@@ -6,6 +6,11 @@ import catalogData from '@fortidashboard/contracts/fixtures/catalog.json'
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref(workspaceFixture.widgets)
   const workspaceName = ref(workspaceFixture.name)
+  const zoom = ref(1)
+
+  function setZoom(val: number) {
+    zoom.value = val
+  }
 
   let maxZIndex = 100 // Ponto de partida seguro
 
@@ -55,6 +60,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
   return {
     activeWidgets,
     workspaceName,
+    zoom,
+    setZoom,
     updateWidgetPosition,
     updateWidgetSize,
     bringToFront,

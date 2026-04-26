@@ -401,8 +401,8 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 ### Trilha Frontend - Canvas e Mockups
 
 - [x] Scaffoldar `apps/web` com Vue 3, Vite, Pinia, Tailwind, Motion for Vue e Lucide Vue.
-- [ ] Implementar telas Vue próprias de `login` e `register`, chamando `/api/auth/*`.
-- [ ] Usar `/api/auth/me` para hidratar usuário/sessão no frontend.
+- [x] Implementar telas Vue próprias de `login` e `register`, chamando `/api/auth/*`.
+- [x] Usar `/api/auth/me` para hidratar usuário/sessão no frontend.
 - [x] Criar layout macro com sidebar fixa e canvas central.
 - [x] Criar store Pinia `useDashboardStore` com fixtures de dois widgets.
 - [x] Criar adapter de dados mockado consumindo `packages/contracts/fixtures`.
@@ -412,6 +412,8 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Implementar catálogo filtrado por integração conectada usando fixtures (Movido para o Build Pane direito estilo Power BI).
 - [x] Implementar chat mockado que adiciona widget em posição livre no canvas (CoPilot na esquerda).
 - [x] Implementar Redimensionamento Livre (Multi-eixo 8 direções) simulando experiência Power BI.
+- [x] Implementar sistema de Theming (Theme Builder Modal) dinâmico via variáveis CSS do Tailwind v4.
+- [x] Adicionar controle de Zoom livre (estilo Figma/Power BI) via scroll do mouse focado exclusivamente na workspace.
 - [ ] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 

@@ -9,10 +9,10 @@ import { ShieldAlert } from 'lucide-vue-next'
       <span class="text-xl font-bold">Top Threats</span>
     </div>
     
-    <div class="flex flex-col gap-2 flex-1 overflow-y-auto pr-2">
-      <div v-for="i in 4" :key="i" class="bg-black/20 rounded p-2 flex justify-between items-center text-sm">
-        <span class="text-slate-300">Intrusion.Botnet.{{ i }}</span>
-        <span class="text-forti-red font-bold font-mono">10.0.0.{{ 10+i }}</span>
+    <div class="flex flex-col gap-2 flex-1 overflow-y-auto no-scrollbar pr-2">
+      <div v-for="i in 4" :key="i" class="bg-theme-text/5 rounded p-2 flex justify-between items-center text-sm">
+        <span class="text-theme-text">Intrusion.Botnet.{{ i }}</span>
+        <span class="text-theme-primary font-bold font-mono">10.0.0.{{ 10+i }}</span>
       </div>
     </div>
   </div>
