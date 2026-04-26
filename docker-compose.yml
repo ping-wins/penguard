@@ -20,7 +20,7 @@ services:
       db:
         condition: service_healthy
       keycloak:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
       interval: 10s
@@ -57,11 +57,6 @@ services:
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3; cat <&3 | grep -q '200 OK'"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
 
 volumes:
   fortidashboard_db:
