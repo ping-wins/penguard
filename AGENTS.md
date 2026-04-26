@@ -218,51 +218,63 @@ Response:
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
-## Backlog
+## Timeline de Trabalho Paralelo
 
-### Fase 0 - Fundação do repositório
+O frontend não deve esperar a integração FortiGate ficar pronta. A primeira fronteira compartilhada é o contrato estático: shapes de integração, catálogo, widget data e workspace. Enquanto o backend implementa FastAPI e persistência, o Lucas pode evoluir `apps/web` usando mocks locais compatíveis com os exemplos deste arquivo.
+
+| Marco | Backend/Felipe | Frontend/Lucas | Critério de desbloqueio |
+| --- | --- | --- | --- |
+| T0 - Contrato inicial | Define mockups de endpoints, IDs e schemas mínimos | Usa os mesmos payloads como fixtures locais | Frontend já consegue montar canvas com dados falsos |
+| T1 - Scaffolds independentes | Cria `apps/api`, healthcheck e OpenAPI inicial | Cria `apps/web`, layout base, Pinia e canvas | Ambos rodam localmente sem depender um do outro |
+| T2 - Front com mocks ricos | Publica JSON schemas/fixtures versionados | Implementa catálogo, chat mockado e widgets estáticos | Lucas desenvolve UX completa sem FortiGate real |
+| T3 - Backend funcional fake/live | Implementa endpoints com mock mode e depois FortiGate live | Troca adapter mock por cliente HTTP mantendo stores | Integração acontece sem reescrever componentes |
+| T4 - Integração real | Persiste integrações, workspace e dados normalizados | Consome API real, trata loading/erro/sem dados | Dashboard salva layout e mostra dados reais |
+
+## Backlog Assíncrono
+
+### Trilha Compartilhada - Contratos e Base
 
 - [ ] Criar estrutura raiz com `.gitignore`, `docker-compose.yml`, `.env.example` e `README.md`.
-- [ ] Scaffoldar `apps/api` com FastAPI, `pyproject.toml`, Ruff, Pytest e Alembic.
-- [ ] Scaffoldar `apps/web` com Vue 3, Vite, Pinia, Tailwind, Motion for Vue e Lucide Vue.
 - [ ] Criar `packages/contracts` com OpenAPI/JSON schemas exportáveis.
-- [ ] Criar `packages/widget-catalog` com definição neutra dos widgets.
-- [ ] Adicionar Postgres no Docker Compose.
+- [ ] Criar fixtures em `packages/contracts/fixtures` para integração, catálogo, widget data e workspace.
+- [ ] Criar `packages/widget-catalog` com definição neutra dos widgets FortiGate.
+- [ ] Manter `AGENTS.md` como contrato vivo sempre que payloads ou responsabilidades mudarem.
 
-### Fase 1 - Backend, dados e FortiGate
+### Trilha Backend - FastAPI, Dados e FortiGate
 
+- [ ] Scaffoldar `apps/api` com FastAPI, `pyproject.toml`, Ruff, Pytest e Alembic.
+- [ ] Adicionar Postgres no Docker Compose e configurar variáveis via `.env.example`.
+- [ ] Implementar `GET /health` e documentação OpenAPI inicial.
+- [ ] Implementar endpoints acima em modo mock, usando fixtures compartilhadas.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
-- [ ] Criptografar API keys em repouso.
+- [ ] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [ ] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [ ] Normalizar status do sistema, interfaces, políticas e threat logs.
 - [ ] Persistir integrações, health checks e workspace specs.
-- [ ] Expor endpoints mockados acima com contratos validados.
-
-### Fase 2 - Catálogo e widgets
-
-- [ ] Criar registry de widgets FortiGate em `packages/widget-catalog`.
-- [ ] Separar catálogo de widgets dos endpoints de dados vivos.
-- [ ] Definir tipos `kpi`, `chart`, `table`, `gauge` e `feed`.
 - [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
 
-### Fase 3 - Frontend e canvas
+### Trilha Frontend - Canvas e Mockups
 
+- [ ] Scaffoldar `apps/web` com Vue 3, Vite, Pinia, Tailwind, Motion for Vue e Lucide Vue.
 - [ ] Criar layout macro com sidebar fixa e canvas central.
-- [ ] Criar store Pinia `useDashboardStore` com dois widgets mockados.
+- [ ] Criar store Pinia `useDashboardStore` com fixtures de dois widgets.
+- [ ] Criar adapter de dados mockado consumindo `packages/contracts/fixtures`.
 - [ ] Criar `DraggableWidget` com Motion for Vue e persistência de posição no Pinia.
 - [ ] Criar cartões Fortinet com cabeçalho escuro, título e ação de fechar/excluir.
 - [ ] Criar `WidgetHealth`, `WidgetThreats` e `WidgetNetwork` com dados estáticos.
+- [ ] Implementar catálogo filtrado por integração conectada usando fixtures.
 - [ ] Implementar chat mockado que adiciona widget em posição livre no canvas.
-- [ ] Consumir contratos gerados de `packages/contracts` sem duplicar payloads.
+- [ ] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 
-### Fase 4 - Qualidade e entrega
+### Trilha de Integração e Qualidade
 
+- [ ] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
 - [ ] Adicionar testes unitários para normalizadores FortiGate.
 - [ ] Adicionar testes de contrato para payloads de API.
 - [ ] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
 - [ ] Documentar setup local completo em `README.md`.
-- [ ] Preparar PRs pequenos com comandos executados e screenshots quando houver UI.
+- [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.
 
 ## Convenções de Código
 
