@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "fortigate-system-status",
+      "title": "System Status",
+      "kind": "kpi",
+      "source": "fortigate",
+      "requiredCapabilities": ["system"],
+      "defaultSize": { "w": 320, "h": 200 },
+      "dataEndpoint": "/api/widgets/fortigate-system-status/data"
+    },
+    {
+      "id": "fortigate-top-threats",
+      "title": "Top Threats",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["threat_logs"],
+      "defaultSize": { "w": 400, "h": 320 },
+      "dataEndpoint": "/api/widgets/fortigate-top-threats/data"
+    },
+    {
+      "id": "fortigate-network-traffic",
+      "title": "Network Traffic",
+      "kind": "chart",
+      "source": "fortigate",
+      "requiredCapabilities": ["system"],
+      "defaultSize": { "w": 350, "h": 250 },
+      "dataEndpoint": "/api/widgets/fortigate-network-traffic/data"
+    },
+    {
+      "id": "fortigate-kpi-sessions",
+      "title": "Active Sessions KPI",
+      "kind": "kpi",
+      "source": "fortigate",
+      "requiredCapabilities": ["system"],
+      "defaultSize": { "w": 250, "h": 150 },
+      "dataEndpoint": "/api/widgets/fortigate-kpi-sessions/data"
+    }
+  ]
+}

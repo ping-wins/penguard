@@ -1,0 +1,19 @@
+{
+  "groups": [
+    {
+      "id": "system",
+      "name": "System Data",
+      "fields": ["CPU Usage", "Memory Usage", "Active Sessions", "Uptime"]
+    },
+    {
+      "id": "network",
+      "name": "Network Traffic",
+      "fields": ["Bytes In", "Bytes Out", "Packets Dropped", "Bandwidth"]
+    },
+    {
+      "id": "threats",
+      "name": "Threat Intelligence",
+      "fields": ["Top Source IPs", "Top Destinations", "Botnet Matches", "Intrusion Events"]
+    }
+  ]
+}

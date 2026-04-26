@@ -262,8 +262,9 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [ ] Criar `DraggableWidget` com Motion for Vue e persistência de posição no Pinia.
 - [ ] Criar cartões Fortinet com cabeçalho escuro, título e ação de fechar/excluir.
 - [ ] Criar `WidgetHealth`, `WidgetThreats` e `WidgetNetwork` com dados estáticos.
-- [ ] Implementar catálogo filtrado por integração conectada usando fixtures.
-- [ ] Implementar chat mockado que adiciona widget em posição livre no canvas.
+- [x] Implementar catálogo filtrado por integração conectada usando fixtures (Movido para o Build Pane direito estilo Power BI).
+- [x] Implementar chat mockado que adiciona widget em posição livre no canvas (CoPilot na esquerda).
+- [x] Implementar Redimensionamento Livre (Multi-eixo 8 direções) simulando experiência Power BI.
 - [ ] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 

@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  
+  /* Brand Colors from AGENTS.md requirements */
+  --color-forti-dark: #121212;
+  --color-forti-panel: #1e1e1e;
+  --color-forti-red: #ea0029;
+}
+
+@layer base {
+  body {
+    @apply bg-forti-dark text-slate-200 antialiased;
+  }
+}

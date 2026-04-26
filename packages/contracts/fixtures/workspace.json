@@ -1,0 +1,12 @@
+{
+  "id": "ws_default",
+  "name": "SOC Overview",
+  "widgets": [
+    {
+      "instanceId": "w_01",
+      "catalogId": "fortigate-system-status",
+      "integrationId": "int_fgt_01",
+      "layout": { "x": 50, "y": 50, "w": 320, "h": 200, "z": 10 }
+    }
+  ]
+}
