@@ -18,10 +18,12 @@ def test_fortigate_client_uses_bearer_token_and_unwraps_results():
             200,
             json={
                 "status": "success",
+                "serial": "FGVMTEST",
+                "version": "v7.6.6",
+                "build": 3652,
                 "results": {
                     "hostname": "FGT-VM",
                     "model_name": "FortiGate-VM64",
-                    "version": "v7.4.3",
                 },
             },
         )
@@ -36,7 +38,9 @@ def test_fortigate_client_uses_bearer_token_and_unwraps_results():
     assert client.get_system_status() == {
         "hostname": "FGT-VM",
         "model_name": "FortiGate-VM64",
-        "version": "v7.4.3",
+        "serial": "FGVMTEST",
+        "version": "v7.6.6",
+        "build": 3652,
     }
 
 
@@ -89,6 +93,42 @@ def test_normalize_system_status_for_widget_and_connection_payloads():
         "memory": 48,
         "sessions": 3812,
         "uptimeSeconds": 92420,
+    }
+
+
+def test_normalize_system_status_accepts_real_fortios_performance_payloads():
+    normalized = normalize_system_status(
+        {
+            "hostname": "FGVMEVJAOUIR5F07",
+            "model": "FGVM64",
+            "model_name": "FortiGate",
+            "model_number": "VM64",
+            "serial": "FGVMEVJAOUIR5F07",
+            "version": "v7.6.6",
+            "build": 3652,
+        },
+        performance={
+            "cpu": {"idle": 97, "iowait": 0, "nice": 0, "system": 1, "user": 2},
+            "mem": {
+                "free": 758415360,
+                "freeable": 383713280,
+                "total": 2091188224,
+                "used": 949059584,
+            },
+        },
+        resource_usage={"session": [{"current": 15}]},
+    )
+
+    assert normalized == {
+        "hostname": "FGVMEVJAOUIR5F07",
+        "model": "FortiGate",
+        "version": "v7.6.6",
+        "serial": "FGVMEVJAOUIR5F07",
+        "build": 3652,
+        "cpu": 3,
+        "memory": 45,
+        "sessions": 15,
+        "uptimeSeconds": None,
     }
 
 

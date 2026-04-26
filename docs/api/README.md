@@ -34,6 +34,8 @@ Integration responses must never include `apiKey`.
 The live FortiGate client is read-only and currently targets:
 
 - `GET /api/v2/monitor/system/status`
+- `GET /api/v2/monitor/system/performance/status`
+- `GET /api/v2/monitor/system/resource/usage?resource=session`
 - `GET /api/v2/cmdb/system/interface`
 - `GET /api/v2/cmdb/firewall/policy`
 - `GET /api/v2/log/memory/utm/ips`

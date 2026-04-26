@@ -105,6 +105,16 @@ def test_fortigate_integration_service_tests_connection_with_live_client():
                 "version": "v7.4.3",
             }
 
+        def get_performance_status(self):
+            return {
+                "cpu": {"idle": 97},
+                "mem": {"total": 100, "used": 48},
+            }
+
+        def get_resource_usage(self, resource: str | None = None):
+            assert resource == "session"
+            return {"session": [{"current": 15}]}
+
     service = FortiGateIntegrationService(
         store=SqlAlchemyFortiGateIntegrationStore(
             engine=engine,

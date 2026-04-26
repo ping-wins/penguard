@@ -24,6 +24,12 @@ class FortiGateClient(Protocol):
     def get_system_status(self) -> dict[str, Any]:
         pass
 
+    def get_performance_status(self) -> dict[str, Any]:
+        pass
+
+    def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
+        pass
+
 
 class FortiGateClientFactory(Protocol):
     def __call__(self, *, host: str, api_key: str, verify_tls: bool) -> FortiGateClient:
@@ -71,7 +77,11 @@ class FortiGateIntegrationService:
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         try:
             client = self.client_factory(host=host, api_key=api_key, verify_tls=verify_tls)
-            system_status = normalize_system_status(client.get_system_status())
+            system_status = normalize_system_status(
+                client.get_system_status(),
+                performance=client.get_performance_status(),
+                resource_usage=client.get_resource_usage(resource="session"),
+            )
         except FortiGateApiError as exc:
             return {
                 "ok": False,

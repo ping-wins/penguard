@@ -2,17 +2,26 @@ from datetime import UTC, datetime
 from typing import Any
 
 
-def normalize_system_status(raw: dict[str, Any]) -> dict[str, Any]:
-    return {
+def normalize_system_status(
+    raw: dict[str, Any],
+    *,
+    performance: dict[str, Any] | None = None,
+    resource_usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = {
         "hostname": _string(raw, "hostname", "host_name"),
         "model": _string(raw, "model_name", "model", "model_number"),
         "version": _string(raw, "version", "firmware_version"),
         "serial": _string(raw, "serial", "serial_number", default=None),
-        "cpu": _integer(raw, "cpu", "cpu_usage"),
-        "memory": _integer(raw, "mem", "memory", "memory_usage"),
-        "sessions": _integer(raw, "current_sessions", "sessions", "session_count"),
+        "cpu": _cpu_percent(raw, performance),
+        "memory": _memory_percent(raw, performance),
+        "sessions": _session_count(raw, resource_usage),
         "uptimeSeconds": _integer(raw, "uptime", "uptime_seconds", "uptimeSeconds"),
     }
+    build = _integer(raw, "build")
+    if build is not None:
+        normalized["build"] = build
+    return normalized
 
 
 def normalize_interfaces(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -95,6 +104,63 @@ def _integer(data: dict[str, Any], *keys: str) -> int | None:
             except (TypeError, ValueError):
                 return None
     return None
+
+
+def _cpu_percent(raw: dict[str, Any], performance: dict[str, Any] | None) -> int | None:
+    direct = _integer(raw, "cpu", "cpu_usage")
+    if direct is not None:
+        return direct
+    if performance is None or not isinstance(performance.get("cpu"), dict):
+        return None
+    cpu = performance["cpu"]
+    if "current" in cpu:
+        return _coerce_int(cpu["current"])
+    if "idle" in cpu:
+        idle = _coerce_int(cpu["idle"])
+        return None if idle is None else max(0, min(100, 100 - idle))
+    total = 0
+    for key in ("user", "system", "nice", "iowait"):
+        value = _coerce_int(cpu.get(key))
+        if value is not None:
+            total += value
+    return total
+
+
+def _memory_percent(raw: dict[str, Any], performance: dict[str, Any] | None) -> int | None:
+    direct = _integer(raw, "mem", "memory", "memory_usage")
+    if direct is not None:
+        return direct
+    if performance is None or not isinstance(performance.get("mem"), dict):
+        return None
+    mem = performance["mem"]
+    used = _coerce_int(mem.get("used"))
+    total = _coerce_int(mem.get("total"))
+    if used is None or total in (None, 0):
+        return None
+    return round((used / total) * 100)
+
+
+def _session_count(raw: dict[str, Any], resource_usage: dict[str, Any] | None) -> int | None:
+    direct = _integer(raw, "current_sessions", "sessions", "session_count")
+    if direct is not None:
+        return direct
+    if resource_usage is None:
+        return None
+    session = resource_usage.get("session")
+    if isinstance(session, list) and session:
+        first = session[0]
+        if isinstance(first, dict):
+            return _coerce_int(first.get("current"))
+    if isinstance(session, dict):
+        return _coerce_int(session.get("current"))
+    return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _interface_ip(value: Any) -> str:

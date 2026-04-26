@@ -489,7 +489,7 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
 
-Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443`, mas o API user/token informado para `pingwin` retornou `401 Unauthorized` em HTTPS Bearer, HTTPS `access_token`, HTTP Bearer e HTTP `access_token`. Próximo passo operacional: regenerar token ou revisar `accprofile`, `vdom` e `trusthost` do `config system api-user`.
+Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
 ### Trilha Frontend - Canvas e Mockups
 

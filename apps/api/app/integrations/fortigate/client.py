@@ -31,6 +31,19 @@ class FortiGateApiClient:
             raise FortiGateApiError("FortiGate system status response was not an object")
         return results
 
+    def get_performance_status(self) -> dict[str, Any]:
+        results = self._get("/api/v2/monitor/system/performance/status")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate performance status response was not an object")
+        return results
+
+    def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
+        params = {"resource": resource} if resource else None
+        results = self._get("/api/v2/monitor/system/resource/usage", params=params)
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate resource usage response was not an object")
+        return results
+
     def get_interfaces(self) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/cmdb/system/interface")
 
@@ -86,7 +99,7 @@ class FortiGateApiClient:
         if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
             raise FortiGateApiError("FortiGate API returned error status")
         if isinstance(payload, dict) and "results" in payload:
-            return payload["results"]
+            return self._merge_envelope_metadata(payload)
         return payload
 
     def _decode_json(self, response: httpx.Response) -> Any:
@@ -94,3 +107,13 @@ class FortiGateApiClient:
             return response.json()
         except ValueError as exc:
             raise FortiGateApiError("FortiGate API returned non-JSON response") from exc
+
+    def _merge_envelope_metadata(self, payload: dict[str, Any]) -> Any:
+        results = payload["results"]
+        if not isinstance(results, dict):
+            return results
+        merged = dict(results)
+        for key in ("serial", "version", "build"):
+            if key in payload and key not in merged:
+                merged[key] = payload[key]
+        return merged
