@@ -481,13 +481,15 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [x] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
 - [x] Criptografar API keys em repouso e nunca retorná-las em responses.
-- [ ] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
-- [ ] Normalizar status do sistema, interfaces, políticas e threat logs.
+- [x] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
+- [x] Normalizar status do sistema, interfaces, políticas e threat logs.
 - [ ] Persistir integrações, health checks e workspace specs.
 - [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
 - [ ] Implementar audit log para ações sensíveis de auth, integração, workspace e administração.
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
+
+Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443`, mas o API user/token informado para `pingwin` retornou `401 Unauthorized` em HTTPS Bearer, HTTPS `access_token`, HTTP Bearer e HTTP `access_token`. Próximo passo operacional: regenerar token ou revisar `accprofile`, `vdom` e `trusthost` do `config system api-user`.
 
 ### Trilha Frontend - Canvas e Mockups
 

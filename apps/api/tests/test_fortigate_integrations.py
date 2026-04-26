@@ -89,6 +89,48 @@ def test_fortigate_integration_service_can_use_persistent_store():
     assert listed["items"][0]["id"] == "int_fgt_service"
 
 
+def test_fortigate_integration_service_tests_connection_with_live_client():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    class FakeClient:
+        def get_system_status(self):
+            return {
+                "hostname": "FGT-VM",
+                "model_name": "FortiGate-VM64",
+                "version": "v7.4.3",
+            }
+
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_service",
+        ),
+        client_factory=lambda *, host, api_key, verify_tls: FakeClient(),
+    )
+
+    result = service.test_connection(
+        host="https://fortigate.local/",
+        api_key="secret-token",
+        verify_tls=False,
+    )
+
+    assert result == {
+        "ok": True,
+        "status": "connected",
+        "device": {
+            "hostname": "FGT-VM",
+            "model": "FortiGate-VM64",
+            "version": "v7.4.3",
+        },
+    }
+
+
 def test_fortigate_integration_endpoint_can_use_persistent_service():
     engine = create_engine(
         "sqlite+pysqlite://",

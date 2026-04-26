@@ -30,3 +30,12 @@ Before `POST /api/auth/register`, `POST /api/auth/login`, or `POST /api/auth/log
 `POST /api/integrations/fortigate` accepts `name`, `host`, `apiKey`, and `verifyTls`. In mock mode, it returns the shared fixture. In live mode (`FORTIDASHBOARD_MOCK_MODE=false`), the backend persists the integration in Postgres and stores the API key only as encrypted `fortigate_integrations.api_key_blob`.
 
 Integration responses must never include `apiKey`.
+
+The live FortiGate client is read-only and currently targets:
+
+- `GET /api/v2/monitor/system/status`
+- `GET /api/v2/cmdb/system/interface`
+- `GET /api/v2/cmdb/firewall/policy`
+- `GET /api/v2/log/memory/utm/ips`
+
+Normalized responses cover system status, interfaces, policies, and threat logs. If a lab token returns `401`, verify the FortiGate `api-user` token, `accprofile`, `vdom`, and `trusthost` before changing backend code.
