@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "int_fgt_01",
+      "type": "fortigate",
+      "name": "FortiGate Lab",
+      "host": "https://fortigate.local",
+      "status": "connected",
+      "lastCheckedAt": "2026-04-26T20:30:00.000Z"
+    }
+  ]
+}

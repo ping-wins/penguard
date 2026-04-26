@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fortidashboard-db
+    environment:
+      POSTGRES_DB: fortidashboard
+      POSTGRES_USER: fortidashboard
+      POSTGRES_PASSWORD: fortidashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - fortidashboard_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fortidashboard -d fortidashboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  fortidashboard_db:

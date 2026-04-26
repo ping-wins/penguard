@@ -234,18 +234,18 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 
 ### Trilha Compartilhada - Contratos e Base
 
-- [ ] Criar estrutura raiz com `.gitignore`, `docker-compose.yml`, `.env.example` e `README.md`.
-- [ ] Criar `packages/contracts` com OpenAPI/JSON schemas exportáveis.
-- [ ] Criar fixtures em `packages/contracts/fixtures` para integração, catálogo, widget data e workspace.
-- [ ] Criar `packages/widget-catalog` com definição neutra dos widgets FortiGate.
+- [x] Criar estrutura raiz com `.gitignore`, `docker-compose.yml`, `.env.example` e `README.md`.
+- [x] Criar `packages/contracts` com OpenAPI/JSON schemas exportáveis.
+- [x] Criar fixtures em `packages/contracts/fixtures` para integração, catálogo, widget data e workspace.
+- [x] Criar `packages/widget-catalog` com definição neutra dos widgets FortiGate.
 - [ ] Manter `AGENTS.md` como contrato vivo sempre que payloads ou responsabilidades mudarem.
 
 ### Trilha Backend - FastAPI, Dados e FortiGate
 
-- [ ] Scaffoldar `apps/api` com FastAPI, `pyproject.toml`, Ruff, Pytest e Alembic.
-- [ ] Adicionar Postgres no Docker Compose e configurar variáveis via `.env.example`.
-- [ ] Implementar `GET /health` e documentação OpenAPI inicial.
-- [ ] Implementar endpoints acima em modo mock, usando fixtures compartilhadas.
+- [x] Scaffoldar `apps/api` com FastAPI, `pyproject.toml`, Ruff, Pytest e Alembic.
+- [x] Adicionar Postgres no Docker Compose e configurar variáveis via `.env.example`.
+- [x] Implementar `GET /health` e documentação OpenAPI inicial.
+- [x] Implementar endpoints acima em modo mock, usando fixtures compartilhadas.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
 - [ ] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [ ] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
@@ -269,11 +269,11 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 
 ### Trilha de Integração e Qualidade
 
-- [ ] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
+- [x] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
 - [ ] Adicionar testes unitários para normalizadores FortiGate.
-- [ ] Adicionar testes de contrato para payloads de API.
+- [x] Adicionar testes de contrato para payloads de API.
 - [ ] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
-- [ ] Documentar setup local completo em `README.md`.
+- [x] Documentar setup local completo em `README.md`.
 - [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.
 
 ## Convenções de Código

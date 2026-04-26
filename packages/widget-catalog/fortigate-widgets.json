@@ -1,0 +1,16 @@
+{
+  "widgets": [
+    {
+      "id": "fortigate-system-status",
+      "title": "System Status",
+      "kind": "kpi",
+      "requiredCapabilities": ["system"]
+    },
+    {
+      "id": "fortigate-top-threats",
+      "title": "Top Threats",
+      "kind": "table",
+      "requiredCapabilities": ["threat_logs"]
+    }
+  ]
+}
