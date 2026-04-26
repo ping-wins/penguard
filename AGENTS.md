@@ -464,6 +464,61 @@ Response:
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
+## Handoff de Widgets para o Lucas - Sprint Atual
+
+O frontend pode trabalhar com widgets FortiGate sem depender do FortiGate real. Em `FORTIDASHBOARD_MOCK_MODE=true`, a API e as fixtures em `packages/contracts/fixtures` retornam payloads estáveis. Em modo live, os mesmos endpoints usam a integração persistida e o client FortiGate read-only.
+
+Fluxo recomendado no `apps/web`:
+
+- Carregar opções com `GET /api/widget-catalog?integrationType=fortigate`.
+- Para cada item do catálogo, usar `id`, `title`, `kind`, `defaultSize`, `requiredCapabilities` e `dataEndpoint`.
+- Ao instanciar um widget no canvas, chamar `${dataEndpoint}?integrationId=<id-da-integracao>`.
+- Renderizar `status: "ready"` como dado normal, `status: "error"` como erro dentro do card, e estados de loading/empty no adapter HTTP.
+- Não acoplar componente visual ao FortiGate: o componente recebe apenas o payload `data` normalizado.
+
+Widgets disponíveis nesta sprint:
+
+| Widget ID | Tipo | Payload principal | Observação frontend |
+| --- | --- | --- | --- |
+| `fortigate-system-status` | `kpi` | `hostname`, `model`, `version`, `build`, `cpu`, `memory`, `sessions`, `uptimeSeconds` | Card de saúde geral do appliance |
+| `fortigate-kpi-sessions` | `kpi` | `sessions` | KPI compacto para sessões ativas |
+| `fortigate-network-traffic` | `table` | `interfaces[]` com `rxBytes`, `txBytes`, packets e `status` | Pode virar tabela ou gráfico por interface |
+| `fortigate-firewall-policies` | `table` | `policies[]` | No lab atual pode vir lista vazia |
+| `fortigate-top-threats` | `table` | `threats[]` ou `status: "error"` | O lab atual retorna `404`; renderizar erro contextual |
+
+Contrato comum de widget:
+
+```json
+{
+  "widgetId": "fortigate-system-status",
+  "integrationId": "int_fgt_01",
+  "refreshedAt": "2026-04-26T23:45:00.000Z",
+  "status": "ready",
+  "data": {},
+  "meta": {
+    "source": "fortigate",
+    "cacheTtlSeconds": 30
+  }
+}
+```
+
+Erro controlado:
+
+```json
+{
+  "widgetId": "fortigate-top-threats",
+  "integrationId": "int_fgt_01",
+  "refreshedAt": "2026-04-26T23:45:00.000Z",
+  "status": "error",
+  "data": {},
+  "meta": {
+    "source": "fortigate",
+    "cacheTtlSeconds": 30,
+    "error": { "message": "FortiGate API request failed with HTTP 404" }
+  }
+}
+```
+
 ## Timeline de Trabalho Paralelo
 
 O frontend não deve esperar a integração FortiGate ficar pronta. A primeira fronteira compartilhada é o contrato estático: shapes de integração, catálogo, widget data, workspace, domínio verificado e audit log. Enquanto o backend implementa FastAPI e persistência, o Lucas pode evoluir `apps/web` usando mocks locais compatíveis com os exemplos deste arquivo.
