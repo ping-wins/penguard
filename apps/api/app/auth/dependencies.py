@@ -1,10 +1,35 @@
 from functools import lru_cache
 
+from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
+from app.auth.csrf import CsrfGuard
 from app.auth.keycloak import KeycloakClient
+from app.auth.rate_limit import InMemoryRateLimiter
 from app.auth.service import AuthService, KeycloakIdentityProvider, MockIdentityProvider
 from app.auth.session_store import InMemorySessionStore, SqlAlchemySessionStore
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
+
+
+@lru_cache
+def get_csrf_guard() -> CsrfGuard:
+    return CsrfGuard()
+
+
+@lru_cache
+def get_auth_rate_limiter() -> InMemoryRateLimiter:
+    settings = get_settings()
+    return InMemoryRateLimiter(
+        max_attempts=settings.auth_rate_limit_max_attempts,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
+
+
+@lru_cache
+def get_auth_audit_store() -> InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore:
+    settings = get_settings()
+    if settings.mock_mode:
+        return InMemoryAuthAuditStore()
+    return SqlAlchemyAuthAuditStore(database_url=settings.database_url)
 
 
 @lru_cache

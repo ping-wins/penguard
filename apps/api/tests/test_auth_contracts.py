@@ -3,11 +3,17 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+def csrf_headers(client: TestClient) -> dict[str, str]:
+    response = client.get("/api/auth/csrf")
+    return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
 def test_register_sets_http_only_session_cookie_without_returning_tokens():
     client = TestClient(app)
 
     response = client.post(
         "/api/auth/register",
+        headers=csrf_headers(client),
         json={
             "email": "analyst@example.com",
             "password": "correct-horse-battery-staple",
@@ -42,6 +48,7 @@ def test_login_sets_session_cookie_and_me_reads_contextual_browser_session():
 
     login_response = client.post(
         "/api/auth/login",
+        headers=csrf_headers(client),
         json={
             "email": "analyst@example.com",
             "password": "correct-horse-battery-staple",
@@ -79,13 +86,14 @@ def test_logout_clears_http_only_session_cookie():
     client = TestClient(app)
     client.post(
         "/api/auth/login",
+        headers=csrf_headers(client),
         json={
             "email": "analyst@example.com",
             "password": "correct-horse-battery-staple",
         },
     )
 
-    logout_response = client.post("/api/auth/logout")
+    logout_response = client.post("/api/auth/logout", headers=csrf_headers(client))
 
     assert logout_response.status_code == 200
     assert logout_response.json() == {"authenticated": False}

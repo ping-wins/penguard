@@ -44,6 +44,7 @@ Modelo obrigatório:
 - Endpoints protegidos usam a sessão da API, não validação JWT feita no browser.
 - A API deve aplicar CSRF para métodos mutáveis, rate limit em login/register e auditoria de tentativas.
 - Sessões live usam Postgres na tabela `auth_sessions`; `token_blob` deve ser criptografado, `expires_at` deve invalidar sessões vencidas e tokens nunca podem aparecer em texto claro.
+- Frontend deve chamar `GET /api/auth/csrf` antes de `login`, `register` ou `logout` e enviar o valor em `X-CSRF-Token`.
 
 Fluxo esperado:
 
@@ -74,6 +75,20 @@ Atualize após o scaffold real existir:
 - `cd apps/web && pnpm test`: executa testes frontend quando existirem.
 
 ## Contratos e Mockups de Endpoints
+
+### CSRF para formulários Vue
+
+`GET /api/auth/csrf`
+
+Response:
+
+```json
+{
+  "csrfToken": "csrf_token_for_x_csrf_token_header"
+}
+```
+
+A resposta define o cookie `fortidashboard_csrf` sem `HttpOnly`. Envie o mesmo valor no header `X-CSRF-Token` em `POST /api/auth/register`, `POST /api/auth/login` e `POST /api/auth/logout`. Falha de CSRF retorna `403`; excesso de tentativas de auth retorna `429`.
 
 ### Registrar usuário
 
@@ -374,7 +389,7 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
 - [x] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
 - [x] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
-- [ ] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
+- [x] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
 - [ ] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [ ] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.

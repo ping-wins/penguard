@@ -22,3 +22,5 @@ Frontend login/register pages call FastAPI auth endpoints. The backend response 
 The backend owns the `Set-Cookie` behavior for `fortidashboard_session`. Frontend code should use `GET /api/auth/me` to hydrate the current user after page reloads.
 
 In live mode (`FORTIDASHBOARD_MOCK_MODE=false`), FastAPI authenticates against Keycloak and persists the browser session in Postgres. Keycloak tokens are stored only in the `auth_sessions.token_blob` encrypted field, `expires_at` invalidates expired sessions, and tokens must never appear in JSON responses.
+
+Before `POST /api/auth/register`, `POST /api/auth/login`, or `POST /api/auth/logout`, frontend code must call `GET /api/auth/csrf` and echo `csrfToken` in `X-CSRF-Token`. Failed CSRF checks return `403`; login/register rate limits return `429`; auth security events are recorded in `auth_audit_events` in live mode.

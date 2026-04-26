@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     mock_mode: bool = True
     session_cookie_name: str = "fortidashboard_session"
     session_cookie_secure: bool = False
+    csrf_cookie_name: str = "fortidashboard_csrf"
+    csrf_header_name: str = "X-CSRF-Token"
+    auth_rate_limit_max_attempts: int = 10
+    auth_rate_limit_window_seconds: int = 60
     keycloak_base_url: str = "http://localhost:8080"
     keycloak_realm: str = "fortidashboard"
     keycloak_client_id: str = "fortidashboard-bff"

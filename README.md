@@ -41,12 +41,15 @@ The API exposes OpenAPI at `http://localhost:8000/openapi.json` and interactive 
 
 The Vue app owns the visual login/register pages, but it must call FastAPI instead of Keycloak directly:
 
+- `GET /api/auth/csrf`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
 
 FastAPI acts as a BFF/auth gateway. The browser receives a `fortidashboard_session` cookie marked `HttpOnly`; Keycloak tokens stay server-side and are persisted in Postgres as an encrypted `token_blob`. The default Compose mode still uses fixtures so frontend work can proceed without Keycloak/FortiGate dependencies.
+
+For mutating auth requests, call `GET /api/auth/csrf` first and send the returned token in `X-CSRF-Token`. The API also rate-limits login/register attempts and records auth audit events.
 
 Keycloak runs locally at `http://localhost:8080` with temporary development admin credentials from `docker-compose.yml`. Replace these before any shared or deployed environment.
 
