@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from app.auth.keycloak import KeycloakClient, KeycloakUser
-from app.auth.session_store import InMemorySessionStore
+from app.auth.session_store import SessionRecord
 from app.core.fixtures import load_fixture
 
 
@@ -25,6 +25,23 @@ class IdentityProvider(Protocol):
         pass
 
     def login(self, *, email: str, password: str) -> AuthIdentity:
+        pass
+
+
+class SessionStore(Protocol):
+    def create(
+        self,
+        *,
+        user: dict[str, Any],
+        tokens: dict[str, Any],
+        expires_at: datetime | None = None,
+    ) -> str:
+        pass
+
+    def get(self, session_id: str | None) -> SessionRecord | None:
+        pass
+
+    def delete(self, session_id: str | None) -> None:
         pass
 
 
@@ -78,7 +95,7 @@ class KeycloakIdentityProvider:
 
 
 class AuthService:
-    def __init__(self, *, provider: IdentityProvider, session_store: InMemorySessionStore) -> None:
+    def __init__(self, *, provider: IdentityProvider, session_store: SessionStore) -> None:
         self.provider = provider
         self.session_store = session_store
 
@@ -101,19 +118,26 @@ class AuthService:
         return load_fixture("auth_logout_response")
 
     def _create_public_session(self, identity: AuthIdentity) -> AuthSessionResult:
-        session_id = self.session_store.create(user=identity.user, tokens=identity.tokens)
+        expires_at = self._expires_at_datetime(identity.tokens)
+        session_id = self.session_store.create(
+            user=identity.user,
+            tokens=identity.tokens,
+            expires_at=expires_at,
+        )
         return AuthSessionResult(
             session_id=session_id,
             payload={
                 "user": identity.user,
                 "session": {
                     "authenticated": True,
-                    "expiresAt": identity.expires_at or self._expires_at(identity.tokens),
+                    "expiresAt": identity.expires_at or self._format_expires_at(expires_at),
                 },
             },
         )
 
-    def _expires_at(self, tokens: dict[str, Any]) -> str:
+    def _expires_at_datetime(self, tokens: dict[str, Any]) -> datetime:
         expires_in = int(tokens.get("expires_in", 0))
-        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+        return datetime.now(UTC) + timedelta(seconds=expires_in)
+
+    def _format_expires_at(self, expires_at: datetime) -> str:
         return expires_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")

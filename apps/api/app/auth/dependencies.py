@@ -2,13 +2,20 @@ from functools import lru_cache
 
 from app.auth.keycloak import KeycloakClient
 from app.auth.service import AuthService, KeycloakIdentityProvider, MockIdentityProvider
-from app.auth.session_store import InMemorySessionStore
+from app.auth.session_store import InMemorySessionStore, SqlAlchemySessionStore
+from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 
 
 @lru_cache
-def get_session_store() -> InMemorySessionStore:
-    return InMemorySessionStore()
+def get_session_store() -> InMemorySessionStore | SqlAlchemySessionStore:
+    settings = get_settings()
+    if settings.mock_mode:
+        return InMemorySessionStore()
+    return SqlAlchemySessionStore(
+        database_url=settings.database_url,
+        token_cipher=TokenCipher.from_secret(settings.token_encryption_key or settings.secret_key),
+    )
 
 
 @lru_cache

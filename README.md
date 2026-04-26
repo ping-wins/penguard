@@ -6,7 +6,7 @@ FortiDashboard is a modular NG-SOC dashboard focused first on FortiGate visibili
 
 The committed implementation starts the backend foundation:
 
-- `apps/api`: FastAPI service with healthcheck, auth-session mocks, and mock contract endpoints.
+- `apps/api`: FastAPI service with healthcheck, BFF auth, persisted server-side sessions, and mock contract endpoints.
 - `packages/contracts/fixtures`: JSON fixtures shared by backend tests and frontend mocks.
 - `packages/widget-catalog`: neutral FortiGate widget catalog seed data.
 - `docker-compose.yml`: local Postgres and Keycloak services for backend development.
@@ -46,11 +46,17 @@ The Vue app owns the visual login/register pages, but it must call FastAPI inste
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
 
-FastAPI acts as a BFF/auth gateway. The browser receives a `fortidashboard_session` cookie marked `HttpOnly`; Keycloak tokens must stay server-side and must not be returned to JavaScript. The current implementation uses mock session fixtures so frontend work can proceed before live Keycloak wiring is complete.
+FastAPI acts as a BFF/auth gateway. The browser receives a `fortidashboard_session` cookie marked `HttpOnly`; Keycloak tokens stay server-side and are persisted in Postgres as an encrypted `token_blob`. The default Compose mode still uses fixtures so frontend work can proceed without Keycloak/FortiGate dependencies.
 
 Keycloak runs locally at `http://localhost:8080` with temporary development admin credentials from `docker-compose.yml`. Replace these before any shared or deployed environment.
 
-To exercise the Keycloak-backed code path, set `FORTIDASHBOARD_MOCK_MODE=false` for the API service. The current default remains mock mode so the frontend can develop against stable fixtures while live session persistence is still being built.
+To exercise the Keycloak-backed code path, run:
+
+```bash
+FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api
+```
+
+The API applies Alembic migrations at container startup for local development.
 
 ## Contract Fixtures
 

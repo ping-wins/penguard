@@ -43,6 +43,7 @@ Modelo obrigatório:
 - Tokens Keycloak, quando necessários, ficam server-side em store de sessão ou registro criptografado.
 - Endpoints protegidos usam a sessão da API, não validação JWT feita no browser.
 - A API deve aplicar CSRF para métodos mutáveis, rate limit em login/register e auditoria de tentativas.
+- Sessões live usam Postgres na tabela `auth_sessions`; `token_blob` deve ser criptografado, `expires_at` deve invalidar sessões vencidas e tokens nunca podem aparecer em texto claro.
 
 Fluxo esperado:
 
@@ -61,6 +62,8 @@ Observação de segurança: formulário próprio com Keycloak costuma exigir Dir
 Atualize após o scaffold real existir:
 
 - `docker compose up -d db`: sobe Postgres local.
+- `docker compose up -d --build api`: sobe API, Postgres e Keycloak em modo mock por padrão.
+- `FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api`: sobe API usando Keycloak live e sessões persistidas no Postgres.
 - `cd apps/api && uv sync`: instala dependências Python.
 - `cd apps/api && uv run uvicorn app.main:app --reload --port 8000`: roda a API.
 - `cd apps/api && uv run pytest`: executa testes backend.
@@ -369,8 +372,8 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Implementar client/provider para `POST /api/auth/register` usando Keycloak Admin API e sessão HTTP-only.
 - [x] Implementar client/provider para `POST /api/auth/login` via token endpoint do Keycloak e sessão HTTP-only.
 - [x] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
-- [ ] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
-- [ ] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
+- [x] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
+- [x] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
 - [ ] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
 - [ ] Criptografar API keys em repouso e nunca retorná-las em responses.

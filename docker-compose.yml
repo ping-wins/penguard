@@ -7,7 +7,8 @@ services:
     environment:
       FORTIDASHBOARD_DATABASE_URL: postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard
       FORTIDASHBOARD_SECRET_KEY: change-me-in-local-env
-      FORTIDASHBOARD_MOCK_MODE: "true"
+      FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY: ${FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY:-}
+      FORTIDASHBOARD_MOCK_MODE: ${FORTIDASHBOARD_MOCK_MODE:-true}
       FORTIDASHBOARD_SESSION_COOKIE_NAME: fortidashboard_session
       FORTIDASHBOARD_SESSION_COOKIE_SECURE: "false"
       FORTIDASHBOARD_KEYCLOAK_BASE_URL: http://keycloak:8080
