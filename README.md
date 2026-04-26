@@ -6,15 +6,15 @@ FortiDashboard is a modular NG-SOC dashboard focused first on FortiGate visibili
 
 The committed implementation starts the backend foundation:
 
-- `apps/api`: FastAPI service with healthcheck and mock contract endpoints.
+- `apps/api`: FastAPI service with healthcheck, auth-session mocks, and mock contract endpoints.
 - `packages/contracts/fixtures`: JSON fixtures shared by backend tests and frontend mocks.
 - `packages/widget-catalog`: neutral FortiGate widget catalog seed data.
-- `docker-compose.yml`: local Postgres service for the future persistence layer.
+- `docker-compose.yml`: local Postgres and Keycloak services for backend development.
 
 ## Backend Development
 
 ```bash
-docker compose up -d db
+docker compose up -d db keycloak
 cd apps/api
 uv sync
 uv run uvicorn app.main:app --reload --port 8000
@@ -30,6 +30,19 @@ uv run alembic upgrade head
 ```
 
 The API exposes OpenAPI at `http://localhost:8000/openapi.json` and interactive docs at `http://localhost:8000/docs`.
+
+## Auth Model
+
+The Vue app owns the visual login/register pages, but it must call FastAPI instead of Keycloak directly:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+
+FastAPI acts as a BFF/auth gateway. The browser receives a `fortidashboard_session` cookie marked `HttpOnly`; Keycloak tokens must stay server-side and must not be returned to JavaScript. The current implementation uses mock session fixtures so frontend work can proceed before live Keycloak wiring is complete.
+
+Keycloak runs locally at `http://localhost:8080` with temporary development admin credentials from `docker-compose.yml`. Replace these before any shared or deployed environment.
 
 ## Contract Fixtures
 

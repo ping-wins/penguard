@@ -364,10 +364,10 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Adicionar Postgres no Docker Compose e configurar variáveis via `.env.example`.
 - [x] Implementar `GET /health` e documentação OpenAPI inicial.
 - [x] Implementar endpoints acima em modo mock, usando fixtures compartilhadas.
-- [ ] Adicionar Keycloak ao Docker Compose com realm/client inicial para desenvolvimento.
+- [x] Adicionar Keycloak ao Docker Compose com realm/client inicial para desenvolvimento.
 - [ ] Implementar `POST /api/auth/register` usando Keycloak Admin API e sessão HTTP-only.
 - [ ] Implementar `POST /api/auth/login` via Keycloak no backend e sessão HTTP-only.
-- [ ] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
+- [x] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
 - [ ] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
 - [ ] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.

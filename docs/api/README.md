@@ -14,3 +14,9 @@ Contract changes must update:
 - Shared fixtures in `packages/contracts/fixtures`.
 - Backend tests in `apps/api/tests`.
 - Consumer-facing notes in `AGENTS.md` when payload shapes change.
+
+## Auth Session Contract
+
+Frontend login/register pages call FastAPI auth endpoints. The backend response body contains user/session context only; access and refresh tokens must never be returned to the browser.
+
+The backend owns the `Set-Cookie` behavior for `fortidashboard_session`. Frontend code should use `GET /api/auth/me` to hydrate the current user after page reloads.
