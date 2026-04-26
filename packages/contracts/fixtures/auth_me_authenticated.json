@@ -1,0 +1,9 @@
+{
+  "authenticated": true,
+  "user": {
+    "id": "usr_01",
+    "email": "analyst@example.com",
+    "displayName": "SOC Analyst",
+    "roles": ["analyst"]
+  }
+}

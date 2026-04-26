@@ -1,0 +1,8 @@
+{
+  "id": "int_fgt_01",
+  "type": "fortigate",
+  "name": "FortiGate Lab",
+  "status": "connected",
+  "capabilities": ["system", "interfaces", "policies", "threat_logs"],
+  "lastCheckedAt": "2026-04-26T20:30:00.000Z"
+}

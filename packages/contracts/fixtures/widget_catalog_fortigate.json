@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "fortigate-system-status",
+      "title": "System Status",
+      "kind": "kpi",
+      "source": "fortigate",
+      "requiredCapabilities": ["system"],
+      "defaultSize": { "w": 3, "h": 2 },
+      "dataEndpoint": "/api/widgets/fortigate-system-status/data"
+    },
+    {
+      "id": "fortigate-top-threats",
+      "title": "Top Threats",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["threat_logs"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-top-threats/data"
+    }
+  ]
+}

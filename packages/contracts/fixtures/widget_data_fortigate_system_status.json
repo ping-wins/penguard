@@ -1,0 +1,16 @@
+{
+  "widgetId": "fortigate-system-status",
+  "integrationId": "int_fgt_01",
+  "refreshedAt": "2026-04-26T20:31:00.000Z",
+  "status": "ready",
+  "data": {
+    "cpu": 12,
+    "memory": 54,
+    "sessions": 3812,
+    "uptimeSeconds": 92420
+  },
+  "meta": {
+    "source": "fortigate",
+    "cacheTtlSeconds": 30
+  }
+}

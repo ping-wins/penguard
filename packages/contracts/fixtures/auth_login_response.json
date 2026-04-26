@@ -1,0 +1,12 @@
+{
+  "user": {
+    "id": "usr_01",
+    "email": "analyst@example.com",
+    "displayName": "SOC Analyst",
+    "roles": ["analyst"]
+  },
+  "session": {
+    "authenticated": true,
+    "expiresAt": "2026-04-26T22:30:00.000Z"
+  }
+}

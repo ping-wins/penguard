@@ -1,18 +1,36 @@
-version: '3.8'
-
 services:
-  db:
-    image: postgres:15-alpine
-    container_name: fortidashboard-db
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: fortidashboard-api
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-fortidashboard}
+      FORTIDASHBOARD_DATABASE_URL: postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard
+      FORTIDASHBOARD_SECRET_KEY: change-me-in-local-env
+      FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY: ${FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY:-}
+      FORTIDASHBOARD_MOCK_MODE: ${FORTIDASHBOARD_MOCK_MODE:-true}
+      FORTIDASHBOARD_SESSION_COOKIE_NAME: fortidashboard_session
+      FORTIDASHBOARD_SESSION_COOKIE_SECURE: "false"
+      FORTIDASHBOARD_CSRF_COOKIE_NAME: fortidashboard_csrf
+      FORTIDASHBOARD_CSRF_HEADER_NAME: X-CSRF-Token
+      FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS:-10}
+      FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
+      FORTIDASHBOARD_KEYCLOAK_BASE_URL: http://keycloak:8080
+      FORTIDASHBOARD_KEYCLOAK_REALM: fortidashboard
+      FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
+      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: dev-client-secret
     ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   web:
     image: node:20-alpine
@@ -20,13 +38,53 @@ services:
     working_dir: /app
     volumes:
       - .:/app
+      - web_node_modules:/app/node_modules
     ports:
       - "5173:5173"
     environment:
-      - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true
+      CI: "true"
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: "true"
+      API_HOST: http://localhost:8000
+      FRONTEND_URL: http://localhost:5173
     command: >
       sh -c "corepack enable && pnpm install && cd apps/web && pnpm dev --host 0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: fortidashboard-db
+    environment:
+      POSTGRES_DB: fortidashboard
+      POSTGRES_USER: fortidashboard
+      POSTGRES_PASSWORD: fortidashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - fortidashboard_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fortidashboard -d fortidashboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: fortidashboard-keycloak
+    command: start-dev --import-realm --http-port=8080
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
 
 volumes:
-  pgdata:
+  fortidashboard_db:
+  keycloak_data:
+  web_node_modules:

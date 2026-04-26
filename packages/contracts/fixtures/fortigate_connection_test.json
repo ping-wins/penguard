@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "status": "connected",
+  "device": {
+    "hostname": "FGT-VM",
+    "model": "FortiGate-VM64",
+    "version": "v7.4.x"
+  }
+}

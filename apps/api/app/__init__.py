@@ -1,0 +1,1 @@
+"""FortiDashboard FastAPI application package."""

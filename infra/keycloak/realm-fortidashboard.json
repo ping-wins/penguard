@@ -1,0 +1,55 @@
+{
+  "realm": "fortidashboard",
+  "enabled": true,
+  "displayName": "FortiDashboard",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "analyst",
+        "description": "Default SOC analyst role"
+      },
+      {
+        "name": "admin",
+        "description": "FortiDashboard administrator role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "fortidashboard-bff",
+      "name": "FortiDashboard BFF",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-client-secret",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst@example.com",
+      "email": "analyst@example.com",
+      "firstName": "SOC",
+      "lastName": "Analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "correct-horse-battery-staple",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["analyst"]
+    }
+  ]
+}
