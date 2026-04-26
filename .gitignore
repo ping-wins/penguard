@@ -32,6 +32,7 @@ venv.bak/
 # Node/Vite
 node_modules/
 .pnpm-store/
+.pnpm-store
 .vite/
 dist/
 dist-ssr/

@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import Sidebar from './components/layout/Sidebar.vue'
-import DashboardCanvas from './components/canvas/DashboardCanvas.vue'
+import { onMounted } from 'vue'
+import { useThemeStore } from './stores/useThemeStore'
+
+const themeStore = useThemeStore()
+
+onMounted(() => {
+  themeStore.applyTheme()
+})
 </script>
 
 <template>
-  <div class="w-screen h-screen flex overflow-hidden">
-    <Sidebar />
-    <DashboardCanvas />
-  </div>
+  <router-view />
 </template>

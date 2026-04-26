@@ -3,14 +3,29 @@
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
   
-  /* Brand Colors from AGENTS.md requirements */
-  --color-forti-dark: #121212;
-  --color-forti-panel: #1e1e1e;
-  --color-forti-red: #ea0029;
+  /* Dynamic Theme Colors */
+  --color-theme-bg: var(--theme-bg, #121212);
+  --color-theme-panel: var(--theme-panel, #1e1e1e);
+  --color-theme-text: var(--theme-text, #e2e8f0);
+  --color-theme-text-muted: var(--theme-text-muted, #94a3b8);
+  --color-theme-border: var(--theme-border, #374151);
+  --color-theme-primary: var(--theme-primary, #1275E2);
+  --color-theme-secondary: var(--theme-secondary, #5F78A3);
+  --color-theme-neutral: var(--theme-neutral, #1A1C1E);
 }
 
 @layer base {
+  :root {
+    --theme-bg: #121212;
+    --theme-panel: #1e1e1e;
+    --theme-text: #e2e8f0;
+    --theme-text-muted: #94a3b8;
+    --theme-border: #374151;
+    --theme-primary: #1275E2;
+    --theme-secondary: #5F78A3;
+    --theme-neutral: #1A1C1E;
+  }
   body {
-    @apply bg-forti-dark text-slate-200 antialiased;
+    @apply bg-theme-bg text-theme-text antialiased;
   }
 }

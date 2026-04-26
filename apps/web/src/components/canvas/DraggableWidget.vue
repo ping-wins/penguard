@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const store = useDashboardStore()
 const isDragging = ref(false)
+const zoom = computed(() => store.zoom)
 
 // Dimensões exatas em pixels
 const widthPx = computed(() => props.layout.w)
@@ -45,8 +46,8 @@ function startDrag(e: PointerEvent) {
 
 function onDrag(e: PointerEvent) {
   if (!isDragging.value) return
-  const dx = e.clientX - startX
-  const dy = e.clientY - startY
+  const dx = (e.clientX - startX) / zoom.value
+  const dy = (e.clientY - startY) / zoom.value
   
   let newX = Math.max(0, initialDragX + dx)
   let newY = Math.max(0, initialDragY + dy)
@@ -85,8 +86,8 @@ function startResize(e: PointerEvent, dir: string) {
 }
 
 function onResize(e: PointerEvent) {
-  const dx = e.clientX - startResizeX
-  const dy = e.clientY - startResizeY
+  const dx = (e.clientX - startResizeX) / zoom.value
+  const dy = (e.clientY - startResizeY) / zoom.value
   
   let newW = initialW
   let newH = initialH
@@ -124,8 +125,8 @@ function stopResize() {
 
 <template>
   <div
-    class="absolute flex flex-col bg-forti-panel border border-gray-700/50 rounded-xl shadow-2xl transition-shadow group"
-    :class="{ 'ring-2 ring-forti-red/50 shadow-forti-red/10': isDragging }"
+    class="absolute flex flex-col bg-theme-panel border border-theme-border rounded-md shadow-2xl transition-shadow group"
+    :class="{ 'ring-2 ring-theme-primary/50 shadow-theme-primary/10': isDragging }"
     :style="{
       width: `${widthPx}px`,
       height: `${heightPx}px`,
@@ -139,20 +140,20 @@ function stopResize() {
   >
     <!-- Header -->
     <div 
-      class="h-10 bg-gray-900/80 border-b border-gray-800 flex items-center justify-between px-3 cursor-move select-none"
+      class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 cursor-move select-none rounded-t-md"
       @pointerdown="startDrag"
     >
-      <div class="flex items-center gap-2 text-gray-400">
+      <div class="flex items-center gap-2 text-theme-text-muted">
         <GripHorizontal :size="16" />
-        <span class="text-xs font-semibold text-gray-300 uppercase tracking-wider">{{ catalogId }}</span>
+        <span class="text-xs font-semibold text-theme-text uppercase tracking-wider">{{ catalogId }}</span>
       </div>
-      <button @click.stop="handleRemove" class="text-gray-500 hover:text-forti-red transition-colors" title="Remove Widget">
+      <button @click.stop="handleRemove" class="text-theme-text-muted hover:text-theme-primary transition-colors" title="Remove Widget">
         <X :size="16" />
       </button>
     </div>
 
     <!-- Content slot -->
-    <div class="flex-1 p-4 overflow-hidden relative pointer-events-auto bg-gradient-to-br from-transparent to-black/10">
+    <div class="flex-1 p-4 overflow-hidden relative pointer-events-auto bg-gradient-to-br from-transparent to-black/10 rounded-b-md">
       <slot />
     </div>
 
@@ -170,7 +171,7 @@ function stopResize() {
       <div class="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize -translate-x-1/2 translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'sw')"></div>
       
       <div 
-        class="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5 hover:text-forti-red transition-colors text-gray-500 z-10" 
+        class="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5 hover:text-theme-primary transition-colors text-theme-text-muted z-10" 
         @pointerdown.stop="startResize($event, 'se')"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
