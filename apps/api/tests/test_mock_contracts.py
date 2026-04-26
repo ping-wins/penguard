@@ -78,6 +78,9 @@ def test_widget_catalog_filters_to_fortigate_widgets():
     payload = response.json()
     assert [item["id"] for item in payload["items"]] == [
         "fortigate-system-status",
+        "fortigate-network-traffic",
+        "fortigate-kpi-sessions",
+        "fortigate-firewall-policies",
         "fortigate-top-threats",
     ]
     assert payload["items"][0]["defaultSize"] == {"w": 3, "h": 2}

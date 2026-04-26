@@ -366,6 +366,33 @@ Response:
       "dataEndpoint": "/api/widgets/fortigate-system-status/data"
     },
     {
+      "id": "fortigate-network-traffic",
+      "title": "Network Traffic",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["interfaces"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-network-traffic/data"
+    },
+    {
+      "id": "fortigate-kpi-sessions",
+      "title": "Active Sessions",
+      "kind": "kpi",
+      "source": "fortigate",
+      "requiredCapabilities": ["system"],
+      "defaultSize": { "w": 3, "h": 2 },
+      "dataEndpoint": "/api/widgets/fortigate-kpi-sessions/data"
+    },
+    {
+      "id": "fortigate-firewall-policies",
+      "title": "Firewall Policies",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["policies"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-firewall-policies/data"
+    },
+    {
       "id": "fortigate-top-threats",
       "title": "Top Threats",
       "kind": "table",
@@ -483,6 +510,7 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [x] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [x] Normalizar status do sistema, interfaces, políticas e threat logs.
+- [x] Ligar endpoints de widgets FortiGate a dados live normalizados em modo não-mock.
 - [ ] Persistir integrações, health checks e workspace specs.
 - [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
 - [ ] Implementar audit log para ações sensíveis de auth, integração, workspace e administração.
@@ -490,6 +518,8 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
 
 Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
+
+Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fortigate-network-traffic` e `fortigate-firewall-policies` retornaram payloads normalizados contra o FortiGate local. `fortigate-top-threats` retornou `status: error` controlado porque o endpoint de logs UTM/IPS respondeu `404` nesse lab.
 
 ### Trilha Frontend - Canvas e Mockups
 

@@ -24,19 +24,26 @@ def normalize_system_status(
     return normalized
 
 
-def normalize_interfaces(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalize_interfaces(
+    raw: list[dict[str, Any]] | dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     normalized = []
-    for item in raw:
+    items = raw.values() if isinstance(raw, dict) else raw
+    for item in items:
         name = str(item.get("name", ""))
         normalized.append(
             {
                 "id": name,
                 "name": name,
                 "alias": _string(item, "alias", default=""),
-                "status": _string(item, "status", default="unknown"),
+                "status": _interface_status(item),
                 "ip": _interface_ip(item.get("ip")),
                 "role": _string(item, "role", default="unknown"),
                 "type": _string(item, "type", default="unknown"),
+                "rxBytes": _coerce_int(item.get("rx_bytes")) or 0,
+                "txBytes": _coerce_int(item.get("tx_bytes")) or 0,
+                "rxPackets": _coerce_int(item.get("rx_packets")) or 0,
+                "txPackets": _coerce_int(item.get("tx_packets")) or 0,
             }
         )
     return normalized
@@ -167,6 +174,12 @@ def _interface_ip(value: Any) -> str:
     if not value:
         return ""
     return str(value).split()[0]
+
+
+def _interface_status(item: dict[str, Any]) -> str:
+    if "link" in item:
+        return "up" if item.get("link") else "down"
+    return str(_string(item, "status", default="unknown"))
 
 
 def _named_list(value: Any) -> list[str]:

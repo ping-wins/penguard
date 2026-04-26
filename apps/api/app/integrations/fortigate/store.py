@@ -74,6 +74,18 @@ class SqlAlchemyFortiGateIntegrationStore:
                 return None
             return str(self.secret_cipher.decrypt(model.api_key_blob)["api_key"])
 
+    def get_connection(self, integration_id: str) -> dict[str, Any] | None:
+        with self.session_factory() as db:
+            model = db.get(FortiGateIntegrationModel, integration_id)
+            if model is None:
+                return None
+            return {
+                "id": model.id,
+                "host": model.host,
+                "api_key": str(self.secret_cipher.decrypt(model.api_key_blob)["api_key"]),
+                "verify_tls": model.verify_tls,
+            }
+
     def _created_payload(self, model: FortiGateIntegrationModel) -> dict[str, Any]:
         return {
             "id": model.id,

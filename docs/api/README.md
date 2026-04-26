@@ -41,3 +41,13 @@ The live FortiGate client is read-only and currently targets:
 - `GET /api/v2/log/memory/utm/ips`
 
 Normalized responses cover system status, interfaces, policies, and threat logs. If a lab token returns `401`, verify the FortiGate `api-user` token, `accprofile`, `vdom`, and `trusthost` before changing backend code.
+
+Live widget data in non-mock mode now supports:
+
+- `fortigate-system-status`
+- `fortigate-network-traffic`
+- `fortigate-kpi-sessions`
+- `fortigate-firewall-policies`
+- `fortigate-top-threats`
+
+When a FortiGate endpoint is unavailable, widget responses keep HTTP 200 and return `status: "error"` with `meta.error.message`, allowing the frontend to render an error state inside the widget.

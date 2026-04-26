@@ -26,7 +26,7 @@ class FortiGateApiClient:
         self.transport = transport
 
     def get_system_status(self) -> dict[str, Any]:
-        results = self._get("/api/v2/monitor/system/status")
+        results = self._get("/api/v2/monitor/system/status", include_metadata=True)
         if not isinstance(results, dict):
             raise FortiGateApiError("FortiGate system status response was not an object")
         return results
@@ -46,6 +46,12 @@ class FortiGateApiClient:
 
     def get_interfaces(self) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/cmdb/system/interface")
+
+    def get_interface_status(self) -> dict[str, Any]:
+        results = self._get("/api/v2/monitor/system/interface")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate interface status response was not an object")
+        return results
 
     def get_policies(self) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/cmdb/firewall/policy")
@@ -74,6 +80,7 @@ class FortiGateApiClient:
         path: str,
         *,
         params: dict[str, Any] | None = None,
+        include_metadata: bool = False,
     ) -> Any:
         try:
             with httpx.Client(
@@ -98,8 +105,10 @@ class FortiGateApiClient:
         payload = self._decode_json(response)
         if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
             raise FortiGateApiError("FortiGate API returned error status")
-        if isinstance(payload, dict) and "results" in payload:
+        if isinstance(payload, dict) and "results" in payload and include_metadata:
             return self._merge_envelope_metadata(payload)
+        if isinstance(payload, dict) and "results" in payload:
+            return payload["results"]
         return payload
 
     def _decode_json(self, response: httpx.Response) -> Any:

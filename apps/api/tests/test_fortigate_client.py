@@ -44,6 +44,43 @@ def test_fortigate_client_uses_bearer_token_and_unwraps_results():
     }
 
 
+def test_fortigate_client_does_not_merge_envelope_metadata_into_interface_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v2/monitor/system/interface"
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "serial": "FGVMTEST",
+                "version": "v7.6.6",
+                "results": {
+                    "port1": {
+                        "id": "port1",
+                        "name": "port1",
+                        "ip": "192.168.0.118",
+                        "link": True,
+                    }
+                },
+            },
+        )
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.get_interface_status() == {
+        "port1": {
+            "id": "port1",
+            "name": "port1",
+            "ip": "192.168.0.118",
+            "link": True,
+        }
+    }
+
+
 def test_fortigate_client_raises_for_fortios_error_status():
     client = FortiGateApiClient(
         host="https://fortigate.local",
@@ -153,6 +190,10 @@ def test_normalize_interfaces_policies_and_threat_logs():
             "ip": "192.168.0.118",
             "role": "wan",
             "type": "physical",
+            "rxBytes": 0,
+            "txBytes": 0,
+            "rxPackets": 0,
+            "txPackets": 0,
         }
     ]
 
