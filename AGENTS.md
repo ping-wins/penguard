@@ -361,13 +361,15 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 ### Trilha Backend - FastAPI, Dados e FortiGate
 
 - [x] Scaffoldar `apps/api` com FastAPI, `pyproject.toml`, Ruff, Pytest e Alembic.
+- [x] Dockerizar `apps/api` e adicionar serviço `api` ao Docker Compose.
 - [x] Adicionar Postgres no Docker Compose e configurar variáveis via `.env.example`.
 - [x] Implementar `GET /health` e documentação OpenAPI inicial.
 - [x] Implementar endpoints acima em modo mock, usando fixtures compartilhadas.
 - [x] Adicionar Keycloak ao Docker Compose com realm/client inicial para desenvolvimento.
-- [ ] Implementar `POST /api/auth/register` usando Keycloak Admin API e sessão HTTP-only.
-- [ ] Implementar `POST /api/auth/login` via Keycloak no backend e sessão HTTP-only.
+- [x] Implementar client/provider para `POST /api/auth/register` usando Keycloak Admin API e sessão HTTP-only.
+- [x] Implementar client/provider para `POST /api/auth/login` via token endpoint do Keycloak e sessão HTTP-only.
 - [x] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
+- [ ] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
 - [ ] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
 - [ ] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.

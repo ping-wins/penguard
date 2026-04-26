@@ -14,6 +14,12 @@ The committed implementation starts the backend foundation:
 ## Backend Development
 
 ```bash
+docker compose up --build api
+```
+
+For local Python-only backend work:
+
+```bash
 docker compose up -d db keycloak
 cd apps/api
 uv sync
@@ -43,6 +49,8 @@ The Vue app owns the visual login/register pages, but it must call FastAPI inste
 FastAPI acts as a BFF/auth gateway. The browser receives a `fortidashboard_session` cookie marked `HttpOnly`; Keycloak tokens must stay server-side and must not be returned to JavaScript. The current implementation uses mock session fixtures so frontend work can proceed before live Keycloak wiring is complete.
 
 Keycloak runs locally at `http://localhost:8080` with temporary development admin credentials from `docker-compose.yml`. Replace these before any shared or deployed environment.
+
+To exercise the Keycloak-backed code path, set `FORTIDASHBOARD_MOCK_MODE=false` for the API service. The current default remains mock mode so the frontend can develop against stable fixtures while live session persistence is still being built.
 
 ## Contract Fixtures
 

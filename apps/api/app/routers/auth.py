@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 
+from app.auth.dependencies import get_auth_service
 from app.core.config import get_settings
-from app.core.fixtures import load_fixture
 
 router = APIRouter(tags=["auth"])
-
-MOCK_SESSION_VALUE = "mock-session-usr-01"
 
 
 class RegisterRequest(BaseModel):
@@ -20,11 +18,11 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
-def set_session_cookie(response: Response) -> None:
+def set_session_cookie(response: Response, session_id: str) -> None:
     settings = get_settings()
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=MOCK_SESSION_VALUE,
+        value=session_id,
         httponly=True,
         secure=settings.session_cookie_secure,
         samesite="lax",
@@ -33,30 +31,39 @@ def set_session_cookie(response: Response) -> None:
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
-def register(_: RegisterRequest, response: Response) -> dict:
-    payload = load_fixture("auth_register_response")
-    set_session_cookie(response)
-    return payload
+def register(request: RegisterRequest, response: Response) -> dict:
+    result = get_auth_service().register(
+        email=str(request.email),
+        password=request.password,
+        display_name=request.display_name,
+    )
+    set_session_cookie(response, result.session_id)
+    return result.payload
 
 
 @router.post("/auth/login")
-def login(_: LoginRequest, response: Response) -> dict:
-    payload = load_fixture("auth_login_response")
-    set_session_cookie(response)
-    return payload
+def login(request: LoginRequest, response: Response) -> dict:
+    result = get_auth_service().login(
+        email=str(request.email),
+        password=request.password,
+    )
+    set_session_cookie(response, result.session_id)
+    return result.payload
 
 
 @router.get("/auth/me")
 def get_current_session(request: Request) -> dict:
-    session = request.cookies.get(get_settings().session_cookie_name)
-    if session != MOCK_SESSION_VALUE:
-        return load_fixture("auth_me_unauthenticated")
-    return load_fixture("auth_me_authenticated")
+    settings = get_settings()
+    user = get_auth_service().get_current_user(request.cookies.get(settings.session_cookie_name))
+    if user is None:
+        return {"authenticated": False, "user": None}
+    return {"authenticated": True, "user": user}
 
 
 @router.post("/auth/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response) -> dict:
     settings = get_settings()
+    payload = get_auth_service().logout(request.cookies.get(settings.session_cookie_name))
     response.delete_cookie(
         key=settings.session_cookie_name,
         path="/",
@@ -64,4 +71,4 @@ def logout(response: Response) -> dict:
         secure=settings.session_cookie_secure,
         samesite="lax",
     )
-    return load_fixture("auth_logout_response")
+    return payload
