@@ -6,6 +6,23 @@ FortiDashboard é um dashboard modular para NG-SOC, focado em centralizar visibi
 
 A experiência principal é uma workspace livre, estilo Power BI/Photoshop: o analista conecta integrações, consulta um catálogo de widgets e posiciona cartões de monitoramento no canvas. O frontend também terá um fluxo de chat/IA para instanciar widgets por linguagem natural, sem substituir a workspace inteira.
 
+## Feedback de Produto - Cristiano (2026-04-26)
+
+Feedback incorporado como requisito de produto, segurança e UX:
+
+- O modo "as a service" precisa provar titularidade de domínio. Para qualquer fluxo de claim de domínio, tenant, branding ou confiança por domínio, exigir desafio DNS TXT antes da ativação. Sem isso, o produto pode ser confundido com ferramenta de phishing.
+- O dashboard precisa ser mais rico que um conector plug and play. A experiência deve priorizar widgets úteis para SOC: postura de risco, anomalias, eventos recentes, health do FortiGate, políticas, interfaces e trilhas de investigação.
+- Plug and play não pode ampliar dano em ataque supply-chain. Integrações devem usar credenciais de menor privilégio, inicialmente read-only, com escopo por tenant/workspace e sem ações destrutivas no primeiro corte.
+- Insider ou conta comprometida dentro do SOC deve deixar rastros. Toda ação sensível precisa gerar audit log: login, falha de login, criação/remoção de integração, troca de API key, alteração de workspace, export e ação administrativa.
+- SSO, IdP, LDAP e federação entram como evolução natural via Keycloak depois que o BFF FastAPI com sessão HTTP-only estiver estável.
+- O design precisa parecer um produto SOC enterprise pronto para cliente. Lucas deve priorizar polimento visual, estados vazios/loading/erro, hierarquia de informação e clareza operacional.
+
+Perguntas abertas para refinamento, sem bloquear o desenvolvimento atual:
+
+- O primeiro deploy será single-tenant local, multi-tenant SaaS ou ambos?
+- Qual retenção mínima de audit logs será exigida no PoC?
+- A integração FortiGate inicial será estritamente read-only no FortiGate API user?
+
 ## Responsabilidades
 
 - Felipe/backend agent: backend FastAPI, dados, contratos de API, persistência, segurança de credenciais e integração FortiGate.
@@ -214,6 +231,8 @@ Response:
 
 API keys devem ser criptografadas em repouso e nunca retornadas.
 
+Em `FORTIDASHBOARD_MOCK_MODE=true`, a API mantém respostas fixture para desenvolvimento do frontend. Em `FORTIDASHBOARD_MOCK_MODE=false`, a integração é persistida em Postgres na tabela `fortigate_integrations`, com `api_key_blob` criptografado.
+
 ### Testar conexão FortiGate
 
 `POST /api/integrations/fortigate/test`
@@ -264,6 +283,69 @@ Response:
 ```
 
 Não retornar `apiKey`.
+
+### Provar titularidade de domínio
+
+`POST /api/tenants/domain-verifications`
+
+Request:
+
+```json
+{
+  "domain": "cliente.example.com"
+}
+```
+
+Response:
+
+```json
+{
+  "id": "domver_01",
+  "domain": "cliente.example.com",
+  "status": "pending",
+  "dnsRecord": {
+    "type": "TXT",
+    "name": "_fortidashboard.cliente.example.com",
+    "value": "fortidashboard-verification=nonce_abc123"
+  },
+  "expiresAt": "2026-04-27T20:30:00.000Z"
+}
+```
+
+`POST /api/tenants/domain-verifications/domver_01/check`
+
+Response:
+
+```json
+{
+  "id": "domver_01",
+  "domain": "cliente.example.com",
+  "status": "verified",
+  "verifiedAt": "2026-04-26T21:00:00.000Z"
+}
+```
+
+### Auditoria
+
+`GET /api/audit/events?limit=50`
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "audit_01",
+      "actor": { "id": "usr_01", "email": "analyst@example.com" },
+      "action": "integration.fortigate.created",
+      "target": { "type": "integration", "id": "int_fgt_01" },
+      "risk": "medium",
+      "ipAddress": "192.0.2.10",
+      "createdAt": "2026-04-26T21:10:00.000Z"
+    }
+  ]
+}
+```
 
 ### Catálogo de widgets
 
@@ -357,15 +439,19 @@ Response:
 
 ## Timeline de Trabalho Paralelo
 
-O frontend não deve esperar a integração FortiGate ficar pronta. A primeira fronteira compartilhada é o contrato estático: shapes de integração, catálogo, widget data e workspace. Enquanto o backend implementa FastAPI e persistência, o Lucas pode evoluir `apps/web` usando mocks locais compatíveis com os exemplos deste arquivo.
+O frontend não deve esperar a integração FortiGate ficar pronta. A primeira fronteira compartilhada é o contrato estático: shapes de integração, catálogo, widget data, workspace, domínio verificado e audit log. Enquanto o backend implementa FastAPI e persistência, o Lucas pode evoluir `apps/web` usando mocks locais compatíveis com os exemplos deste arquivo.
 
 | Marco | Backend/Felipe | Frontend/Lucas | Critério de desbloqueio |
 | --- | --- | --- | --- |
+| T-1 - Feedback incorporado | Converte feedback em requisitos de domínio, auditoria, menor privilégio e enriquecimento | Ajusta direção visual para produto SOC enterprise e SaaS | Backlog atualizado sem bloquear código em andamento |
 | T0 - Contrato inicial | Define mockups de endpoints, IDs e schemas mínimos | Usa os mesmos payloads como fixtures locais | Frontend já consegue montar canvas com dados falsos |
 | T1 - Scaffolds independentes | Cria `apps/api`, healthcheck, OpenAPI inicial e auth mocks | Cria `apps/web`, layout base, Pinia e canvas | Ambos rodam localmente sem depender um do outro |
-| T2 - Front com mocks ricos | Publica JSON schemas/fixtures versionados, incluindo auth/session | Implementa login/register mockado, catálogo, chat e widgets estáticos | Lucas desenvolve UX completa sem Keycloak ou FortiGate real |
-| T3 - Backend funcional fake/live | Implementa endpoints com mock mode, BFF auth e depois FortiGate live | Troca adapter mock por cliente HTTP mantendo stores | Integração acontece sem reescrever componentes |
-| T4 - Integração real | Persiste integrações, workspace e dados normalizados | Consome API real, trata loading/erro/sem dados | Dashboard salva layout e mostra dados reais |
+| T2 - Front com mocks ricos | Publica JSON schemas/fixtures versionados, incluindo auth/session, domínio, audit log e widgets | Implementa login/register mockado, catálogo, chat, audit feed, estados de domínio e widgets estáticos | Lucas desenvolve UX completa sem Keycloak ou FortiGate real |
+| T3 - Backend funcional fake/live | Implementa endpoints com mock mode, BFF auth, persistência de integração e audit events | Troca adapter mock por cliente HTTP mantendo stores | Integração acontece sem reescrever componentes |
+| T4 - FortiGate read-only real | Implementa cliente FortiGate, normalizadores, health checks e cache curto | Consome API real, trata loading/erro/sem dados e conexão inválida | Dashboard salva layout e mostra dados reais |
+| T5 - SaaS e hardening | Implementa prova DNS TXT, RBAC, SSO/IdP via Keycloak e auditoria consultável | Refina onboarding SaaS, tela de domínio, audit trail e polimento visual | Produto começa a responder riscos de phishing, supply-chain e insider |
+
+Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir evoluir usando apenas fixtures/mockups. Ponto de backend funcional: ao final de T4, a API deve autenticar sessão, persistir integração FortiGate, consultar dados read-only e expor dados normalizados para widgets.
 
 ## Backlog Assíncrono
 
@@ -375,6 +461,8 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Criar `packages/contracts` com OpenAPI/JSON schemas exportáveis.
 - [x] Criar fixtures em `packages/contracts/fixtures` para integração, catálogo, widget data e workspace.
 - [x] Criar `packages/widget-catalog` com definição neutra dos widgets FortiGate.
+- [ ] Adicionar fixtures de domínio pendente/verificado e audit events para desenvolvimento frontend.
+- [ ] Registrar threat model inicial para phishing, supply-chain e insider antes do modo SaaS.
 - [ ] Manter `AGENTS.md` como contrato vivo sempre que payloads ou responsabilidades mudarem.
 
 ### Trilha Backend - FastAPI, Dados e FortiGate
@@ -391,12 +479,15 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
 - [x] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
 - [x] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
-- [ ] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
-- [ ] Criptografar API keys em repouso e nunca retorná-las em responses.
+- [x] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
+- [x] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [ ] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [ ] Normalizar status do sistema, interfaces, políticas e threat logs.
 - [ ] Persistir integrações, health checks e workspace specs.
 - [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
+- [ ] Implementar audit log para ações sensíveis de auth, integração, workspace e administração.
+- [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
+- [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
 
 ### Trilha Frontend - Canvas e Mockups
 
@@ -414,6 +505,10 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [x] Implementar Redimensionamento Livre (Multi-eixo 8 direções) simulando experiência Power BI.
 - [ ] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
+- [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
+- [ ] Criar audit trail/activity feed para eventos sensíveis.
+- [ ] Enriquecer dashboard com widgets de postura de risco, anomalias e investigação SOC.
+- [ ] Refinar visual para experiência SaaS enterprise, não apenas protótipo técnico.
 
 ### Trilha de Integração e Qualidade
 
@@ -421,6 +516,8 @@ O frontend não deve esperar a integração FortiGate ficar pronta. A primeira f
 - [ ] Adicionar testes unitários para normalizadores FortiGate.
 - [x] Adicionar testes de contrato para payloads de API.
 - [ ] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
+- [ ] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.
+- [ ] Testar que audit logs não gravam segredos, API keys ou tokens.
 - [x] Documentar setup local completo em `README.md`.
 - [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.
 
