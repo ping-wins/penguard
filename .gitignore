@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 .pnpm-store
+.vite
 dist
 dist-ssr
 *.local
