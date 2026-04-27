@@ -23,7 +23,7 @@
       "title": "Network Traffic",
       "kind": "chart",
       "source": "fortigate",
-      "requiredCapabilities": ["system"],
+      "requiredCapabilities": ["interfaces"],
       "defaultSize": { "w": 350, "h": 250 },
       "dataEndpoint": "/api/widgets/fortigate-network-traffic/data"
     },
@@ -35,6 +35,15 @@
       "requiredCapabilities": ["system"],
       "defaultSize": { "w": 250, "h": 150 },
       "dataEndpoint": "/api/widgets/fortigate-kpi-sessions/data"
+    },
+    {
+      "id": "fortigate-firewall-policies",
+      "title": "Firewall Policies",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["policies"],
+      "defaultSize": { "w": 420, "h": 320 },
+      "dataEndpoint": "/api/widgets/fortigate-firewall-policies/data"
     }
   ]
 }
