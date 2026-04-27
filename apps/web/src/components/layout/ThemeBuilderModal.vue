@@ -216,7 +216,7 @@ function setMode(mode: ThemeMode) {
               <div class="bg-theme-panel border border-theme-border rounded-xl p-6 flex flex-col justify-center items-center gap-6 transition-colors duration-300">
                 <div class="w-full max-w-sm relative">
                   <Search :size="18" class="absolute left-3 top-3 text-theme-text-muted" />
-                  <input type="text" placeholder="Search components..." class="w-full bg-theme-bg border border-theme-border rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none transition-colors duration-300" :style="{ focusRing: themeStore.primary }" />
+                  <input type="text" placeholder="Search components..." class="w-full bg-theme-bg border border-theme-border rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none transition-colors duration-300" :style="{ borderColor: themeStore.primary }" />
                 </div>
                 <div class="flex gap-4">
                   <div class="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md" :style="{ backgroundColor: themeStore.primary }">

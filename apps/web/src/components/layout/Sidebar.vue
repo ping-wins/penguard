@@ -13,8 +13,6 @@ const themeStore = useThemeStore()
 const router = useRouter()
 const activeTab = ref<'none' | 'chat' | 'settings'>('none')
 
-const themeColors = [] // Removed old colors
-
 const chatInput = ref('')
 const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
