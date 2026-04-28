@@ -83,6 +83,7 @@ Atualize após o scaffold real existir:
 - `docker compose up --build`: sobe API, frontend Vue, Postgres e Keycloak.
 - `docker compose up -d --build api`: sobe API, Postgres e Keycloak em modo mock por padrão.
 - `FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api`: sobe API usando Keycloak live e sessões persistidas no Postgres.
+- Portas locais podem ser sobrescritas com `FORTIDASHBOARD_API_PORT`, `FORTIDASHBOARD_WEB_PORT`, `FORTIDASHBOARD_KEYCLOAK_PORT` e `FORTIDASHBOARD_POSTGRES_PORT`.
 - `cd apps/api && uv sync`: instala dependências Python.
 - `cd apps/api && uv run uvicorn app.main:app --reload --port 8000`: roda a API.
 - `cd apps/api && uv run pytest`: executa testes backend.
@@ -92,6 +93,8 @@ Atualize após o scaffold real existir:
 - `cd apps/web && pnpm dev`: roda o frontend Vite.
 - `cd apps/web && pnpm smoke:canvas`: valida o contrato mínimo de renderização do canvas.
 - `cd apps/web && pnpm test`: executa testes frontend quando existirem.
+
+Nota Docker: o serviço `web` usa `apps/web/Dockerfile` com `pnpm` pinado e volumes próprios para `node_modules`/store. Não monte `node_modules` do host no container; isso precisa continuar portátil entre Linux e Windows.
 
 ## Contratos e Mockups de Endpoints
 
@@ -513,6 +516,8 @@ Fluxo recomendado no `apps/web`:
 - Em modo live, as chamadas a `/api/integrations*` e `/api/widgets/*/data` precisam enviar o cookie de sessão da API; o backend filtra por `owner_user_id`.
 - Renderizar `status: "ready"` como dado normal, `status: "error"` como erro dentro do card, e estados de loading/empty no adapter HTTP.
 - Não acoplar componente visual ao FortiGate: o componente recebe apenas o payload `data` normalizado.
+- No frontend, `apps/web/src/services/widgetDataClient.ts` é o adapter HTTP dos widgets e deve continuar retornando `state: "ready"` ou `state: "error"` para o frame decidir loading/erro.
+- `defaultSize` do catálogo vem em unidades de grid. `apps/web/src/utils/widgetLayout.ts` converte essas unidades para pixels antes de renderizar ou adicionar widgets no canvas.
 
 Widgets disponíveis nesta sprint:
 
@@ -631,12 +636,13 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Criar `DraggableWidget` com Motion for Vue e persistência de posição no Pinia.
 - [x] Criar cartões Fortinet com cabeçalho escuro, título e ação de fechar/excluir.
 - [x] Criar `WidgetHealth`, `WidgetThreats` e `WidgetNetwork` com dados estáticos.
+- [x] Criar `WidgetFirewallPolicies` para o widget `fortigate-firewall-policies`.
 - [x] Implementar catálogo filtrado por integração conectada usando fixtures (Movido para o Build Pane direito estilo Power BI).
 - [x] Implementar chat mockado que adiciona widget em posição livre no canvas (CoPilot na esquerda).
 - [x] Implementar Redimensionamento Livre (Multi-eixo 8 direções) simulando experiência Power BI.
 - [x] Implementar sistema de Theming (Theme Builder Modal) dinâmico via variáveis CSS do Tailwind v4.
 - [x] Adicionar controle de Zoom livre (estilo Figma/Power BI) via scroll do mouse focado exclusivamente na workspace.
-- [ ] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
+- [x] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [ ] Criar audit trail/activity feed para eventos sensíveis.
@@ -647,6 +653,7 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 
 - [x] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
 - [x] Adicionar testes unitários para normalizadores FortiGate.
+- [x] Adicionar testes unitários frontend para adapter de widgets, layout do canvas e renderizadores FortiGate.
 - [x] Adicionar testes de contrato para payloads de API.
 - [x] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
 - [x] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.

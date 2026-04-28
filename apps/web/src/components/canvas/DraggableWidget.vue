@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { X, GripHorizontal, Loader2, AlertCircle } from 'lucide-vue-next'
+import { fetchWidgetData } from '../../services/widgetDataClient'
+import type { WidgetLayout } from '../../types/dashboard'
 
 const props = defineProps<{
   instanceId: string
   catalogId: string
   integrationId: string
-  layout: { x: number; y: number; w: number; h: number; z: number }
+  layout: WidgetLayout
 }>()
 
 const store = useDashboardStore()
@@ -18,35 +20,71 @@ const zoom = computed(() => store.zoom)
 const isLoading = ref(true)
 const fetchError = ref<string | null>(null)
 const widgetData = ref<any>(null)
+const catalogItem = computed(() => store.catalogItems.find(c => c.id === props.catalogId))
 
-onMounted(async () => {
-  const catalogItem = store.catalogItems.find(c => c.id === props.catalogId)
-  if (!catalogItem || !catalogItem.dataEndpoint) {
+let currentController: AbortController | null = null
+let requestId = 0
+
+async function loadWidgetData() {
+  requestId += 1
+  const currentRequestId = requestId
+  currentController?.abort()
+  currentController = null
+
+  fetchError.value = null
+  widgetData.value = null
+
+  if (!catalogItem.value?.dataEndpoint) {
+    if (!store.isCatalogLoaded && store.catalogItems.length === 0) {
+      isLoading.value = true
+      return
+    }
+
     isLoading.value = false
     fetchError.value = 'Catalog item or endpoint not found'
     return
   }
 
+  const controller = new AbortController()
+  currentController = controller
+  isLoading.value = true
+
   try {
-    const res = await fetch(`${catalogItem.dataEndpoint}?integrationId=${props.integrationId}`, {
-      credentials: 'include'
+    const result = await fetchWidgetData({
+      dataEndpoint: catalogItem.value.dataEndpoint,
+      integrationId: props.integrationId,
+      signal: controller.signal,
     })
-    
-    if (res.ok) {
-      const respData = await res.json()
-      if (respData.status === 'error') {
-        fetchError.value = respData.meta?.error?.message || 'Widget error occurred'
-      } else {
-        widgetData.value = respData.data || {}
-      }
+
+    if (currentRequestId !== requestId || controller.signal.aborted) return
+
+    if (result.state === 'ready') {
+      widgetData.value = result.data
     } else {
-      fetchError.value = `HTTP Error ${res.status}`
+      fetchError.value = result.errorMessage
     }
   } catch (e: any) {
+    if (controller.signal.aborted) return
     fetchError.value = e.message || 'Network Error'
   } finally {
-    isLoading.value = false
+    if (currentRequestId === requestId) {
+      isLoading.value = false
+      currentController = null
+    }
   }
+}
+
+watch(
+  [catalogItem, () => props.integrationId, () => store.catalogItems.length],
+  () => {
+    loadWidgetData()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  requestId += 1
+  currentController?.abort()
 })
 
 // Dimensões exatas em pixels
