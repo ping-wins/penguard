@@ -81,6 +81,47 @@ def test_fortigate_client_does_not_merge_envelope_metadata_into_interface_status
     }
 
 
+def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/api/v2/monitor/system/status":
+            return httpx.Response(200, json={"status": "success", "results": {}})
+        if request.url.path == "/api/v2/monitor/system/performance/status":
+            return httpx.Response(200, json={"status": "success", "results": {}})
+        if request.url.path == "/api/v2/monitor/system/resource/usage":
+            return httpx.Response(200, json={"status": "success", "results": {}})
+        if request.url.path == "/api/v2/monitor/system/interface":
+            return httpx.Response(200, json={"status": "success", "results": {}})
+        return httpx.Response(200, json={"status": "success", "results": []})
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    client.get_system_status()
+    client.get_performance_status()
+    client.get_resource_usage(resource="session")
+    client.get_interface_status()
+    client.get_interfaces()
+    client.get_policies()
+    client.get_threat_logs(limit=25)
+
+    assert requests == [
+        ("GET", "/api/v2/monitor/system/status"),
+        ("GET", "/api/v2/monitor/system/performance/status"),
+        ("GET", "/api/v2/monitor/system/resource/usage"),
+        ("GET", "/api/v2/monitor/system/interface"),
+        ("GET", "/api/v2/cmdb/system/interface"),
+        ("GET", "/api/v2/cmdb/firewall/policy"),
+        ("GET", "/api/v2/log/memory/utm/ips"),
+    ]
+
+
 def test_fortigate_client_raises_for_fortios_error_status():
     client = FortiGateApiClient(
         host="https://fortigate.local",
@@ -247,5 +288,33 @@ def test_normalize_interfaces_policies_and_threat_logs():
             "destinationIp": "203.0.113.10",
             "action": "blocked",
             "message": "IPS signature matched",
+        }
+    ]
+
+
+def test_normalize_interfaces_uses_fortios_dict_key_when_name_is_missing():
+    assert normalize_interfaces(
+        {
+            "port1": {
+                "id": "port1",
+                "ip": "192.168.0.118",
+                "link": True,
+                "rx_bytes": 8304525,
+                "tx_bytes": 6185442,
+            }
+        }
+    ) == [
+        {
+            "id": "port1",
+            "name": "port1",
+            "alias": "",
+            "status": "up",
+            "ip": "192.168.0.118",
+            "role": "unknown",
+            "type": "unknown",
+            "rxBytes": 8304525,
+            "txBytes": 6185442,
+            "rxPackets": 0,
+            "txPackets": 0,
         }
     ]

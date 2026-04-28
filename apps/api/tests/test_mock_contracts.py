@@ -5,9 +5,15 @@ from app.main import app
 client = TestClient(app)
 
 
+def csrf_headers() -> dict[str, str]:
+    response = client.get("/api/auth/csrf")
+    return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
 def test_create_fortigate_integration_never_returns_api_key():
     response = client.post(
         "/api/integrations/fortigate",
+        headers=csrf_headers(),
         json={
             "name": "FortiGate Lab",
             "host": "https://fortigate.local",
@@ -32,6 +38,7 @@ def test_create_fortigate_integration_never_returns_api_key():
 def test_test_fortigate_connection_returns_device_metadata():
     response = client.post(
         "/api/integrations/fortigate/test",
+        headers=csrf_headers(),
         json={
             "host": "https://fortigate.local",
             "apiKey": "fg_api_key_from_user",
@@ -130,6 +137,7 @@ def test_workspace_round_trip_contract():
 
     put_response = client.put(
         "/api/workspaces/ws_default",
+        headers=csrf_headers(),
         json={
             "name": "SOC Overview",
             "widgets": [

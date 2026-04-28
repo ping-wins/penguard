@@ -123,6 +123,49 @@ def test_fortigate_widget_service_returns_live_system_status_payload():
     }
 
 
+def test_fortigate_widget_service_caches_payloads_inside_short_ttl():
+    from app.integrations.fortigate.widgets import FortiGateWidgetDataService
+
+    current_time = datetime(2026, 4, 26, 23, 45, tzinfo=UTC)
+    factory_calls = 0
+
+    def clock():
+        return current_time
+
+    def cached_client_factory(*, host: str, api_key: str, verify_tls: bool):
+        nonlocal factory_calls
+        factory_calls += 1
+        return FakeFortiGateClient()
+
+    service = FortiGateWidgetDataService(
+        store=FakeFortiGateConnectionStore(),
+        client_factory=cached_client_factory,
+        clock=clock,
+    )
+
+    first = service.get_widget_data(
+        "fortigate-system-status",
+        integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
+    )
+    current_time = datetime(2026, 4, 26, 23, 45, 10, tzinfo=UTC)
+    second = service.get_widget_data(
+        "fortigate-system-status",
+        integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
+    )
+    current_time = datetime(2026, 4, 26, 23, 45, 41, tzinfo=UTC)
+    third = service.get_widget_data(
+        "fortigate-system-status",
+        integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
+    )
+
+    assert second == first
+    assert third["refreshedAt"] == "2026-04-26T23:45:41.000Z"
+    assert factory_calls == 2
+
+
 def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
     from app.integrations.fortigate.widgets import FortiGateWidgetDataService
 

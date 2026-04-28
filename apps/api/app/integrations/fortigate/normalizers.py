@@ -28,9 +28,9 @@ def normalize_interfaces(
     raw: list[dict[str, Any]] | dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     normalized = []
-    items = raw.values() if isinstance(raw, dict) else raw
-    for item in items:
-        name = str(item.get("name", ""))
+    items = raw.items() if isinstance(raw, dict) else ((None, item) for item in raw)
+    for key, item in items:
+        name = str(item.get("name") or item.get("id") or key or "")
         normalized.append(
             {
                 "id": name,

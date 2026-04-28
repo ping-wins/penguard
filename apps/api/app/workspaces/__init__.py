@@ -1,0 +1,1 @@
+"""Workspace persistence for FortiDashboard."""

@@ -90,6 +90,7 @@ Atualize após o scaffold real existir:
 - `cd apps/api && uv run alembic upgrade head`: aplica migrations.
 - `cd apps/web && pnpm install`: instala dependências frontend.
 - `cd apps/web && pnpm dev`: roda o frontend Vite.
+- `cd apps/web && pnpm smoke:canvas`: valida o contrato mínimo de renderização do canvas.
 - `cd apps/web && pnpm test`: executa testes frontend quando existirem.
 
 ## Contratos e Mockups de Endpoints
@@ -106,7 +107,7 @@ Response:
 }
 ```
 
-A resposta define o cookie `fortidashboard_csrf` sem `HttpOnly`. Envie o mesmo valor no header `X-CSRF-Token` em `POST /api/auth/register`, `POST /api/auth/login` e `POST /api/auth/logout`. Falha de CSRF retorna `403`; excesso de tentativas de auth retorna `429`.
+A resposta define o cookie `fortidashboard_csrf` sem `HttpOnly`. Envie o mesmo valor no header `X-CSRF-Token` em todo método mutável (`POST`, `PUT`, `PATCH`, `DELETE`), incluindo auth, integrações e workspace. Falha de CSRF retorna `403`; excesso de tentativas de auth retorna `429`.
 
 ### Registrar usuário
 
@@ -263,6 +264,31 @@ Response:
 }
 ```
 
+### Health check persistido FortiGate
+
+`POST /api/integrations/fortigate/:integrationId/health-check`
+
+Response:
+
+```json
+{
+  "id": "fgt_health_01",
+  "integrationId": "int_fgt_01",
+  "ok": true,
+  "status": "connected",
+  "device": {
+    "hostname": "FGT-VM",
+    "model": "FortiGate-VM64",
+    "version": "v7.4.x"
+  },
+  "message": null,
+  "latencyMs": 12,
+  "checkedAt": "2026-04-27T20:30:00.000Z"
+}
+```
+
+`GET /api/integrations/fortigate/:integrationId/health-checks?limit=20` retorna `{ "items": [...] }`. Em modo live, cada health check atualiza `fortigate_integrations.status`, `last_checked_at` e grava histórico em `fortigate_health_checks`.
+
 ### Listar integrações
 
 `GET /api/integrations`
@@ -340,14 +366,19 @@ Response:
       "id": "audit_01",
       "actor": { "id": "usr_01", "email": "analyst@example.com" },
       "action": "integration.fortigate.created",
-      "target": { "type": "integration", "id": "int_fgt_01" },
-      "risk": "medium",
+      "outcome": "success",
       "ipAddress": "192.0.2.10",
+      "userAgent": "Mozilla/5.0",
+      "details": { "integrationId": "int_fgt_01" },
       "createdAt": "2026-04-26T21:10:00.000Z"
     }
   ]
 }
 ```
+
+Campos sensíveis em `details` são sempre saneados como `[REDACTED]` antes de persistir ou retornar: `apiKey`, `api_key`, `token`, `access_token`, `refresh_token`, `clientSecret`, `password`, `api_key_blob` e variações equivalentes.
+
+No corte atual, o endpoint retorna eventos do usuário autenticado. Visão cross-user fica para RBAC/admin.
 
 ### Catálogo de widgets
 
@@ -455,6 +486,8 @@ Response:
 
 `PUT /api/workspaces/:workspaceId` salva `name`, lista de widgets e layout. A resposta mínima deve retornar `id`, `version` e `updatedAt`.
 
+Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; um usuário não deve ler ou sobrescrever o canvas de outro. Em mock mode, a fixture continua estável para desenvolvimento do frontend.
+
 ## Arquitetura Frontend
 
 - Use Vue 3 apenas com Composition API e `<script setup>`.
@@ -469,6 +502,8 @@ Response:
 ## Handoff de Widgets para o Lucas - Sprint Atual
 
 O frontend pode trabalhar com widgets FortiGate sem depender do FortiGate real. Em `FORTIDASHBOARD_MOCK_MODE=true`, a API e as fixtures em `packages/contracts/fixtures` retornam payloads estáveis. Em modo live, os mesmos endpoints usam a integração persistida e o client FortiGate read-only.
+
+Em modo live, dados de widget FortiGate usam cache curto em memória por processo, chaveado por `owner_user_id`, `integrationId` e `widgetId`, com TTL de 30 segundos. Isso reduz chamadas repetidas ao FortiGate sem mudar o contrato do payload.
 
 Fluxo recomendado no `apps/web`:
 
@@ -570,11 +605,16 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Normalizar status do sistema, interfaces, políticas e threat logs.
 - [x] Ligar endpoints de widgets FortiGate a dados live normalizados em modo não-mock.
 - [x] Escopar integrações FortiGate por usuário autenticado via `owner_user_id`.
-- [ ] Persistir integrações, health checks e workspace specs.
-- [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
-- [ ] Implementar audit log para ações sensíveis de auth, integração, workspace e administração.
+- [x] Persistir integrações FortiGate por usuário autenticado via `fortigate_integrations.owner_user_id`.
+- [x] Persistir health checks FortiGate em `fortigate_health_checks`.
+- [x] Persistir workspace specs por usuário em `workspace_specs`.
+- [x] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
+- [x] Implementar audit log para auth, integração e workspace, com endpoint `GET /api/audit/events`.
+- [ ] Adicionar auditoria a rotas administrativas quando a superfície admin existir.
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
+
+Nota de progresso backend (2026-04-27): migrations adicionam `workspace_specs` e `fortigate_health_checks`. Workspace live agora faz round-trip no Postgres por usuário; health check salvo pode ser executado por integração persistida; widgets FortiGate têm cache TTL 30s; audit events são saneados antes de persistir e retornar. Review pré-merge adicionou escopo por usuário no audit feed, CSRF em mutáveis de integração/workspace e `404` para histórico de health check de integração inexistente.
 
 Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
@@ -606,11 +646,11 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 ### Trilha de Integração e Qualidade
 
 - [x] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
-- [ ] Adicionar testes unitários para normalizadores FortiGate.
+- [x] Adicionar testes unitários para normalizadores FortiGate.
 - [x] Adicionar testes de contrato para payloads de API.
-- [ ] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
-- [ ] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.
-- [ ] Testar que audit logs não gravam segredos, API keys ou tokens.
+- [x] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
+- [x] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.
+- [x] Testar que audit logs não gravam segredos, API keys ou tokens.
 - [x] Documentar setup local completo em `README.md`.
 - [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.
 

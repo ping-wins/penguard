@@ -13,6 +13,11 @@ from app.main import app
 from app.routers import integrations as integrations_router
 
 
+def csrf_headers(client: TestClient) -> dict[str, str]:
+    response = client.get("/api/auth/csrf")
+    return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
 def test_fortigate_integration_store_encrypts_api_key_and_returns_public_payload():
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -208,6 +213,7 @@ def test_fortigate_integration_endpoint_can_use_persistent_service():
     try:
         create_response = client.post(
             "/api/integrations/fortigate",
+            headers=csrf_headers(client),
             json={
                 "name": "FortiGate Lab",
                 "host": "https://fortigate.local",
@@ -268,6 +274,7 @@ def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():
     try:
         first_response = client.post(
             "/api/integrations/fortigate",
+            headers=csrf_headers(client),
             json={
                 "name": "Owner A FortiGate",
                 "host": "https://fortigate-a.local",
@@ -283,6 +290,7 @@ def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():
         }
         second_response = client.post(
             "/api/integrations/fortigate",
+            headers=csrf_headers(client),
             json={
                 "name": "Owner B FortiGate",
                 "host": "https://fortigate-b.local",

@@ -69,6 +69,7 @@ class FortiGateWidgetDataService:
         self.store = store
         self.client_factory = client_factory or self._default_client_factory
         self.clock = clock or (lambda: datetime.now(UTC))
+        self._cache: dict[tuple[str, str, str], tuple[datetime, dict[str, Any]]] = {}
 
     def get_widget_data(
         self,
@@ -77,6 +78,14 @@ class FortiGateWidgetDataService:
         *,
         owner_user_id: str,
     ) -> dict[str, Any]:
+        cache_key = (owner_user_id, integration_id, widget_id)
+        cached = self._cache.get(cache_key)
+        now = self.clock()
+        if cached is not None:
+            cached_at, payload = cached
+            if (now - cached_at).total_seconds() < CACHE_TTL_SECONDS:
+                return payload
+
         client = self._client_for_integration(integration_id, owner_user_id=owner_user_id)
         try:
             match widget_id:
@@ -93,22 +102,33 @@ class FortiGateWidgetDataService:
                 case _:
                     raise KeyError("Widget data not found")
         except FortiGateApiError as exc:
-            return self._error_payload(widget_id, integration_id, str(exc))
+            payload = self._error_payload(widget_id, integration_id, str(exc), refreshed_at=now)
+            self._cache[cache_key] = (now, payload)
+            return payload
 
-        return {
+        payload = {
             "widgetId": widget_id,
             "integrationId": integration_id,
-            "refreshedAt": self._format_datetime(self.clock()),
+            "refreshedAt": self._format_datetime(now),
             "status": "ready",
             "data": data,
             "meta": {"source": "fortigate", "cacheTtlSeconds": CACHE_TTL_SECONDS},
         }
+        self._cache[cache_key] = (now, payload)
+        return payload
 
-    def _error_payload(self, widget_id: str, integration_id: str, message: str) -> dict[str, Any]:
+    def _error_payload(
+        self,
+        widget_id: str,
+        integration_id: str,
+        message: str,
+        *,
+        refreshed_at: datetime,
+    ) -> dict[str, Any]:
         return {
             "widgetId": widget_id,
             "integrationId": integration_id,
-            "refreshedAt": self._format_datetime(self.clock()),
+            "refreshedAt": self._format_datetime(refreshed_at),
             "status": "error",
             "data": {},
             "meta": {
