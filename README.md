@@ -32,6 +32,14 @@ FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api
 
 A API aplica migrations Alembic no startup do container para desenvolvimento local.
 
+As portas podem ser trocadas sem editar o compose, útil quando outro serviço já usa a porta no Windows ou Linux:
+
+```bash
+FORTIDASHBOARD_WEB_PORT=5174 FORTIDASHBOARD_API_PORT=8001 docker compose up --build
+```
+
+O serviço `web` usa uma imagem própria com `pnpm` pinado e mantém `node_modules` em volumes Docker para evitar diferenças entre filesystem Linux e Windows.
+
 ## Backend
 
 ```bash

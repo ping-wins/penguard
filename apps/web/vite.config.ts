@@ -1,6 +1,8 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+
+const apiProxyTarget = process.env.API_HOST || 'http://localhost:8000'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,9 +14,14 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://api:8000',
+        target: apiProxyTarget,
         changeOrigin: true,
       }
     }
+  },
+  test: {
+    environment: 'happy-dom',
+    include: ['tests/**/*.test.ts'],
+    restoreMocks: true,
   },
 })

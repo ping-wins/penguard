@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: fortidashboard-api
     environment:
       FORTIDASHBOARD_DATABASE_URL: postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard
       FORTIDASHBOARD_SECRET_KEY: change-me-in-local-env
@@ -20,7 +19,7 @@ services:
       FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
       FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: dev-client-secret
     ports:
-      - "8000:8000"
+      - "${FORTIDASHBOARD_API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -30,38 +29,42 @@ services:
       test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 20s
 
   web:
-    image: node:20-alpine
-    container_name: fortidashboard-web
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     working_dir: /app
     volumes:
       - .:/app
       - web_node_modules:/app/node_modules
+      - web_app_node_modules:/app/apps/web/node_modules
+      - web_pnpm_store:/pnpm/store
     ports:
-      - "5173:5173"
+      - "${FORTIDASHBOARD_WEB_PORT:-5173}:5173"
     environment:
       CI: "true"
       NODE_ENV: development
       CHOKIDAR_USEPOLLING: "true"
-      API_HOST: http://localhost:8000
+      PNPM_STORE_DIR: /pnpm/store
+      API_HOST: http://api:8000
       FRONTEND_URL: http://localhost:5173
     command: >
-      sh -c "corepack enable && pnpm install && cd apps/web && pnpm dev --host 0.0.0.0"
+      sh -c "pnpm install --frozen-lockfile && pnpm --filter @fortidashboard/web dev --host 0.0.0.0"
     depends_on:
       api:
         condition: service_healthy
 
   db:
     image: postgres:16-alpine
-    container_name: fortidashboard-db
     environment:
       POSTGRES_DB: fortidashboard
       POSTGRES_USER: fortidashboard
       POSTGRES_PASSWORD: fortidashboard
     ports:
-      - "5432:5432"
+      - "${FORTIDASHBOARD_POSTGRES_PORT:-5432}:5432"
     volumes:
       - fortidashboard_db:/var/lib/postgresql/data
     healthcheck:
@@ -72,14 +75,13 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
-    container_name: fortidashboard-keycloak
     command: start-dev --import-realm --http-port=8080
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
     ports:
-      - "8080:8080"
+      - "${FORTIDASHBOARD_KEYCLOAK_PORT:-8080}:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
@@ -88,3 +90,5 @@ volumes:
   fortidashboard_db:
   keycloak_data:
   web_node_modules:
+  web_app_node_modules:
+  web_pnpm_store:

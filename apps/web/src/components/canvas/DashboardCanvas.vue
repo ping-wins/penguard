@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { storeToRefs } from 'pinia'
@@ -9,6 +9,7 @@ import WidgetHealth from '../widgets/WidgetHealth.vue'
 import WidgetThreats from '../widgets/WidgetThreats.vue'
 import WidgetNetwork from '../widgets/WidgetNetwork.vue'
 import WidgetKpiCard from '../widgets/WidgetKpiCard.vue'
+import WidgetFirewallPolicies from '../widgets/WidgetFirewallPolicies.vue'
 
 import dataFields from '@fortidashboard/contracts/fixtures/data-fields.json'
 
@@ -17,13 +18,11 @@ const integrationsStore = useIntegrationsStore()
 const { activeWidgets, workspaceName, catalogItems } = storeToRefs(dashboardStore)
 
 onMounted(async () => {
-  await Promise.all([
-    dashboardStore.loadWorkspace(),
-    integrationsStore.fetchIntegrations()
-  ])
+  await integrationsStore.fetchIntegrations()
   if (integrationsStore.hasFortigate) {
-    dashboardStore.fetchCatalog()
+    await dashboardStore.fetchCatalog()
   }
+  await dashboardStore.loadWorkspace()
 })
 
 watch(() => integrationsStore.hasFortigate, (has) => {
@@ -34,6 +33,7 @@ watch(() => integrationsStore.hasFortigate, (has) => {
 
 const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
+const fortigateIntegrations = computed(() => integrationsStore.integrations.filter(i => i.type === 'fortigate'))
 
 const expandedFolders = ref<Record<string, boolean>>({
   'system': true
@@ -55,7 +55,8 @@ const widgetMap: Record<string, any> = {
   'fortigate-system-status': WidgetHealth,
   'fortigate-top-threats': WidgetThreats,
   'fortigate-network-traffic': WidgetNetwork,
-  'fortigate-kpi-sessions': WidgetKpiCard
+  'fortigate-kpi-sessions': WidgetKpiCard,
+  'fortigate-firewall-policies': WidgetFirewallPolicies
 }
 
 function getIconForKind(kind: string) {
@@ -174,7 +175,13 @@ function handleWheel(e: WheelEvent) {
               <label class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Device</label>
               <select class="w-full bg-theme-bg border border-theme-border rounded p-2 text-sm text-theme-text outline-none">
                 <option value="all">All Devices</option>
-                <option value="int_fgt_01" selected>FortiGate Lab (FGT-VM)</option>
+                <option
+                  v-for="integration in fortigateIntegrations"
+                  :key="integration.id"
+                  :value="integration.id"
+                >
+                  {{ integration.name || integration.host || integration.id }}
+                </option>
               </select>
             </div>
             

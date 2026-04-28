@@ -1,51 +1,61 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import workspaceFixture from '@fortidashboard/contracts/fixtures/workspace.json'
+import catalogFixture from '@fortidashboard/contracts/fixtures/widget_catalog_fortigate.json'
 import { useAuthStore } from './useAuthStore'
+import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
+import type { WidgetCatalogItem, WorkspaceWidget } from '../types/dashboard'
 
 export const useDashboardStore = defineStore('dashboard', () => {
-  const activeWidgets = ref<any[]>([])
+  const activeWidgets = ref<WorkspaceWidget[]>([])
   const workspaceName = ref('SOC Overview')
   const zoom = ref(1)
   const isInitialized = ref(false)
-  const catalogItems = ref<any[]>([])
+  const isCatalogLoaded = ref(false)
+  const catalogItems = ref<WidgetCatalogItem[]>([])
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null
+  let maxZIndex = 100
 
   async function fetchCatalog() {
     try {
-      const authStore = useAuthStore()
-      if (!authStore.csrfToken) await authStore.fetchCsrf()
-      
       const res = await fetch('/api/widget-catalog?integrationType=fortigate', {
-        headers: { 'X-CSRF-Token': authStore.csrfToken },
         credentials: 'include'
       })
-      if (res.ok) {
-        const data = await res.json()
-        catalogItems.value = data.items || []
+      if (!res.ok) {
+        throw new Error(`Widget catalog failed with HTTP ${res.status}`)
       }
+      const data = await res.json()
+      catalogItems.value = data.items || []
     } catch (e) {
       console.error('Failed to fetch widget catalog', e)
+      catalogItems.value = (catalogFixture as { items: WidgetCatalogItem[] }).items || []
+    } finally {
+      isCatalogLoaded.value = true
     }
+  }
+
+  function syncMaxZIndex() {
+    maxZIndex = Math.max(100, ...activeWidgets.value.map(widget => widget.layout?.z || 0))
   }
 
   async function loadWorkspace() {
     try {
-      const res = await fetch('/api/workspaces/ws_default')
+      const res = await fetch('/api/workspaces/ws_default', { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
-        activeWidgets.value = data.widgets || []
+        activeWidgets.value = normalizeWorkspaceWidgets(data.widgets || [])
         workspaceName.value = data.name || 'SOC Overview'
       } else {
-        activeWidgets.value = workspaceFixture.widgets
+        activeWidgets.value = normalizeWorkspaceWidgets(workspaceFixture.widgets as WorkspaceWidget[])
         workspaceName.value = workspaceFixture.name
       }
     } catch (e) {
       console.error('Failed to load workspace', e)
-      activeWidgets.value = workspaceFixture.widgets
+      activeWidgets.value = normalizeWorkspaceWidgets(workspaceFixture.widgets as WorkspaceWidget[])
       workspaceName.value = workspaceFixture.name
     } finally {
+      syncMaxZIndex()
       isInitialized.value = true
     }
   }
@@ -94,8 +104,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
     zoom.value = val
   }
 
-  let maxZIndex = 100 // Ponto de partida seguro
-
   function updateWidgetPosition(instanceId: string, x: number, y: number) {
     const widget = activeWidgets.value.find(w => w.instanceId === instanceId)
     if (widget && widget.layout) {
@@ -124,17 +132,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   function addWidget(catalogId: string, integrationId: string) {
-    const newId = 'w_' + Math.random().toString(36).substr(2, 9)
     const catalogItem = catalogItems.value.find(i => i.id === catalogId)
-    const w = catalogItem?.defaultSize.w || 320
-    const h = catalogItem?.defaultSize.h || 240
-    
-    activeWidgets.value.push({
-      instanceId: newId,
+    activeWidgets.value.push(createWidgetInstance({
       catalogId,
       integrationId,
-      layout: { x: 50, y: 50, w, h, z: ++maxZIndex }
-    })
+      defaultSize: catalogItem?.defaultSize,
+      zIndex: ++maxZIndex
+    }))
     debouncedSave()
   }
 
@@ -148,6 +152,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     workspaceName,
     zoom,
     isInitialized,
+    isCatalogLoaded,
     catalogItems,
     setZoom,
     fetchCatalog,
