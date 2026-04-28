@@ -44,7 +44,7 @@ class FakeFortiGateClient:
             "port1": {
                 "id": "port1",
                 "name": "port1",
-                "ip": "192.168.0.118",
+                "ip": "192.0.2.118",
                 "link": True,
                 "rx_bytes": 8304525,
                 "tx_bytes": 6185442,
@@ -166,6 +166,37 @@ def test_fortigate_widget_service_caches_payloads_inside_short_ttl():
     assert factory_calls == 2
 
 
+def test_system_status_and_session_kpi_share_system_snapshot_inside_short_ttl():
+    from app.integrations.fortigate.widgets import FortiGateWidgetDataService
+
+    session_counts = iter([42, 43])
+
+    class ChangingSessionClient(FakeFortiGateClient):
+        def get_resource_usage(self, *, resource: str | None = None):
+            assert resource == "session"
+            return {"session": [{"current": next(session_counts)}]}
+
+    service = FortiGateWidgetDataService(
+        store=FakeFortiGateConnectionStore(),
+        client_factory=lambda *, host, api_key, verify_tls: ChangingSessionClient(),
+        clock=lambda: datetime(2026, 4, 26, 23, 45, tzinfo=UTC),
+    )
+
+    system_status = service.get_widget_data(
+        "fortigate-system-status",
+        integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
+    )
+    sessions_kpi = service.get_widget_data(
+        "fortigate-kpi-sessions",
+        integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
+    )
+
+    assert system_status["data"]["sessions"] == 42
+    assert sessions_kpi["data"]["sessions"] == 42
+
+
 def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
     from app.integrations.fortigate.widgets import FortiGateWidgetDataService
 
@@ -191,7 +222,7 @@ def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
             "name": "port1",
             "alias": "",
             "status": "up",
-            "ip": "192.168.0.118",
+            "ip": "192.0.2.118",
             "role": "unknown",
             "type": "unknown",
             "rxBytes": 8304525,

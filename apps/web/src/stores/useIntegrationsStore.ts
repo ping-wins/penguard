@@ -53,10 +53,12 @@ export const useIntegrationsStore = defineStore('integrations', () => {
 
       if (res.ok) {
         const data = await res.json()
-        return { success: true, data }
-      } else {
-        return { success: false, error: 'Connection failed' }
+        if (data.ok === true) {
+          return { success: true, data }
+        }
+        return { success: false, error: data.error?.message ?? 'Connection failed' }
       }
+      return { success: false, error: await responseErrorMessage(res, 'Connection failed') }
     } catch (e) {
       return { success: false, error: 'Network error' }
     } finally {
@@ -87,9 +89,8 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         else integrations.value.push(data)
         
         return { success: true, data }
-      } else {
-        return { success: false, error: 'Failed to add integration' }
       }
+      return { success: false, error: await responseErrorMessage(res, 'Failed to add integration') }
     } catch (e) {
       return { success: false, error: 'Network error' }
     }
@@ -106,3 +107,16 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     addFortigate
   }
 })
+
+async function responseErrorMessage(response: Response, fallback: string) {
+  try {
+    const body = await response.json()
+    if (typeof body.detail === 'string') return body.detail
+    if (Array.isArray(body.detail) && body.detail.length > 0) {
+      return body.detail[0]?.msg ?? fallback
+    }
+  } catch (e) {
+    return fallback
+  }
+  return fallback
+}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -22,6 +22,9 @@ const fgForm = ref({
 })
 const fgTestResult = ref<any>(null)
 const fgTestError = ref<string | null>(null)
+const canSubmitFortigate = computed(() => {
+  return fgForm.value.host.trim().length > 0 && fgForm.value.apiKey.trim().length > 0
+})
 
 const chatInput = ref('')
 const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
@@ -53,6 +56,8 @@ async function handleSaveFortigate() {
     fgTestResult.value = null
     fgTestError.value = null
     fgForm.value.apiKey = ''
+  } else {
+    fgTestError.value = res.error ?? 'Failed to add integration'
   }
 }
 
@@ -261,7 +266,7 @@ function handleChatSubmit() {
             <button 
               @click="handleTestFortigate" 
               class="flex-1 py-1.5 px-3 rounded border border-theme-border text-sm font-medium hover:bg-theme-border transition-colors text-theme-text-muted hover:text-theme-text disabled:opacity-50"
-              :disabled="integrationsStore.isTesting || !fgForm.apiKey"
+              :disabled="integrationsStore.isTesting || !canSubmitFortigate"
             >
               <span v-if="integrationsStore.isTesting">Testando...</span>
               <span v-else>Testar Conexão</span>
@@ -269,7 +274,7 @@ function handleChatSubmit() {
             <button 
               @click="handleSaveFortigate" 
               class="flex-1 py-1.5 px-3 rounded bg-theme-primary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              :disabled="!fgForm.apiKey"
+              :disabled="!canSubmitFortigate"
             >
               Salvar
             </button>

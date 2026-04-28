@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://fortidashboard:fortidashboard@localhost:5432/fortidashboard"
     secret_key: str = "dev-only-change-me"
     token_encryption_key: str | None = None
-    mock_mode: bool = True
+    mock_mode: bool = False
     session_cookie_name: str = "fortidashboard_session"
     session_cookie_secure: bool = False
     csrf_cookie_name: str = "fortidashboard_csrf"

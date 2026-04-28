@@ -12,6 +12,7 @@ from app.integrations.fortigate.normalizers import (
 )
 
 CACHE_TTL_SECONDS = 30
+SYSTEM_STATUS_SNAPSHOT_CACHE_KEY = "__system_status_snapshot"
 
 
 class FortiGateConnectionStore(Protocol):
@@ -90,9 +91,20 @@ class FortiGateWidgetDataService:
         try:
             match widget_id:
                 case "fortigate-system-status":
-                    data = self._system_status_data(client)
+                    data = self._cached_system_status_data(
+                        client,
+                        owner_user_id=owner_user_id,
+                        integration_id=integration_id,
+                        now=now,
+                    )
                 case "fortigate-kpi-sessions":
-                    data = {"sessions": self._system_status_data(client)["sessions"]}
+                    system_status = self._cached_system_status_data(
+                        client,
+                        owner_user_id=owner_user_id,
+                        integration_id=integration_id,
+                        now=now,
+                    )
+                    data = {"sessions": system_status["sessions"]}
                 case "fortigate-network-traffic":
                     data = {"interfaces": normalize_interfaces(client.get_interface_status())}
                 case "fortigate-firewall-policies":
@@ -144,6 +156,25 @@ class FortiGateWidgetDataService:
             performance=client.get_performance_status(),
             resource_usage=client.get_resource_usage(resource="session"),
         )
+
+    def _cached_system_status_data(
+        self,
+        client: FortiGateWidgetClient,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        now: datetime,
+    ) -> dict[str, Any]:
+        cache_key = (owner_user_id, integration_id, SYSTEM_STATUS_SNAPSHOT_CACHE_KEY)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            cached_at, data = cached
+            if (now - cached_at).total_seconds() < CACHE_TTL_SECONDS:
+                return data
+
+        data = self._system_status_data(client)
+        self._cache[cache_key] = (now, data)
+        return data
 
     def _client_for_integration(
         self,

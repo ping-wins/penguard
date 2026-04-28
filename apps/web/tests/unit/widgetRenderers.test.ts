@@ -1,9 +1,32 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import WidgetFirewallPolicies from '../../src/components/widgets/WidgetFirewallPolicies.vue'
+import WidgetHealth from '../../src/components/widgets/WidgetHealth.vue'
 import WidgetThreats from '../../src/components/widgets/WidgetThreats.vue'
 
 describe('FortiGate widget renderers', () => {
+  it('renders live FortiGate identity and health fields', () => {
+    const wrapper = mount(WidgetHealth, {
+      props: {
+        data: {
+          hostname: 'FGT-LIVE-01',
+          model: 'FortiGate',
+          version: 'v7.6.6',
+          cpu: 1,
+          memory: 45,
+          sessions: 25,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('FGT-LIVE-01')
+    expect(wrapper.text()).toContain('FortiGate')
+    expect(wrapper.text()).toContain('v7.6.6')
+    expect(wrapper.text()).toContain('1%')
+    expect(wrapper.text()).toContain('45%')
+    expect(wrapper.text()).toContain('25')
+  })
+
   it('renders normalized FortiGate threat fields from the API', () => {
     const wrapper = mount(WidgetThreats, {
       props: {

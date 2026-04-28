@@ -65,6 +65,10 @@ class FortiGateClientFactory(Protocol):
         pass
 
 
+class FortiGateConnectionFailed(RuntimeError):
+    pass
+
+
 class MockFortiGateIntegrationService:
     def create(
         self,
@@ -133,6 +137,10 @@ class FortiGateIntegrationService:
         api_key: str,
         verify_tls: bool,
     ) -> dict[str, Any]:
+        probe = self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
+        if not probe["ok"]:
+            error = probe.get("error") or {}
+            raise FortiGateConnectionFailed(error.get("message") or "FortiGate connection failed")
         return self.store.create(
             owner_user_id=owner_user_id,
             name=name,

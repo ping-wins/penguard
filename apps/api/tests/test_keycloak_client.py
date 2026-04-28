@@ -1,7 +1,9 @@
 import json
 
 import httpx
+import pytest
 
+from app.auth.errors import AuthProviderError
 from app.auth.keycloak import KeycloakClient
 
 
@@ -61,6 +63,10 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
         assert payload["username"] == "analyst@example.com"
         assert payload["email"] == "analyst@example.com"
         assert payload["enabled"] is True
+        assert payload["emailVerified"] is True
+        assert payload["requiredActions"] == []
+        assert payload["firstName"] == "SOC"
+        assert payload["lastName"] == "Analyst"
         assert payload["credentials"] == [
             {
                 "type": "password",
@@ -94,3 +100,98 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
     assert user.id == "usr_01"
     assert user.email == "analyst@example.com"
     assert user.display_name == "SOC Analyst"
+
+
+def test_login_maps_keycloak_invalid_credentials_to_auth_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        return httpx.Response(
+            401,
+            json={
+                "error": "invalid_grant",
+                "error_description": "Invalid user credentials",
+            },
+        )
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AuthProviderError) as exc:
+        client.login(email="analyst@example.com", password="wrong-password")
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid email or password"
+
+
+def test_create_user_maps_keycloak_conflict_to_duplicate_user_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/realms/fortidashboard/protocol/openid-connect/token":
+            return httpx.Response(200, json={"access_token": "admin-token", "expires_in": 300})
+        return httpx.Response(409, json={"errorMessage": "User exists with same username"})
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AuthProviderError) as exc:
+        client.create_user(
+            email="analyst@example.com",
+            password="correct-horse-battery-staple",
+            display_name="SOC Analyst",
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Email already registered"
+
+
+def test_create_user_maps_admin_api_transport_failure_to_provider_unavailable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/realms/fortidashboard/protocol/openid-connect/token":
+            return httpx.Response(200, json={"access_token": "admin-token", "expires_in": 300})
+        raise httpx.ConnectError("connection failed", request=request)
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AuthProviderError) as exc:
+        client.create_user(
+            email="analyst@example.com",
+            password="correct-horse-battery-staple",
+            display_name="SOC Analyst",
+        )
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "Identity provider unavailable"
+
+
+def test_get_userinfo_maps_transport_failure_to_provider_unavailable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection failed", request=request)
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AuthProviderError) as exc:
+        client.get_userinfo(access_token="access-token")
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "Identity provider unavailable"
