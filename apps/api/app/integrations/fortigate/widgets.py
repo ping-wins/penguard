@@ -15,7 +15,7 @@ CACHE_TTL_SECONDS = 30
 
 
 class FortiGateConnectionStore(Protocol):
-    def get_connection(self, integration_id: str) -> dict[str, Any] | None:
+    def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
         pass
 
 
@@ -45,7 +45,13 @@ class FortiGateWidgetClientFactory(Protocol):
 
 
 class MockFortiGateWidgetDataService:
-    def get_widget_data(self, widget_id: str, integration_id: str) -> dict[str, Any]:
+    def get_widget_data(
+        self,
+        widget_id: str,
+        integration_id: str,
+        *,
+        owner_user_id: str,
+    ) -> dict[str, Any]:
         data = load_fixture("widget_data_fortigate_system_status")
         if widget_id != data["widgetId"] or integration_id != data["integrationId"]:
             raise KeyError("Widget data not found")
@@ -64,8 +70,14 @@ class FortiGateWidgetDataService:
         self.client_factory = client_factory or self._default_client_factory
         self.clock = clock or (lambda: datetime.now(UTC))
 
-    def get_widget_data(self, widget_id: str, integration_id: str) -> dict[str, Any]:
-        client = self._client_for_integration(integration_id)
+    def get_widget_data(
+        self,
+        widget_id: str,
+        integration_id: str,
+        *,
+        owner_user_id: str,
+    ) -> dict[str, Any]:
+        client = self._client_for_integration(integration_id, owner_user_id=owner_user_id)
         try:
             match widget_id:
                 case "fortigate-system-status":
@@ -113,8 +125,13 @@ class FortiGateWidgetDataService:
             resource_usage=client.get_resource_usage(resource="session"),
         )
 
-    def _client_for_integration(self, integration_id: str) -> FortiGateWidgetClient:
-        connection = self.store.get_connection(integration_id)
+    def _client_for_integration(
+        self,
+        integration_id: str,
+        *,
+        owner_user_id: str,
+    ) -> FortiGateWidgetClient:
+        connection = self.store.get_connection(integration_id, owner_user_id=owner_user_id)
         if connection is None:
             raise KeyError("Integration not found")
         return self.client_factory(

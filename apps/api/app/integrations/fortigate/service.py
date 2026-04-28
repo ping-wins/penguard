@@ -9,6 +9,7 @@ class FortiGateIntegrationStore(Protocol):
     def create(
         self,
         *,
+        owner_user_id: str,
         name: str,
         host: str,
         api_key: str,
@@ -16,7 +17,7 @@ class FortiGateIntegrationStore(Protocol):
     ) -> dict[str, Any]:
         pass
 
-    def list_public(self) -> dict[str, list[dict[str, Any]]]:
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
         pass
 
 
@@ -40,6 +41,7 @@ class MockFortiGateIntegrationService:
     def create(
         self,
         *,
+        owner_user_id: str,
         name: str,
         host: str,
         api_key: str,
@@ -50,7 +52,7 @@ class MockFortiGateIntegrationService:
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         return load_fixture("fortigate_connection_test")
 
-    def list(self) -> dict[str, Any]:
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
         return load_fixture("integrations_list")
 
 
@@ -67,12 +69,19 @@ class FortiGateIntegrationService:
     def create(
         self,
         *,
+        owner_user_id: str,
         name: str,
         host: str,
         api_key: str,
         verify_tls: bool,
     ) -> dict[str, Any]:
-        return self.store.create(name=name, host=host, api_key=api_key, verify_tls=verify_tls)
+        return self.store.create(
+            owner_user_id=owner_user_id,
+            name=name,
+            host=host,
+            api_key=api_key,
+            verify_tls=verify_tls,
+        )
 
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         try:
@@ -98,8 +107,8 @@ class FortiGateIntegrationService:
             },
         }
 
-    def list(self) -> dict[str, Any]:
-        return self.store.list_public()
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
+        return self.store.list_public(owner_user_id=owner_user_id)
 
     def _default_client_factory(
         self,

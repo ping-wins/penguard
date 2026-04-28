@@ -233,6 +233,8 @@ API keys devem ser criptografadas em repouso e nunca retornadas.
 
 Em `FORTIDASHBOARD_MOCK_MODE=true`, a API mantém respostas fixture para desenvolvimento do frontend. Em `FORTIDASHBOARD_MOCK_MODE=false`, a integração é persistida em Postgres na tabela `fortigate_integrations`, com `api_key_blob` criptografado.
 
+Em modo live, a integração pertence ao usuário autenticado pela sessão HTTP-only. A tabela `fortigate_integrations.owner_user_id` guarda o dono, e `GET /api/integrations` só lista integrações do usuário atual.
+
 ### Testar conexão FortiGate
 
 `POST /api/integrations/fortigate/test`
@@ -473,6 +475,7 @@ Fluxo recomendado no `apps/web`:
 - Carregar opções com `GET /api/widget-catalog?integrationType=fortigate`.
 - Para cada item do catálogo, usar `id`, `title`, `kind`, `defaultSize`, `requiredCapabilities` e `dataEndpoint`.
 - Ao instanciar um widget no canvas, chamar `${dataEndpoint}?integrationId=<id-da-integracao>`.
+- Em modo live, as chamadas a `/api/integrations*` e `/api/widgets/*/data` precisam enviar o cookie de sessão da API; o backend filtra por `owner_user_id`.
 - Renderizar `status: "ready"` como dado normal, `status: "error"` como erro dentro do card, e estados de loading/empty no adapter HTTP.
 - Não acoplar componente visual ao FortiGate: o componente recebe apenas o payload `data` normalizado.
 
@@ -566,6 +569,7 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [x] Normalizar status do sistema, interfaces, políticas e threat logs.
 - [x] Ligar endpoints de widgets FortiGate a dados live normalizados em modo não-mock.
+- [x] Escopar integrações FortiGate por usuário autenticado via `owner_user_id`.
 - [ ] Persistir integrações, health checks e workspace specs.
 - [ ] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
 - [ ] Implementar audit log para ações sensíveis de auth, integração, workspace e administração.

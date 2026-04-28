@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
+from app.auth.dependencies import get_current_api_user
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.integrations.fortigate.service import (
@@ -55,8 +56,10 @@ def get_fortigate_integration_service() -> FortiGateService:
 def create_fortigate_integration(
     payload: FortiGateIntegrationCreate,
     service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return service.create(
+        owner_user_id=str(current_user["id"]),
         name=payload.name,
         host=str(payload.host),
         api_key=payload.api_key,
@@ -68,6 +71,7 @@ def create_fortigate_integration(
 def test_fortigate_connection(
     payload: FortiGateConnectionTest,
     service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return service.test_connection(
         host=str(payload.host),
@@ -79,5 +83,6 @@ def test_fortigate_connection(
 @router.get("/integrations")
 def list_integrations(
     service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
-    return service.list()
+    return service.list(owner_user_id=str(current_user["id"]))

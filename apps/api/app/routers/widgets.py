@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.auth.dependencies import get_current_api_user
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
@@ -35,8 +36,13 @@ def get_widget_data(
     widget_id: str,
     integration_id: Annotated[str, Query(alias="integrationId")],
     service: Annotated[FortiGateWidgetService, Depends(get_fortigate_widget_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     try:
-        return service.get_widget_data(widget_id, integration_id)
+        return service.get_widget_data(
+            widget_id,
+            integration_id,
+            owner_user_id=str(current_user["id"]),
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Widget data not found") from exc
