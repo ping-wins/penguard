@@ -36,6 +36,14 @@
   ],
   "users": [
     {
+      "username": "service-account-fortidashboard-bff",
+      "enabled": true,
+      "serviceAccountClientId": "fortidashboard-bff",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users"]
+      }
+    },
+    {
       "username": "analyst@example.com",
       "email": "analyst@example.com",
       "firstName": "SOC",

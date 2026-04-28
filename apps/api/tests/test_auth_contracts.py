@@ -1,6 +1,11 @@
+import pytest
 from fastapi.testclient import TestClient
 
+from app.auth.errors import AuthProviderError
+from app.auth.service import AuthService
+from app.auth.session_store import InMemorySessionStore
 from app.main import app
+from app.routers import auth as auth_router
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
@@ -103,3 +108,54 @@ def test_logout_clears_http_only_session_cookie():
 
     me_response = client.get("/api/auth/me")
     assert me_response.json() == {"authenticated": False, "user": None}
+
+
+class FailingIdentityProvider:
+    def register(self, *, email: str, password: str, display_name: str):
+        raise AuthProviderError(status_code=409, detail="Email already registered")
+
+    def login(self, *, email: str, password: str):
+        raise AuthProviderError(status_code=401, detail="Invalid email or password")
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "payload", "expected_status", "expected_detail"),
+    [
+        (
+            "/api/auth/login",
+            {"email": "analyst@example.com", "password": "wrong-password"},
+            401,
+            "Invalid email or password",
+        ),
+        (
+            "/api/auth/register",
+            {
+                "email": "analyst@example.com",
+                "password": "correct-horse-battery-staple",
+                "displayName": "SOC Analyst",
+            },
+            409,
+            "Email already registered",
+        ),
+    ],
+)
+def test_auth_routes_return_stable_provider_errors(
+    endpoint,
+    payload,
+    expected_status,
+    expected_detail,
+):
+    client = TestClient(app)
+    service = AuthService(
+        provider=FailingIdentityProvider(),
+        session_store=InMemorySessionStore(),
+    )
+    app.dependency_overrides[auth_router.get_auth_service] = lambda: service
+
+    try:
+        response = client.post(endpoint, headers=csrf_headers(client), json=payload)
+    finally:
+        app.dependency_overrides.pop(auth_router.get_auth_service, None)
+
+    assert response.status_code == expected_status
+    assert response.json() == {"detail": expected_detail}

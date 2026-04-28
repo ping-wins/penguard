@@ -58,6 +58,20 @@ def test_test_fortigate_connection_returns_device_metadata():
     }
 
 
+def test_test_fortigate_connection_rejects_short_api_key():
+    response = client.post(
+        "/api/integrations/fortigate/test",
+        headers=csrf_headers(),
+        json={
+            "host": "https://fortigate.local",
+            "apiKey": "abc",
+            "verifyTls": False,
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_list_integrations_omits_api_key():
     response = client.get("/api/integrations")
 

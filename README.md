@@ -4,7 +4,7 @@ FortiDashboard é um dashboard modular para NG-SOC, focado em centralizar visibi
 
 ## Estrutura do Monorepo
 
-- `apps/api`: backend FastAPI com healthcheck, BFF auth, sessões server-side persistidas e endpoints mockados de contrato.
+- `apps/api`: backend FastAPI com healthcheck, BFF auth, sessões server-side persistidas e modo mock opt-in para contratos.
 - `apps/web`: frontend Vue 3 + Vite para workspace livre, canvas, widgets e sidebar.
 - `packages/contracts`: fixtures e schemas compartilhados entre backend e frontend.
 - `packages/widget-catalog`: registro neutro de widgets FortiGate.
@@ -24,10 +24,10 @@ Serviços locais:
 - Keycloak: `http://localhost:8080`
 - Postgres: `localhost:5432`
 
-Para testar o caminho real com Keycloak em vez de fixtures:
+O Docker Compose sobe em modo live por padrão. Para usar fixtures mockadas de frontend de forma explícita:
 
 ```bash
-FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api
+FORTIDASHBOARD_MOCK_MODE=true docker compose up -d --build api
 ```
 
 A API aplica migrations Alembic no startup do container para desenvolvimento local.
@@ -66,7 +66,7 @@ pnpm install
 pnpm dev
 ```
 
-O frontend pode usar fixtures de `packages/contracts/fixtures` enquanto o FortiGate real não estiver integrado.
+O frontend pode usar fixtures de `packages/contracts/fixtures` quando `FORTIDASHBOARD_MOCK_MODE=true`, mas o default local valida Keycloak, sessão e conexão FortiGate reais.
 
 ## Autenticação
 
@@ -79,6 +79,15 @@ O Vue implementa as telas próprias de login/register, mas chama FastAPI em vez 
 - `POST /api/auth/logout`
 
 Para `register`, `login` e `logout`, chame `GET /api/auth/csrf` primeiro e envie o valor em `X-CSRF-Token`. A sessão do browser usa cookie `fortidashboard_session` com `HttpOnly`; tokens Keycloak ficam server-side e são persistidos em Postgres como `token_blob` criptografado.
+
+No frontend, use `apps/web/src/services/authClient.ts` para o fluxo completo. Ele busca CSRF com cookie, faz uma nova tentativa quando o CSRF expira, chama `login/register/logout` com `credentials: include` e confirma `login/register` com `GET /api/auth/me`.
+
+Em modo live, o realm dev dá ao service account `fortidashboard-bff` permissão `manage-users`/`view-users` para criar usuários via BFF. Se você já tinha subido Keycloak antes dessa configuração, recrie os volumes para reimportar o realm:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
 
 ## Contratos
 

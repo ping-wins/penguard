@@ -61,7 +61,12 @@ Modelo obrigatório:
 - Endpoints protegidos usam a sessão da API, não validação JWT feita no browser.
 - A API deve aplicar CSRF para métodos mutáveis, rate limit em login/register e auditoria de tentativas.
 - Sessões live usam Postgres na tabela `auth_sessions`; `token_blob` deve ser criptografado, `expires_at` deve invalidar sessões vencidas e tokens nunca podem aparecer em texto claro.
-- Frontend deve chamar `GET /api/auth/csrf` antes de `login`, `register` ou `logout` e enviar o valor em `X-CSRF-Token`.
+- Frontend deve usar `apps/web/src/services/authClient.ts` para `login`, `register`, `logout`, CSRF e `/auth/me`. Não duplique chamadas auth direto em views.
+- Frontend deve chamar `GET /api/auth/csrf` com `credentials: "include"` antes de `login`, `register` ou `logout` e enviar o valor em `X-CSRF-Token`.
+- Se `login/register/logout` retornar `403` com falha de CSRF, o client pode buscar novo CSRF e tentar novamente uma única vez.
+- Depois de `login` ou `register`, o frontend deve confirmar a sessão com `GET /api/auth/me`; o estado autenticado vem da sessão HTTP-only, não só do response inicial.
+- API deve normalizar erros de provider em JSON estável: `401 Invalid email or password`, `409 Email already registered`, `429 Too many authentication attempts`, `502 Identity provider rejected FortiDashboard service account` e `503 Identity provider unavailable`.
+- No register live, o BFF deve criar o usuário Keycloak com perfil completo para login imediato: `emailVerified: true`, `requiredActions: []`, `firstName` e `lastName` derivados de `displayName`.
 
 Fluxo esperado:
 
@@ -81,8 +86,8 @@ Atualize após o scaffold real existir:
 
 - `docker compose up -d db`: sobe Postgres local.
 - `docker compose up --build`: sobe API, frontend Vue, Postgres e Keycloak.
-- `docker compose up -d --build api`: sobe API, Postgres e Keycloak em modo mock por padrão.
-- `FORTIDASHBOARD_MOCK_MODE=false docker compose up -d --build api`: sobe API usando Keycloak live e sessões persistidas no Postgres.
+- `docker compose up -d --build api`: sobe API, Postgres e Keycloak em modo live por padrão.
+- `FORTIDASHBOARD_MOCK_MODE=true docker compose up -d --build api`: sobe API com fixtures mockadas para desenvolvimento isolado do frontend.
 - Portas locais podem ser sobrescritas com `FORTIDASHBOARD_API_PORT`, `FORTIDASHBOARD_WEB_PORT`, `FORTIDASHBOARD_KEYCLOAK_PORT` e `FORTIDASHBOARD_POSTGRES_PORT`.
 - `cd apps/api && uv sync`: instala dependências Python.
 - `cd apps/api && uv run uvicorn app.main:app --reload --port 8000`: roda a API.
@@ -95,6 +100,8 @@ Atualize após o scaffold real existir:
 - `cd apps/web && pnpm test`: executa testes frontend quando existirem.
 
 Nota Docker: o serviço `web` usa `apps/web/Dockerfile` com `pnpm` pinado e volumes próprios para `node_modules`/store. Não monte `node_modules` do host no container; isso precisa continuar portátil entre Linux e Windows.
+
+Nota Keycloak: mudanças em `infra/keycloak/realm-fortidashboard.json` só entram em um realm novo. Em ambiente dev com volume antigo, rode `docker compose down -v` antes de validar alteração de realm/service-account.
 
 ## Contratos e Mockups de Endpoints
 
@@ -235,9 +242,11 @@ Response:
 
 API keys devem ser criptografadas em repouso e nunca retornadas.
 
-Em `FORTIDASHBOARD_MOCK_MODE=true`, a API mantém respostas fixture para desenvolvimento do frontend. Em `FORTIDASHBOARD_MOCK_MODE=false`, a integração é persistida em Postgres na tabela `fortigate_integrations`, com `api_key_blob` criptografado.
+O default do repositório é `FORTIDASHBOARD_MOCK_MODE=false`. Em modo live, a integração é persistida em Postgres na tabela `fortigate_integrations`, com `api_key_blob` criptografado. Use `FORTIDASHBOARD_MOCK_MODE=true` apenas de forma explícita para fixtures de frontend.
 
 Em modo live, a integração pertence ao usuário autenticado pela sessão HTTP-only. A tabela `fortigate_integrations.owner_user_id` guarda o dono, e `GET /api/integrations` só lista integrações do usuário atual.
+
+Antes de persistir em modo live, `POST /api/integrations/fortigate` executa um probe read-only. Falha de conexão retorna `400` e grava audit event `integration.fortigate.created` com `outcome: "failed"` sem persistir a API key.
 
 ### Testar conexão FortiGate
 
@@ -266,6 +275,8 @@ Response:
   }
 }
 ```
+
+Falhas controladas podem retornar HTTP 200 com `ok: false`, `status: "disconnected"` e `error.message`; o frontend deve tratar isso como falha, nunca como sucesso. API keys curtas ou inválidas no contrato retornam `422`.
 
 ### Health check persistido FortiGate
 
@@ -508,6 +519,8 @@ O frontend pode trabalhar com widgets FortiGate sem depender do FortiGate real. 
 
 Em modo live, dados de widget FortiGate usam cache curto em memória por processo, chaveado por `owner_user_id`, `integrationId` e `widgetId`, com TTL de 30 segundos. Isso reduz chamadas repetidas ao FortiGate sem mudar o contrato do payload.
 
+Widgets derivados do mesmo status de sistema, como `fortigate-system-status` e `fortigate-kpi-sessions`, compartilham o mesmo snapshot normalizado dentro do TTL para evitar números divergentes no canvas.
+
 Fluxo recomendado no `apps/web`:
 
 - Carregar opções com `GET /api/widget-catalog?integrationType=fortigate`.
@@ -600,11 +613,16 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Adicionar Keycloak ao Docker Compose com realm/client inicial para desenvolvimento.
 - [x] Implementar client/provider para `POST /api/auth/register` usando Keycloak Admin API e sessão HTTP-only.
 - [x] Implementar client/provider para `POST /api/auth/login` via token endpoint do Keycloak e sessão HTTP-only.
+- [x] Normalizar erros de Keycloak/provider para responses JSON estáveis no BFF FastAPI.
+- [x] Conceder `manage-users`/`view-users` ao service account `fortidashboard-bff` no realm dev do Keycloak.
 - [x] Implementar `GET /api/auth/me` e `POST /api/auth/logout`.
 - [x] Validar o fluxo live de auth contra Keycloak em Docker Compose com `FORTIDASHBOARD_MOCK_MODE=false`.
 - [x] Persistir sessões server-side com tokens Keycloak criptografados ou referência segura.
 - [x] Adicionar CSRF/rate limit/auditoria para endpoints de autenticação.
 - [x] Implementar cadastro de integração FortiGate com `host`, `apiKey` e `verifyTls`.
+- [x] Deixar `FORTIDASHBOARD_MOCK_MODE=false` como default do Docker/API; mocks são opt-in.
+- [x] Validar tamanho mínimo da API key FortiGate antes de testar ou salvar integração.
+- [x] Bloquear persistência de integração FortiGate live quando o probe read-only falhar.
 - [x] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [x] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [x] Normalizar status do sistema, interfaces, políticas e threat logs.
@@ -614,6 +632,7 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Persistir health checks FortiGate em `fortigate_health_checks`.
 - [x] Persistir workspace specs por usuário em `workspace_specs`.
 - [x] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
+- [x] Compartilhar snapshot de status entre widgets FortiGate derivados do sistema.
 - [x] Implementar audit log para auth, integração e workspace, com endpoint `GET /api/audit/events`.
 - [ ] Adicionar auditoria a rotas administrativas quando a superfície admin existir.
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
@@ -621,7 +640,7 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 
 Nota de progresso backend (2026-04-27): migrations adicionam `workspace_specs` e `fortigate_health_checks`. Workspace live agora faz round-trip no Postgres por usuário; health check salvo pode ser executado por integração persistida; widgets FortiGate têm cache TTL 30s; audit events são saneados antes de persistir e retornar. Review pré-merge adicionou escopo por usuário no audit feed, CSRF em mutáveis de integração/workspace e `404` para histórico de health check de integração inexistente.
 
-Nota de validação FortiGate local (2026-04-26): host `192.168.0.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
+Nota de validação FortiGate local (2026-04-26): host `192.0.2.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
 Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fortigate-network-traffic` e `fortigate-firewall-policies` retornaram payloads normalizados contra o FortiGate local. `fortigate-top-threats` retornou `status: error` controlado porque o endpoint de logs UTM/IPS respondeu `404` nesse lab.
 
@@ -629,6 +648,8 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 
 - [x] Scaffoldar `apps/web` com Vue 3, Vite, Pinia, Tailwind, Motion for Vue e Lucide Vue.
 - [x] Implementar telas Vue próprias de `login` e `register`, chamando `/api/auth/*`.
+- [x] Centralizar CSRF/login/register/logout/me em `apps/web/src/services/authClient.ts`.
+- [x] Confirmar sessão browser via `/api/auth/me` após login/register antes de marcar usuário autenticado.
 - [x] Usar `/api/auth/me` para hidratar usuário/sessão no frontend.
 - [x] Criar layout macro com sidebar fixa e canvas central.
 - [x] Criar store Pinia `useDashboardStore` com fixtures de dois widgets.
@@ -643,6 +664,8 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Implementar sistema de Theming (Theme Builder Modal) dinâmico via variáveis CSS do Tailwind v4.
 - [x] Adicionar controle de Zoom livre (estilo Figma/Power BI) via scroll do mouse focado exclusivamente na workspace.
 - [x] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
+- [x] Tratar `ok: false` de teste FortiGate como erro no painel de integrações.
+- [x] Exibir identidade do FortiGate no widget de saúde para diferenciar dados live de mock.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [ ] Criar audit trail/activity feed para eventos sensíveis.
@@ -654,6 +677,9 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Validar que fixtures, schemas e responses FastAPI têm o mesmo shape.
 - [x] Adicionar testes unitários para normalizadores FortiGate.
 - [x] Adicionar testes unitários frontend para adapter de widgets, layout do canvas e renderizadores FortiGate.
+- [x] Adicionar testes unitários frontend para CSRF, login/register e confirmação de sessão via `/auth/me`.
+- [x] Adicionar testes backend para normalização de erros Keycloak e permissões do realm dev.
+- [x] Adicionar testes para default live, rejeição de API key curta e `ok:false` no teste FortiGate.
 - [x] Adicionar testes de contrato para payloads de API.
 - [x] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
 - [x] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.

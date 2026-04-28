@@ -3,6 +3,8 @@ from urllib.parse import urljoin
 
 import httpx
 
+from app.auth.errors import AuthProviderError
+
 
 @dataclass(frozen=True)
 class KeycloakTokenSet:
@@ -36,9 +38,8 @@ class KeycloakClient:
         self.http_client = http_client or httpx.Client(timeout=10)
 
     def login(self, *, email: str, password: str) -> KeycloakTokenSet:
-        response = self.http_client.post(
-            self._realm_url("protocol/openid-connect/token"),
-            data={
+        response = self._post_token(
+            {
                 "grant_type": "password",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
@@ -46,8 +47,8 @@ class KeycloakClient:
                 "password": password,
                 "scope": "openid profile email",
             },
+            context="login",
         )
-        response.raise_for_status()
         payload = response.json()
         return KeycloakTokenSet(
             access_token=payload["access_token"],
@@ -57,15 +58,20 @@ class KeycloakClient:
 
     def create_user(self, *, email: str, password: str, display_name: str) -> KeycloakUser:
         admin_token = self._service_account_access_token()
-        response = self.http_client.post(
+        first_name, last_name = self._split_display_name(display_name)
+        response = self._request(
+            "POST",
             self._admin_url("users"),
+            context="create_user",
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "username": email,
                 "email": email,
                 "enabled": True,
-                "emailVerified": False,
-                "firstName": display_name,
+                "emailVerified": True,
+                "firstName": first_name,
+                "lastName": last_name,
+                "requiredActions": [],
                 "credentials": [
                     {
                         "type": "password",
@@ -75,7 +81,7 @@ class KeycloakClient:
                 ],
             },
         )
-        response.raise_for_status()
+        self._raise_for_status(response, context="create_user")
         user_id = response.headers.get("Location", "").rstrip("/").rsplit("/", 1)[-1]
         return KeycloakUser(
             id=user_id or email,
@@ -85,11 +91,13 @@ class KeycloakClient:
         )
 
     def get_userinfo(self, *, access_token: str) -> KeycloakUser:
-        response = self.http_client.get(
+        response = self._request(
+            "GET",
             self._realm_url("protocol/openid-connect/userinfo"),
+            context="userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        response.raise_for_status()
+        self._raise_for_status(response, context="userinfo")
         payload = response.json()
         display_name = (
             payload.get("name")
@@ -104,16 +112,73 @@ class KeycloakClient:
         )
 
     def _service_account_access_token(self) -> str:
-        response = self.http_client.post(
-            self._realm_url("protocol/openid-connect/token"),
-            data={
+        response = self._post_token(
+            {
                 "grant_type": "client_credentials",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
             },
+            context="service_account",
         )
-        response.raise_for_status()
         return response.json()["access_token"]
+
+    def _split_display_name(self, display_name: str) -> tuple[str, str]:
+        parts = display_name.strip().split(maxsplit=1)
+        if not parts:
+            return ("SOC", "Analyst")
+        if len(parts) == 1:
+            return (parts[0], parts[0])
+        return (parts[0], parts[1])
+
+    def _post_token(self, data: dict[str, str], *, context: str) -> httpx.Response:
+        return self._request(
+            "POST",
+            self._realm_url("protocol/openid-connect/token"),
+            context=context,
+            data=data,
+        )
+
+    def _request(self, method: str, url: str, *, context: str, **kwargs) -> httpx.Response:
+        try:
+            response = self.http_client.request(method, url, **kwargs)
+        except httpx.RequestError as exc:
+            raise AuthProviderError(
+                status_code=503,
+                detail="Identity provider unavailable",
+                audit_outcome="provider_unavailable",
+            ) from exc
+        self._raise_for_status(response, context=context)
+        return response
+
+    def _raise_for_status(self, response: httpx.Response, *, context: str) -> None:
+        if response.status_code < 400:
+            return
+
+        if context == "login" and response.status_code in {400, 401}:
+            raise AuthProviderError(status_code=401, detail="Invalid email or password")
+
+        if context == "create_user" and response.status_code == 409:
+            raise AuthProviderError(status_code=409, detail="Email already registered")
+
+        if response.status_code in {401, 403} and context in {"service_account", "create_user"}:
+            raise AuthProviderError(
+                status_code=502,
+                detail="Identity provider rejected FortiDashboard service account",
+                audit_outcome="provider_configuration_error",
+            )
+
+        if response.status_code >= 500:
+            raise AuthProviderError(
+                status_code=503,
+                detail="Identity provider unavailable",
+                audit_outcome="provider_unavailable",
+            )
+
+        raise AuthProviderError(
+            status_code=502,
+            detail="Identity provider rejected authentication request",
+            audit_outcome="provider_error",
+        )
 
     def _realm_url(self, path: str) -> str:
         return urljoin(self.base_url, f"realms/{self.realm}/{path}")

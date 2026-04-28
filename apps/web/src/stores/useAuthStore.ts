@@ -1,36 +1,31 @@
 import { defineStore } from 'pinia'
+import {
+  fetchBrowserSession,
+  fetchCsrfToken,
+  loginWithBrowserSession,
+  logoutBrowserSession,
+  registerWithBrowserSession,
+  type AuthUser,
+} from '../services/authClient'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     isAuthenticated: false,
-    user: null as any,
+    user: null as AuthUser | null,
     isInitialized: false,
     csrfToken: ''
   }),
   actions: {
     async fetchCsrf() {
-      try {
-        const res = await fetch('/api/auth/csrf')
-        if (res.ok) {
-          const data = await res.json()
-          this.csrfToken = data.csrfToken
-        }
-      } catch (e) {
-        console.error('Failed to fetch CSRF token', e)
-      }
+      this.csrfToken = await fetchCsrfToken()
+      return this.csrfToken
     },
     
     async fetchSession() {
       try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
-        if (res.ok) {
-          const data = await res.json()
-          this.isAuthenticated = data.authenticated
-          this.user = data.user
-        } else {
-          this.isAuthenticated = false
-          this.user = null
-        }
+        const data = await fetchBrowserSession()
+        this.isAuthenticated = data.authenticated
+        this.user = data.user
       } catch (e) {
         this.isAuthenticated = false
         this.user = null
@@ -40,78 +35,29 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async login(payload: any) {
-      if (!this.csrfToken) await this.fetchCsrf()
-      
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': this.csrfToken
-        },
-        credentials: 'include',
-        body: JSON.stringify(payload)
-      })
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        let msg = 'Credenciais inválidas'
-        if (errData.detail) {
-          msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail)
-        }
-        throw new Error(msg)
-      }
-      
-      const data = await res.json()
-      this.isAuthenticated = true
-      this.user = data.user
-      return data
+      const session = await loginWithBrowserSession(payload)
+      this.isAuthenticated = session.authenticated
+      this.user = session.user
+      this.isInitialized = true
+      this.csrfToken = ''
+      return session
     },
 
     async register(payload: any) {
-      if (!this.csrfToken) await this.fetchCsrf()
-      
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': this.csrfToken
-        },
-        credentials: 'include',
-        body: JSON.stringify(payload)
-      })
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        let msg = 'Falha no registro'
-        if (errData.detail) {
-          if (Array.isArray(errData.detail) && errData.detail[0]?.msg) {
-             msg = errData.detail[0].msg
-          } else {
-             msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail)
-          }
-        }
-        throw new Error(msg)
-      }
-      
-      const data = await res.json()
-      this.isAuthenticated = true
-      this.user = data.user
-      return data
+      const session = await registerWithBrowserSession(payload)
+      this.isAuthenticated = session.authenticated
+      this.user = session.user
+      this.isInitialized = true
+      this.csrfToken = ''
+      return session
     },
 
     async logout() {
-      if (!this.csrfToken) await this.fetchCsrf()
-      
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'X-CSRF-Token': this.csrfToken
-        },
-        credentials: 'include'
-      })
-      
+      await logoutBrowserSession()
       this.isAuthenticated = false
       this.user = null
+      this.isInitialized = true
+      this.csrfToken = ''
     }
   }
 })

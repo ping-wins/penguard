@@ -10,6 +10,7 @@ from app.auth.dependencies import get_auth_audit_store, get_current_api_user
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.integrations.fortigate.service import (
+    FortiGateConnectionFailed,
     FortiGateIntegrationService,
     MockFortiGateIntegrationService,
 )
@@ -23,7 +24,7 @@ AuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
 class FortiGateIntegrationCreate(BaseModel):
     name: str
     host: HttpUrl
-    api_key: str = Field(alias="apiKey")
+    api_key: str = Field(alias="apiKey", min_length=16)
     verify_tls: bool = Field(alias="verifyTls", default=True)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -31,7 +32,7 @@ class FortiGateIntegrationCreate(BaseModel):
 
 class FortiGateConnectionTest(BaseModel):
     host: HttpUrl
-    api_key: str = Field(alias="apiKey")
+    api_key: str = Field(alias="apiKey", min_length=16)
     verify_tls: bool = Field(alias="verifyTls", default=True)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -64,13 +65,29 @@ def create_fortigate_integration(
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
-    created = service.create(
-        owner_user_id=str(current_user["id"]),
-        name=payload.name,
-        host=str(payload.host),
-        api_key=payload.api_key,
-        verify_tls=payload.verify_tls,
-    )
+    try:
+        created = service.create(
+            owner_user_id=str(current_user["id"]),
+            name=payload.name,
+            host=str(payload.host),
+            api_key=payload.api_key,
+            verify_tls=payload.verify_tls,
+        )
+    except FortiGateConnectionFailed as exc:
+        audit_store.record(
+            action="integration.fortigate.created",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=str(current_user["id"]),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "host": str(payload.host),
+                "verifyTls": payload.verify_tls,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     audit_store.record(
         action="integration.fortigate.created",
         outcome="success",

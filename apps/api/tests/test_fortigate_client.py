@@ -57,7 +57,7 @@ def test_fortigate_client_does_not_merge_envelope_metadata_into_interface_status
                     "port1": {
                         "id": "port1",
                         "name": "port1",
-                        "ip": "192.168.0.118",
+                        "ip": "192.0.2.118",
                         "link": True,
                     }
                 },
@@ -75,7 +75,7 @@ def test_fortigate_client_does_not_merge_envelope_metadata_into_interface_status
         "port1": {
             "id": "port1",
             "name": "port1",
-            "ip": "192.168.0.118",
+            "ip": "192.0.2.118",
             "link": True,
         }
     }
@@ -217,7 +217,7 @@ def test_normalize_interfaces_policies_and_threat_logs():
                 "name": "port1",
                 "alias": "WAN",
                 "status": "up",
-                "ip": "192.168.0.118 255.255.255.0",
+                "ip": "192.0.2.118 255.255.255.0",
                 "role": "wan",
                 "type": "physical",
             }
@@ -228,7 +228,7 @@ def test_normalize_interfaces_policies_and_threat_logs():
             "name": "port1",
             "alias": "WAN",
             "status": "up",
-            "ip": "192.168.0.118",
+            "ip": "192.0.2.118",
             "role": "wan",
             "type": "physical",
             "rxBytes": 0,
@@ -297,7 +297,7 @@ def test_normalize_interfaces_uses_fortios_dict_key_when_name_is_missing():
         {
             "port1": {
                 "id": "port1",
-                "ip": "192.168.0.118",
+                "ip": "192.0.2.118",
                 "link": True,
                 "rx_bytes": 8304525,
                 "tx_bytes": 6185442,
@@ -309,7 +309,7 @@ def test_normalize_interfaces_uses_fortios_dict_key_when_name_is_missing():
             "name": "port1",
             "alias": "",
             "status": "up",
-            "ip": "192.168.0.118",
+            "ip": "192.0.2.118",
             "role": "unknown",
             "type": "unknown",
             "rxBytes": 8304525,

@@ -6,6 +6,7 @@ from app.auth import dependencies as auth_dependencies
 from app.auth.audit import InMemoryAuthAuditStore, sanitize_audit_details
 from app.auth.token_cipher import TokenCipher
 from app.db.base import Base
+from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.service import FortiGateIntegrationService
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
 from app.main import app
@@ -26,6 +27,26 @@ def sqlite_engine():
 def csrf_headers(client: TestClient) -> dict[str, str]:
     response = client.get("/api/auth/csrf")
     return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
+class HealthyFortiGateClient:
+    def get_system_status(self):
+        return {
+            "hostname": "FGT-VM",
+            "model_name": "FortiGate-VM64",
+            "version": "v7.4.3",
+        }
+
+    def get_performance_status(self):
+        return {"cpu": {"idle": 97}, "mem": {"total": 100, "used": 48}}
+
+    def get_resource_usage(self, resource: str | None = None):
+        assert resource == "session"
+        return {"session": [{"current": 15}]}
+
+
+def healthy_client_factory(*, host: str, api_key: str, verify_tls: bool):
+    return HealthyFortiGateClient()
 
 
 def test_audit_details_redact_secret_fields_recursively():
@@ -66,7 +87,8 @@ def test_integration_create_records_sanitized_audit_event():
             engine=engine,
             secret_cipher=TokenCipher.from_secret("test-secret"),
             id_factory=lambda: "int_fgt_audit",
-        )
+        ),
+        client_factory=healthy_client_factory,
     )
     audit_store = InMemoryAuthAuditStore()
     app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
@@ -88,7 +110,7 @@ def test_integration_create_records_sanitized_audit_event():
             json={
                 "name": "FortiGate Lab",
                 "host": "https://fortigate.local",
-                "apiKey": "fg-secret",
+                "apiKey": "fg-secret-token-123",
                 "verifyTls": False,
             },
         )
@@ -108,7 +130,74 @@ def test_integration_create_records_sanitized_audit_event():
         "host": "https://fortigate.local/",
         "verifyTls": False,
     }
-    assert "fg-secret" not in repr(audit_store.events)
+    assert "fg-secret-token-123" not in repr(audit_store.events)
+
+
+def test_integration_create_failure_records_sanitized_audit_event():
+    engine = sqlite_engine()
+    Base.metadata.create_all(engine)
+
+    class FailingFortiGateClient:
+        def get_system_status(self):
+            raise FortiGateApiError("FortiGate API request failed")
+
+        def get_performance_status(self):
+            return {}
+
+        def get_resource_usage(self, resource: str | None = None):
+            return {}
+
+    store = SqlAlchemyFortiGateIntegrationStore(
+        engine=engine,
+        secret_cipher=TokenCipher.from_secret("test-secret"),
+        id_factory=lambda: "int_fgt_failed_audit",
+    )
+    service = FortiGateIntegrationService(
+        store=store,
+        client_factory=lambda *, host, api_key, verify_tls: FailingFortiGateClient(),
+    )
+    audit_store = InMemoryAuthAuditStore()
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
+        lambda: service
+    )
+    app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "Broken FortiGate",
+                "host": "https://fortigate.invalid",
+                "apiKey": "fg-secret-token-123",
+                "verifyTls": False,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service, None
+        )
+        app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "FortiGate API request failed"}
+    assert audit_store.events[0].action == "integration.fortigate.created"
+    assert audit_store.events[0].outcome == "failed"
+    assert audit_store.events[0].details == {
+        "host": "https://fortigate.invalid/",
+        "verifyTls": False,
+        "error": "FortiGate API request failed",
+    }
+    assert store.list_public(owner_user_id="usr_owner") == {"items": []}
+    assert "fg-secret-token-123" not in repr(audit_store.events)
 
 
 def test_workspace_update_records_audit_event_without_widget_secrets():

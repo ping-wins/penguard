@@ -9,7 +9,9 @@ from app.auth.dependencies import (
     get_auth_service,
     get_csrf_guard,
 )
+from app.auth.errors import AuthProviderError
 from app.auth.rate_limit import InMemoryRateLimiter
+from app.auth.service import AuthService
 from app.core.config import get_settings
 
 router = APIRouter(tags=["auth"])
@@ -30,6 +32,7 @@ AuthAuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
 CSRF_GUARD_DEP = Depends(get_csrf_guard)
 AUTH_AUDIT_STORE_DEP = Depends(get_auth_audit_store)
 AUTH_RATE_LIMITER_DEP = Depends(get_auth_rate_limiter)
+AUTH_SERVICE_DEP = Depends(get_auth_service)
 
 
 def require_csrf(
@@ -91,6 +94,24 @@ def set_session_cookie(response: Response, session_id: str) -> None:
     )
 
 
+def raise_auth_provider_error(
+    *,
+    error: AuthProviderError,
+    request: Request,
+    action: str,
+    audit_store: AuthAuditStore,
+    email: str | None = None,
+) -> None:
+    audit_store.record(
+        action=action,
+        outcome=error.audit_outcome,
+        email=email,
+        client_ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    raise HTTPException(status_code=error.status_code, detail=error.detail)
+
+
 REQUIRE_CSRF_DEP = Depends(require_csrf)
 REQUIRE_AUTH_RATE_LIMIT_DEP = Depends(require_auth_rate_limit)
 
@@ -112,16 +133,27 @@ def register(
     _csrf: None = REQUIRE_CSRF_DEP,
     _rate_limit: None = REQUIRE_AUTH_RATE_LIMIT_DEP,
     audit_store: AuthAuditStore = AUTH_AUDIT_STORE_DEP,
+    auth_service: AuthService = AUTH_SERVICE_DEP,
 ) -> dict:
-    result = get_auth_service().register(
-        email=str(payload.email),
-        password=payload.password,
-        display_name=payload.display_name,
-    )
+    email = str(payload.email)
+    try:
+        result = auth_service.register(
+            email=email,
+            password=payload.password,
+            display_name=payload.display_name,
+        )
+    except AuthProviderError as error:
+        raise_auth_provider_error(
+            error=error,
+            request=request,
+            action="register",
+            audit_store=audit_store,
+            email=email,
+        )
     audit_store.record(
         action="register",
         outcome="success",
-        email=str(payload.email),
+        email=email,
         user_id=result.payload["user"]["id"],
         client_ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
@@ -138,15 +170,26 @@ def login(
     _csrf: None = REQUIRE_CSRF_DEP,
     _rate_limit: None = REQUIRE_AUTH_RATE_LIMIT_DEP,
     audit_store: AuthAuditStore = AUTH_AUDIT_STORE_DEP,
+    auth_service: AuthService = AUTH_SERVICE_DEP,
 ) -> dict:
-    result = get_auth_service().login(
-        email=str(payload.email),
-        password=payload.password,
-    )
+    email = str(payload.email)
+    try:
+        result = auth_service.login(
+            email=email,
+            password=payload.password,
+        )
+    except AuthProviderError as error:
+        raise_auth_provider_error(
+            error=error,
+            request=request,
+            action="login",
+            audit_store=audit_store,
+            email=email,
+        )
     audit_store.record(
         action="login",
         outcome="success",
-        email=str(payload.email),
+        email=email,
         user_id=result.payload["user"]["id"],
         client_ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
