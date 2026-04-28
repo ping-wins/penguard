@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
+import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { storeToRefs } from 'pinia'
 import { PanelRightClose, PanelRightOpen, Filter, BarChart2, Database, Folder, FolderOpen, Table, Activity, Network } from 'lucide-vue-next'
 import DraggableWidget from './DraggableWidget.vue'
@@ -9,11 +10,27 @@ import WidgetThreats from '../widgets/WidgetThreats.vue'
 import WidgetNetwork from '../widgets/WidgetNetwork.vue'
 import WidgetKpiCard from '../widgets/WidgetKpiCard.vue'
 
-import catalogData from '@fortidashboard/contracts/fixtures/catalog.json'
 import dataFields from '@fortidashboard/contracts/fixtures/data-fields.json'
 
 const dashboardStore = useDashboardStore()
-const { activeWidgets, workspaceName } = storeToRefs(dashboardStore)
+const integrationsStore = useIntegrationsStore()
+const { activeWidgets, workspaceName, catalogItems } = storeToRefs(dashboardStore)
+
+onMounted(async () => {
+  await Promise.all([
+    dashboardStore.loadWorkspace(),
+    integrationsStore.fetchIntegrations()
+  ])
+  if (integrationsStore.hasFortigate) {
+    dashboardStore.fetchCatalog()
+  }
+})
+
+watch(() => integrationsStore.hasFortigate, (has) => {
+  if (has && dashboardStore.catalogItems.length === 0) {
+    dashboardStore.fetchCatalog()
+  }
+})
 
 const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
@@ -27,7 +44,10 @@ function toggleFolder(id: string) {
 }
 
 function handleAddWidget(catalogId: string) {
-  dashboardStore.addWidget(catalogId)
+  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
+  if (firstFortigate) {
+    dashboardStore.addWidget(catalogId, firstFortigate.id)
+  }
 }
 
 // Map from catalogId to component
@@ -64,6 +84,7 @@ function handleWheel(e: WheelEvent) {
       <h1 class="text-xl font-medium tracking-tight">{{ workspaceName }}</h1>
       
       <button 
+        v-if="integrationsStore.hasFortigate"
         @click="isBuildPaneOpen = !isBuildPaneOpen" 
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
         :class="isBuildPaneOpen ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
@@ -89,9 +110,15 @@ function handleWheel(e: WheelEvent) {
             :key="widget.instanceId"
             :instance-id="widget.instanceId"
             :catalog-id="widget.catalogId"
+            :integration-id="widget.integrationId"
             :layout="widget.layout"
+            v-slot="{ widgetData }"
           >
-            <component :is="widgetMap[widget.catalogId]" v-if="widgetMap[widget.catalogId]" />
+            <component 
+              :is="widgetMap[widget.catalogId]" 
+              v-if="widgetMap[widget.catalogId]"
+              :data="widgetData"
+            />
             <div v-else class="text-gray-500 text-sm flex h-full items-center justify-center">
               Component not found for {{ widget.catalogId }}
             </div>
@@ -101,6 +128,7 @@ function handleWheel(e: WheelEvent) {
 
       <!-- Build Pane (Power BI style) -->
       <aside 
+        v-if="integrationsStore.hasFortigate"
         class="h-full bg-theme-panel border-l border-theme-border transition-all duration-300 flex flex-col z-30 shrink-0"
         :style="{ width: isBuildPaneOpen ? '300px' : '0px', opacity: isBuildPaneOpen ? 1 : 0 }"
       >
@@ -162,7 +190,7 @@ function handleWheel(e: WheelEvent) {
             <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Modules Catalog</h3>
             <div class="grid grid-cols-2 gap-2">
               <div 
-                v-for="item in catalogData.items" 
+                v-for="item in catalogItems" 
                 :key="item.id"
                 @click="handleAddWidget(item.id)"
                 class="bg-theme-bg border border-theme-border p-3 rounded hover:border-theme-primary/50 hover:bg-theme-border transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer group text-center"

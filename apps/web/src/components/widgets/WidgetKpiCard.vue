@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Activity, TrendingUp } from 'lucide-vue-next'
+
+defineProps<{ data: any }>()
 </script>
 
 <template>
@@ -8,10 +10,10 @@ import { Activity, TrendingUp } from 'lucide-vue-next'
       <Activity :size="16" /> Active Sessions
     </div>
     <div class="text-5xl font-bold text-theme-text tracking-tight">
-      3,812
+      {{ data?.sessions?.toLocaleString() || 0 }}
     </div>
     <div class="mt-3 text-xs flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">
-      <TrendingUp :size="12" /> +14% vs last hour
+      <TrendingUp :size="12" /> Active
     </div>
   </div>
 </template>

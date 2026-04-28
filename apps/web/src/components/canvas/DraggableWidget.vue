@@ -1,17 +1,55 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
-import { X, GripHorizontal } from 'lucide-vue-next'
+import { useAuthStore } from '../../stores/useAuthStore'
+import { X, GripHorizontal, Loader2, AlertCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   instanceId: string
   catalogId: string
+  integrationId: string
   layout: { x: number; y: number; w: number; h: number; z: number }
 }>()
 
 const store = useDashboardStore()
+const authStore = useAuthStore()
+
 const isDragging = ref(false)
 const zoom = computed(() => store.zoom)
+
+const isLoading = ref(true)
+const fetchError = ref<string | null>(null)
+const widgetData = ref<any>(null)
+
+onMounted(async () => {
+  const catalogItem = store.catalogItems.find(c => c.id === props.catalogId)
+  if (!catalogItem || !catalogItem.dataEndpoint) {
+    isLoading.value = false
+    fetchError.value = 'Catalog item or endpoint not found'
+    return
+  }
+
+  try {
+    const res = await fetch(`${catalogItem.dataEndpoint}?integrationId=${props.integrationId}`, {
+      credentials: 'include'
+    })
+    
+    if (res.ok) {
+      const respData = await res.json()
+      if (respData.status === 'error') {
+        fetchError.value = respData.meta?.error?.message || 'Widget error occurred'
+      } else {
+        widgetData.value = respData.data || {}
+      }
+    } else {
+      fetchError.value = `HTTP Error ${res.status}`
+    }
+  } catch (e: any) {
+    fetchError.value = e.message || 'Network Error'
+  } finally {
+    isLoading.value = false
+  }
+})
 
 // Dimensões exatas em pixels
 const widthPx = computed(() => props.layout.w)
@@ -154,7 +192,15 @@ function stopResize() {
 
     <!-- Content slot -->
     <div class="flex-1 p-4 overflow-hidden relative pointer-events-auto bg-gradient-to-br from-transparent to-black/10 rounded-b-md">
-      <slot />
+      <div v-if="isLoading" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-theme-text-muted bg-theme-panel/50 backdrop-blur-sm z-20">
+        <Loader2 :size="24" class="animate-spin text-theme-primary" />
+        <span class="text-xs">Loading...</span>
+      </div>
+      <div v-else-if="fetchError" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-red-400 bg-red-950/20 backdrop-blur-sm z-20 p-4 text-center">
+        <AlertCircle :size="24" />
+        <span class="text-xs font-medium">{{ fetchError }}</span>
+      </div>
+      <slot v-else :widgetData="widgetData" />
     </div>
 
     <!-- Handles - Visíveis no hover do container -->

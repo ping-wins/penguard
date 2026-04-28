@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut } from 'lucide-vue-next'
-import catalogData from '@fortidashboard/contracts/fixtures/catalog.json'
+import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
+import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useRouter } from 'vue-router'
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const integrationsStore = useIntegrationsStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations'>('none')
+
+const fgForm = ref({
+  name: 'FortiGate Lab',
+  host: 'https://fortigate.local',
+  apiKey: '',
+  verifyTls: false
+})
+const fgTestResult = ref<any>(null)
+const fgTestError = ref<string | null>(null)
 
 const chatInput = ref('')
 const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
@@ -19,12 +29,41 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
 ])
 const isThinking = ref(false)
 
-function toggleTab(tab: 'chat' | 'settings') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations') {
+  if (activeTab.value !== tab && tab === 'integrations') {
+    integrationsStore.fetchIntegrations()
+  }
   activeTab.value = activeTab.value === tab ? 'none' : tab
 }
 
-function handleAddWidget(catalogId: string) {
-  store.addWidget(catalogId)
+async function handleTestFortigate() {
+  fgTestResult.value = null
+  fgTestError.value = null
+  const res = await integrationsStore.testFortigate(fgForm.value.host, fgForm.value.apiKey, fgForm.value.verifyTls)
+  if (res.success) {
+    fgTestResult.value = res.data
+  } else {
+    fgTestError.value = res.error
+  }
+}
+
+async function handleSaveFortigate() {
+  const res = await integrationsStore.addFortigate(fgForm.value.name, fgForm.value.host, fgForm.value.apiKey, fgForm.value.verifyTls)
+  if (res.success) {
+    fgTestResult.value = null
+    fgTestError.value = null
+    fgForm.value.apiKey = ''
+  }
+}
+
+function handleAddWidget(catalogId: string, integrationId?: string) {
+  if (!integrationId) {
+    const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
+    integrationId = firstFortigate?.id
+  }
+  if (integrationId) {
+    store.addWidget(catalogId, integrationId)
+  }
 }
 
 async function handleLogout() {
@@ -42,14 +81,23 @@ function handleChatSubmit() {
   
   setTimeout(() => {
     isThinking.value = false
+    
+    if (!integrationsStore.hasFortigate) {
+      chatMessages.value.push({ role: 'assistant', text: 'Você precisa conectar uma integração FortiGate primeiro antes de adicionar widgets!' })
+      return
+    }
+
     // NLP MOCK logic
     const lowerText = text.toLowerCase()
     let found = false
-    for (const item of catalogData.items) {
+    const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
+    for (const item of store.catalogItems) {
       if (lowerText.includes(item.title.toLowerCase()) || lowerText.includes(item.id.split('-').pop() || '')) {
-        handleAddWidget(item.id)
-        chatMessages.value.push({ role: 'assistant', text: `Adicionei o painel "${item.title}" para você!` })
-        found = true
+        if (firstFortigate) {
+          handleAddWidget(item.id, firstFortigate.id)
+          chatMessages.value.push({ role: 'assistant', text: `Adicionei o painel "${item.title}" para você!` })
+          found = true
+        }
         break
       }
     }
@@ -86,6 +134,15 @@ function handleChatSubmit() {
           title="SOC Assistant"
         >
           <MessageSquare :size="20" />
+        </div>
+
+        <div 
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'integrations' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('integrations')"
+          title="Integrações SOC"
+        >
+          <Plug :size="20" />
         </div>
       </nav>
       
@@ -142,6 +199,82 @@ function handleChatSubmit() {
             <Send :size="18" />
           </button>
         </form>
+      </div>
+
+      <!-- Integrations Tab -->
+      <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full w-[320px] shrink-0 overflow-y-auto">
+        <h2 class="font-bold text-lg mb-4 text-theme-text">Integrações SOC</h2>
+        
+        <!-- List existing integrations -->
+        <div class="mb-6 flex flex-col gap-3">
+          <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Conectadas</h3>
+          
+          <div v-if="integrationsStore.isLoading" class="text-sm text-theme-text-muted">Carregando...</div>
+          <div v-else-if="integrationsStore.integrations.length === 0" class="text-sm text-theme-text-muted italic">Nenhuma integração conectada.</div>
+          
+          <div v-for="intg in integrationsStore.integrations" :key="intg.id" class="p-3 border border-theme-border rounded-lg bg-theme-bg">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-medium text-theme-text text-sm">{{ intg.name }}</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                {{ intg.status }}
+              </span>
+            </div>
+            <div class="text-xs text-theme-text-muted capitalize">{{ intg.type }}</div>
+          </div>
+        </div>
+
+        <!-- Add New Integration Form -->
+        <div class="flex flex-col gap-3 pt-4 border-t border-theme-border">
+          <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Adicionar FortiGate</h3>
+          
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-theme-text">Nome</label>
+            <input v-model="fgForm.name" type="text" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-theme-text">Host (URL)</label>
+            <input v-model="fgForm.host" type="text" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="text-xs text-theme-text">API Key</label>
+            <input v-model="fgForm.apiKey" type="password" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+          </div>
+
+          <label class="flex items-center gap-2 mt-1 cursor-pointer">
+            <input v-model="fgForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
+            <span class="text-xs text-theme-text">Verificar TLS/SSL</span>
+          </label>
+
+          <div v-if="fgTestResult" class="mt-2 p-2 rounded bg-green-500/10 border border-green-500/20 text-xs">
+            <div class="text-green-400 font-medium mb-1">Conexão bem-sucedida!</div>
+            <div class="text-theme-text-muted">Hostname: {{ fgTestResult.device?.hostname }}</div>
+            <div class="text-theme-text-muted">Modelo: {{ fgTestResult.device?.model }}</div>
+          </div>
+
+          <div v-if="fgTestError" class="mt-2 p-2 rounded bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+            {{ fgTestError }}
+          </div>
+
+          <div class="flex gap-2 mt-2">
+            <button 
+              @click="handleTestFortigate" 
+              class="flex-1 py-1.5 px-3 rounded border border-theme-border text-sm font-medium hover:bg-theme-border transition-colors text-theme-text-muted hover:text-theme-text disabled:opacity-50"
+              :disabled="integrationsStore.isTesting || !fgForm.apiKey"
+            >
+              <span v-if="integrationsStore.isTesting">Testando...</span>
+              <span v-else>Testar Conexão</span>
+            </button>
+            <button 
+              @click="handleSaveFortigate" 
+              class="flex-1 py-1.5 px-3 rounded bg-theme-primary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              :disabled="!fgForm.apiKey"
+            >
+              Salvar
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

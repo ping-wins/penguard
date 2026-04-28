@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ShieldAlert } from 'lucide-vue-next'
+
+defineProps<{ data: any }>()
 </script>
 
 <template>
@@ -10,9 +12,12 @@ import { ShieldAlert } from 'lucide-vue-next'
     </div>
     
     <div class="flex flex-col gap-2 flex-1 overflow-y-auto no-scrollbar pr-2">
-      <div v-for="i in 4" :key="i" class="bg-theme-text/5 rounded p-2 flex justify-between items-center text-sm">
-        <span class="text-theme-text">Intrusion.Botnet.{{ i }}</span>
-        <span class="text-theme-primary font-bold font-mono">10.0.0.{{ 10+i }}</span>
+      <div v-for="(threat, i) in data?.threats || []" :key="i" class="bg-theme-text/5 rounded p-2 flex justify-between items-center text-sm">
+        <span class="text-theme-text">{{ threat.name }}</span>
+        <span class="text-theme-primary font-bold font-mono">{{ threat.srcIp }}</span>
+      </div>
+      <div v-if="!(data?.threats?.length)" class="text-xs text-theme-text-muted italic flex-1 flex items-center justify-center">
+        Nenhuma ameaça recente.
       </div>
     </div>
   </div>
