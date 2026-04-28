@@ -43,7 +43,7 @@ async function handleTestFortigate() {
   if (res.success) {
     fgTestResult.value = res.data
   } else {
-    fgTestError.value = res.error
+    fgTestError.value = res.error ?? 'Connection failed'
   }
 }
 

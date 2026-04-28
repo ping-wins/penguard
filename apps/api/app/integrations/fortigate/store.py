@@ -36,6 +36,7 @@ class SqlAlchemyFortiGateIntegrationStore:
     def create(
         self,
         *,
+        owner_user_id: str,
         name: str,
         host: str,
         api_key: str,
@@ -44,6 +45,7 @@ class SqlAlchemyFortiGateIntegrationStore:
         checked_at = datetime.now(UTC)
         model = FortiGateIntegrationModel(
             id=self.id_factory(),
+            owner_user_id=owner_user_id,
             name=name,
             host=host,
             verify_tls=verify_tls,
@@ -60,24 +62,26 @@ class SqlAlchemyFortiGateIntegrationStore:
             db.refresh(model)
             return self._created_payload(model)
 
-    def list_public(self) -> dict[str, list[dict[str, Any]]]:
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
         with self.session_factory() as db:
             rows = db.execute(
-                select(FortiGateIntegrationModel).order_by(FortiGateIntegrationModel.created_at)
+                select(FortiGateIntegrationModel)
+                .where(FortiGateIntegrationModel.owner_user_id == owner_user_id)
+                .order_by(FortiGateIntegrationModel.created_at)
             ).scalars()
             return {"items": [self._list_item(row) for row in rows]}
 
-    def get_api_key(self, integration_id: str) -> str | None:
+    def get_api_key(self, integration_id: str, *, owner_user_id: str) -> str | None:
         with self.session_factory() as db:
             model = db.get(FortiGateIntegrationModel, integration_id)
-            if model is None:
+            if model is None or model.owner_user_id != owner_user_id:
                 return None
             return str(self.secret_cipher.decrypt(model.api_key_blob)["api_key"])
 
-    def get_connection(self, integration_id: str) -> dict[str, Any] | None:
+    def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
         with self.session_factory() as db:
             model = db.get(FortiGateIntegrationModel, integration_id)
-            if model is None:
+            if model is None or model.owner_user_id != owner_user_id:
                 return None
             return {
                 "id": model.id,

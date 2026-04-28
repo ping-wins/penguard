@@ -47,6 +47,7 @@ class FortiGateIntegrationModel(Base):
     __tablename__ = "fortigate_integrations"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     host: Mapped[str] = mapped_column(String(2048), nullable=False)
     verify_tls: Mapped[bool] = mapped_column(default=True, nullable=False)

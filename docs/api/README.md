@@ -31,6 +31,8 @@ Before `POST /api/auth/register`, `POST /api/auth/login`, or `POST /api/auth/log
 
 Integration responses must never include `apiKey`.
 
+In live mode, FortiGate integrations are scoped to the authenticated API session. `fortigate_integrations.owner_user_id` stores the owner, `GET /api/integrations` only returns the current user's integrations, and widget data lookups reject integrations owned by another user by returning `404`.
+
 The live FortiGate client is read-only and currently targets:
 
 - `GET /api/v2/monitor/system/status`

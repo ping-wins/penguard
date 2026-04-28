@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
-import { useAuthStore } from '../../stores/useAuthStore'
 import { X, GripHorizontal, Loader2, AlertCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -12,7 +11,6 @@ const props = defineProps<{
 }>()
 
 const store = useDashboardStore()
-const authStore = useAuthStore()
 
 const isDragging = ref(false)
 const zoom = computed(() => store.zoom)

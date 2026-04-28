@@ -2,13 +2,15 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from app.auth import dependencies as auth_dependencies
 from app.main import app
 from app.routers import widgets as widgets_router
 
 
 class FakeFortiGateConnectionStore:
-    def get_connection(self, integration_id: str):
+    def get_connection(self, integration_id: str, *, owner_user_id: str):
         assert integration_id == "int_fgt_live"
+        assert owner_user_id == "usr_owner"
         return {
             "id": "int_fgt_live",
             "host": "https://fortigate.local/",
@@ -100,6 +102,7 @@ def test_fortigate_widget_service_returns_live_system_status_payload():
     assert service.get_widget_data(
         "fortigate-system-status",
         integration_id="int_fgt_live",
+        owner_user_id="usr_owner",
     ) == {
         "widgetId": "fortigate-system-status",
         "integrationId": "int_fgt_live",
@@ -129,9 +132,15 @@ def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
         clock=lambda: datetime(2026, 4, 26, 23, 45, tzinfo=UTC),
     )
 
-    interfaces = service.get_widget_data("fortigate-network-traffic", "int_fgt_live")
-    policies = service.get_widget_data("fortigate-firewall-policies", "int_fgt_live")
-    threats = service.get_widget_data("fortigate-top-threats", "int_fgt_live")
+    interfaces = service.get_widget_data(
+        "fortigate-network-traffic", "int_fgt_live", owner_user_id="usr_owner"
+    )
+    policies = service.get_widget_data(
+        "fortigate-firewall-policies", "int_fgt_live", owner_user_id="usr_owner"
+    )
+    threats = service.get_widget_data(
+        "fortigate-top-threats", "int_fgt_live", owner_user_id="usr_owner"
+    )
 
     assert interfaces["data"]["interfaces"] == [
         {
@@ -166,7 +175,9 @@ def test_fortigate_widget_service_returns_error_payload_when_fortigate_endpoint_
         clock=lambda: datetime(2026, 4, 26, 23, 45, tzinfo=UTC),
     )
 
-    assert service.get_widget_data("fortigate-top-threats", "int_fgt_live") == {
+    assert service.get_widget_data(
+        "fortigate-top-threats", "int_fgt_live", owner_user_id="usr_owner"
+    ) == {
         "widgetId": "fortigate-top-threats",
         "integrationId": "int_fgt_live",
         "refreshedAt": "2026-04-26T23:45:00.000Z",
@@ -189,6 +200,12 @@ def test_live_widget_endpoint_uses_service_dependency_override():
         clock=lambda: datetime(2026, 4, 26, 23, 45, tzinfo=UTC),
     )
     app.dependency_overrides[widgets_router.get_fortigate_widget_service] = lambda: service
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
     client = TestClient(app)
 
     try:
@@ -198,6 +215,7 @@ def test_live_widget_endpoint_uses_service_dependency_override():
         )
     finally:
         app.dependency_overrides.pop(widgets_router.get_fortigate_widget_service, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
     assert response.status_code == 200
     assert response.json()["data"]["sessions"] == 42

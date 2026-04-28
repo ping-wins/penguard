@@ -1,4 +1,7 @@
 from functools import lru_cache
+from typing import Any
+
+from fastapi import HTTPException, Request, status
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf import CsrfGuard
@@ -8,6 +11,7 @@ from app.auth.service import AuthService, KeycloakIdentityProvider, MockIdentity
 from app.auth.session_store import InMemorySessionStore, SqlAlchemySessionStore
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
+from app.core.fixtures import load_fixture
 
 
 @lru_cache
@@ -58,3 +62,19 @@ def get_auth_service() -> AuthService:
             )
         )
     return AuthService(provider=provider, session_store=get_session_store())
+
+
+def get_current_api_user(request: Request) -> dict[str, Any]:
+    settings = get_settings()
+    if settings.mock_mode:
+        return dict(load_fixture("auth_me_authenticated")["user"])
+
+    user = get_auth_service().get_current_user(
+        request.cookies.get(settings.session_cookie_name)
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return user
