@@ -248,4 +248,60 @@ describe('DraggableWidget', () => {
     expect(wrapper.text()).toContain('Updated')
     expect(wrapper.text()).toContain('2026-04-26')
   })
+
+  it('emits a field drop payload when a provider field is dropped onto a custom visual template', async () => {
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = []
+    store.isCatalogLoaded = true
+
+    const binding = {
+      fieldId: 'system.cpu',
+      label: 'CPU Usage',
+      type: 'number',
+      unit: 'percent',
+      source: 'fortigate-system-status',
+      provider: 'fortigate',
+      groupId: 'system',
+      groupName: 'System Data',
+    }
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_custom',
+        catalogId: 'visual-template-card',
+        integrationId: '',
+        layout: { x: 0, y: 0, w: 320, h: 200, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'payload' }, 'Empty custom visual'),
+      },
+    })
+
+    await wrapper.trigger('drop', {
+      dataTransfer: {
+        getData: (type: string) => (
+          type === 'application/x-fortidashboard-provider-field'
+            ? JSON.stringify(binding)
+            : ''
+        ),
+        dropEffect: 'copy',
+      },
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    })
+
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(wrapper.emitted('field-drop')).toEqual([
+      [{ instanceId: 'w_custom', binding }],
+    ])
+  })
 })

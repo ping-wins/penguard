@@ -125,5 +125,20 @@ describe('DashboardCanvas build pane', () => {
     expect(wrapper.text()).toContain('CPU Usage')
     expect(wrapper.text()).toContain('number')
     expect(wrapper.text()).toContain('Live')
+
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: '',
+    }
+    await wrapper.get('[data-test="data-field-system.cpu"]').trigger('dragstart', {
+      dataTransfer,
+    })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-fortidashboard-provider-field',
+      expect.stringContaining('"fieldId":"system.cpu"'),
+    )
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'system.cpu')
+    expect(dataTransfer.effectAllowed).toBe('copy')
   })
 })

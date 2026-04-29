@@ -5,7 +5,7 @@ import catalogFixture from '@fortidashboard/contracts/fixtures/widget_catalog_fo
 import { useAuthStore } from './useAuthStore'
 import { visualTemplatesById } from '../constants/visualTemplates'
 import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
-import type { WidgetCatalogItem, WorkspaceWidget } from '../types/dashboard'
+import type { WidgetCatalogItem, WidgetFieldBinding, WorkspaceWidget } from '../types/dashboard'
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref<WorkspaceWidget[]>([])
@@ -155,6 +155,19 @@ export const useDashboardStore = defineStore('dashboard', () => {
     debouncedSave()
   }
 
+  function bindFieldToWidget(instanceId: string, binding: WidgetFieldBinding) {
+    const widget = activeWidgets.value.find(w => w.instanceId === instanceId)
+    if (!widget) return
+
+    const existingBindings = widget.fieldBindings ?? []
+    if (existingBindings.some(existing => existing.fieldId === binding.fieldId)) {
+      return
+    }
+
+    widget.fieldBindings = [...existingBindings, binding]
+    debouncedSave()
+  }
+
   function removeWidget(instanceId: string) {
     activeWidgets.value = activeWidgets.value.filter(w => w.instanceId !== instanceId)
     debouncedSave()
@@ -176,6 +189,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     bringToFront,
     addWidget,
     addVisualTemplate,
+    bindFieldToWidget,
     removeWidget
   }
 })

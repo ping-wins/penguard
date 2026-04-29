@@ -13,7 +13,9 @@ import WidgetKpiCard from '../widgets/WidgetKpiCard.vue'
 import WidgetFirewallPolicies from '../widgets/WidgetFirewallPolicies.vue'
 import WidgetEmptyVisual from '../widgets/WidgetEmptyVisual.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
-import type { ProviderDataField } from '../../services/providerDataClient'
+import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
+import type { WidgetFieldBinding } from '../../types/dashboard'
+import { PROVIDER_FIELD_DRAG_MIME, serializeFieldBinding } from '../../utils/fieldDrag'
 
 const dashboardStore = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
@@ -80,6 +82,35 @@ async function loadFortigateBuildPaneData() {
 
 function handleAddVisualTemplate(templateId: string) {
   dashboardStore.addVisualTemplate(templateId)
+}
+
+function fieldBindingFromProviderField(
+  field: ProviderDataField,
+  group: ProviderDataGroup,
+): WidgetFieldBinding {
+  return {
+    fieldId: field.id,
+    label: field.label,
+    type: field.type,
+    unit: field.unit,
+    source: field.source,
+    provider: providerDataStore.provider,
+    groupId: group.id,
+    groupName: group.name,
+  }
+}
+
+function handleFieldDragStart(event: DragEvent, field: ProviderDataField, group: ProviderDataGroup) {
+  const binding = fieldBindingFromProviderField(field, group)
+  event.dataTransfer?.setData(PROVIDER_FIELD_DRAG_MIME, serializeFieldBinding(binding))
+  event.dataTransfer?.setData('text/plain', binding.fieldId)
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+}
+
+function handleFieldDrop(payload: { instanceId: string, binding: WidgetFieldBinding }) {
+  dashboardStore.bindFieldToWidget(payload.instanceId, payload.binding)
 }
 
 // Map from catalogId to component
@@ -178,13 +209,16 @@ function handleWheel(e: WheelEvent) {
             :catalog-id="widget.catalogId"
             :integration-id="widget.integrationId"
             :layout="widget.layout"
-            v-slot="{ widgetData }"
+            :field-bindings="widget.fieldBindings ?? []"
+            @field-drop="handleFieldDrop"
+            v-slot="{ widgetData, fieldBindings }"
           >
             <component
               :is="getWidgetComponent(widget.catalogId)"
               v-if="getWidgetComponent(widget.catalogId)"
               :data="widgetData"
               :catalog-id="widget.catalogId"
+              :field-bindings="fieldBindings"
             />
             <div v-else class="text-gray-500 text-sm flex h-full items-center justify-center">
               Component not found for {{ widget.catalogId }}
@@ -324,6 +358,9 @@ function handleWheel(e: WheelEvent) {
                     :key="fieldKey(field)"
                     class="flex flex-col gap-1 p-1.5 text-xs text-theme-text-muted hover:text-theme-text cursor-pointer hover:bg-theme-border/50 rounded transition-colors"
                     :title="field.source"
+                    :data-test="`data-field-${fieldKey(field)}`"
+                    draggable="true"
+                    @dragstart="handleFieldDragStart($event, field, group)"
                   >
                     <div class="flex items-center gap-2">
                       <Database :size="12" class="opacity-50" />

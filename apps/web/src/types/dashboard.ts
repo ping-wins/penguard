@@ -21,11 +21,23 @@ export type WidgetCatalogItem = {
   dataEndpoint: string
 }
 
+export type WidgetFieldBinding = {
+  fieldId: string
+  label: string
+  type: string
+  unit?: string
+  source: string
+  provider?: string
+  groupId?: string
+  groupName?: string
+}
+
 export type WorkspaceWidget = {
   instanceId: string
   catalogId: string
   integrationId: string
   layout: WidgetLayout
+  fieldBindings?: WidgetFieldBinding[]
 }
 
 export type WidgetDataResponse = {

@@ -3,14 +3,20 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff } from 'lucide-vue-next'
 import { fetchWidgetData } from '../../services/widgetDataClient'
-import type { WidgetDataErrorKind, WidgetDataResponse, WidgetLayout } from '../../types/dashboard'
+import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
 import { visualTemplatesById } from '../../constants/visualTemplates'
+import { parseFieldBindingTransfer } from '../../utils/fieldDrag'
 
 const props = defineProps<{
   instanceId: string
   catalogId: string
   integrationId: string
   layout: WidgetLayout
+  fieldBindings?: WidgetFieldBinding[]
+}>()
+
+const emit = defineEmits<{
+  'field-drop': [{ instanceId: string, binding: WidgetFieldBinding }]
 }>()
 
 const store = useDashboardStore()
@@ -206,6 +212,23 @@ function bringToFront() {
   store.bringToFront(props.instanceId)
 }
 
+function handleFieldDragOver(event: DragEvent) {
+  if (!isVisualTemplate.value) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleFieldDrop(event: DragEvent) {
+  if (!isVisualTemplate.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  const binding = parseFieldBindingTransfer(event.dataTransfer)
+  if (!binding) return
+  emit('field-drop', { instanceId: props.instanceId, binding })
+}
+
 let startX = 0
 let startY = 0
 let initialDragX = 0
@@ -318,6 +341,8 @@ function stopResize() {
     v-motion
     :initial="{ opacity: 0, scale: 0.9, y: 20 }"
     :enter="{ opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 250, damping: 20 } }"
+    @dragover="handleFieldDragOver"
+    @drop="handleFieldDrop"
   >
     <!-- Header -->
     <div 
@@ -373,6 +398,7 @@ function stopResize() {
           :widgetData="widgetData"
           :widgetMeta="widgetResponse?.meta"
           :refreshedAt="widgetResponse?.refreshedAt"
+          :fieldBindings="fieldBindings ?? []"
         />
       </template>
     </div>

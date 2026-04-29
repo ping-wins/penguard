@@ -567,6 +567,7 @@ Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; 
 - Widgets de visualização não sabem sua posição; eles ficam dentro de um `DraggableWidget` genérico.
 - No Build Panel, `Visuals` separa presets FortiGate prontos de templates vazios em `Criar dados ao seu visual`. Presets já vêm com `dataEndpoint`; templates vazios usam IDs `visual-template-*` e aguardam binding de campos.
 - No Build Panel, `Data` deve consumir `GET /api/providers/fortigate/data-fields` via `apps/web/src/services/providerDataClient.ts`; não importe `packages/contracts/fixtures/data-fields.json` direto em componentes.
+- Campos do painel `Data` são arrastáveis. Ao soltar um campo em um template vazio no canvas, o frontend grava o vínculo em `WorkspaceWidget.fieldBindings[]` com `fieldId`, `label`, `type`, `unit`, `source`, `provider`, `groupId` e `groupName`.
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
@@ -590,6 +591,7 @@ Fluxo recomendado no `apps/web`:
 - `defaultSize` do catálogo vem em unidades de grid. `apps/web/src/utils/widgetLayout.ts` converte essas unidades para pixels antes de renderizar ou adicionar widgets no canvas.
 - `apps/web/src/constants/visualTemplates.ts` define os templates visuais vazios: Card, Gauge, Table, Bar Chart, Line Chart, Event Feed e Signal List. Eles não chamam FortiGate até existir binding campo -> visual.
 - `apps/web/src/stores/useProviderDataStore.ts` mantém os campos do provider carregados pelo backend. O painel Data deve mostrar campos como variáveis live do FortiGate, incluindo `type`, `unit`, `source` e indicação visual de atualização live.
+- `DraggableWidget` é a zona de drop para templates `visual-template-*`; widgets FortiGate prontos não aceitam drop de campos. O binding deve persistir no workspace para sobreviver a reload.
 
 Widgets disponíveis nesta sprint:
 
@@ -746,7 +748,8 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [x] Separar `Visuals` em presets FortiGate e templates vazios para criação futura de visuais customizados.
 - [x] Carregar campos do painel `Data` por `/api/providers/fortigate/data-fields` em vez de fixture importada no componente.
-- [ ] Implementar binding campo -> template vazio para criar widgets customizados Power BI-like.
+- [x] Implementar drag-and-drop de campos do painel `Data` para templates vazios, persistindo `fieldBindings` no workspace.
+- [ ] Transformar `fieldBindings` em renderização calculada por tipo de visual (card, gauge, tabela, gráfico etc.).
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [x] Criar audit trail/activity feed para eventos sensíveis.
 - [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.

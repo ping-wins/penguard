@@ -96,6 +96,18 @@ def test_workspace_endpoint_round_trips_persistent_specs_for_authenticated_user(
                         "catalogId": "fortigate-system-status",
                         "integrationId": "int_fgt_01",
                         "layout": {"x": 10, "y": 20, "w": 4, "h": 2, "z": 11},
+                        "fieldBindings": [
+                            {
+                                "fieldId": "system.cpu",
+                                "label": "CPU Usage",
+                                "type": "number",
+                                "unit": "percent",
+                                "source": "fortigate-system-status",
+                                "provider": "fortigate",
+                                "groupId": "system",
+                                "groupName": "System Data",
+                            }
+                        ],
                     }
                 ],
             },
@@ -118,6 +130,18 @@ def test_workspace_endpoint_round_trips_persistent_specs_for_authenticated_user(
             "catalogId": "fortigate-system-status",
             "integrationId": "int_fgt_01",
             "layout": {"x": 10, "y": 20, "w": 4, "h": 2, "z": 11},
+            "fieldBindings": [
+                {
+                    "fieldId": "system.cpu",
+                    "label": "CPU Usage",
+                    "type": "number",
+                    "unit": "percent",
+                    "source": "fortigate-system-status",
+                    "provider": "fortigate",
+                    "groupId": "system",
+                    "groupName": "System Data",
+                }
+            ],
         }
     ]
 

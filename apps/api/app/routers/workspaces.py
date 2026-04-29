@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
@@ -38,11 +38,25 @@ class WidgetLayout(BaseModel):
     z: int
 
 
+class WorkspaceFieldBinding(BaseModel):
+    field_id: str = Field(alias="fieldId")
+    label: str
+    type: str
+    unit: str | None = None
+    source: str
+    provider: str | None = None
+    group_id: str | None = Field(default=None, alias="groupId")
+    group_name: str | None = Field(default=None, alias="groupName")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class WorkspaceWidget(BaseModel):
     instanceId: str
     catalogId: str
     integrationId: str
     layout: WidgetLayout
+    fieldBindings: list[WorkspaceFieldBinding] = Field(default_factory=list)
 
 
 class WorkspaceUpdate(BaseModel):
@@ -89,7 +103,12 @@ def update_workspace(
 ) -> dict:
     owner_user_id = str(current_user["id"])
     if store is not None:
-        widgets = [widget.model_dump(mode="json") for widget in payload.widgets]
+        widgets = []
+        for widget in payload.widgets:
+            widget_payload = widget.model_dump(mode="json", by_alias=True)
+            if not widget_payload["fieldBindings"]:
+                widget_payload.pop("fieldBindings")
+            widgets.append(widget_payload)
         response = store.save(
             workspace_id=workspace_id,
             owner_user_id=owner_user_id,
