@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.token_cipher import TokenCipher
@@ -91,6 +91,21 @@ class SqlAlchemyFortiGateIntegrationStore:
                 "api_key": str(self.secret_cipher.decrypt(model.api_key_blob)["api_key"]),
                 "verify_tls": model.verify_tls,
             }
+
+    def delete(self, *, owner_user_id: str, integration_id: str) -> bool:
+        with self.session_factory() as db:
+            model = db.get(FortiGateIntegrationModel, integration_id)
+            if model is None or model.owner_user_id != owner_user_id:
+                return False
+            db.execute(
+                delete(FortiGateHealthCheckModel).where(
+                    FortiGateHealthCheckModel.owner_user_id == owner_user_id,
+                    FortiGateHealthCheckModel.integration_id == integration_id,
+                )
+            )
+            db.delete(model)
+            db.commit()
+            return True
 
     def record_health_check(
         self,

@@ -68,6 +68,8 @@ pnpm dev
 
 O frontend pode usar fixtures de `packages/contracts/fixtures` quando `FORTIDASHBOARD_MOCK_MODE=true`, mas o default local valida Keycloak, sessão e conexão FortiGate reais.
 
+Widgets FortiGate em modo live são atualizados automaticamente pelo intervalo retornado em `meta.refreshIntervalSeconds`; métricas voláteis de sistema, sessões e rede usam polling curto de 2s.
+
 ## Autenticação
 
 O Vue implementa as telas próprias de login/register, mas chama FastAPI em vez de falar direto com Keycloak:

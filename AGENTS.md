@@ -326,6 +326,21 @@ Response:
 
 Não retornar `apiKey`.
 
+### Remover integração
+
+`DELETE /api/integrations/int_fgt_01`
+
+Response:
+
+```json
+{
+  "deleted": true,
+  "id": "int_fgt_01"
+}
+```
+
+Exige sessão HTTP-only e `X-CSRF-Token`. Em modo live, remove apenas a integração salva no FortiDashboard, a API key criptografada e o histórico local de health checks daquele usuário. Sucesso ou falha gravam `integration.fortigate.deleted` no audit log. Não executa nenhuma alteração no FortiGate.
+
 ### Provar titularidade de domínio
 
 `POST /api/tenants/domain-verifications`
@@ -472,7 +487,8 @@ Response:
   },
   "meta": {
     "source": "fortigate",
-    "cacheTtlSeconds": 30
+    "cacheTtlSeconds": 2,
+    "refreshIntervalSeconds": 2
   }
 }
 ```
@@ -517,7 +533,7 @@ Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; 
 
 O frontend pode trabalhar com widgets FortiGate sem depender do FortiGate real. Em `FORTIDASHBOARD_MOCK_MODE=true`, a API e as fixtures em `packages/contracts/fixtures` retornam payloads estáveis. Em modo live, os mesmos endpoints usam a integração persistida e o client FortiGate read-only.
 
-Em modo live, dados de widget FortiGate usam cache curto em memória por processo, chaveado por `owner_user_id`, `integrationId` e `widgetId`, com TTL de 30 segundos. Isso reduz chamadas repetidas ao FortiGate sem mudar o contrato do payload.
+Em modo live, dados de widget FortiGate usam cache curto em memória por processo, chaveado por `owner_user_id`, `integrationId` e `widgetId`. O backend informa `cacheTtlSeconds` e `refreshIntervalSeconds`, e o `DraggableWidget` deve usar esse intervalo para atualizar o card automaticamente. Widgets voláteis de sistema, sessões e rede usam 2s; threats usam 5s; policies usam 15s.
 
 Widgets derivados do mesmo status de sistema, como `fortigate-system-status` e `fortigate-kpi-sessions`, compartilham o mesmo snapshot normalizado dentro do TTL para evitar números divergentes no canvas.
 
@@ -529,7 +545,7 @@ Fluxo recomendado no `apps/web`:
 - Em modo live, as chamadas a `/api/integrations*` e `/api/widgets/*/data` precisam enviar o cookie de sessão da API; o backend filtra por `owner_user_id`.
 - Renderizar `status: "ready"` como dado normal, `status: "error"` como erro dentro do card, e estados de loading/empty no adapter HTTP.
 - Não acoplar componente visual ao FortiGate: o componente recebe apenas o payload `data` normalizado.
-- No frontend, `apps/web/src/services/widgetDataClient.ts` é o adapter HTTP dos widgets e deve continuar retornando `state: "ready"` ou `state: "error"` para o frame decidir loading/erro.
+- No frontend, `apps/web/src/services/widgetDataClient.ts` é o adapter HTTP dos widgets e deve continuar retornando `state: "ready"` ou `state: "error"` para o frame decidir loading/erro. O frame agenda o próximo fetch por `meta.refreshIntervalSeconds`.
 - `defaultSize` do catálogo vem em unidades de grid. `apps/web/src/utils/widgetLayout.ts` converte essas unidades para pixels antes de renderizar ou adicionar widgets no canvas.
 
 Widgets disponíveis nesta sprint:
@@ -553,7 +569,8 @@ Contrato comum de widget:
   "data": {},
   "meta": {
     "source": "fortigate",
-    "cacheTtlSeconds": 30
+    "cacheTtlSeconds": 2,
+    "refreshIntervalSeconds": 2
   }
 }
 ```
@@ -569,7 +586,8 @@ Erro controlado:
   "data": {},
   "meta": {
     "source": "fortigate",
-    "cacheTtlSeconds": 30,
+    "cacheTtlSeconds": 5,
+    "refreshIntervalSeconds": 5,
     "error": { "message": "FortiGate API request failed with HTTP 404" }
   }
 }
@@ -633,12 +651,18 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Persistir workspace specs por usuário em `workspace_specs`.
 - [x] Adicionar cache curto por widget para evitar excesso de chamadas ao FortiGate.
 - [x] Compartilhar snapshot de status entre widgets FortiGate derivados do sistema.
+- [x] Expor `refreshIntervalSeconds` e reduzir TTL de widgets voláteis para atualização quase em tempo real.
+- [x] Implementar remoção local de integração via `DELETE /api/integrations/{integrationId}` com escopo por usuário, CSRF e audit log.
 - [x] Implementar audit log para auth, integração e workspace, com endpoint `GET /api/audit/events`.
 - [ ] Adicionar auditoria a rotas administrativas quando a superfície admin existir.
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
 
-Nota de progresso backend (2026-04-27): migrations adicionam `workspace_specs` e `fortigate_health_checks`. Workspace live agora faz round-trip no Postgres por usuário; health check salvo pode ser executado por integração persistida; widgets FortiGate têm cache TTL 30s; audit events são saneados antes de persistir e retornar. Review pré-merge adicionou escopo por usuário no audit feed, CSRF em mutáveis de integração/workspace e `404` para histórico de health check de integração inexistente.
+Nota de progresso backend (2026-04-27): migrations adicionam `workspace_specs` e `fortigate_health_checks`. Workspace live agora faz round-trip no Postgres por usuário; health check salvo pode ser executado por integração persistida; widgets FortiGate têm cache curto; audit events são saneados antes de persistir e retornar. Review pré-merge adicionou escopo por usuário no audit feed, CSRF em mutáveis de integração/workspace e `404` para histórico de health check de integração inexistente.
+
+Nota de realtime widgets (2026-04-28): `fortigate-system-status`, `fortigate-kpi-sessions` e `fortigate-network-traffic` atualizam a cada 2s no frontend via `meta.refreshIntervalSeconds`; `fortigate-top-threats` usa 5s e `fortigate-firewall-policies` usa 15s.
+
+Nota de CRUD de integrações (2026-04-28): o frontend pode remover integrações conectadas pela sidebar. O backend apaga somente o registro local, a API key criptografada e health checks do usuário autenticado; o FortiGate não sofre mudanças de configuração.
 
 Nota de validação FortiGate local (2026-04-26): host `192.0.2.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
@@ -666,6 +690,8 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Preparar troca do adapter mock para HTTP sem alterar componentes de visualização.
 - [x] Tratar `ok: false` de teste FortiGate como erro no painel de integrações.
 - [x] Exibir identidade do FortiGate no widget de saúde para diferenciar dados live de mock.
+- [x] Atualizar widgets automaticamente pelo intervalo retornado pela API.
+- [x] Permitir remover integrações conectadas pela sidebar usando o endpoint `DELETE /api/integrations/{integrationId}`.
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [ ] Criar audit trail/activity feed para eventos sensíveis.
@@ -683,6 +709,7 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Adicionar testes de contrato para payloads de API.
 - [x] Adicionar smoke tests para conexão, catálogo e renderização do canvas.
 - [x] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.
+- [x] Testar remoção de integração com escopo por usuário, CSRF e audit log saneado.
 - [x] Testar que audit logs não gravam segredos, API keys ou tokens.
 - [x] Documentar setup local completo em `README.md`.
 - [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.

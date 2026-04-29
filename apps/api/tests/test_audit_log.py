@@ -200,6 +200,127 @@ def test_integration_create_failure_records_sanitized_audit_event():
     assert "fg-secret-token-123" not in repr(audit_store.events)
 
 
+def test_integration_delete_records_sanitized_audit_event():
+    engine = sqlite_engine()
+    Base.metadata.create_all(engine)
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_delete_audit",
+        ),
+        client_factory=healthy_client_factory,
+    )
+    audit_store = InMemoryAuthAuditStore()
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
+        lambda: service
+    )
+    app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "FortiGate Lab",
+                "host": "https://fortigate.local",
+                "apiKey": "fg-secret-token-123",
+                "verifyTls": False,
+            },
+        )
+        delete_response = client.delete(
+            "/api/integrations/int_fgt_delete_audit",
+            headers=csrf_headers(client),
+        )
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service, None
+        )
+        app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert create_response.status_code == 201
+    assert delete_response.status_code == 200
+    assert [(event.action, event.outcome, event.user_id) for event in audit_store.events] == [
+        ("integration.fortigate.created", "success", "usr_owner"),
+        ("integration.fortigate.deleted", "success", "usr_owner"),
+    ]
+    assert audit_store.events[1].details == {"integrationId": "int_fgt_delete_audit"}
+    assert "fg-secret-token-123" not in repr(audit_store.events)
+
+
+def test_integration_delete_failure_records_audit_event():
+    engine = sqlite_engine()
+    Base.metadata.create_all(engine)
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_other_user",
+        ),
+        client_factory=healthy_client_factory,
+    )
+    audit_store = InMemoryAuthAuditStore()
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
+        lambda: service
+    )
+    app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "FortiGate Lab",
+                "host": "https://fortigate.local",
+                "apiKey": "fg-secret-token-123",
+                "verifyTls": False,
+            },
+        )
+        app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+            "id": "usr_other",
+            "email": "other@example.com",
+            "displayName": "Other",
+            "roles": ["analyst"],
+        }
+        delete_response = client.delete(
+            "/api/integrations/int_fgt_other_user",
+            headers=csrf_headers(client),
+        )
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service, None
+        )
+        app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert create_response.status_code == 201
+    assert delete_response.status_code == 404
+    assert [(event.action, event.outcome, event.user_id) for event in audit_store.events] == [
+        ("integration.fortigate.created", "success", "usr_owner"),
+        ("integration.fortigate.deleted", "failed", "usr_other"),
+    ]
+    assert audit_store.events[1].details == {
+        "integrationId": "int_fgt_other_user",
+        "error": "Integration not found",
+    }
+    assert "fg-secret-token-123" not in repr(audit_store.events)
+
+
 def test_workspace_update_records_audit_event_without_widget_secrets():
     engine = sqlite_engine()
     Base.metadata.create_all(engine)

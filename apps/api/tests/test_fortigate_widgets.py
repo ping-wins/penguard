@@ -119,11 +119,15 @@ def test_fortigate_widget_service_returns_live_system_status_payload():
             "sessions": 42,
             "uptimeSeconds": None,
         },
-        "meta": {"source": "fortigate", "cacheTtlSeconds": 30},
+        "meta": {
+            "source": "fortigate",
+            "cacheTtlSeconds": 2,
+            "refreshIntervalSeconds": 2,
+        },
     }
 
 
-def test_fortigate_widget_service_caches_payloads_inside_short_ttl():
+def test_fortigate_widget_service_caches_payloads_inside_realtime_ttl():
     from app.integrations.fortigate.widgets import FortiGateWidgetDataService
 
     current_time = datetime(2026, 4, 26, 23, 45, tzinfo=UTC)
@@ -148,13 +152,13 @@ def test_fortigate_widget_service_caches_payloads_inside_short_ttl():
         integration_id="int_fgt_live",
         owner_user_id="usr_owner",
     )
-    current_time = datetime(2026, 4, 26, 23, 45, 10, tzinfo=UTC)
+    current_time = datetime(2026, 4, 26, 23, 45, 1, tzinfo=UTC)
     second = service.get_widget_data(
         "fortigate-system-status",
         integration_id="int_fgt_live",
         owner_user_id="usr_owner",
     )
-    current_time = datetime(2026, 4, 26, 23, 45, 41, tzinfo=UTC)
+    current_time = datetime(2026, 4, 26, 23, 45, 3, tzinfo=UTC)
     third = service.get_widget_data(
         "fortigate-system-status",
         integration_id="int_fgt_live",
@@ -162,7 +166,7 @@ def test_fortigate_widget_service_caches_payloads_inside_short_ttl():
     )
 
     assert second == first
-    assert third["refreshedAt"] == "2026-04-26T23:45:41.000Z"
+    assert third["refreshedAt"] == "2026-04-26T23:45:03.000Z"
     assert factory_calls == 2
 
 
@@ -259,7 +263,8 @@ def test_fortigate_widget_service_returns_error_payload_when_fortigate_endpoint_
         "data": {},
         "meta": {
             "source": "fortigate",
-            "cacheTtlSeconds": 30,
+            "cacheTtlSeconds": 5,
+            "refreshIntervalSeconds": 5,
             "error": {"message": "FortiGate API request failed with HTTP 404"},
         },
     }

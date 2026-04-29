@@ -92,6 +92,16 @@ def test_list_integrations_omits_api_key():
     assert "apiKey" not in payload["items"][0]
 
 
+def test_delete_integration_returns_contract_payload():
+    response = client.delete(
+        "/api/integrations/int_fgt_01",
+        headers=csrf_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True, "id": "int_fgt_01"}
+
+
 def test_widget_catalog_filters_to_fortigate_widgets():
     response = client.get("/api/widget-catalog", params={"integrationType": "fortigate"})
 
@@ -127,7 +137,8 @@ def test_widget_data_returns_normalized_system_status():
         },
         "meta": {
             "source": "fortigate",
-            "cacheTtlSeconds": 30,
+            "cacheTtlSeconds": 2,
+            "refreshIntervalSeconds": 2,
         },
     }
 

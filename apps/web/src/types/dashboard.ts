@@ -37,6 +37,7 @@ export type WidgetDataResponse = {
   meta?: {
     source?: string
     cacheTtlSeconds?: number
+    refreshIntervalSeconds?: number
     error?: {
       message?: string
     }

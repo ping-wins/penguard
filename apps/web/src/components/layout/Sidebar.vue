@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug } from 'lucide-vue-next'
+import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2 } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -58,6 +58,14 @@ async function handleSaveFortigate() {
     fgForm.value.apiKey = ''
   } else {
     fgTestError.value = res.error ?? 'Failed to add integration'
+  }
+}
+
+async function handleRemoveIntegration(integrationId: string) {
+  fgTestError.value = null
+  const res = await integrationsStore.removeIntegration(integrationId)
+  if (!res.success) {
+    fgTestError.value = res.error ?? 'Failed to remove integration'
   }
 }
 
@@ -218,13 +226,26 @@ function handleChatSubmit() {
           <div v-else-if="integrationsStore.integrations.length === 0" class="text-sm text-theme-text-muted italic">Nenhuma integração conectada.</div>
           
           <div v-for="intg in integrationsStore.integrations" :key="intg.id" class="p-3 border border-theme-border rounded-lg bg-theme-bg">
-            <div class="flex items-center justify-between mb-1">
-              <span class="font-medium text-theme-text text-sm">{{ intg.name }}</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
-                {{ intg.status }}
-              </span>
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <div class="min-w-0">
+                <span class="font-medium text-theme-text text-sm truncate block">{{ intg.name }}</span>
+                <div class="text-xs text-theme-text-muted capitalize">{{ intg.type }}</div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                  {{ intg.status }}
+                </span>
+                <button
+                  type="button"
+                  class="p-1 rounded text-theme-text-muted hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+                  :disabled="integrationsStore.isDeleting[intg.id]"
+                  title="Remover integração"
+                  @click="handleRemoveIntegration(intg.id)"
+                >
+                  <Trash2 :size="14" />
+                </button>
+              </div>
             </div>
-            <div class="text-xs text-theme-text-muted capitalize">{{ intg.type }}</div>
           </div>
         </div>
 

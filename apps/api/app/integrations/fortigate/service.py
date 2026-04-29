@@ -25,6 +25,9 @@ class FortiGateIntegrationStore(Protocol):
     def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
         pass
 
+    def delete(self, *, owner_user_id: str, integration_id: str) -> bool:
+        pass
+
     def record_health_check(
         self,
         *,
@@ -86,6 +89,9 @@ class MockFortiGateIntegrationService:
 
     def list(self, *, owner_user_id: str) -> dict[str, Any]:
         return load_fixture("integrations_list")
+
+    def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
+        return integration_id == "int_fgt_01"
 
     def run_health_check(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
         return {
@@ -214,6 +220,12 @@ class FortiGateIntegrationService:
 
     def list(self, *, owner_user_id: str) -> dict[str, Any]:
         return self.store.list_public(owner_user_id=owner_user_id)
+
+    def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
+        return self.store.delete(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+        )
 
     def _default_client_factory(
         self,

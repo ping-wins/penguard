@@ -16,7 +16,7 @@ describe('fetchWidgetData', () => {
       refreshedAt: '2026-04-26T23:45:00.000Z',
       status: 'ready',
       data: { sessions: 3812 },
-      meta: { source: 'fortigate', cacheTtlSeconds: 30 },
+      meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
     }))
 
     const result = await fetchWidgetData({
@@ -45,7 +45,8 @@ describe('fetchWidgetData', () => {
       data: {},
       meta: {
         source: 'fortigate',
-        cacheTtlSeconds: 30,
+        cacheTtlSeconds: 5,
+        refreshIntervalSeconds: 5,
         error: { message: 'FortiGate API request failed with HTTP 404' },
       },
     }))
