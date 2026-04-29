@@ -229,6 +229,9 @@ function handleChatSubmit() {
             <div class="flex items-start justify-between gap-2 mb-1">
               <div class="min-w-0">
                 <span class="font-medium text-theme-text text-sm truncate block">{{ intg.name }}</span>
+                <div v-if="intg.host" class="text-xs text-theme-text-muted font-mono truncate" :title="intg.host">
+                  {{ intg.host }}
+                </div>
                 <div class="text-xs text-theme-text-muted capitalize">{{ intg.type }}</div>
               </div>
               <div class="flex items-center gap-2 shrink-0">
