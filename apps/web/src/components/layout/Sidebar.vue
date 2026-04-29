@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -44,18 +44,27 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
 ])
 const isThinking = ref(false)
 function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit') {
+  const isClosingCurrentTab = activeTab.value === tab
+  if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
+    auditStore.stopPolling()
+  }
+
   if (activeTab.value !== tab && tab === 'integrations') {
     integrationsStore.fetchIntegrations()
   }
   if (activeTab.value !== tab && tab === 'audit') {
-    auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
+    auditStore.startPolling({ scope: auditScope.value, limit: 50, intervalMs: 5000 })
   }
-  activeTab.value = activeTab.value === tab ? 'none' : tab
+  activeTab.value = isClosingCurrentTab ? 'none' : tab
 }
 
 function refreshAuditTrail() {
   auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
 }
+
+onBeforeUnmount(() => {
+  auditStore.stopPolling()
+})
 
 async function handleTestFortigate() {
   fgTestResult.value = null

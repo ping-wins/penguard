@@ -95,5 +95,7 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.text()).toContain('Global SOC activity')
     expect(wrapper.text()).toContain('Login succeeded')
     expect(wrapper.text()).toContain('analyst@example.com')
+
+    wrapper.unmount()
   })
 })

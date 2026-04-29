@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditFeed from '../../src/components/audit/AuditFeed.vue'
 import { formatAuditEvent } from '../../src/components/audit/auditFormat'
 import { fetchAuditEvents } from '../../src/services/auditClient'
@@ -27,6 +27,11 @@ const loginEvent = {
 describe('audit feed', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('fetches audit events with browser credentials and a bounded limit', async () => {
@@ -118,6 +123,28 @@ describe('audit feed', () => {
     })
     expect(store.events).toEqual([loginEvent])
     expect(store.scope).toBe('admin')
+  })
+
+  it('polls audit events until polling is stopped', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [loginEvent] }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuditStore()
+    store.startPolling({ scope: 'admin', limit: 10, intervalMs: 2000 })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=10', {
+      credentials: 'include',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+
+    store.stopPolling()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
   it('renders loading, empty, error, and event rows without exposing secrets', () => {
