@@ -467,6 +467,45 @@ Response:
 }
 ```
 
+Além dos campos acima, cada item pode informar `template`, `dataGroup` e `fieldBindings`. Esses metadados fazem a ponte Power BI-like entre o modelo de dados do provider e o template visual. O frontend deve tratar widgets como templates reutilizáveis que consomem campos normalizados, não como cards hardcoded.
+
+Templates FortiGate adicionados para enriquecimento SOC:
+
+- `fortigate-risk-posture`: `template: "risk-summary"`, usa `risk.score` e `risk.signals`.
+- `fortigate-interface-health`: `template: "interface-health"`, usa `interfaces[]` e resumo de links.
+- `fortigate-recent-events`: `template: "event-feed"`, usa eventos/threat logs normalizados.
+- `fortigate-anomaly-highlights`: `template: "anomaly-list"`, usa sinais de CPU, memória e interfaces.
+
+### Modelo de dados do provider FortiGate
+
+`GET /api/providers/fortigate/data-fields`
+
+Response resumido:
+
+```json
+{
+  "provider": "fortigate",
+  "groups": [
+    {
+      "id": "system",
+      "name": "System Data",
+      "fields": [
+        {
+          "id": "system.cpu",
+          "label": "CPU Usage",
+          "type": "number",
+          "unit": "percent",
+          "source": "fortigate-system-status",
+          "recommendedVisuals": ["kpi", "gauge", "risk-summary"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Grupos iniciais: `system`, `interfaces`, `policies`, `events` e `risk`. Esse endpoint é a base para o painel Data do build pane. No futuro, criar um widget customizado deve significar selecionar provider, grupo/campo e template visual, mantendo o FortiGate read-only.
+
 ### Dados normalizados de widget
 
 `GET /api/widgets/:widgetId/data?integrationId=int_fgt_01`
@@ -557,6 +596,10 @@ Widgets disponíveis nesta sprint:
 | `fortigate-network-traffic` | `table` | `interfaces[]` com `rxBytes`, `txBytes`, packets e `status` | Pode virar tabela ou gráfico por interface |
 | `fortigate-firewall-policies` | `table` | `policies[]` | No lab atual pode vir lista vazia |
 | `fortigate-top-threats` | `table` | `threats[]` ou `status: "error"` | O lab atual retorna `404`; renderizar erro contextual |
+| `fortigate-risk-posture` | `summary` | `score`, `level`, `signals[]`, `summary` | Postura de risco derivada de CPU, memória, interfaces e políticas |
+| `fortigate-interface-health` | `status-list` | `interfaces[]`, `summary` | Saúde operacional dos links e tráfego agregado |
+| `fortigate-recent-events` | `feed` | `events[]`, `summary` | Feed simples para threat logs/eventos recentes |
+| `fortigate-anomaly-highlights` | `feed` | `anomalies[]`, `summary` | Destaques de anomalias derivadas de métricas read-only |
 
 Contrato comum de widget:
 
@@ -644,6 +687,8 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Criptografar API keys em repouso e nunca retorná-las em responses.
 - [x] Implementar cliente REST FortiGate em `apps/api/app/integrations/fortigate`.
 - [x] Normalizar status do sistema, interfaces, políticas e threat logs.
+- [x] Expor modelo Power BI-like de campos FortiGate em `GET /api/providers/fortigate/data-fields`.
+- [x] Adicionar templates SOC de risco, saúde de interfaces, eventos recentes e anomalias ao catálogo FortiGate.
 - [x] Ligar endpoints de widgets FortiGate a dados live normalizados em modo não-mock.
 - [x] Escopar integrações FortiGate por usuário autenticado via `owner_user_id`.
 - [x] Persistir integrações FortiGate por usuário autenticado via `fortigate_integrations.owner_user_id`.
@@ -663,6 +708,8 @@ Nota de progresso backend (2026-04-27): migrations adicionam `workspace_specs` e
 Nota de realtime widgets (2026-04-28): `fortigate-system-status`, `fortigate-kpi-sessions` e `fortigate-network-traffic` atualizam a cada 2s no frontend via `meta.refreshIntervalSeconds`; `fortigate-top-threats` usa 5s e `fortigate-firewall-policies` usa 15s.
 
 Nota de CRUD de integrações (2026-04-28): o frontend pode remover integrações conectadas pela sidebar. O backend apaga somente o registro local, a API key criptografada e health checks do usuário autenticado; o FortiGate não sofre mudanças de configuração.
+
+Nota de modelo Power BI-like (2026-04-28): o FortiGate agora expõe um catálogo de campos por grupos (`system`, `interfaces`, `policies`, `events`, `risk`) e templates adicionais (`risk-posture`, `interface-health`, `recent-events`, `anomaly-highlights`). Isso prepara a futura criação de widgets customizados por seleção de campo + visual, sem abandonar os templates prontos.
 
 Nota de validação FortiGate local (2026-04-26): host `192.0.2.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
@@ -695,6 +742,7 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [ ] Criar audit trail/activity feed para eventos sensíveis.
+- [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.
 - [ ] Enriquecer dashboard com widgets de postura de risco, anomalias e investigação SOC.
 - [ ] Refinar visual para experiência SaaS enterprise, não apenas protótipo técnico.
 

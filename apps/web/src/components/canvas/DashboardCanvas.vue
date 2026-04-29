@@ -64,8 +64,19 @@ function getIconForKind(kind: string) {
     case 'kpi': return Activity
     case 'table': return Table
     case 'chart': return Network
+    case 'summary': return Activity
+    case 'feed': return Table
+    case 'status-list': return Network
     default: return BarChart2
   }
+}
+
+function fieldKey(field: string | { id: string }) {
+  return typeof field === 'string' ? field : field.id
+}
+
+function fieldLabel(field: string | { label: string }) {
+  return typeof field === 'string' ? field : field.label
 }
 
 function handleWheel(e: WheelEvent) {
@@ -226,11 +237,11 @@ function handleWheel(e: WheelEvent) {
               <div v-if="expandedFolders[group.id]" class="flex flex-col ml-6 pl-2 border-l border-theme-border py-1 gap-1">
                 <div 
                   v-for="field in group.fields" 
-                  :key="field"
+                  :key="fieldKey(field)"
                   class="flex items-center gap-2 p-1.5 text-xs text-theme-text-muted hover:text-theme-text cursor-pointer hover:bg-theme-border/50 rounded transition-colors"
                 >
                   <Database :size="12" class="opacity-50" />
-                  {{ field }}
+                  {{ fieldLabel(field) }}
                 </div>
               </div>
             </div>

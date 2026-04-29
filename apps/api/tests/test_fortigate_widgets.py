@@ -31,8 +31,8 @@ class FakeFortiGateClient:
 
     def get_performance_status(self):
         return {
-            "cpu": {"idle": 88},
-            "mem": {"used": 1024, "total": 2048},
+            "cpu": {"idle": 8},
+            "mem": {"used": 1843, "total": 2048},
         }
 
     def get_resource_usage(self, *, resource: str | None = None):
@@ -50,6 +50,16 @@ class FakeFortiGateClient:
                 "tx_bytes": 6185442,
                 "rx_packets": 35655,
                 "tx_packets": 26875,
+            },
+            "port2": {
+                "id": "port2",
+                "name": "port2",
+                "ip": "10.0.0.1",
+                "link": False,
+                "rx_bytes": 0,
+                "tx_bytes": 0,
+                "rx_packets": 0,
+                "tx_packets": 0,
             }
         }
 
@@ -114,8 +124,8 @@ def test_fortigate_widget_service_returns_live_system_status_payload():
             "version": "v7.6.6",
             "serial": "FGVMTEST",
             "build": 3652,
-            "cpu": 12,
-            "memory": 50,
+            "cpu": 92,
+            "memory": 90,
             "sessions": 42,
             "uptimeSeconds": None,
         },
@@ -233,10 +243,127 @@ def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
             "txBytes": 6185442,
             "rxPackets": 35655,
             "txPackets": 26875,
+        },
+        {
+            "id": "port2",
+            "name": "port2",
+            "alias": "",
+            "status": "down",
+            "ip": "10.0.0.1",
+            "role": "unknown",
+            "type": "unknown",
+            "rxBytes": 0,
+            "txBytes": 0,
+            "rxPackets": 0,
+            "txPackets": 0,
         }
     ]
     assert policies["data"]["policies"][0]["name"] == "LAN to WAN"
     assert threats["data"]["threats"][0]["severity"] == "high"
+
+
+def test_fortigate_widget_service_returns_soc_enrichment_payloads():
+    from app.integrations.fortigate.widgets import FortiGateWidgetDataService
+
+    service = FortiGateWidgetDataService(
+        store=FakeFortiGateConnectionStore(),
+        client_factory=fake_client_factory,
+        clock=lambda: datetime(2026, 4, 26, 23, 45, tzinfo=UTC),
+    )
+
+    risk = service.get_widget_data(
+        "fortigate-risk-posture", "int_fgt_live", owner_user_id="usr_owner"
+    )
+    interface_health = service.get_widget_data(
+        "fortigate-interface-health", "int_fgt_live", owner_user_id="usr_owner"
+    )
+    recent_events = service.get_widget_data(
+        "fortigate-recent-events", "int_fgt_live", owner_user_id="usr_owner"
+    )
+    anomalies = service.get_widget_data(
+        "fortigate-anomaly-highlights", "int_fgt_live", owner_user_id="usr_owner"
+    )
+
+    assert risk["data"] == {
+        "score": 54,
+        "level": "high",
+        "signals": [
+            {
+                "id": "system.cpu",
+                "label": "High CPU usage",
+                "severity": "critical",
+                "value": 92,
+                "unit": "percent",
+                "description": "FortiGate CPU usage is above 85%.",
+            },
+            {
+                "id": "system.memory",
+                "label": "High memory usage",
+                "severity": "critical",
+                "value": 90,
+                "unit": "percent",
+                "description": "FortiGate memory usage is above 85%.",
+            },
+            {
+                "id": "interfaces.down",
+                "label": "Interfaces down",
+                "severity": "warning",
+                "value": 1,
+                "unit": "count",
+                "description": "One or more FortiGate interfaces report link down.",
+            },
+            {
+                "id": "policies.enabled",
+                "label": "Firewall policies enabled",
+                "severity": "healthy",
+                "value": 1,
+                "unit": "count",
+                "description": "Observed firewall policies are enabled.",
+            },
+        ],
+        "summary": {"critical": 2, "warning": 1, "healthy": 1},
+    }
+    assert interface_health["data"]["summary"] == {
+        "total": 2,
+        "up": 1,
+        "down": 1,
+        "totalRxBytes": 8304525,
+        "totalTxBytes": 6185442,
+    }
+    assert recent_events["data"]["summary"] == {
+        "total": 1,
+        "blocked": 1,
+        "highSeverity": 1,
+    }
+    assert anomalies["data"]["anomalies"] == [
+        {
+            "id": "cpu-critical",
+            "title": "CPU pressure above normal SOC threshold",
+            "severity": "critical",
+            "metric": "system.cpu",
+            "value": 92,
+            "unit": "percent",
+            "description": "Sustained CPU pressure can delay inspection and logging.",
+        },
+        {
+            "id": "memory-critical",
+            "title": "Memory pressure above normal SOC threshold",
+            "severity": "critical",
+            "metric": "system.memory",
+            "value": 90,
+            "unit": "percent",
+            "description": "High memory usage can indicate overloaded inspection or logging.",
+        },
+        {
+            "id": "interfaces-down",
+            "title": "Interface link down",
+            "severity": "warning",
+            "metric": "interfaces.down",
+            "value": 1,
+            "unit": "count",
+            "description": "One or more FortiGate interfaces are not passing traffic.",
+        },
+    ]
 
 
 def test_fortigate_widget_service_returns_error_payload_when_fortigate_endpoint_fails():

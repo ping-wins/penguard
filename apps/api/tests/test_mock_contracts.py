@@ -113,8 +113,43 @@ def test_widget_catalog_filters_to_fortigate_widgets():
         "fortigate-kpi-sessions",
         "fortigate-firewall-policies",
         "fortigate-top-threats",
+        "fortigate-risk-posture",
+        "fortigate-interface-health",
+        "fortigate-recent-events",
+        "fortigate-anomaly-highlights",
     ]
     assert payload["items"][0]["defaultSize"] == {"w": 3, "h": 2}
+    risk_posture = next(item for item in payload["items"] if item["id"] == "fortigate-risk-posture")
+    assert risk_posture["template"] == "risk-summary"
+    assert risk_posture["dataGroup"] == "risk"
+    assert risk_posture["fieldBindings"] == {
+        "score": "risk.score",
+        "signals": "risk.signals",
+    }
+
+
+def test_fortigate_provider_data_fields_describe_powerbi_like_model():
+    response = client.get("/api/providers/fortigate/data-fields")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "fortigate"
+    assert [group["id"] for group in payload["groups"]] == [
+        "system",
+        "interfaces",
+        "policies",
+        "events",
+        "risk",
+    ]
+    system_fields = payload["groups"][0]["fields"]
+    assert system_fields[0] == {
+        "id": "system.cpu",
+        "label": "CPU Usage",
+        "type": "number",
+        "unit": "percent",
+        "source": "fortigate-system-status",
+        "recommendedVisuals": ["kpi", "gauge", "risk-summary"],
+    }
 
 
 def test_widget_data_returns_normalized_system_status():
@@ -141,6 +176,24 @@ def test_widget_data_returns_normalized_system_status():
             "refreshIntervalSeconds": 2,
         },
     }
+
+
+def test_mock_widget_data_returns_soc_enrichment_templates():
+    for widget_id in (
+        "fortigate-risk-posture",
+        "fortigate-interface-health",
+        "fortigate-recent-events",
+        "fortigate-anomaly-highlights",
+    ):
+        response = client.get(
+            f"/api/widgets/{widget_id}/data",
+            params={"integrationId": "int_fgt_01"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["widgetId"] == widget_id
+        assert response.json()["integrationId"] == "int_fgt_01"
+        assert response.json()["status"] == "ready"
 
 
 def test_workspace_round_trip_contract():
