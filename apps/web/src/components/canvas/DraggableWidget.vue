@@ -254,8 +254,8 @@ function onDrag(e: PointerEvent) {
   const dx = (e.clientX - startX) / zoom.value
   const dy = (e.clientY - startY) / zoom.value
   
-  let newX = Math.max(0, initialDragX + dx)
-  let newY = Math.max(0, initialDragY + dy)
+  const newX = initialDragX + dx
+  const newY = initialDragY + dy
   
   store.updateWidgetPosition(props.instanceId, newX, newY)
 }
@@ -358,6 +358,7 @@ function stopResize() {
   >
     <!-- Header -->
     <div 
+      data-test="widget-drag-handle"
       class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 cursor-move select-none rounded-t-md"
       @pointerdown="startDrag"
     >

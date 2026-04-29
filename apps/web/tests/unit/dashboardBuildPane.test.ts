@@ -5,6 +5,8 @@ import DashboardCanvas from '../../src/components/canvas/DashboardCanvas.vue'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { useIntegrationsStore } from '../../src/stores/useIntegrationsStore'
 
+const WORKSPACE_TEST_ORIGIN = 100000
+
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
     status: init.status ?? 200,
@@ -342,5 +344,209 @@ describe('DashboardCanvas build pane', () => {
 
     expect(viewport.scrollLeft).toBe(220)
     expect(viewport.scrollTop).toBe(290)
+  })
+
+  it('adds a FortiGate preset by dragging it from Visuals onto the workspace', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) {
+        return Promise.resolve(jsonResponse({
+          items: [{
+            id: 'int_fgt_01',
+            type: 'fortigate',
+            name: 'FortiGate Lab',
+            status: 'connected',
+          }],
+        }))
+      }
+      if (url.startsWith('/api/widget-catalog')) {
+        return Promise.resolve(jsonResponse({
+          items: [{
+            id: 'fortigate-system-status',
+            title: 'System Status',
+            kind: 'kpi',
+            source: 'fortigate',
+            requiredCapabilities: ['system'],
+            defaultSize: { w: 3, h: 2 },
+            dataEndpoint: '/api/widgets/fortigate-system-status/data',
+          }],
+        }))
+      }
+      if (url.startsWith('/api/providers/fortigate/data-fields')) {
+        return Promise.resolve(jsonResponse({ provider: 'fortigate', groups: [] }))
+      }
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const store = useDashboardStore()
+    store.setZoom(2)
+    const viewportWrapper = wrapper.get('[data-test="workspace-viewport"]')
+    const viewport = viewportWrapper.element as HTMLElement
+    viewport.scrollLeft = WORKSPACE_TEST_ORIGIN * 2 + 200
+    viewport.scrollTop = WORKSPACE_TEST_ORIGIN * 2 + 120
+
+    const dragPayload: Record<string, string> = {}
+    const dataTransfer = {
+      setData: vi.fn((type: string, value: string) => {
+        dragPayload[type] = value
+      }),
+      getData: vi.fn((type: string) => dragPayload[type] ?? ''),
+      effectAllowed: '',
+      dropEffect: '',
+    }
+
+    await wrapper.get('[data-test="catalog-widget-fortigate-system-status"]').trigger('dragstart', {
+      dataTransfer,
+    })
+    await viewportWrapper.trigger('drop', {
+      dataTransfer,
+      clientX: 300,
+      clientY: 220,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    })
+
+    expect(store.activeWidgets).toHaveLength(1)
+    expect(store.activeWidgets[0]).toEqual(expect.objectContaining({
+      catalogId: 'fortigate-system-status',
+      integrationId: 'int_fgt_01',
+    }))
+    expect(store.activeWidgets[0].layout).toEqual(expect.objectContaining({
+      x: 250,
+      y: 170,
+      w: 320,
+      h: 200,
+    }))
+  })
+
+  it('adds an empty visual template by dragging it from Visuals onto the workspace', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) {
+        return Promise.resolve(jsonResponse({
+          items: [{
+            id: 'int_fgt_01',
+            type: 'fortigate',
+            name: 'FortiGate Lab',
+            status: 'connected',
+          }],
+        }))
+      }
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/providers/fortigate/data-fields')) {
+        return Promise.resolve(jsonResponse({ provider: 'fortigate', groups: [] }))
+      }
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const dragPayload: Record<string, string> = {}
+    const dataTransfer = {
+      setData: vi.fn((type: string, value: string) => {
+        dragPayload[type] = value
+      }),
+      getData: vi.fn((type: string) => dragPayload[type] ?? ''),
+      effectAllowed: '',
+      dropEffect: '',
+    }
+
+    await wrapper.get('[data-test="visual-template-visual-template-card"]').trigger('dragstart', {
+      dataTransfer,
+    })
+    const viewport = wrapper.get('[data-test="workspace-viewport"]').element as HTMLElement
+    viewport.scrollLeft = WORKSPACE_TEST_ORIGIN
+    viewport.scrollTop = WORKSPACE_TEST_ORIGIN
+    await wrapper.get('[data-test="workspace-viewport"]').trigger('drop', {
+      dataTransfer,
+      clientX: 140,
+      clientY: 90,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    })
+
+    const store = useDashboardStore()
+    expect(store.activeWidgets).toHaveLength(1)
+    expect(store.activeWidgets[0]).toEqual(expect.objectContaining({
+      catalogId: 'visual-template-card',
+      integrationId: 'int_fgt_01',
+    }))
+    expect(store.activeWidgets[0].layout).toEqual(expect.objectContaining({
+      x: 140,
+      y: 90,
+      w: 320,
+      h: 200,
+    }))
+  })
+
+  it('renders a minimap with widget markers and the current viewport', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({
+          id: 'ws_default',
+          name: 'SOC Overview',
+          widgets: [{
+            instanceId: 'w_01',
+            catalogId: 'visual-template-card',
+            integrationId: '',
+            layout: { x: -240, y: 160, w: 3, h: 2, z: 10 },
+          }],
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="workspace-minimap"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="minimap-viewport"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="minimap-widget-w_01"]').exists()).toBe(true)
   })
 })

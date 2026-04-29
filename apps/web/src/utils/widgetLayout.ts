@@ -44,6 +44,10 @@ type CreateWidgetInstanceOptions = {
   defaultSize?: WidgetDefaultSize
   instanceId?: string
   zIndex: number
+  position?: {
+    x: number
+    y: number
+  }
 }
 
 function isGridUnitSize(w: number, h: number) {
@@ -109,14 +113,15 @@ export function createWidgetInstance({
   defaultSize = { w: 3, h: 2 },
   instanceId = `w_${Math.random().toString(36).slice(2, 11)}`,
   zIndex,
+  position,
 }: CreateWidgetInstanceOptions): WorkspaceWidget {
   return {
     instanceId,
     catalogId,
     integrationId,
     layout: {
-      x: 50,
-      y: 50,
+      x: position?.x ?? 50,
+      y: position?.y ?? 50,
       ...gridSizeToPixels(defaultSize),
       z: zIndex,
     },

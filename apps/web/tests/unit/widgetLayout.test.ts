@@ -43,6 +43,19 @@ describe('widget layout normalization', () => {
     })
   })
 
+  it('can create widget instances at negative workspace coordinates', () => {
+    expect(createWidgetInstance({
+      catalogId: 'visual-template-card',
+      integrationId: 'int_fgt_01',
+      defaultSize: { w: 3, h: 2 },
+      instanceId: 'w_negative',
+      zIndex: 105,
+      position: { x: -240, y: -160 },
+    })).toEqual(expect.objectContaining({
+      layout: expect.objectContaining({ x: -240, y: -160 }),
+    }))
+  })
+
   it('normalizes all widgets from a workspace response', () => {
     const widgets = normalizeWorkspaceWidgets([
       {
