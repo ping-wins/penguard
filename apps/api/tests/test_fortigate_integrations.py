@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -6,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import dependencies as auth_dependencies
 from app.auth.token_cipher import TokenCipher
 from app.db.base import Base
-from app.db.models import FortiGateIntegrationModel
+from app.db.models import FortiGateHealthCheckModel, FortiGateIntegrationModel
 from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.service import FortiGateIntegrationService
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
@@ -135,6 +137,59 @@ def test_fortigate_integration_store_scopes_rows_by_owner_user_id():
     }
 
 
+def test_fortigate_integration_store_deletes_only_owned_integration_and_health_checks():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    ids = iter(["int_fgt_owner_a", "int_fgt_owner_b"])
+    store = SqlAlchemyFortiGateIntegrationStore(
+        engine=engine,
+        secret_cipher=TokenCipher.from_secret("test-secret"),
+        id_factory=lambda: next(ids),
+        health_id_factory=lambda: "fgt_health_owner_a",
+    )
+
+    store.create(
+        owner_user_id="usr_a",
+        name="Owner A FortiGate",
+        host="https://fortigate-a.local/",
+        api_key="owner-a-token",
+        verify_tls=False,
+    )
+    store.create(
+        owner_user_id="usr_b",
+        name="Owner B FortiGate",
+        host="https://fortigate-b.local/",
+        api_key="owner-b-token",
+        verify_tls=False,
+    )
+    store.record_health_check(
+        owner_user_id="usr_a",
+        integration_id="int_fgt_owner_a",
+        ok=True,
+        status="connected",
+        device={"hostname": "FGT-VM"},
+        message=None,
+        latency_ms=12,
+        checked_at=datetime.now(UTC),
+    )
+
+    assert store.delete(owner_user_id="usr_b", integration_id="int_fgt_owner_a") is False
+    assert store.delete(owner_user_id="usr_a", integration_id="int_fgt_owner_a") is True
+
+    with Session(engine) as db:
+        integration_ids = [
+            row.id for row in db.execute(select(FortiGateIntegrationModel)).scalars()
+        ]
+        health_ids = [row.id for row in db.execute(select(FortiGateHealthCheckModel)).scalars()]
+
+    assert integration_ids == ["int_fgt_owner_b"]
+    assert health_ids == []
+
+
 def test_fortigate_integration_service_can_use_persistent_store():
     engine = create_engine(
         "sqlite+pysqlite://",
@@ -162,6 +217,34 @@ def test_fortigate_integration_service_can_use_persistent_store():
 
     assert created["id"] == "int_fgt_service"
     assert listed["items"][0]["id"] == "int_fgt_service"
+
+
+def test_fortigate_integration_service_deletes_owned_integration():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_service",
+        ),
+        client_factory=healthy_client_factory,
+    )
+    service.create(
+        owner_user_id="usr_owner",
+        name="FortiGate Lab",
+        host="https://fortigate.local/",
+        api_key="fg_api_key_from_user",
+        verify_tls=False,
+    )
+
+    assert service.delete(integration_id="int_fgt_service", owner_user_id="usr_other") is False
+    assert service.delete(integration_id="int_fgt_service", owner_user_id="usr_owner") is True
+    assert service.list(owner_user_id="usr_owner") == {"items": []}
 
 
 def test_fortigate_integration_service_does_not_persist_failed_connection():
@@ -368,3 +451,117 @@ def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():
     assert first_response.status_code == 201
     assert second_response.status_code == 201
     assert [item["id"] for item in list_response.json()["items"]] == ["int_fgt_owner_a"]
+
+
+def test_fortigate_integration_endpoint_deletes_owned_integration():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_endpoint_delete",
+        ),
+        client_factory=healthy_client_factory,
+    )
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
+        lambda: service
+    )
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "FortiGate Lab",
+                "host": "https://fortigate.local",
+                "apiKey": "fg_api_key_from_user",
+                "verifyTls": False,
+            },
+        )
+        delete_response = client.delete(
+            "/api/integrations/int_fgt_endpoint_delete",
+            headers=csrf_headers(client),
+        )
+        list_response = client.get("/api/integrations")
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service,
+            None,
+        )
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert create_response.status_code == 201
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": True, "id": "int_fgt_endpoint_delete"}
+    assert list_response.json() == {"items": []}
+
+
+def test_fortigate_integration_endpoint_returns_404_when_deleting_other_users_integration():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_endpoint_other",
+        ),
+        client_factory=healthy_client_factory,
+    )
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
+        lambda: service
+    )
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "FortiGate Lab",
+                "host": "https://fortigate.local",
+                "apiKey": "fg_api_key_from_user",
+                "verifyTls": False,
+            },
+        )
+        app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+            "id": "usr_other",
+            "email": "other@example.com",
+            "displayName": "Other",
+            "roles": ["analyst"],
+        }
+        delete_response = client.delete(
+            "/api/integrations/int_fgt_endpoint_other",
+            headers=csrf_headers(client),
+        )
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service,
+            None,
+        )
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert create_response.status_code == 201
+    assert delete_response.status_code == 404
+    assert delete_response.json() == {"detail": "Integration not found"}

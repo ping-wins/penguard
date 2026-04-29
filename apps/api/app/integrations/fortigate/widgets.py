@@ -11,7 +11,14 @@ from app.integrations.fortigate.normalizers import (
     normalize_threat_logs,
 )
 
-CACHE_TTL_SECONDS = 30
+DEFAULT_REFRESH_INTERVAL_SECONDS = 10
+WIDGET_REFRESH_INTERVAL_SECONDS = {
+    "fortigate-system-status": 2,
+    "fortigate-kpi-sessions": 2,
+    "fortigate-network-traffic": 2,
+    "fortigate-top-threats": 5,
+    "fortigate-firewall-policies": 15,
+}
 SYSTEM_STATUS_SNAPSHOT_CACHE_KEY = "__system_status_snapshot"
 
 
@@ -82,9 +89,10 @@ class FortiGateWidgetDataService:
         cache_key = (owner_user_id, integration_id, widget_id)
         cached = self._cache.get(cache_key)
         now = self.clock()
+        cache_ttl_seconds = self._cache_ttl_seconds(widget_id)
         if cached is not None:
             cached_at, payload = cached
-            if (now - cached_at).total_seconds() < CACHE_TTL_SECONDS:
+            if (now - cached_at).total_seconds() < cache_ttl_seconds:
                 return payload
 
         client = self._client_for_integration(integration_id, owner_user_id=owner_user_id)
@@ -114,7 +122,13 @@ class FortiGateWidgetDataService:
                 case _:
                     raise KeyError("Widget data not found")
         except FortiGateApiError as exc:
-            payload = self._error_payload(widget_id, integration_id, str(exc), refreshed_at=now)
+            payload = self._error_payload(
+                widget_id,
+                integration_id,
+                str(exc),
+                refreshed_at=now,
+                cache_ttl_seconds=cache_ttl_seconds,
+            )
             self._cache[cache_key] = (now, payload)
             return payload
 
@@ -124,7 +138,7 @@ class FortiGateWidgetDataService:
             "refreshedAt": self._format_datetime(now),
             "status": "ready",
             "data": data,
-            "meta": {"source": "fortigate", "cacheTtlSeconds": CACHE_TTL_SECONDS},
+            "meta": self._meta(widget_id, cache_ttl_seconds=cache_ttl_seconds),
         }
         self._cache[cache_key] = (now, payload)
         return payload
@@ -136,6 +150,7 @@ class FortiGateWidgetDataService:
         message: str,
         *,
         refreshed_at: datetime,
+        cache_ttl_seconds: int,
     ) -> dict[str, Any]:
         return {
             "widgetId": widget_id,
@@ -145,7 +160,8 @@ class FortiGateWidgetDataService:
             "data": {},
             "meta": {
                 "source": "fortigate",
-                "cacheTtlSeconds": CACHE_TTL_SECONDS,
+                "cacheTtlSeconds": cache_ttl_seconds,
+                "refreshIntervalSeconds": self._refresh_interval_seconds(widget_id),
                 "error": {"message": message},
             },
         }
@@ -167,14 +183,28 @@ class FortiGateWidgetDataService:
     ) -> dict[str, Any]:
         cache_key = (owner_user_id, integration_id, SYSTEM_STATUS_SNAPSHOT_CACHE_KEY)
         cached = self._cache.get(cache_key)
+        cache_ttl_seconds = self._cache_ttl_seconds("fortigate-system-status")
         if cached is not None:
             cached_at, data = cached
-            if (now - cached_at).total_seconds() < CACHE_TTL_SECONDS:
+            if (now - cached_at).total_seconds() < cache_ttl_seconds:
                 return data
 
         data = self._system_status_data(client)
         self._cache[cache_key] = (now, data)
         return data
+
+    def _meta(self, widget_id: str, *, cache_ttl_seconds: int) -> dict[str, Any]:
+        return {
+            "source": "fortigate",
+            "cacheTtlSeconds": cache_ttl_seconds,
+            "refreshIntervalSeconds": self._refresh_interval_seconds(widget_id),
+        }
+
+    def _cache_ttl_seconds(self, widget_id: str) -> int:
+        return self._refresh_interval_seconds(widget_id)
+
+    def _refresh_interval_seconds(self, widget_id: str) -> int:
+        return WIDGET_REFRESH_INTERVAL_SECONDS.get(widget_id, DEFAULT_REFRESH_INTERVAL_SECONDS)
 
     def _client_for_integration(
         self,

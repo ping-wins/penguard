@@ -11,6 +11,7 @@
   },
   "meta": {
     "source": "fortigate",
-    "cacheTtlSeconds": 30
+    "cacheTtlSeconds": 2,
+    "refreshIntervalSeconds": 2
   }
 }

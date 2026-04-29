@@ -126,6 +126,45 @@ def list_integrations(
     return service.list(owner_user_id=str(current_user["id"]))
 
 
+@router.delete("/integrations/{integration_id}")
+def delete_integration(
+    integration_id: str,
+    request: Request,
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    deleted = service.delete(
+        integration_id=integration_id,
+        owner_user_id=str(current_user["id"]),
+    )
+    if not deleted:
+        audit_store.record(
+            action="integration.fortigate.deleted",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=str(current_user["id"]),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "integrationId": integration_id,
+                "error": "Integration not found",
+            },
+        )
+        raise HTTPException(status_code=404, detail="Integration not found")
+    audit_store.record(
+        action="integration.fortigate.deleted",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={"integrationId": integration_id},
+    )
+    return {"deleted": True, "id": integration_id}
+
+
 @router.post("/integrations/fortigate/{integration_id}/health-check")
 def run_fortigate_health_check(
     integration_id: str,

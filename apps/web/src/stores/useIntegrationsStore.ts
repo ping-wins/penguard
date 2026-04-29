@@ -6,6 +6,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
   const isTesting = ref(false)
+  const isDeleting = ref<Record<string, boolean>>({})
   const error = ref<string | null>(null)
 
   const hasFortigate = computed(() => integrations.value.some(i => i.type === 'fortigate'))
@@ -96,15 +97,42 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
+  async function removeIntegration(integrationId: string) {
+    isDeleting.value[integrationId] = true
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/integrations/${encodeURIComponent(integrationId)}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': authStore.csrfToken },
+        credentials: 'include',
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        integrations.value = integrations.value.filter(item => item.id !== integrationId)
+        return { success: true, data }
+      }
+      return { success: false, error: await responseErrorMessage(res, 'Failed to remove integration') }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    } finally {
+      delete isDeleting.value[integrationId]
+    }
+  }
+
   return {
     integrations,
     isLoading,
     isTesting,
+    isDeleting,
     error,
     hasFortigate,
     fetchIntegrations,
     testFortigate,
-    addFortigate
+    addFortigate,
+    removeIntegration
   }
 })
 

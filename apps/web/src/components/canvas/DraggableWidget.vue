@@ -24,15 +24,37 @@ const catalogItem = computed(() => store.catalogItems.find(c => c.id === props.c
 
 let currentController: AbortController | null = null
 let requestId = 0
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null
 
-async function loadWidgetData() {
+function clearRefreshTimeout() {
+  if (refreshTimeout) {
+    clearTimeout(refreshTimeout)
+    refreshTimeout = null
+  }
+}
+
+function scheduleRefresh(response?: { meta?: { refreshIntervalSeconds?: number } }) {
+  clearRefreshTimeout()
+  const refreshIntervalSeconds = response?.meta?.refreshIntervalSeconds
+  if (!refreshIntervalSeconds || refreshIntervalSeconds <= 0) return
+
+  refreshTimeout = setTimeout(() => {
+    loadWidgetData({ showLoading: false })
+  }, refreshIntervalSeconds * 1000)
+}
+
+async function loadWidgetData(options: { showLoading?: boolean } = {}) {
+  const showLoading = options.showLoading ?? true
   requestId += 1
   const currentRequestId = requestId
   currentController?.abort()
   currentController = null
+  clearRefreshTimeout()
 
   fetchError.value = null
-  widgetData.value = null
+  if (showLoading) {
+    widgetData.value = null
+  }
 
   if (!catalogItem.value?.dataEndpoint) {
     if (!store.isCatalogLoaded && store.catalogItems.length === 0) {
@@ -47,7 +69,9 @@ async function loadWidgetData() {
 
   const controller = new AbortController()
   currentController = controller
-  isLoading.value = true
+  if (showLoading) {
+    isLoading.value = true
+  }
 
   try {
     const result = await fetchWidgetData({
@@ -63,6 +87,7 @@ async function loadWidgetData() {
     } else {
       fetchError.value = result.errorMessage
     }
+    scheduleRefresh(result.response)
   } catch (e: any) {
     if (controller.signal.aborted) return
     fetchError.value = e.message || 'Network Error'
@@ -84,6 +109,7 @@ watch(
 
 onBeforeUnmount(() => {
   requestId += 1
+  clearRefreshTimeout()
   currentController?.abort()
 })
 
