@@ -288,6 +288,9 @@ function formatFieldValue(value: unknown, binding: WidgetFieldBinding) {
 
   const parsedNumber = numericValue(value)
   if (parsedNumber !== null) {
+    if (binding.unit === 'seconds' || binding.type === 'duration' || binding.fieldId.toLowerCase().includes('uptime')) {
+      return formatDurationSeconds(parsedNumber)
+    }
     if (binding.unit === 'percent') return `${Math.round(parsedNumber)}%`
     if (binding.unit === 'bytes') return formatBytes(parsedNumber)
     return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(parsedNumber)
@@ -306,6 +309,22 @@ function formatBytes(value: number) {
     unitIndex += 1
   }
   return `${amount.toFixed(amount >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatDurationSeconds(value: number) {
+  const totalSeconds = Math.max(0, Math.floor(value))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const parts: string[] = []
+
+  if (days > 0) parts.push(`${days}d`)
+  if (hours > 0 || parts.length > 0) parts.push(`${hours}h`)
+  if (minutes > 0 || parts.length > 0) parts.push(`${minutes}m`)
+  if (parts.length === 0) parts.push(`${seconds}s`)
+
+  return parts.slice(0, 3).join(' ')
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -19,6 +19,7 @@ describe('FortiGate widget renderers', () => {
           cpu: 1,
           memory: 45,
           sessions: 25,
+          uptimeSeconds: 92420,
         },
       },
     })
@@ -29,6 +30,28 @@ describe('FortiGate widget renderers', () => {
     expect(wrapper.text()).toContain('1%')
     expect(wrapper.text()).toContain('45%')
     expect(wrapper.text()).toContain('25')
+    expect(wrapper.text()).toContain('Uptime')
+    expect(wrapper.text()).toContain('1d 1h 40m')
+  })
+
+  it('does not render missing FortiGate uptime as zero seconds', () => {
+    const wrapper = mount(WidgetHealth, {
+      props: {
+        data: {
+          hostname: 'FGT-LIVE-01',
+          model: 'FortiGate',
+          version: 'v7.6.6',
+          cpu: 1,
+          memory: 45,
+          sessions: 25,
+          uptimeSeconds: null,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Uptime')
+    expect(wrapper.text()).toContain('--')
+    expect(wrapper.text()).not.toContain('0s')
   })
 
   it('renders normalized FortiGate threat fields from the API', () => {

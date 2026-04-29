@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,6 +8,7 @@ def normalize_system_status(
     *,
     performance: dict[str, Any] | None = None,
     resource_usage: dict[str, Any] | None = None,
+    web_ui_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = {
         "hostname": _string(raw, "hostname", "host_name"),
@@ -16,7 +18,7 @@ def normalize_system_status(
         "cpu": _cpu_percent(raw, performance),
         "memory": _memory_percent(raw, performance),
         "sessions": _session_count(raw, resource_usage),
-        "uptimeSeconds": _integer(raw, "uptime", "uptime_seconds", "uptimeSeconds"),
+        "uptimeSeconds": _uptime_seconds(raw, performance, web_ui_state),
     }
     build = _integer(raw, "build")
     if build is not None:
@@ -161,6 +163,104 @@ def _session_count(raw: dict[str, Any], resource_usage: dict[str, Any] | None) -
     if isinstance(session, dict):
         return _coerce_int(session.get("current"))
     return None
+
+
+def _uptime_seconds(
+    raw: dict[str, Any],
+    performance: dict[str, Any] | None,
+    web_ui_state: dict[str, Any] | None,
+) -> int | None:
+    direct = _duration_seconds_from_keys(raw, "uptime", "uptime_seconds", "uptimeSeconds")
+    if direct is not None:
+        return direct
+    if performance is not None:
+        performance_uptime = _duration_seconds_from_keys(
+            performance,
+            "uptime",
+            "uptime_seconds",
+            "uptimeSeconds",
+        )
+        if performance_uptime is not None:
+            return performance_uptime
+    if web_ui_state is None:
+        return None
+    return _web_ui_state_uptime_seconds(web_ui_state)
+
+
+def _duration_seconds_from_keys(data: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        value = data.get(key)
+        if value not in (None, ""):
+            parsed = _duration_seconds(value)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _duration_seconds(value: Any) -> int | None:
+    direct = _coerce_int(value)
+    if direct is not None:
+        return direct
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+
+    total = 0
+    matched = False
+    unit_seconds = {
+        "day": 86400,
+        "days": 86400,
+        "hour": 3600,
+        "hours": 3600,
+        "hr": 3600,
+        "hrs": 3600,
+        "minute": 60,
+        "minutes": 60,
+        "min": 60,
+        "mins": 60,
+        "second": 1,
+        "seconds": 1,
+        "sec": 1,
+        "secs": 1,
+    }
+    for amount, unit in re.findall(r"(\d+)\s*([a-z]+)", normalized):
+        if unit in unit_seconds:
+            total += int(amount) * unit_seconds[unit]
+            matched = True
+
+    if matched:
+        return total
+
+    colon_parts = normalized.split(":")
+    if len(colon_parts) in {2, 3} and all(part.isdigit() for part in colon_parts):
+        numbers = [int(part) for part in colon_parts]
+        if len(numbers) == 2:
+            minutes, seconds = numbers
+            return minutes * 60 + seconds
+        hours, minutes, seconds = numbers
+        return hours * 3600 + minutes * 60 + seconds
+
+    return None
+
+
+def _web_ui_state_uptime_seconds(web_ui_state: dict[str, Any]) -> int | None:
+    snapshot = _epoch_seconds(web_ui_state.get("snapshot_utc_time"))
+    last_reboot = _epoch_seconds(web_ui_state.get("utc_last_reboot"))
+    if snapshot is None or last_reboot is None or snapshot < last_reboot:
+        return None
+    return int(snapshot - last_reboot)
+
+
+def _epoch_seconds(value: Any) -> float | None:
+    numeric = _coerce_int(value)
+    if numeric is None:
+        return None
+    if numeric > 1_000_000_000_000:
+        return numeric / 1000
+    return float(numeric)
 
 
 def _coerce_int(value: Any) -> int | None:

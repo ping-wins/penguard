@@ -8,6 +8,30 @@ const deviceTitle = computed(() => props.data?.hostname || props.data?.model || 
 const deviceMeta = computed(() => {
   return [props.data?.model, props.data?.version].filter(Boolean).join(' / ')
 })
+
+const uptimeLabel = computed(() => {
+  const rawUptime = props.data?.uptimeSeconds
+  if (rawUptime === null || rawUptime === undefined || rawUptime === '') return '--'
+  const uptime = Number(rawUptime)
+  if (!Number.isFinite(uptime) || uptime < 0) return '--'
+  return formatDurationSeconds(uptime)
+})
+
+function formatDurationSeconds(value: number) {
+  const totalSeconds = Math.max(0, Math.floor(value))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const parts: string[] = []
+
+  if (days > 0) parts.push(`${days}d`)
+  if (hours > 0 || parts.length > 0) parts.push(`${hours}h`)
+  if (minutes > 0 || parts.length > 0) parts.push(`${minutes}m`)
+  if (parts.length === 0) parts.push(`${seconds}s`)
+
+  return parts.slice(0, 3).join(' ')
+}
 </script>
 
 <template>
@@ -35,6 +59,10 @@ const deviceMeta = computed(() => {
       <div class="bg-theme-text/5 rounded-md p-3 flex flex-col justify-center border-l-4 border-blue-500 col-span-2">
         <span class="text-xs text-theme-text-muted uppercase font-semibold">Active Sessions</span>
         <span class="text-3xl font-bold text-theme-text tracking-tight">{{ data?.sessions?.toLocaleString() || 0 }}</span>
+      </div>
+      <div class="bg-theme-text/5 rounded-md p-3 flex flex-col justify-center border-l-4 border-cyan-500 col-span-2">
+        <span class="text-xs text-theme-text-muted uppercase font-semibold">Uptime</span>
+        <span class="text-2xl font-bold text-theme-text tracking-tight">{{ uptimeLabel }}</span>
       </div>
     </div>
   </div>

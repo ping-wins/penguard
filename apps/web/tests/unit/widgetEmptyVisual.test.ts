@@ -32,6 +32,17 @@ const memoryBinding: WidgetFieldBinding = {
   groupName: 'System Data',
 }
 
+const uptimeBinding: WidgetFieldBinding = {
+  fieldId: 'system.uptimeSeconds',
+  label: 'Uptime',
+  type: 'duration',
+  unit: 'seconds',
+  source: 'fortigate-system-status',
+  provider: 'fortigate',
+  groupId: 'system',
+  groupName: 'System Data',
+}
+
 const interfacesBinding: WidgetFieldBinding = {
   fieldId: 'interfaces',
   label: 'Interfaces',
@@ -115,6 +126,31 @@ describe('WidgetEmptyVisual', () => {
     expect(wrapper.text()).toContain('41%')
     expect(wrapper.get('[data-test="custom-bar-system.cpu"]').attributes('style')).toContain('width: 74%')
     expect(wrapper.get('[data-test="custom-bar-system.memory"]').attributes('style')).toContain('width: 41%')
+  })
+
+  it('renders FortiGate uptime bindings as a readable duration', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      widgetId: 'fortigate-system-status',
+      integrationId: 'int_fgt_01',
+      refreshedAt: '2026-04-29T03:40:02.000Z',
+      status: 'ready',
+      data: { uptimeSeconds: 92420 },
+      meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(WidgetEmptyVisual, {
+      props: {
+        catalogId: 'visual-template-card',
+        integrationId: 'int_fgt_01',
+        fieldBindings: [uptimeBinding],
+      } as any,
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="custom-card-value"]').text()).toBe('1d 1h 40m')
+    expect(wrapper.text()).toContain('Uptime')
   })
 
   it('renders a gauge from a bound percentage field without fabricating history', async () => {

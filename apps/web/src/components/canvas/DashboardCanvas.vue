@@ -62,7 +62,7 @@ const WORKSPACE_WIDTH_PX = 200000
 const WORKSPACE_HEIGHT_PX = 200000
 const WORKSPACE_ORIGIN_X_PX = WORKSPACE_WIDTH_PX / 2
 const WORKSPACE_ORIGIN_Y_PX = WORKSPACE_HEIGHT_PX / 2
-const WORKSPACE_GRID_SIZE_PX = 80
+const WORKSPACE_DOT_SIZE_PX = 24
 const MINIMAP_WIDTH_PX = 160
 const MINIMAP_HEIGHT_PX = 104
 const MIN_ZOOM = 0.2
@@ -253,10 +253,9 @@ const workspaceStageStyle = computed(() => ({
   transform: `scale(${dashboardStore.zoom})`,
 }))
 
-const workspaceGridStyle = computed(() => ({
-  backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)',
-  backgroundSize: `${WORKSPACE_GRID_SIZE_PX}px ${WORKSPACE_GRID_SIZE_PX}px`,
-  backgroundPosition: `${-(viewportScroll.value.x % WORKSPACE_GRID_SIZE_PX)}px ${-(viewportScroll.value.y % WORKSPACE_GRID_SIZE_PX)}px`,
+const workspaceDotCanvasStyle = computed(() => ({
+  backgroundImage: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.26) 1px, transparent 1.3px)',
+  backgroundSize: `${WORKSPACE_DOT_SIZE_PX}px ${WORKSPACE_DOT_SIZE_PX}px`,
 }))
 
 const viewportWorldRect = computed(() => {
@@ -447,9 +446,9 @@ function isEditableTarget(target: EventTarget | null) {
 function startViewportPan(event: PointerEvent) {
   const viewport = workspaceViewport.value
   if (!viewport || (!isSpacePanning.value && event.button !== 1)) return
-  if ((event.target as HTMLElement | null)?.closest('[data-workspace-widget="true"]')) return
 
   event.preventDefault()
+  event.stopPropagation()
   isViewportPanning.value = true
   panStartX = event.clientX
   panStartY = event.clientY
@@ -506,22 +505,21 @@ onBeforeUnmount(() => {
         tabindex="0"
         class="flex-1 h-full relative overflow-auto bg-theme-bg no-scrollbar outline-none"
         :class="{
-          'cursor-grab': isSpacePanning && !isViewportPanning,
-          'cursor-grabbing': isViewportPanning,
+          'cursor-grab select-none': isSpacePanning && !isViewportPanning,
+          'cursor-grabbing select-none': isViewportPanning,
         }"
-        :style="workspaceGridStyle"
+        :style="workspaceDotCanvasStyle"
         @wheel="handleWheel"
         @scroll="syncViewportScroll"
         @keydown="handleViewportKeyDown"
         @keyup="handleViewportKeyUp"
-        @pointerdown="startViewportPan"
+        @pointerdown.capture="startViewportPan"
         @dragover="handleWorkspaceDragOver"
         @drop="handleWorkspaceDrop"
       >
         <div
           data-test="workspace-grid"
-          class="pointer-events-none absolute inset-0 z-0 opacity-10 pattern-grid"
-          :style="workspaceGridStyle"
+          class="pointer-events-none absolute inset-0 z-0"
         />
 
         <div class="relative z-10" :style="workspaceSurfaceStyle">
@@ -555,36 +553,36 @@ onBeforeUnmount(() => {
             </DraggableWidget>
           </div>
         </div>
-
-        <div
-          data-test="workspace-minimap"
-          class="absolute bottom-4 left-4 z-40 rounded-md border border-theme-border bg-theme-panel/90 p-2 shadow-2xl backdrop-blur-sm"
-        >
-          <div class="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-theme-text-muted">
-            <span>Workspace</span>
-            <span>{{ Math.round(dashboardStore.zoom * 100) }}%</span>
-          </div>
-          <div
-            class="relative overflow-hidden rounded border border-theme-border bg-theme-bg/80"
-            :style="{ width: `${MINIMAP_WIDTH_PX}px`, height: `${MINIMAP_HEIGHT_PX}px` }"
-          >
-            <div class="absolute left-1/2 top-0 h-full w-px bg-theme-border/45" />
-            <div class="absolute left-0 top-1/2 h-px w-full bg-theme-border/45" />
-            <div
-              v-for="rect in minimapWidgetRects"
-              :key="rect.id"
-              :data-test="`minimap-widget-${rect.id}`"
-              class="absolute rounded-sm bg-theme-primary/55"
-              :style="rect.style"
-            />
-            <div
-              data-test="minimap-viewport"
-              class="absolute rounded-sm border border-blue-400 bg-blue-400/12"
-              :style="minimapViewportStyle"
-            />
-          </div>
-        </div>
       </main>
+
+      <div
+        data-test="workspace-minimap"
+        class="absolute bottom-4 left-4 z-40 rounded-md border border-theme-border bg-theme-panel/90 p-2 shadow-2xl backdrop-blur-sm"
+      >
+        <div class="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-theme-text-muted">
+          <span>Workspace</span>
+          <span>{{ Math.round(dashboardStore.zoom * 100) }}%</span>
+        </div>
+        <div
+          class="relative overflow-hidden rounded border border-theme-border bg-theme-bg/80"
+          :style="{ width: `${MINIMAP_WIDTH_PX}px`, height: `${MINIMAP_HEIGHT_PX}px` }"
+        >
+          <div class="absolute left-1/2 top-0 h-full w-px bg-theme-border/45" />
+          <div class="absolute left-0 top-1/2 h-px w-full bg-theme-border/45" />
+          <div
+            v-for="rect in minimapWidgetRects"
+            :key="rect.id"
+            :data-test="`minimap-widget-${rect.id}`"
+            class="absolute rounded-sm bg-theme-primary/55"
+            :style="rect.style"
+          />
+          <div
+            data-test="minimap-viewport"
+            class="absolute rounded-sm border border-blue-400 bg-blue-400/12"
+            :style="minimapViewportStyle"
+          />
+        </div>
+      </div>
 
       <!-- Build Pane (Power BI style) -->
       <aside 

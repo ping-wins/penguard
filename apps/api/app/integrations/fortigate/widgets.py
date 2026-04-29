@@ -49,6 +49,9 @@ class FortiGateWidgetClient(Protocol):
     def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
         pass
 
+    def get_web_ui_state(self) -> dict[str, Any]:
+        pass
+
     def get_interface_status(self) -> dict[str, Any]:
         pass
 
@@ -200,10 +203,16 @@ class FortiGateWidgetDataService:
         }
 
     def _system_status_data(self, client: FortiGateWidgetClient) -> dict[str, Any]:
+        web_ui_state = None
+        try:
+            web_ui_state = client.get_web_ui_state()
+        except FortiGateApiError:
+            web_ui_state = None
         return normalize_system_status(
             client.get_system_status(),
             performance=client.get_performance_status(),
             resource_usage=client.get_resource_usage(resource="session"),
+            web_ui_state=web_ui_state,
         )
 
     def _risk_posture_data(

@@ -244,7 +244,7 @@ describe('DashboardCanvas build pane', () => {
     expect(wrapper.text()).toContain('Retry fields')
   })
 
-  it('zooms the workspace content without scaling the viewport grid', async () => {
+  it('keeps a stable dot canvas background while zooming and panning', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
@@ -272,8 +272,20 @@ describe('DashboardCanvas build pane', () => {
     const store = useDashboardStore()
     const viewport = wrapper.get('[data-test="workspace-viewport"]')
     const grid = wrapper.get('[data-test="workspace-grid"]')
+    const viewportElement = viewport.element as HTMLElement
 
-    expect(grid.attributes('style')).toContain('background-size: 80px 80px')
+    const dotStyle = viewport.attributes('style') ?? ''
+    expect(dotStyle).toContain('radial-gradient')
+    expect(dotStyle).toContain('background-size: 24px 24px')
+    expect(dotStyle).not.toContain('linear-gradient')
+    expect(dotStyle).not.toContain('background-position')
+
+    viewportElement.scrollLeft = 240
+    viewportElement.scrollTop = 160
+    await viewport.trigger('scroll')
+
+    expect(viewport.attributes('style')).toBe(dotStyle)
+    expect(grid.attributes('style') ?? '').not.toContain('radial-gradient')
 
     await viewport.trigger('wheel', {
       ctrlKey: true,
@@ -283,7 +295,7 @@ describe('DashboardCanvas build pane', () => {
     })
 
     expect(store.zoom).toBeGreaterThan(1)
-    expect(grid.attributes('style')).toContain('background-size: 80px 80px')
+    expect(viewport.attributes('style')).toBe(dotStyle)
     expect(wrapper.get('[data-test="workspace-stage"]').attributes('style')).toContain('scale(')
   })
 
@@ -344,6 +356,63 @@ describe('DashboardCanvas build pane', () => {
 
     expect(viewport.scrollLeft).toBe(220)
     expect(viewport.scrollTop).toBe(290)
+  })
+
+  it('uses space-drag to pan when the pointer starts over a widget', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({
+          id: 'ws_default',
+          name: 'SOC Overview',
+          widgets: [{
+            instanceId: 'w_01',
+            catalogId: 'visual-template-card',
+            integrationId: '',
+            layout: { x: 0, y: 0, w: 3, h: 2, z: 10 },
+          }],
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: {
+            template: '<div data-workspace-widget="true" data-test="stub-widget">Widget text</div>',
+            props: ['instanceId', 'catalogId', 'integrationId', 'layout', 'fieldBindings'],
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const viewportWrapper = wrapper.get('[data-test="workspace-viewport"]')
+    const viewport = viewportWrapper.element as HTMLElement
+    viewport.scrollLeft = 500
+    viewport.scrollTop = 600
+
+    await viewportWrapper.trigger('keydown', { code: 'Space', key: ' ' })
+    await wrapper.get('[data-test="stub-widget"]').trigger('pointerdown', {
+      clientX: 300,
+      clientY: 200,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 260,
+      clientY: 170,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(viewport.scrollLeft).toBe(540)
+    expect(viewport.scrollTop).toBe(630)
   })
 
   it('adds a FortiGate preset by dragging it from Visuals onto the workspace', async () => {
@@ -546,6 +615,7 @@ describe('DashboardCanvas build pane', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="workspace-minimap"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="workspace-viewport"]').find('[data-test="workspace-minimap"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="minimap-viewport"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="minimap-widget-w_01"]').exists()).toBe(true)
   })
