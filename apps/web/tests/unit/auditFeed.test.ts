@@ -41,6 +41,16 @@ describe('audit feed', () => {
     })
   })
 
+  it('fetches admin audit events from the admin endpoint when scoped globally', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [loginEvent] }))
+
+    await fetchAuditEvents({ limit: 500, scope: 'admin', fetcher })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=100', {
+      credentials: 'include',
+    })
+  })
+
   it('maps known and unknown audit actions into readable SOC labels', () => {
     expect(formatAuditEvent({ ...loginEvent, action: 'login', outcome: 'success' }).title)
       .toBe('Login succeeded')
@@ -52,6 +62,8 @@ describe('audit feed', () => {
       .toBe('FortiGate integration removed')
     expect(formatAuditEvent({ ...loginEvent, action: 'workspace.updated' }).title)
       .toBe('Workspace updated')
+    expect(formatAuditEvent({ ...loginEvent, action: 'audit.events.viewed' }).title)
+      .toBe('Audit trail viewed')
     expect(formatAuditEvent({ ...loginEvent, action: 'tenant.unknown.action' }).title)
       .toBe('tenant.unknown.action')
   })
@@ -94,9 +106,25 @@ describe('audit feed', () => {
     expect(store.isLoading).toBe(false)
   })
 
+  it('loads admin scoped events through the store', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse({ items: [loginEvent] }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuditStore()
+    await store.fetchEvents({ scope: 'admin', limit: 20 })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=20', {
+      credentials: 'include',
+    })
+    expect(store.events).toEqual([loginEvent])
+    expect(store.scope).toBe('admin')
+  })
+
   it('renders loading, empty, error, and event rows without exposing secrets', () => {
     expect(mount(AuditFeed, { props: { isLoading: true, events: [] } }).text())
       .toContain('Loading audit trail')
+    expect(mount(AuditFeed, { props: { title: 'Admin audit trail', subtitle: 'Global SOC activity', events: [] } }).text())
+      .toContain('Global SOC activity')
     expect(mount(AuditFeed, { props: { events: [] } }).text())
       .toContain('No sensitive activity recorded')
     expect(mount(AuditFeed, { props: { events: [], error: 'Audit unavailable' } }).text())

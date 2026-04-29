@@ -18,6 +18,8 @@ export type AuditEventsResponse = {
   items: AuditEvent[]
 }
 
+export type AuditScope = 'mine' | 'admin'
+
 type Fetcher = typeof fetch
 
 export class AuditApiError extends Error {
@@ -42,19 +44,22 @@ async function errorFromResponse(response: Response) {
   return new AuditApiError('Unable to load audit trail', response.status)
 }
 
-function auditEventsUrl(limit: number) {
+function auditEventsUrl(limit: number, scope: AuditScope) {
   const boundedLimit = Math.min(100, Math.max(1, Math.trunc(limit)))
-  return `/api/audit/events?limit=${boundedLimit}`
+  const basePath = scope === 'admin' ? '/api/admin/audit/events' : '/api/audit/events'
+  return `${basePath}?limit=${boundedLimit}`
 }
 
 export async function fetchAuditEvents({
   limit = 50,
+  scope = 'mine',
   fetcher = globalThis.fetch.bind(globalThis),
 }: {
   limit?: number
+  scope?: AuditScope
   fetcher?: Fetcher
 } = {}): Promise<AuditEventsResponse> {
-  const response = await fetcher(auditEventsUrl(limit), { credentials: 'include' })
+  const response = await fetcher(auditEventsUrl(limit, scope), { credentials: 'include' })
   if (!response.ok) {
     throw await errorFromResponse(response)
   }

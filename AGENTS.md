@@ -730,7 +730,9 @@ Nota de modelo Power BI-like (2026-04-28): o FortiGate agora expõe um catálogo
 
 Nota de visuais customizados (2026-04-29): campos arrastados do painel `Data` para templates vazios já são resolvidos contra dados live pelo `source` do campo. `Card`, `Gauge`, `Table`, `Bar Chart`, `Line Chart`, `Event Feed` e `Signal List` renderizam os bindings com visual próprio, usando request compartilhada por origem e atualização pelo intervalo retornado pela API.
 
-Nota de UX Power BI-like (2026-04-29): o Build Panel separa presets FortiGate prontos de templates vazios, mostra estados de loading/empty/retry para catálogo e data model, e a sidebar exibe preview estático de domain verification pendente e audit activity para guiar o corte SaaS. Os widgets `fortigate-risk-posture`, `fortigate-interface-health`, `fortigate-recent-events` e `fortigate-anomaly-highlights` já têm componentes dedicados no canvas.
+Nota de UX Power BI-like (2026-04-29): o Build Panel separa presets FortiGate prontos de templates vazios, mostra estados de loading/empty/retry para catálogo e data model, e a sidebar exibe preview estático de domain verification pendente para guiar o corte SaaS. Os widgets `fortigate-risk-posture`, `fortigate-interface-health`, `fortigate-recent-events` e `fortigate-anomaly-highlights` já têm componentes dedicados no canvas.
+
+Nota de audit trail no frontend (2026-04-29): a sidebar possui um drawer `Audit Trail` real. Usuários comuns carregam `/api/audit/events`; usuários com role `admin` carregam `/api/admin/audit/events` e veem eventos cross-user. O componente `AuditFeed` deve continuar saneando detalhes sensíveis antes de renderizar e deve exibir estados de loading, erro e vazio.
 
 Nota de navegação do canvas (2026-04-29): widgets/templates agora têm min/max size por tipo; resize respeita esses limites. A workspace usa origem virtual central em uma superfície ampla, permite coordenadas negativas, pan por scroll, `Shift+Scroll`, `Space+drag` e zoom por `Ctrl/Cmd+Scroll`. O fundo da workspace usa dots discretos fixos na viewport, sem `background-position` dependente do scroll, para evitar flicker durante pan/zoom. O minimapa mostra viewport e widgets como overlay fixo da área de dashboard, e `Space+drag` captura o pointerdown antes do widget para evitar seleção de texto ou drag involuntário.
 
@@ -772,9 +774,9 @@ Nota de uptime e canvas dots (2026-04-29): `fortigate-system-status` deve preser
 - [x] Implementar drag-and-drop de campos do painel `Data` para templates vazios, persistindo `fieldBindings` no workspace.
 - [x] Transformar `fieldBindings` em renderização calculada inicial para `Card` e `Bar Chart`, consumindo dados live pelo `source` do campo.
 - [x] Expandir renderização dedicada de `fieldBindings` para Gauge, Table, Line Chart, Event Feed e Signal List.
-- [x] Adicionar preview estático de domínio pendente e audit activity na sidebar para orientar UX SaaS.
+- [x] Adicionar preview estático de domínio pendente na sidebar para orientar UX SaaS.
 - [ ] Criar mocks visuais completos para domínio pendente/verificado e falha de verificação.
-- [x] Criar audit trail/activity feed para eventos sensíveis.
+- [x] Criar audit trail/activity feed real para eventos sensíveis, com escopo admin quando permitido pela sessão.
 - [x] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.
 - [x] Definir min/max size por tipo de widget/template e aplicar esses limites no resize.
 - [x] Melhorar navegação livre do canvas com scroll, `Shift+Scroll`, `Ctrl/Cmd+Scroll` e `Space+drag`.

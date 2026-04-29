@@ -14,9 +14,13 @@ import { formatAuditEvent } from './auditFormat'
 
 const props = withDefaults(defineProps<{
   events: AuditEvent[]
+  title?: string
+  subtitle?: string
   isLoading?: boolean
   error?: string | null
 }>(), {
+  title: 'Audit trail',
+  subtitle: 'Sensitive SOC activity',
   isLoading: false,
   error: null,
 })
@@ -43,8 +47,8 @@ function toneClasses(tone: string) {
           <ShieldAlert :size="18" />
         </div>
         <div class="min-w-0">
-          <h2 class="truncate text-sm font-semibold">Audit trail</h2>
-          <p class="truncate text-xs text-theme-text-muted">Sensitive SOC activity</p>
+          <h2 class="truncate text-sm font-semibold">{{ title }}</h2>
+          <p class="truncate text-xs text-theme-text-muted">{{ subtitle }}</p>
         </div>
       </div>
       <button

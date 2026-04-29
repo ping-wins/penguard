@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History, Clock3 } from 'lucide-vue-next'
+import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { useAuditStore } from '../../stores/useAuditStore'
+import AuditFeed from '../audit/AuditFeed.vue'
 import { useRouter } from 'vue-router'
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
+const auditStore = useAuditStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -25,23 +28,33 @@ const fgTestError = ref<string | null>(null)
 const canSubmitFortigate = computed(() => {
   return fgForm.value.host.trim().length > 0 && fgForm.value.apiKey.trim().length > 0
 })
+const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
+const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
+const auditTitle = computed(() => isAdmin.value ? 'Admin audit trail' : 'My audit trail')
+const auditSubtitle = computed(() => isAdmin.value ? 'Global SOC activity' : 'Your browser session activity')
+const drawerWidth = computed(() => {
+  if (activeTab.value === 'none') return '0px'
+  if (activeTab.value === 'audit') return '420px'
+  return '320px'
+})
 
 const chatInput = ref('')
 const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
 ])
 const isThinking = ref(false)
-const auditActivityPreview = [
-  { action: 'login', label: 'Login attempts', status: 'tracked' },
-  { action: 'integration.fortigate.created', label: 'Integration changes', status: 'tracked' },
-  { action: 'workspace.updated', label: 'Canvas edits', status: 'tracked' },
-]
-
-function toggleTab(tab: 'chat' | 'settings' | 'integrations') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit') {
   if (activeTab.value !== tab && tab === 'integrations') {
     integrationsStore.fetchIntegrations()
   }
+  if (activeTab.value !== tab && tab === 'audit') {
+    auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
+  }
   activeTab.value = activeTab.value === tab ? 'none' : tab
+}
+
+function refreshAuditTrail() {
+  auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
 }
 
 async function handleTestFortigate() {
@@ -162,6 +175,15 @@ function handleChatSubmit() {
         >
           <Plug :size="20" />
         </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'audit' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('audit')"
+          title="Audit Trail"
+        >
+          <History :size="20" />
+        </div>
       </nav>
       
       <div class="mt-auto flex flex-col gap-2">
@@ -181,7 +203,7 @@ function handleChatSubmit() {
     <!-- Drawer Panel -->
     <div 
       class="h-full bg-theme-panel border-r border-theme-border flex flex-col transition-all duration-300 overflow-hidden z-10"
-      :style="{ width: activeTab !== 'none' ? '320px' : '0px', opacity: activeTab !== 'none' ? 1 : 0 }"
+      :style="{ width: drawerWidth, opacity: activeTab !== 'none' ? 1 : 0 }"
     >
       <!-- Chat Tab -->
       <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full w-[320px] shrink-0">
@@ -257,7 +279,7 @@ function handleChatSubmit() {
           </div>
         </div>
 
-        <!-- Domain trust and audit affordances -->
+        <!-- Domain trust affordance -->
         <div class="mb-6 flex flex-col gap-3">
           <div class="flex items-center justify-between gap-3">
             <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Domain verification</h3>
@@ -281,32 +303,6 @@ function handleChatSubmit() {
             </div>
           </div>
 
-          <div class="rounded border border-theme-border bg-theme-bg p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 text-sm font-medium text-theme-text">
-                <History :size="15" class="text-theme-primary" />
-                <span>Audit activity</span>
-              </div>
-              <span class="text-[10px] uppercase tracking-wider text-theme-text-muted">Preview</span>
-            </div>
-
-            <div class="flex flex-col gap-2">
-              <div
-                v-for="item in auditActivityPreview"
-                :key="item.action"
-                class="flex items-center justify-between gap-2 text-xs"
-              >
-                <div class="min-w-0">
-                  <div class="truncate font-medium text-theme-text">{{ item.label }}</div>
-                  <div class="truncate font-mono text-[10px] text-theme-text-muted">{{ item.action }}</div>
-                </div>
-                <span class="flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                  <Clock3 :size="10" />
-                  {{ item.status }}
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- Add New Integration Form -->
@@ -361,6 +357,18 @@ function handleChatSubmit() {
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Audit Tab -->
+      <div v-if="activeTab === 'audit'" class="h-full w-[420px] shrink-0 p-4">
+        <AuditFeed
+          :events="auditStore.events"
+          :is-loading="auditStore.isLoading"
+          :error="auditStore.error"
+          :title="auditTitle"
+          :subtitle="auditSubtitle"
+          @refresh="refreshAuditTrail"
+        />
       </div>
     </div>
   </div>
