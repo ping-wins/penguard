@@ -29,6 +29,30 @@
       "title": "Top Threats",
       "kind": "table",
       "requiredCapabilities": ["threat_logs"]
+    },
+    {
+      "id": "fortigate-risk-posture",
+      "title": "Risk Posture",
+      "kind": "summary",
+      "requiredCapabilities": ["system", "interfaces", "policies"]
+    },
+    {
+      "id": "fortigate-interface-health",
+      "title": "Interface Health",
+      "kind": "status-list",
+      "requiredCapabilities": ["interfaces"]
+    },
+    {
+      "id": "fortigate-recent-events",
+      "title": "Recent Events",
+      "kind": "feed",
+      "requiredCapabilities": ["threat_logs"]
+    },
+    {
+      "id": "fortigate-anomaly-highlights",
+      "title": "Anomaly Highlights",
+      "kind": "feed",
+      "requiredCapabilities": ["system", "interfaces"]
     }
   ]
 }

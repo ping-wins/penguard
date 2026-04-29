@@ -1,0 +1,38 @@
+{
+  "widgetId": "fortigate-risk-posture",
+  "integrationId": "int_fgt_01",
+  "refreshedAt": "2026-04-26T20:31:00.000Z",
+  "status": "ready",
+  "data": {
+    "score": 84,
+    "level": "low",
+    "signals": [
+      {
+        "id": "system.cpu",
+        "label": "CPU within expected range",
+        "severity": "healthy",
+        "value": 12,
+        "unit": "percent",
+        "description": "FortiGate CPU usage is below SOC attention thresholds."
+      },
+      {
+        "id": "system.memory",
+        "label": "Memory within expected range",
+        "severity": "healthy",
+        "value": 54,
+        "unit": "percent",
+        "description": "FortiGate memory usage is below SOC attention thresholds."
+      }
+    ],
+    "summary": {
+      "critical": 0,
+      "warning": 0,
+      "healthy": 4
+    }
+  },
+  "meta": {
+    "source": "fortigate",
+    "cacheTtlSeconds": 5,
+    "refreshIntervalSeconds": 5
+  }
+}

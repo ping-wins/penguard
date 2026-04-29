@@ -1,0 +1,35 @@
+{
+  "widgetId": "fortigate-interface-health",
+  "integrationId": "int_fgt_01",
+  "refreshedAt": "2026-04-26T20:31:00.000Z",
+  "status": "ready",
+  "data": {
+    "interfaces": [
+      {
+        "id": "port1",
+        "name": "port1",
+        "alias": "WAN",
+        "status": "up",
+        "ip": "192.0.2.118",
+        "role": "wan",
+        "type": "physical",
+        "rxBytes": 8304525,
+        "txBytes": 6185442,
+        "rxPackets": 35655,
+        "txPackets": 26875
+      }
+    ],
+    "summary": {
+      "total": 1,
+      "up": 1,
+      "down": 0,
+      "totalRxBytes": 8304525,
+      "totalTxBytes": 6185442
+    }
+  },
+  "meta": {
+    "source": "fortigate",
+    "cacheTtlSeconds": 2,
+    "refreshIntervalSeconds": 2
+  }
+}

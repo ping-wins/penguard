@@ -9,5 +9,9 @@ The initial FortiGate catalog includes:
 - `fortigate-kpi-sessions`
 - `fortigate-firewall-policies`
 - `fortigate-top-threats`
+- `fortigate-risk-posture`
+- `fortigate-interface-health`
+- `fortigate-recent-events`
+- `fortigate-anomaly-highlights`
 
 Backend endpoints can expose these widgets, and the frontend can use them to render mock catalog entries before the live API is complete.

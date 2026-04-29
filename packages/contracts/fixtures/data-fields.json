@@ -1,19 +1,168 @@
 {
+  "provider": "fortigate",
   "groups": [
     {
       "id": "system",
       "name": "System Data",
-      "fields": ["CPU Usage", "Memory Usage", "Active Sessions", "Uptime"]
+      "fields": [
+        {
+          "id": "system.cpu",
+          "label": "CPU Usage",
+          "type": "number",
+          "unit": "percent",
+          "source": "fortigate-system-status",
+          "recommendedVisuals": ["kpi", "gauge", "risk-summary"]
+        },
+        {
+          "id": "system.memory",
+          "label": "Memory Usage",
+          "type": "number",
+          "unit": "percent",
+          "source": "fortigate-system-status",
+          "recommendedVisuals": ["kpi", "gauge", "risk-summary"]
+        },
+        {
+          "id": "system.sessions",
+          "label": "Active Sessions",
+          "type": "number",
+          "unit": "count",
+          "source": "fortigate-system-status",
+          "recommendedVisuals": ["kpi", "line", "anomaly-list"]
+        },
+        {
+          "id": "system.uptimeSeconds",
+          "label": "Uptime",
+          "type": "duration",
+          "unit": "seconds",
+          "source": "fortigate-system-status",
+          "recommendedVisuals": ["kpi"]
+        }
+      ]
     },
     {
-      "id": "network",
-      "name": "Network Traffic",
-      "fields": ["Bytes In", "Bytes Out", "Packets Dropped", "Bandwidth"]
+      "id": "interfaces",
+      "name": "Interface Data",
+      "fields": [
+        {
+          "id": "interfaces.name",
+          "label": "Interface Name",
+          "type": "string",
+          "source": "fortigate-network-traffic",
+          "recommendedVisuals": ["table", "interface-health"]
+        },
+        {
+          "id": "interfaces.status",
+          "label": "Link Status",
+          "type": "category",
+          "source": "fortigate-network-traffic",
+          "recommendedVisuals": ["table", "status-list", "interface-health"]
+        },
+        {
+          "id": "interfaces.rxBytes",
+          "label": "Bytes In",
+          "type": "number",
+          "unit": "bytes",
+          "source": "fortigate-network-traffic",
+          "recommendedVisuals": ["table", "bar", "line"]
+        },
+        {
+          "id": "interfaces.txBytes",
+          "label": "Bytes Out",
+          "type": "number",
+          "unit": "bytes",
+          "source": "fortigate-network-traffic",
+          "recommendedVisuals": ["table", "bar", "line"]
+        }
+      ]
     },
     {
-      "id": "threats",
-      "name": "Threat Intelligence",
-      "fields": ["Top Source IPs", "Top Destinations", "Botnet Matches", "Intrusion Events"]
+      "id": "policies",
+      "name": "Policy Data",
+      "fields": [
+        {
+          "id": "policies.name",
+          "label": "Policy Name",
+          "type": "string",
+          "source": "fortigate-firewall-policies",
+          "recommendedVisuals": ["table"]
+        },
+        {
+          "id": "policies.status",
+          "label": "Policy Status",
+          "type": "category",
+          "source": "fortigate-firewall-policies",
+          "recommendedVisuals": ["table", "risk-summary"]
+        },
+        {
+          "id": "policies.action",
+          "label": "Policy Action",
+          "type": "category",
+          "source": "fortigate-firewall-policies",
+          "recommendedVisuals": ["table"]
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "name": "Threat/Event Data",
+      "fields": [
+        {
+          "id": "events.timestamp",
+          "label": "Event Time",
+          "type": "datetime",
+          "source": "fortigate-top-threats",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "events.severity",
+          "label": "Severity",
+          "type": "category",
+          "source": "fortigate-top-threats",
+          "recommendedVisuals": ["feed", "risk-summary", "bar"]
+        },
+        {
+          "id": "events.sourceIp",
+          "label": "Source IP",
+          "type": "ip",
+          "source": "fortigate-top-threats",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "events.action",
+          "label": "Action",
+          "type": "category",
+          "source": "fortigate-top-threats",
+          "recommendedVisuals": ["feed", "table"]
+        }
+      ]
+    },
+    {
+      "id": "risk",
+      "name": "Risk Signals",
+      "fields": [
+        {
+          "id": "risk.score",
+          "label": "Risk Score",
+          "type": "number",
+          "unit": "score",
+          "source": "fortigate-risk-posture",
+          "recommendedVisuals": ["risk-summary", "gauge", "kpi"]
+        },
+        {
+          "id": "risk.signals",
+          "label": "Risk Signals",
+          "type": "list",
+          "source": "fortigate-risk-posture",
+          "recommendedVisuals": ["risk-summary", "anomaly-list"]
+        },
+        {
+          "id": "risk.anomalies",
+          "label": "Anomalies",
+          "type": "list",
+          "source": "fortigate-anomaly-highlights",
+          "recommendedVisuals": ["anomaly-list", "feed"]
+        }
+      ]
     }
   ]
 }

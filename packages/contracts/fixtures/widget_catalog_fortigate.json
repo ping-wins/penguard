@@ -43,7 +43,70 @@
       "source": "fortigate",
       "requiredCapabilities": ["threat_logs"],
       "defaultSize": { "w": 5, "h": 4 },
-      "dataEndpoint": "/api/widgets/fortigate-top-threats/data"
+      "dataEndpoint": "/api/widgets/fortigate-top-threats/data",
+      "template": "event-table",
+      "dataGroup": "events",
+      "fieldBindings": {
+        "rows": "events"
+      }
+    },
+    {
+      "id": "fortigate-risk-posture",
+      "title": "Risk Posture",
+      "kind": "summary",
+      "source": "fortigate",
+      "requiredCapabilities": ["system", "interfaces", "policies"],
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/fortigate-risk-posture/data",
+      "template": "risk-summary",
+      "dataGroup": "risk",
+      "fieldBindings": {
+        "score": "risk.score",
+        "signals": "risk.signals"
+      }
+    },
+    {
+      "id": "fortigate-interface-health",
+      "title": "Interface Health",
+      "kind": "status-list",
+      "source": "fortigate",
+      "requiredCapabilities": ["interfaces"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-interface-health/data",
+      "template": "interface-health",
+      "dataGroup": "interfaces",
+      "fieldBindings": {
+        "interfaces": "interfaces",
+        "summary": "interfaces.summary"
+      }
+    },
+    {
+      "id": "fortigate-recent-events",
+      "title": "Recent Events",
+      "kind": "feed",
+      "source": "fortigate",
+      "requiredCapabilities": ["threat_logs"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-recent-events/data",
+      "template": "event-feed",
+      "dataGroup": "events",
+      "fieldBindings": {
+        "events": "events"
+      }
+    },
+    {
+      "id": "fortigate-anomaly-highlights",
+      "title": "Anomaly Highlights",
+      "kind": "feed",
+      "source": "fortigate",
+      "requiredCapabilities": ["system", "interfaces"],
+      "defaultSize": { "w": 5, "h": 3 },
+      "dataEndpoint": "/api/widgets/fortigate-anomaly-highlights/data",
+      "template": "anomaly-list",
+      "dataGroup": "risk",
+      "fieldBindings": {
+        "anomalies": "risk.anomalies"
+      }
     }
   ]
 }
