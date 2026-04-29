@@ -43,3 +43,5 @@ export type WidgetDataResponse = {
     }
   }
 }
+
+export type WidgetDataErrorKind = 'widget_error' | 'network' | 'invalid_connection'

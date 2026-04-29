@@ -134,4 +134,118 @@ describe('DraggableWidget', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Sessions: 28')
   })
+
+  it('keeps the last good payload visible when a background refresh fails', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        widgetId: 'fortigate-kpi-sessions',
+        integrationId: 'int_fgt_01',
+        refreshedAt: '2026-04-26T23:45:00.000Z',
+        status: 'ready',
+        data: { sessions: 23 },
+        meta: { source: 'fortigate', cacheTtlSeconds: 1, refreshIntervalSeconds: 1 },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        widgetId: 'fortigate-kpi-sessions',
+        integrationId: 'int_fgt_01',
+        refreshedAt: '2026-04-26T23:45:01.000Z',
+        status: 'error',
+        data: {},
+        meta: {
+          source: 'fortigate',
+          cacheTtlSeconds: 1,
+          refreshIntervalSeconds: 1,
+          error: { message: 'FortiGate API request failed with HTTP 404' },
+        },
+      }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'fortigate-kpi-sessions',
+      title: 'Active Sessions',
+      kind: 'kpi',
+      source: 'fortigate',
+      requiredCapabilities: ['system'],
+      defaultSize: { w: 3, h: 2 },
+      dataEndpoint: '/api/widgets/fortigate-kpi-sessions/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_sessions',
+        catalogId: 'fortigate-kpi-sessions',
+        integrationId: 'int_fgt_01',
+        layout: { x: 0, y: 0, w: 320, h: 200, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `Sessions: ${widgetData?.sessions ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('Sessions: 23')
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Sessions: 23')
+    expect(wrapper.text()).toContain('FortiGate API request failed with HTTP 404')
+  })
+
+  it('shows empty state and last update metadata for ready responses without data', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      widgetId: 'fortigate-firewall-policies',
+      integrationId: 'int_fgt_01',
+      refreshedAt: '2026-04-26T23:45:00.000Z',
+      status: 'ready',
+      data: {},
+      meta: { source: 'fortigate', cacheTtlSeconds: 15, refreshIntervalSeconds: 15 },
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'fortigate-firewall-policies',
+      title: 'Firewall Policies',
+      kind: 'table',
+      source: 'fortigate',
+      requiredCapabilities: ['policies'],
+      defaultSize: { w: 5, h: 4 },
+      dataEndpoint: '/api/widgets/fortigate-firewall-policies/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_policies',
+        catalogId: 'fortigate-firewall-policies',
+        integrationId: 'int_fgt_01',
+        layout: { x: 0, y: 0, w: 380, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, JSON.stringify(widgetData)),
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No data returned')
+    expect(wrapper.text()).toContain('Updated')
+    expect(wrapper.text()).toContain('2026-04-26')
+  })
 })

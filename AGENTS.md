@@ -739,9 +739,9 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Exibir identidade do FortiGate no widget de saúde para diferenciar dados live de mock.
 - [x] Atualizar widgets automaticamente pelo intervalo retornado pela API.
 - [x] Permitir remover integrações conectadas pela sidebar usando o endpoint `DELETE /api/integrations/{integrationId}`.
-- [ ] Mostrar estados de loading, erro, sem dados e conexão inválida.
+- [x] Mostrar estados de loading, erro, sem dados e conexão inválida.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
-- [ ] Criar audit trail/activity feed para eventos sensíveis.
+- [x] Criar audit trail/activity feed para eventos sensíveis.
 - [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.
 - [ ] Enriquecer dashboard com widgets de postura de risco, anomalias e investigação SOC.
 - [ ] Refinar visual para experiência SaaS enterprise, não apenas protótipo técnico.
