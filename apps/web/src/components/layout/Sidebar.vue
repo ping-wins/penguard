@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2 } from 'lucide-vue-next'
+import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History, Clock3 } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -31,6 +31,11 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
 ])
 const isThinking = ref(false)
+const auditActivityPreview = [
+  { action: 'login', label: 'Login attempts', status: 'tracked' },
+  { action: 'integration.fortigate.created', label: 'Integration changes', status: 'tracked' },
+  { action: 'workspace.updated', label: 'Canvas edits', status: 'tracked' },
+]
 
 function toggleTab(tab: 'chat' | 'settings' | 'integrations') {
   if (activeTab.value !== tab && tab === 'integrations') {
@@ -247,6 +252,58 @@ function handleChatSubmit() {
                 >
                   <Trash2 :size="14" />
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Domain trust and audit affordances -->
+        <div class="mb-6 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Domain verification</h3>
+            <span class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200">
+              DNS TXT pending
+            </span>
+          </div>
+
+          <div class="rounded border border-theme-border bg-theme-bg p-3">
+            <div class="flex items-start gap-2">
+              <ShieldCheck :size="16" class="mt-0.5 shrink-0 text-theme-primary" />
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-theme-text">Tenant domain claim</div>
+                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                  Static preview for SaaS branding. Activation waits for DNS proof.
+                </p>
+                <div class="mt-2 rounded border border-theme-border bg-theme-panel px-2 py-1 font-mono text-[10px] text-theme-text-muted">
+                  _fortidashboard.your-domain.example
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded border border-theme-border bg-theme-bg p-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 text-sm font-medium text-theme-text">
+                <History :size="15" class="text-theme-primary" />
+                <span>Audit activity</span>
+              </div>
+              <span class="text-[10px] uppercase tracking-wider text-theme-text-muted">Preview</span>
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <div
+                v-for="item in auditActivityPreview"
+                :key="item.action"
+                class="flex items-center justify-between gap-2 text-xs"
+              >
+                <div class="min-w-0">
+                  <div class="truncate font-medium text-theme-text">{{ item.label }}</div>
+                  <div class="truncate font-mono text-[10px] text-theme-text-muted">{{ item.action }}</div>
+                </div>
+                <span class="flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                  <Clock3 :size="10" />
+                  {{ item.status }}
+                </span>
               </div>
             </div>
           </div>

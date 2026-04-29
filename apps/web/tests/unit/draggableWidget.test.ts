@@ -304,4 +304,133 @@ describe('DraggableWidget', () => {
       [{ instanceId: 'w_custom', binding }],
     ])
   })
+
+  it('does not resize a visual template below its minimum readable size', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = []
+    store.isCatalogLoaded = true
+    store.activeWidgets = [{
+      instanceId: 'w_table',
+      catalogId: 'visual-template-table',
+      integrationId: '',
+      layout: { x: 100, y: 120, w: 500, h: 360, z: 10 },
+    }]
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_table',
+        catalogId: 'visual-template-table',
+        integrationId: '',
+        layout: store.activeWidgets[0].layout,
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'payload' }, 'Custom table'),
+      },
+    })
+
+    await wrapper.get('[data-test="resize-handle-se"]').trigger('pointerdown', {
+      clientX: 0,
+      clientY: 0,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: -1000,
+      clientY: -1000,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(store.activeWidgets[0].layout.w).toBe(420)
+    expect(store.activeWidgets[0].layout.h).toBe(300)
+  })
+
+  it('does not resize a visual template above its maximum readable size', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = []
+    store.isCatalogLoaded = true
+    store.activeWidgets = [{
+      instanceId: 'w_table',
+      catalogId: 'visual-template-table',
+      integrationId: '',
+      layout: { x: 100, y: 120, w: 500, h: 360, z: 10 },
+    }]
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_table',
+        catalogId: 'visual-template-table',
+        integrationId: '',
+        layout: store.activeWidgets[0].layout,
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'payload' }, 'Custom table'),
+      },
+    })
+
+    await wrapper.get('[data-test="resize-handle-se"]').trigger('pointerdown', {
+      clientX: 0,
+      clientY: 0,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 2000,
+      clientY: 2000,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(store.activeWidgets[0].layout.w).toBe(960)
+    expect(store.activeWidgets[0].layout.h).toBe(720)
+  })
+
+  it('allows dragging widgets into negative workspace coordinates', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = []
+    store.isCatalogLoaded = true
+    store.activeWidgets = [{
+      instanceId: 'w_card',
+      catalogId: 'visual-template-card',
+      integrationId: '',
+      layout: { x: 10, y: 15, w: 320, h: 200, z: 10 },
+    }]
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_card',
+        catalogId: 'visual-template-card',
+        integrationId: '',
+        layout: store.activeWidgets[0].layout,
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'payload' }, 'Custom card'),
+      },
+    })
+
+    await wrapper.get('[data-test="widget-drag-handle"]').trigger('pointerdown', {
+      clientX: 100,
+      clientY: 100,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 20,
+      clientY: 30,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(store.activeWidgets[0].layout.x).toBe(-70)
+    expect(store.activeWidgets[0].layout.y).toBe(-55)
+  })
 })

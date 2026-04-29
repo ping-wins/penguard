@@ -44,6 +44,12 @@ class FortiGateApiClient:
             raise FortiGateApiError("FortiGate resource usage response was not an object")
         return results
 
+    def get_web_ui_state(self) -> dict[str, Any]:
+        results = self._get("/api/v2/monitor/web-ui/state")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate web UI state response was not an object")
+        return results
+
     def get_interfaces(self) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/cmdb/system/interface")
 
@@ -122,7 +128,7 @@ class FortiGateApiClient:
         if not isinstance(results, dict):
             return results
         merged = dict(results)
-        for key in ("serial", "version", "build"):
+        for key in ("serial", "version", "build", "uptime", "uptime_seconds", "uptimeSeconds"):
             if key in payload and key not in merged:
                 merged[key] = payload[key]
         return merged

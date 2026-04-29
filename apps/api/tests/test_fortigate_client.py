@@ -21,6 +21,7 @@ def test_fortigate_client_uses_bearer_token_and_unwraps_results():
                 "serial": "FGVMTEST",
                 "version": "v7.6.6",
                 "build": 3652,
+                "uptime": 92420,
                 "results": {
                     "hostname": "FGT-VM",
                     "model_name": "FortiGate-VM64",
@@ -41,6 +42,7 @@ def test_fortigate_client_uses_bearer_token_and_unwraps_results():
         "serial": "FGVMTEST",
         "version": "v7.6.6",
         "build": 3652,
+        "uptime": 92420,
     }
 
 
@@ -81,6 +83,33 @@ def test_fortigate_client_does_not_merge_envelope_metadata_into_interface_status
     }
 
 
+def test_fortigate_client_reads_web_ui_state_for_reboot_timestamp():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v2/monitor/web-ui/state"
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "results": {
+                    "snapshot_utc_time": 1777477582000,
+                    "utc_last_reboot": 1777470648000,
+                },
+            },
+        )
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.get_web_ui_state() == {
+        "snapshot_utc_time": 1777477582000,
+        "utc_last_reboot": 1777470648000,
+    }
+
+
 def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
     requests: list[tuple[str, str]] = []
 
@@ -93,6 +122,8 @@ def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
         if request.url.path == "/api/v2/monitor/system/resource/usage":
             return httpx.Response(200, json={"status": "success", "results": {}})
         if request.url.path == "/api/v2/monitor/system/interface":
+            return httpx.Response(200, json={"status": "success", "results": {}})
+        if request.url.path == "/api/v2/monitor/web-ui/state":
             return httpx.Response(200, json={"status": "success", "results": {}})
         return httpx.Response(200, json={"status": "success", "results": []})
 
@@ -107,6 +138,7 @@ def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
     client.get_performance_status()
     client.get_resource_usage(resource="session")
     client.get_interface_status()
+    client.get_web_ui_state()
     client.get_interfaces()
     client.get_policies()
     client.get_threat_logs(limit=25)
@@ -116,6 +148,7 @@ def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
         ("GET", "/api/v2/monitor/system/performance/status"),
         ("GET", "/api/v2/monitor/system/resource/usage"),
         ("GET", "/api/v2/monitor/system/interface"),
+        ("GET", "/api/v2/monitor/web-ui/state"),
         ("GET", "/api/v2/cmdb/system/interface"),
         ("GET", "/api/v2/cmdb/firewall/policy"),
         ("GET", "/api/v2/log/memory/utm/ips"),
@@ -208,6 +241,45 @@ def test_normalize_system_status_accepts_real_fortios_performance_payloads():
         "sessions": 15,
         "uptimeSeconds": None,
     }
+
+
+def test_normalize_system_status_reads_fortios_performance_uptime_text():
+    normalized = normalize_system_status(
+        {
+            "hostname": "FGT-VM",
+            "model_name": "FortiGate",
+            "version": "v7.6.6",
+        },
+        performance={
+            "cpu": {"idle": 97},
+            "mem": {"used": 1024, "total": 2048},
+            "uptime": "1 days, 1 hours, 40 minutes, 20 seconds",
+        },
+        resource_usage={"session": [{"current": 15}]},
+    )
+
+    assert normalized["uptimeSeconds"] == 92420
+
+
+def test_normalize_system_status_derives_uptime_from_web_ui_state_reboot_time():
+    normalized = normalize_system_status(
+        {
+            "hostname": "FGT-VM",
+            "model_name": "FortiGate",
+            "version": "v7.6.6",
+        },
+        performance={
+            "cpu": {"idle": 97},
+            "mem": {"used": 1024, "total": 2048},
+        },
+        resource_usage={"session": [{"current": 15}]},
+        web_ui_state={
+            "snapshot_utc_time": 1777477582000,
+            "utc_last_reboot": 1777470648000,
+        },
+    )
+
+    assert normalized["uptimeSeconds"] == 6934
 
 
 def test_normalize_interfaces_policies_and_threat_logs():

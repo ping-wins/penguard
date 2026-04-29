@@ -7,6 +7,11 @@ import { visualTemplatesById } from '../constants/visualTemplates'
 import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
 import type { WidgetCatalogItem, WidgetFieldBinding, WorkspaceWidget } from '../types/dashboard'
 
+type WidgetInsertPosition = {
+  x: number
+  y: number
+}
+
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref<WorkspaceWidget[]>([])
   const workspaceName = ref('SOC Overview')
@@ -132,25 +137,27 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
-  function addWidget(catalogId: string, integrationId: string) {
+  function addWidget(catalogId: string, integrationId: string, position?: WidgetInsertPosition) {
     const catalogItem = catalogItems.value.find(i => i.id === catalogId)
     activeWidgets.value.push(createWidgetInstance({
       catalogId,
       integrationId,
       defaultSize: catalogItem?.defaultSize,
-      zIndex: ++maxZIndex
+      zIndex: ++maxZIndex,
+      position,
     }))
     debouncedSave()
   }
 
-  function addVisualTemplate(templateId: string, integrationId = '') {
+  function addVisualTemplate(templateId: string, integrationId = '', position?: WidgetInsertPosition) {
     const template = visualTemplatesById[templateId]
     if (!template) return
     activeWidgets.value.push(createWidgetInstance({
       catalogId: template.id,
       integrationId,
       defaultSize: template.defaultSize,
-      zIndex: ++maxZIndex
+      zIndex: ++maxZIndex,
+      position,
     }))
     debouncedSave()
   }

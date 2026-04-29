@@ -33,11 +33,18 @@ class FakeFortiGateClient:
         return {
             "cpu": {"idle": 8},
             "mem": {"used": 1843, "total": 2048},
+            "uptime": "1 days, 1 hours, 40 minutes, 20 seconds",
         }
 
     def get_resource_usage(self, *, resource: str | None = None):
         assert resource == "session"
         return {"session": [{"current": 42}]}
+
+    def get_web_ui_state(self):
+        return {
+            "snapshot_utc_time": 1777477582000,
+            "utc_last_reboot": 1777470648000,
+        }
 
     def get_interface_status(self):
         return {
@@ -127,7 +134,7 @@ def test_fortigate_widget_service_returns_live_system_status_payload():
             "cpu": 92,
             "memory": 90,
             "sessions": 42,
-            "uptimeSeconds": None,
+            "uptimeSeconds": 92420,
         },
         "meta": {
             "source": "fortigate",

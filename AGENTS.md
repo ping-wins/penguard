@@ -566,10 +566,14 @@ Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; 
 - Motion for Vue controla drag-and-drop livre, transições e limites do canvas.
 - O renderizador principal deve iterar `activeWidgets` e usar `<component :is="...">` para instanciar widgets.
 - Widgets de visualização não sabem sua posição; eles ficam dentro de um `DraggableWidget` genérico.
-- No Build Panel, `Visuals` separa presets FortiGate prontos de templates vazios em `Criar dados ao seu visual`. Presets já vêm com `dataEndpoint`; templates vazios usam IDs `visual-template-*` e aguardam binding de campos.
+- Cada widget/template deve respeitar limites mínimos e máximos de tamanho definidos por tipo para evitar renderização quebrada em dimensões compactas demais ou exageradas demais.
+- A workspace deve funcionar como canvas virtual praticamente infinito: a origem lógica fica no centro de uma superfície ampla, widgets podem existir em coordenadas negativas e o usuário navega por pan/scroll sem perceber um limite próximo. Scroll vertical move a viewport, `Shift+Scroll` move horizontalmente, `Ctrl/Cmd+Scroll` controla zoom e `Space+drag` panifica o canvas, inclusive quando o drag começa em cima de um widget.
+- O fundo da workspace deve seguir uma linguagem de canvas tipo Microsoft Whiteboard/Canva: pequenos pontos discretos, baixo contraste e textura fixa na viewport. Não use linhas de grid nem reposicione `background-position` a cada scroll, porque isso gera flicker durante pan/zoom.
+- A workspace deve exibir um minimapa discreto com viewport atual e marcadores dos widgets para orientar o analista em canvas grandes. O minimapa é overlay da área de dashboard, fora do viewport rolável, para não sumir quando o usuário navega pelo canvas.
+- No Build Panel, `Visuals` separa presets FortiGate prontos de templates vazios em `Criar dados ao seu visual`. Presets já vêm com `dataEndpoint`; templates vazios usam IDs `visual-template-*` e aguardam binding de campos. Ambos devem ser adicionáveis por click e por drag-and-drop para uma posição específica no canvas.
 - No Build Panel, `Data` deve consumir `GET /api/providers/fortigate/data-fields` via `apps/web/src/services/providerDataClient.ts`; não importe `packages/contracts/fixtures/data-fields.json` direto em componentes.
 - Campos do painel `Data` são arrastáveis. Ao soltar um campo em um template vazio no canvas, o frontend grava o vínculo em `WorkspaceWidget.fieldBindings[]` com `fieldId`, `label`, `type`, `unit`, `source`, `provider`, `groupId` e `groupName`.
-- Templates vazios com `fieldBindings` devem resolver dados live por `source`, chamando `/api/widgets/{source}/data?integrationId=<id>`. O primeiro corte renderiza `Card` como KPI real e `Bar Chart` como barras proporcionais; outros visuais podem cair em lista de campo/valor até ganharem renderer dedicado.
+- Templates vazios com `fieldBindings` devem resolver dados live por `source`, chamando `/api/widgets/{source}/data?integrationId=<id>`. O corte atual renderiza `Card`, `Gauge`, `Table`, `Bar Chart`, `Line Chart`, `Event Feed` e `Signal List` com visual dedicado a partir dos campos vinculados.
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
@@ -594,7 +598,7 @@ Fluxo recomendado no `apps/web`:
 - `apps/web/src/constants/visualTemplates.ts` define os templates visuais vazios: Card, Gauge, Table, Bar Chart, Line Chart, Event Feed e Signal List. Eles não chamam FortiGate até existir binding campo -> visual.
 - `apps/web/src/stores/useProviderDataStore.ts` mantém os campos do provider carregados pelo backend. O painel Data deve mostrar campos como variáveis live do FortiGate, incluindo `type`, `unit`, `source` e indicação visual de atualização live.
 - `DraggableWidget` é a zona de drop para templates `visual-template-*`; widgets FortiGate prontos não aceitam drop de campos. O binding deve persistir no workspace para sobreviver a reload.
-- `WidgetEmptyVisual` consome os bindings e usa `source` como widget de origem. Se dois campos vêm do mesmo `source`, o frontend deve fazer uma única request e reutilizar o payload normalizado para renderizar o visual customizado.
+- `WidgetEmptyVisual` consome os bindings e usa `source` como widget de origem. Se dois campos vêm do mesmo `source`, o frontend deve fazer uma única request e reutilizar o payload normalizado para renderizar o visual customizado. Os renderers atuais: `Card` mostra KPI único, `Gauge` mostra valor percentual/score, `Table` achata arrays/objetos em linhas, `Bar Chart` compara números, `Line Chart` mostra perfil do snapshot atual, `Event Feed` mostra eventos/listas e `Signal List` destaca severidade.
 
 Widgets disponíveis nesta sprint:
 
@@ -720,11 +724,19 @@ Nota de CRUD de integrações (2026-04-28): o frontend pode remover integraçõe
 
 Nota de modelo Power BI-like (2026-04-28): o FortiGate agora expõe um catálogo de campos por grupos (`system`, `interfaces`, `policies`, `events`, `risk`) e templates adicionais (`risk-posture`, `interface-health`, `recent-events`, `anomaly-highlights`). Isso prepara a futura criação de widgets customizados por seleção de campo + visual, sem abandonar os templates prontos.
 
-Nota de visuais customizados (2026-04-29): campos arrastados do painel `Data` para templates vazios já são resolvidos contra dados live pelo `source` do campo. `Card` renderiza o primeiro campo como KPI com unidade; `Bar Chart` renderiza campos numéricos como barras proporcionais usando uma request compartilhada por origem. Próximo corte: renderers dedicados para Gauge, Table, Line, Event Feed e Signal List.
+Nota de visuais customizados (2026-04-29): campos arrastados do painel `Data` para templates vazios já são resolvidos contra dados live pelo `source` do campo. `Card`, `Gauge`, `Table`, `Bar Chart`, `Line Chart`, `Event Feed` e `Signal List` renderizam os bindings com visual próprio, usando request compartilhada por origem e atualização pelo intervalo retornado pela API.
+
+Nota de UX Power BI-like (2026-04-29): o Build Panel separa presets FortiGate prontos de templates vazios, mostra estados de loading/empty/retry para catálogo e data model, e a sidebar exibe preview estático de domain verification pendente e audit activity para guiar o corte SaaS. Os widgets `fortigate-risk-posture`, `fortigate-interface-health`, `fortigate-recent-events` e `fortigate-anomaly-highlights` já têm componentes dedicados no canvas.
+
+Nota de navegação do canvas (2026-04-29): widgets/templates agora têm min/max size por tipo; resize respeita esses limites. A workspace usa origem virtual central em uma superfície ampla, permite coordenadas negativas, pan por scroll, `Shift+Scroll`, `Space+drag` e zoom por `Ctrl/Cmd+Scroll`. O fundo da workspace usa dots discretos fixos na viewport, sem `background-position` dependente do scroll, para evitar flicker durante pan/zoom. O minimapa mostra viewport e widgets como overlay fixo da área de dashboard, e `Space+drag` captura o pointerdown antes do widget para evitar seleção de texto ou drag involuntário.
+
+Nota de inserção no canvas (2026-04-29): presets FortiGate e templates vazios no Build Panel podem ser clicados para inserção padrão ou arrastados para a workspace. Ao soltar no canvas, a posição considera scroll e zoom atuais para instanciar o widget no ponto escolhido pelo analista.
 
 Nota de validação FortiGate local (2026-04-26): host `192.0.2.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
 Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fortigate-network-traffic` e `fortigate-firewall-policies` retornaram payloads normalizados contra o FortiGate local. `fortigate-top-threats` retornou `status: error` controlado porque o endpoint de logs UTM/IPS respondeu `404` nesse lab.
+
+Nota de uptime e canvas dots (2026-04-29): `fortigate-system-status` deve preservar `uptime`/`uptime_seconds`/`uptimeSeconds` quando vier no envelope da API FortiGate ou no payload de performance do FortiOS, inclusive formato textual como `1 days, 1 hours, 40 minutes`. No FortiOS 7.6 do lab, os endpoints de status/performance não retornam uptime; o backend deve buscar `/api/v2/monitor/web-ui/state` e calcular `snapshot_utc_time - utc_last_reboot`. Renderizar `Uptime` em formato legível nos widgets prontos e templates customizados; se o FortiGate não retornar uptime, mostrar `--`, nunca `0s` fabricado. O background de dots fica aplicado no viewport rolável, não em um filho dentro do conteúdo scrollado, para continuar visível quando a workspace está centralizada na origem virtual.
 
 ### Trilha Frontend - Canvas e Mockups
 
@@ -755,10 +767,16 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Carregar campos do painel `Data` por `/api/providers/fortigate/data-fields` em vez de fixture importada no componente.
 - [x] Implementar drag-and-drop de campos do painel `Data` para templates vazios, persistindo `fieldBindings` no workspace.
 - [x] Transformar `fieldBindings` em renderização calculada inicial para `Card` e `Bar Chart`, consumindo dados live pelo `source` do campo.
-- [ ] Expandir renderização dedicada de `fieldBindings` para Gauge, Table, Line Chart, Event Feed e Signal List.
-- [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
+- [x] Expandir renderização dedicada de `fieldBindings` para Gauge, Table, Line Chart, Event Feed e Signal List.
+- [x] Adicionar preview estático de domínio pendente e audit activity na sidebar para orientar UX SaaS.
+- [ ] Criar mocks visuais completos para domínio pendente/verificado e falha de verificação.
 - [x] Criar audit trail/activity feed para eventos sensíveis.
-- [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.
+- [x] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.
+- [x] Definir min/max size por tipo de widget/template e aplicar esses limites no resize.
+- [x] Melhorar navegação livre do canvas com scroll, `Shift+Scroll`, `Ctrl/Cmd+Scroll` e `Space+drag`.
+- [x] Separar grid de fundo do layer escalado para manter espaçamento visual estável durante zoom.
+- [x] Permitir adicionar presets e templates no canvas por drag-and-drop a partir do Build Panel.
+- [x] Implementar workspace virtual com origem central, coordenadas negativas e minimapa.
 - [ ] Enriquecer dashboard com widgets de postura de risco, anomalias e investigação SOC.
 - [ ] Refinar visual para experiência SaaS enterprise, não apenas protótipo técnico.
 
