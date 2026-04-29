@@ -565,6 +565,8 @@ Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; 
 - Motion for Vue controla drag-and-drop livre, transições e limites do canvas.
 - O renderizador principal deve iterar `activeWidgets` e usar `<component :is="...">` para instanciar widgets.
 - Widgets de visualização não sabem sua posição; eles ficam dentro de um `DraggableWidget` genérico.
+- No Build Panel, `Visuals` separa presets FortiGate prontos de templates vazios em `Criar dados ao seu visual`. Presets já vêm com `dataEndpoint`; templates vazios usam IDs `visual-template-*` e aguardam binding de campos.
+- No Build Panel, `Data` deve consumir `GET /api/providers/fortigate/data-fields` via `apps/web/src/services/providerDataClient.ts`; não importe `packages/contracts/fixtures/data-fields.json` direto em componentes.
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
@@ -586,6 +588,8 @@ Fluxo recomendado no `apps/web`:
 - Não acoplar componente visual ao FortiGate: o componente recebe apenas o payload `data` normalizado.
 - No frontend, `apps/web/src/services/widgetDataClient.ts` é o adapter HTTP dos widgets e deve continuar retornando `state: "ready"` ou `state: "error"` para o frame decidir loading/erro. O frame agenda o próximo fetch por `meta.refreshIntervalSeconds`.
 - `defaultSize` do catálogo vem em unidades de grid. `apps/web/src/utils/widgetLayout.ts` converte essas unidades para pixels antes de renderizar ou adicionar widgets no canvas.
+- `apps/web/src/constants/visualTemplates.ts` define os templates visuais vazios: Card, Gauge, Table, Bar Chart, Line Chart, Event Feed e Signal List. Eles não chamam FortiGate até existir binding campo -> visual.
+- `apps/web/src/stores/useProviderDataStore.ts` mantém os campos do provider carregados pelo backend. O painel Data deve mostrar campos como variáveis live do FortiGate, incluindo `type`, `unit`, `source` e indicação visual de atualização live.
 
 Widgets disponíveis nesta sprint:
 
@@ -740,6 +744,9 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Atualizar widgets automaticamente pelo intervalo retornado pela API.
 - [x] Permitir remover integrações conectadas pela sidebar usando o endpoint `DELETE /api/integrations/{integrationId}`.
 - [x] Mostrar estados de loading, erro, sem dados e conexão inválida.
+- [x] Separar `Visuals` em presets FortiGate e templates vazios para criação futura de visuais customizados.
+- [x] Carregar campos do painel `Data` por `/api/providers/fortigate/data-fields` em vez de fixture importada no componente.
+- [ ] Implementar binding campo -> template vazio para criar widgets customizados Power BI-like.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [x] Criar audit trail/activity feed para eventos sensíveis.
 - [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.

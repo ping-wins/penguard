@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import workspaceFixture from '@fortidashboard/contracts/fixtures/workspace.json'
 import catalogFixture from '@fortidashboard/contracts/fixtures/widget_catalog_fortigate.json'
 import { useAuthStore } from './useAuthStore'
+import { visualTemplatesById } from '../constants/visualTemplates'
 import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
 import type { WidgetCatalogItem, WorkspaceWidget } from '../types/dashboard'
 
@@ -142,6 +143,18 @@ export const useDashboardStore = defineStore('dashboard', () => {
     debouncedSave()
   }
 
+  function addVisualTemplate(templateId: string) {
+    const template = visualTemplatesById[templateId]
+    if (!template) return
+    activeWidgets.value.push(createWidgetInstance({
+      catalogId: template.id,
+      integrationId: '',
+      defaultSize: template.defaultSize,
+      zIndex: ++maxZIndex
+    }))
+    debouncedSave()
+  }
+
   function removeWidget(instanceId: string) {
     activeWidgets.value = activeWidgets.value.filter(w => w.instanceId !== instanceId)
     debouncedSave()
@@ -162,6 +175,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     updateWidgetSize,
     bringToFront,
     addWidget,
+    addVisualTemplate,
     removeWidget
   }
 })

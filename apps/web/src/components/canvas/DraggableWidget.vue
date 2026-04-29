@@ -4,6 +4,7 @@ import { useDashboardStore } from '../../stores/useDashboardStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff } from 'lucide-vue-next'
 import { fetchWidgetData } from '../../services/widgetDataClient'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetLayout } from '../../types/dashboard'
+import { visualTemplatesById } from '../../constants/visualTemplates'
 
 const props = defineProps<{
   instanceId: string
@@ -24,6 +25,9 @@ const fetchErrorKind = ref<WidgetDataErrorKind | null>(null)
 const widgetData = ref<any>(null)
 const widgetResponse = ref<WidgetDataResponse | null>(null)
 const catalogItem = computed(() => store.catalogItems.find(c => c.id === props.catalogId))
+const visualTemplate = computed(() => visualTemplatesById[props.catalogId])
+const isVisualTemplate = computed(() => Boolean(visualTemplate.value))
+const widgetTitle = computed(() => catalogItem.value?.title ?? visualTemplate.value?.title ?? props.catalogId)
 
 let currentController: AbortController | null = null
 let requestId = 0
@@ -116,6 +120,12 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
     isRefreshing.value = true
   }
 
+  if (isVisualTemplate.value) {
+    isLoading.value = false
+    isRefreshing.value = false
+    return
+  }
+
   if (!catalogItem.value?.dataEndpoint) {
     if (!store.isCatalogLoaded && store.catalogItems.length === 0) {
       isLoading.value = true
@@ -171,7 +181,7 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
 }
 
 watch(
-  [catalogItem, () => props.integrationId, () => store.catalogItems.length],
+  [catalogItem, visualTemplate, () => props.integrationId, () => store.catalogItems.length],
   () => {
     loadWidgetData()
   },
@@ -316,7 +326,7 @@ function stopResize() {
     >
       <div class="flex items-center gap-2 text-theme-text-muted">
         <GripHorizontal :size="16" />
-        <span class="text-xs font-semibold text-theme-text uppercase tracking-wider">{{ catalogId }}</span>
+        <span class="text-xs font-semibold text-theme-text uppercase tracking-wider">{{ widgetTitle }}</span>
       </div>
       <button @click.stop="handleRemove" class="text-theme-text-muted hover:text-theme-primary transition-colors" title="Remove Widget">
         <X :size="16" />
