@@ -408,7 +408,9 @@ Response:
 
 Campos sensíveis em `details` são sempre saneados como `[REDACTED]` antes de persistir ou retornar: `apiKey`, `api_key`, `token`, `access_token`, `refresh_token`, `clientSecret`, `password`, `api_key_blob` e variações equivalentes.
 
-No corte atual, o endpoint retorna eventos do usuário autenticado. Visão cross-user fica para RBAC/admin.
+`GET /api/audit/events` retorna somente eventos do usuário autenticado. A visão cross-user fica em `GET /api/admin/audit/events`, exige role `admin` vinda da sessão BFF/Keycloak e aceita filtros opcionais `actorUserId`, `action`, `outcome` e `limit`. Cada consulta admin bem-sucedida grava `audit.events.viewed`.
+
+No realm dev, `admin@example.com` existe apenas para PoC/local com role `admin`. Novos usuários criados por `POST /api/auth/register` continuam restritos a `analyst`; em produção, promoção/criação de administradores deve acontecer pelo Keycloak, não pela tela pública do FortiDashboard.
 
 ### Catálogo de widgets
 
@@ -712,7 +714,9 @@ Ponto de independência do frontend: ao final de T2, `apps/web` deve conseguir e
 - [x] Expor `refreshIntervalSeconds` e reduzir TTL de widgets voláteis para atualização quase em tempo real.
 - [x] Implementar remoção local de integração via `DELETE /api/integrations/{integrationId}` com escopo por usuário, CSRF e audit log.
 - [x] Implementar audit log para auth, integração e workspace, com endpoint `GET /api/audit/events`.
-- [ ] Adicionar auditoria a rotas administrativas quando a superfície admin existir.
+- [x] Ler roles reais do Keycloak no BFF e provisionar usuário admin dev para PoC.
+- [x] Adicionar visão admin cross-user em `GET /api/admin/audit/events` com filtros e audit event `audit.events.viewed`.
+- [ ] Adicionar auditoria a novas rotas administrativas quando a superfície admin crescer.
 - [ ] Implementar prova de titularidade de domínio por DNS TXT antes de ativar tenant/domínio SaaS.
 - [ ] Planejar SSO/IdP/LDAP via Keycloak sem expor tokens ao frontend.
 
@@ -793,6 +797,7 @@ Nota de uptime e canvas dots (2026-04-29): `fortigate-system-status` deve preser
 - [x] Validar que ações destrutivas não entram no primeiro corte da integração FortiGate.
 - [x] Testar remoção de integração com escopo por usuário, CSRF e audit log saneado.
 - [x] Testar que audit logs não gravam segredos, API keys ou tokens.
+- [x] Testar RBAC admin para audit log cross-user e extração de roles Keycloak.
 - [x] Documentar setup local completo em `README.md`.
 - [ ] Preparar PRs pequenos por trilha, com comandos executados e screenshots quando houver UI.
 

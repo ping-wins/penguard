@@ -1,3 +1,4 @@
+import base64
 import json
 
 import httpx
@@ -5,6 +6,16 @@ import pytest
 
 from app.auth.errors import AuthProviderError
 from app.auth.keycloak import KeycloakClient
+
+
+def unsigned_token(payload: dict) -> str:
+    header = {"alg": "none", "typ": "JWT"}
+
+    def encode(value: dict) -> str:
+        encoded = base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
+        return encoded.rstrip("=")
+
+    return f"{encode(header)}.{encode(payload)}."
 
 
 def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_layer():
@@ -22,7 +33,9 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
         return httpx.Response(
             200,
             json={
-                "access_token": "keycloak-access-token",
+                "access_token": unsigned_token(
+                    {"realm_access": {"roles": ["admin", "analyst"]}}
+                ),
                 "refresh_token": "keycloak-refresh-token",
                 "expires_in": 300,
                 "refresh_expires_in": 1800,
@@ -43,10 +56,67 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
     )
 
     assert len(requests) == 1
-    assert tokens.access_token == "keycloak-access-token"
+    assert tokens.access_token
     assert tokens.refresh_token == "keycloak-refresh-token"
     assert tokens.expires_in == 300
     assert tokens.refresh_expires_in == 1800
+    assert tokens.roles == ["admin", "analyst"]
+
+
+def test_login_defaults_to_analyst_when_access_token_has_no_realm_roles():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        return httpx.Response(
+            200,
+            json={
+                "access_token": unsigned_token({"sub": "usr_01"}),
+                "refresh_token": "keycloak-refresh-token",
+                "expires_in": 300,
+            },
+        )
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    tokens = client.login(
+        email="analyst@example.com",
+        password="correct-horse-battery-staple",
+    )
+
+    assert tokens.roles == ["analyst"]
+
+
+def test_login_defaults_to_analyst_when_access_token_is_malformed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        return httpx.Response(
+            200,
+            json={
+                "access_token": "not.a.jwt",
+                "refresh_token": "keycloak-refresh-token",
+                "expires_in": 300,
+            },
+        )
+
+    client = KeycloakClient(
+        base_url="http://keycloak.local",
+        realm="fortidashboard",
+        client_id="fortidashboard-bff",
+        client_secret="dev-client-secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    tokens = client.login(
+        email="analyst@example.com",
+        password="correct-horse-battery-staple",
+    )
+
+    assert tokens.roles == ["analyst"]
 
 
 def test_create_user_uses_service_account_and_keycloak_admin_api():

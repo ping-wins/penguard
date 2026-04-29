@@ -85,14 +85,22 @@ class KeycloakIdentityProvider:
     def login(self, *, email: str, password: str) -> AuthIdentity:
         tokens = self.keycloak.login(email=email, password=password)
         user = self.keycloak.get_userinfo(access_token=tokens.access_token)
-        return AuthIdentity(user=self._public_user(user), tokens=tokens.__dict__)
+        return AuthIdentity(
+            user=self._public_user(user, roles=tokens.roles or ["analyst"]),
+            tokens=tokens.__dict__,
+        )
 
-    def _public_user(self, user: KeycloakUser) -> dict[str, Any]:
+    def _public_user(
+        self,
+        user: KeycloakUser,
+        *,
+        roles: list[str] | None = None,
+    ) -> dict[str, Any]:
         return {
             "id": user.id,
             "email": user.email,
             "displayName": user.display_name,
-            "roles": user.roles,
+            "roles": roles or user.roles,
         }
 
 

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from app.auth.service import AuthIdentity, AuthService
+from app.auth.keycloak import KeycloakTokenSet, KeycloakUser
+from app.auth.service import AuthIdentity, AuthService, KeycloakIdentityProvider
 from app.auth.session_store import InMemorySessionStore
 
 
@@ -122,3 +123,37 @@ def test_auth_service_uses_refresh_token_lifespan_for_browser_session():
     assert session is not None
     assert session.expires_at is not None
     assert (session.expires_at - before_login).total_seconds() >= 1700
+
+
+def test_keycloak_identity_provider_uses_roles_from_server_side_token():
+    class FakeKeycloakClient:
+        def login(self, *, email: str, password: str) -> KeycloakTokenSet:
+            return KeycloakTokenSet(
+                access_token="server-side-token",
+                refresh_token="server-side-refresh",
+                expires_in=300,
+                roles=["admin"],
+            )
+
+        def get_userinfo(self, *, access_token: str) -> KeycloakUser:
+            assert access_token == "server-side-token"
+            return KeycloakUser(
+                id="usr_admin",
+                email="admin@example.com",
+                display_name="SOC Admin",
+                roles=["analyst"],
+            )
+
+    provider = KeycloakIdentityProvider(FakeKeycloakClient())
+
+    identity = provider.login(
+        email="admin@example.com",
+        password="correct-horse-battery-staple",
+    )
+
+    assert identity.user == {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "displayName": "SOC Admin",
+        "roles": ["admin"],
+    }
