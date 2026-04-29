@@ -4,13 +4,17 @@ import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useProviderDataStore } from '../../stores/useProviderDataStore'
 import { storeToRefs } from 'pinia'
-import { PanelRightClose, PanelRightOpen, Filter, BarChart2, Database, Folder, FolderOpen, Table, Activity, Network } from 'lucide-vue-next'
+import { PanelRightClose, PanelRightOpen, Filter, BarChart2, Database, Folder, FolderOpen, Table, Activity, Network, RefreshCcw, AlertTriangle, Layers3 } from 'lucide-vue-next'
 import DraggableWidget from './DraggableWidget.vue'
 import WidgetHealth from '../widgets/WidgetHealth.vue'
 import WidgetThreats from '../widgets/WidgetThreats.vue'
 import WidgetNetwork from '../widgets/WidgetNetwork.vue'
 import WidgetKpiCard from '../widgets/WidgetKpiCard.vue'
 import WidgetFirewallPolicies from '../widgets/WidgetFirewallPolicies.vue'
+import WidgetRiskPosture from '../widgets/WidgetRiskPosture.vue'
+import WidgetInterfaceHealth from '../widgets/WidgetInterfaceHealth.vue'
+import WidgetRecentEvents from '../widgets/WidgetRecentEvents.vue'
+import WidgetAnomalyHighlights from '../widgets/WidgetAnomalyHighlights.vue'
 import WidgetEmptyVisual from '../widgets/WidgetEmptyVisual.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
@@ -44,6 +48,11 @@ watch(() => integrationsStore.hasFortigate, (has) => {
 const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
 const fortigateIntegrations = computed(() => integrationsStore.integrations.filter(i => i.type === 'fortigate'))
+const dataFieldCount = computed(() => dataFieldGroups.value.reduce((total, group) => total + group.fields.length, 0))
+const dataFieldCountLabel = computed(() => `${dataFieldCount.value} field${dataFieldCount.value === 1 ? '' : 's'} available`)
+const visualPresetCountLabel = computed(() => `${catalogItems.value.length} preset${catalogItems.value.length === 1 ? '' : 's'} ready`)
+const isVisualCatalogLoading = computed(() => !dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
+const isVisualCatalogEmpty = computed(() => dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 let buildPaneDataLoad: Promise<void> | null = null
 
 const expandedFolders = ref<Record<string, boolean>>({
@@ -85,6 +94,14 @@ function handleAddVisualTemplate(templateId: string) {
   dashboardStore.addVisualTemplate(templateId, firstFortigate?.id ?? '')
 }
 
+function retryVisualPresets() {
+  dashboardStore.fetchCatalog()
+}
+
+function retryProviderFields() {
+  providerDataStore.fetchFortigateFields()
+}
+
 function fieldBindingFromProviderField(
   field: ProviderDataField,
   group: ProviderDataGroup,
@@ -120,7 +137,11 @@ const widgetMap: Record<string, any> = {
   'fortigate-top-threats': WidgetThreats,
   'fortigate-network-traffic': WidgetNetwork,
   'fortigate-kpi-sessions': WidgetKpiCard,
-  'fortigate-firewall-policies': WidgetFirewallPolicies
+  'fortigate-firewall-policies': WidgetFirewallPolicies,
+  'fortigate-risk-posture': WidgetRiskPosture,
+  'fortigate-interface-health': WidgetInterfaceHealth,
+  'fortigate-recent-events': WidgetRecentEvents,
+  'fortigate-anomaly-highlights': WidgetAnomalyHighlights
 }
 
 function getIconForKind(kind: string) {
@@ -297,22 +318,81 @@ function handleWheel(e: WheelEvent) {
 
           <!-- Visualizations Tab -->
           <div v-if="activeBuildTab === 'visuals'" class="p-4 flex flex-col gap-4">
-            <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">FortiGate presets</h3>
-            <div class="grid grid-cols-2 gap-2">
-              <div 
-                v-for="item in catalogItems" 
-                :key="item.id"
-                @click="handleAddWidget(item.id)"
-                class="bg-theme-bg border border-theme-border p-3 rounded hover:border-theme-primary/50 hover:bg-theme-border transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer group text-center"
-                :title="item.title"
-              >
-                <component :is="getIconForKind(item.kind)" :size="24" class="text-theme-text-muted group-hover:text-theme-primary transition-colors" />
-                <span class="text-[10px] leading-tight font-medium text-theme-text-muted group-hover:text-theme-text">{{ item.title }}</span>
+            <div class="border-b border-theme-border pb-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">Visual analysis</h3>
+                  <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
+                    FortiGate presets and reusable templates for the SOC canvas.
+                  </p>
+                </div>
+                <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-2 py-1 text-[10px] font-medium text-theme-text-muted">
+                  {{ isVisualCatalogLoading ? 'Loading' : visualPresetCountLabel }}
+                </span>
               </div>
             </div>
 
-            <div class="mt-2 border-t border-theme-border pt-4">
-              <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Criar dados ao seu visual</h3>
+            <section class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">FortiGate presets</h3>
+                <span v-if="catalogItems.length > 0" class="text-[10px] text-theme-text-muted">{{ visualPresetCountLabel }}</span>
+              </div>
+
+              <div v-if="isVisualCatalogLoading" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
+                <div class="flex items-center gap-2 font-medium text-theme-text">
+                  <RefreshCcw :size="14" class="animate-spin text-theme-primary" />
+                  <span>Loading FortiGate presets</span>
+                </div>
+                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                  Catalog metadata is loading for this workspace.
+                </p>
+              </div>
+
+              <div v-else-if="isVisualCatalogEmpty" class="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                <div class="flex items-center gap-2 font-medium text-amber-200">
+                  <AlertTriangle :size="14" />
+                  <span>No FortiGate presets available</span>
+                </div>
+                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                  Catalog status: unavailable; visual templates remain available.
+                </p>
+                <button
+                  type="button"
+                  class="mt-3 flex items-center gap-1 rounded border border-theme-border px-2 py-1 text-xs font-medium text-theme-text-muted hover:bg-theme-border hover:text-theme-text"
+                  @click="retryVisualPresets"
+                >
+                  <RefreshCcw :size="12" />
+                  Retry presets
+                </button>
+              </div>
+
+              <div v-else class="grid grid-cols-2 gap-2">
+                <div
+                  v-for="item in catalogItems"
+                  :key="item.id"
+                  @click="handleAddWidget(item.id)"
+                  class="bg-theme-bg border border-theme-border p-3 rounded hover:border-theme-primary/50 hover:bg-theme-border transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer group text-center"
+                  :title="item.title"
+                >
+                  <component :is="getIconForKind(item.kind)" :size="24" class="text-theme-text-muted group-hover:text-theme-primary transition-colors" />
+                  <span class="text-[10px] leading-tight font-medium text-theme-text-muted group-hover:text-theme-text">{{ item.title }}</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="mt-1 border-t border-theme-border pt-4">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Criar dados ao seu visual</h3>
+                  <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
+                    Template binding: Data fields.
+                  </p>
+                </div>
+                <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-2 py-1 text-[10px] text-theme-text-muted">
+                  <Layers3 :size="11" class="mr-1 inline" />
+                  {{ visualTemplates.length }}
+                </span>
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <div
                   v-for="template in visualTemplates"
@@ -326,24 +406,58 @@ function handleWheel(e: WheelEvent) {
                   <span class="text-[10px] leading-tight font-medium text-theme-text-muted group-hover:text-theme-text">{{ template.title }}</span>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
 
           <!-- Data Tab -->
-          <div v-if="activeBuildTab === 'data'" class="p-4 flex flex-col gap-2">
-            <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider mb-2">Available Fields</h3>
+          <div v-if="activeBuildTab === 'data'" class="p-4 flex flex-col gap-3">
+            <div class="border-b border-theme-border pb-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">FortiGate data model</h3>
+                  <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
+                    Fields available for empty visual templates.
+                  </p>
+                </div>
+                <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-2 py-1 text-[10px] font-medium text-theme-text-muted">
+                  {{ isDataFieldsLoading ? 'Loading' : dataFieldCountLabel }}
+                </span>
+              </div>
+            </div>
 
             <div v-if="isDataFieldsLoading" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
-              Loading FortiGate fields...
+              <div class="flex items-center gap-2 font-medium text-theme-text">
+                <RefreshCcw :size="14" class="animate-spin text-theme-primary" />
+                <span>Loading FortiGate fields</span>
+              </div>
+              <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                Preparing normalized provider fields for live visual binding.
+              </p>
             </div>
-            <div v-else-if="dataFieldsError" class="rounded border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-              {{ dataFieldsError }}
+            <div v-else-if="dataFieldsError" class="rounded border border-red-500/30 bg-red-500/10 p-3 text-sm">
+              <div class="flex items-center gap-2 font-medium text-red-200">
+                <AlertTriangle :size="14" />
+                <span>Data model unavailable</span>
+              </div>
+              <p class="mt-1 text-xs leading-snug text-red-300">{{ dataFieldsError }}</p>
+              <button
+                type="button"
+                class="mt-3 flex items-center gap-1 rounded border border-red-500/30 px-2 py-1 text-xs font-medium text-red-200 hover:bg-red-500/10"
+                @click="retryProviderFields"
+              >
+                <RefreshCcw :size="12" />
+                Retry fields
+              </button>
             </div>
             <div v-else-if="dataFieldGroups.length === 0" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
-              No provider fields available.
+              <div class="font-medium text-theme-text">No provider fields available</div>
+              <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                No FortiGate field groups returned by the provider data endpoint.
+              </p>
             </div>
             
             <template v-else>
+              <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Available Fields</h3>
               <div v-for="group in dataFieldGroups" :key="group.id" class="flex flex-col">
                 <div 
                   class="flex items-center gap-2 p-2 hover:bg-theme-border rounded cursor-pointer transition-colors text-sm text-theme-text"

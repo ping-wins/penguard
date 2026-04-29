@@ -52,5 +52,9 @@ describe('Sidebar integrations panel', () => {
 
     expect(wrapper.text()).toContain('FortiGate Lab')
     expect(wrapper.text()).toContain('https://192.0.2.118')
+    expect(wrapper.text()).toContain('Domain verification')
+    expect(wrapper.text()).toContain('DNS TXT pending')
+    expect(wrapper.text()).toContain('Audit activity')
+    expect(wrapper.text()).toContain('integration.fortigate.created')
   })
 })
