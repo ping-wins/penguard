@@ -57,6 +57,7 @@ describe('fetchWidgetData', () => {
       fetcher,
     })).resolves.toEqual({
       state: 'error',
+      errorKind: 'widget_error',
       errorMessage: 'FortiGate API request failed with HTTP 404',
       response: expect.objectContaining({ status: 'error' }),
     })
@@ -71,7 +72,8 @@ describe('fetchWidgetData', () => {
       fetcher,
     })).resolves.toEqual({
       state: 'error',
-      errorMessage: 'HTTP Error 403',
+      errorKind: 'invalid_connection',
+      errorMessage: 'Widget connection is not authorized. Check the FortiDashboard session or FortiGate integration.',
     })
   })
 })
