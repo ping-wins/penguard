@@ -113,7 +113,7 @@ describe('DashboardCanvas build pane', () => {
     expect(dashboardStore.activeWidgets).toEqual([
       expect.objectContaining({
         catalogId: 'visual-template-card',
-        integrationId: '',
+        integrationId: 'int_fgt_01',
       }),
     ])
 

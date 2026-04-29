@@ -568,6 +568,7 @@ Em modo live, workspace é persistido em `workspace_specs` por `owner_user_id`; 
 - No Build Panel, `Visuals` separa presets FortiGate prontos de templates vazios em `Criar dados ao seu visual`. Presets já vêm com `dataEndpoint`; templates vazios usam IDs `visual-template-*` e aguardam binding de campos.
 - No Build Panel, `Data` deve consumir `GET /api/providers/fortigate/data-fields` via `apps/web/src/services/providerDataClient.ts`; não importe `packages/contracts/fixtures/data-fields.json` direto em componentes.
 - Campos do painel `Data` são arrastáveis. Ao soltar um campo em um template vazio no canvas, o frontend grava o vínculo em `WorkspaceWidget.fieldBindings[]` com `fieldId`, `label`, `type`, `unit`, `source`, `provider`, `groupId` e `groupName`.
+- Templates vazios com `fieldBindings` devem resolver dados live por `source`, chamando `/api/widgets/{source}/data?integrationId=<id>`. O primeiro corte renderiza `Card` como KPI real e `Bar Chart` como barras proporcionais; outros visuais podem cair em lista de campo/valor até ganharem renderer dedicado.
 - Componentes iniciais esperados: `WidgetHealth`, `WidgetThreats` e `WidgetNetwork`.
 - A sidebar deve conter chat da IA e lista/catálogo de módulos disponíveis.
 
@@ -592,6 +593,7 @@ Fluxo recomendado no `apps/web`:
 - `apps/web/src/constants/visualTemplates.ts` define os templates visuais vazios: Card, Gauge, Table, Bar Chart, Line Chart, Event Feed e Signal List. Eles não chamam FortiGate até existir binding campo -> visual.
 - `apps/web/src/stores/useProviderDataStore.ts` mantém os campos do provider carregados pelo backend. O painel Data deve mostrar campos como variáveis live do FortiGate, incluindo `type`, `unit`, `source` e indicação visual de atualização live.
 - `DraggableWidget` é a zona de drop para templates `visual-template-*`; widgets FortiGate prontos não aceitam drop de campos. O binding deve persistir no workspace para sobreviver a reload.
+- `WidgetEmptyVisual` consome os bindings e usa `source` como widget de origem. Se dois campos vêm do mesmo `source`, o frontend deve fazer uma única request e reutilizar o payload normalizado para renderizar o visual customizado.
 
 Widgets disponíveis nesta sprint:
 
@@ -717,6 +719,8 @@ Nota de CRUD de integrações (2026-04-28): o frontend pode remover integraçõe
 
 Nota de modelo Power BI-like (2026-04-28): o FortiGate agora expõe um catálogo de campos por grupos (`system`, `interfaces`, `policies`, `events`, `risk`) e templates adicionais (`risk-posture`, `interface-health`, `recent-events`, `anomaly-highlights`). Isso prepara a futura criação de widgets customizados por seleção de campo + visual, sem abandonar os templates prontos.
 
+Nota de visuais customizados (2026-04-29): campos arrastados do painel `Data` para templates vazios já são resolvidos contra dados live pelo `source` do campo. `Card` renderiza o primeiro campo como KPI com unidade; `Bar Chart` renderiza campos numéricos como barras proporcionais usando uma request compartilhada por origem. Próximo corte: renderers dedicados para Gauge, Table, Line, Event Feed e Signal List.
+
 Nota de validação FortiGate local (2026-04-26): host `192.0.2.118` responde em `443` e o API user `pingwin` autenticou com token regenerado. Validação read-only passou para status, performance e sessões, normalizando hostname, modelo, versão, build, CPU, memória e sessões sem registrar a API key no repositório.
 
 Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fortigate-network-traffic` e `fortigate-firewall-policies` retornaram payloads normalizados contra o FortiGate local. `fortigate-top-threats` retornou `status: error` controlado porque o endpoint de logs UTM/IPS respondeu `404` nesse lab.
@@ -749,7 +753,8 @@ Nota de validação de widgets live (2026-04-26): `fortigate-system-status`, `fo
 - [x] Separar `Visuals` em presets FortiGate e templates vazios para criação futura de visuais customizados.
 - [x] Carregar campos do painel `Data` por `/api/providers/fortigate/data-fields` em vez de fixture importada no componente.
 - [x] Implementar drag-and-drop de campos do painel `Data` para templates vazios, persistindo `fieldBindings` no workspace.
-- [ ] Transformar `fieldBindings` em renderização calculada por tipo de visual (card, gauge, tabela, gráfico etc.).
+- [x] Transformar `fieldBindings` em renderização calculada inicial para `Card` e `Bar Chart`, consumindo dados live pelo `source` do campo.
+- [ ] Expandir renderização dedicada de `fieldBindings` para Gauge, Table, Line Chart, Event Feed e Signal List.
 - [ ] Criar mocks visuais para domínio pendente/verificado e falha de verificação.
 - [x] Criar audit trail/activity feed para eventos sensíveis.
 - [ ] Renderizar no frontend os novos templates de postura de risco, saúde de interfaces, eventos recentes e anomalias.

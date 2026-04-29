@@ -81,7 +81,8 @@ async function loadFortigateBuildPaneData() {
 }
 
 function handleAddVisualTemplate(templateId: string) {
-  dashboardStore.addVisualTemplate(templateId)
+  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
+  dashboardStore.addVisualTemplate(templateId, firstFortigate?.id ?? '')
 }
 
 function fieldBindingFromProviderField(
@@ -218,6 +219,7 @@ function handleWheel(e: WheelEvent) {
               v-if="getWidgetComponent(widget.catalogId)"
               :data="widgetData"
               :catalog-id="widget.catalogId"
+              :integration-id="widget.integrationId"
               :field-bindings="fieldBindings"
             />
             <div v-else class="text-gray-500 text-sm flex h-full items-center justify-center">

@@ -143,12 +143,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
     debouncedSave()
   }
 
-  function addVisualTemplate(templateId: string) {
+  function addVisualTemplate(templateId: string, integrationId = '') {
     const template = visualTemplatesById[templateId]
     if (!template) return
     activeWidgets.value.push(createWidgetInstance({
       catalogId: template.id,
-      integrationId: '',
+      integrationId,
       defaultSize: template.defaultSize,
       zIndex: ++maxZIndex
     }))
