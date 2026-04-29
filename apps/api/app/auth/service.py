@@ -54,6 +54,7 @@ class MockIdentityProvider:
                 "access_token": "mock-access-token",
                 "refresh_token": "mock-refresh-token",
                 "expires_in": 7200,
+                "refresh_expires_in": 7200,
             },
             expires_at=payload["session"]["expiresAt"],
         )
@@ -66,6 +67,7 @@ class MockIdentityProvider:
                 "access_token": "mock-access-token",
                 "refresh_token": "mock-refresh-token",
                 "expires_in": 7200,
+                "refresh_expires_in": 7200,
             },
             expires_at=payload["session"]["expiresAt"],
         )
@@ -136,8 +138,13 @@ class AuthService:
         )
 
     def _expires_at_datetime(self, tokens: dict[str, Any]) -> datetime:
-        expires_in = int(tokens.get("expires_in", 0))
-        return datetime.now(UTC) + timedelta(seconds=expires_in)
+        ttl_seconds = self._session_ttl_seconds(tokens)
+        return datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+
+    def _session_ttl_seconds(self, tokens: dict[str, Any]) -> int:
+        if tokens.get("refresh_token") and tokens.get("refresh_expires_in") is not None:
+            return int(tokens["refresh_expires_in"])
+        return int(tokens.get("expires_in", 0))
 
     def _format_expires_at(self, expires_at: datetime) -> str:
         return expires_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")

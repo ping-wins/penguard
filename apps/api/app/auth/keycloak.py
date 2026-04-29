@@ -11,6 +11,7 @@ class KeycloakTokenSet:
     access_token: str
     refresh_token: str | None
     expires_in: int
+    refresh_expires_in: int | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class KeycloakClient:
             access_token=payload["access_token"],
             refresh_token=payload.get("refresh_token"),
             expires_in=payload["expires_in"],
+            refresh_expires_in=payload.get("refresh_expires_in"),
         )
 
     def create_user(self, *, email: str, password: str, display_name: str) -> KeycloakUser:

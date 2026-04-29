@@ -37,4 +37,35 @@ describe('useAuthStore', () => {
     expect(store.user.email).toBe('analyst@example.com')
     expect(store.isInitialized).toBe(true)
   })
+
+  it('hydrates an existing browser session from /auth/me on reload', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse({
+      authenticated: true,
+      user: { id: 'usr_01', email: 'analyst@example.com', displayName: 'SOC Analyst', roles: ['analyst'] },
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuthStore()
+    await store.fetchSession()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/auth/me', { credentials: 'include' })
+    expect(store.isAuthenticated).toBe(true)
+    expect(store.user?.email).toBe('analyst@example.com')
+    expect(store.isInitialized).toBe(true)
+  })
+
+  it('marks the user unauthenticated when /auth/me returns no active session', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse({
+      authenticated: false,
+      user: null,
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuthStore()
+    await store.fetchSession()
+
+    expect(store.isAuthenticated).toBe(false)
+    expect(store.user).toBeNull()
+    expect(store.isInitialized).toBe(true)
+  })
 })

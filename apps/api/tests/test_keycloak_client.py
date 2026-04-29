@@ -25,6 +25,7 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
                 "access_token": "keycloak-access-token",
                 "refresh_token": "keycloak-refresh-token",
                 "expires_in": 300,
+                "refresh_expires_in": 1800,
             },
         )
 
@@ -45,6 +46,7 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
     assert tokens.access_token == "keycloak-access-token"
     assert tokens.refresh_token == "keycloak-refresh-token"
     assert tokens.expires_in == 300
+    assert tokens.refresh_expires_in == 1800
 
 
 def test_create_user_uses_service_account_and_keycloak_admin_api():

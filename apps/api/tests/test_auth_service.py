@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from app.auth.service import AuthIdentity, AuthService
 from app.auth.session_store import InMemorySessionStore
 
@@ -92,3 +94,31 @@ def test_auth_service_login_and_logout_are_session_store_backed():
     }
     assert logout_payload == {"authenticated": False}
     assert service.get_current_user(login_result.session_id) is None
+
+
+def test_auth_service_uses_refresh_token_lifespan_for_browser_session():
+    class RefreshTokenProvider(RecordingProvider):
+        def login(self, *, email: str, password: str) -> AuthIdentity:
+            identity = super().login(email=email, password=password)
+            return AuthIdentity(
+                user=identity.user,
+                tokens={
+                    **identity.tokens,
+                    "refresh_expires_in": 1800,
+                },
+            )
+
+    provider = RefreshTokenProvider()
+    store = InMemorySessionStore(token_factory=lambda: "session_refresh")
+    service = AuthService(provider=provider, session_store=store)
+
+    before_login = datetime.now(UTC)
+    login_result = service.login(
+        email="analyst@example.com",
+        password="correct-horse-battery-staple",
+    )
+
+    session = store.get(login_result.session_id)
+    assert session is not None
+    assert session.expires_at is not None
+    assert (session.expires_at - before_login).total_seconds() >= 1700

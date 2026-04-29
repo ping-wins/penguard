@@ -61,6 +61,7 @@ Modelo obrigatório:
 - Endpoints protegidos usam a sessão da API, não validação JWT feita no browser.
 - A API deve aplicar CSRF para métodos mutáveis, rate limit em login/register e auditoria de tentativas.
 - Sessões live usam Postgres na tabela `auth_sessions`; `token_blob` deve ser criptografado, `expires_at` deve invalidar sessões vencidas e tokens nunca podem aparecer em texto claro.
+- Em login/register live, `auth_sessions.expires_at` deve seguir `refresh_expires_in` quando houver refresh token server-side. Usar apenas `expires_in` do access token derruba a sessão em poucos minutos e força novo login após reload.
 - Frontend deve usar `apps/web/src/services/authClient.ts` para `login`, `register`, `logout`, CSRF e `/auth/me`. Não duplique chamadas auth direto em views.
 - Frontend deve chamar `GET /api/auth/csrf` com `credentials: "include"` antes de `login`, `register` ou `logout` e enviar o valor em `X-CSRF-Token`.
 - Se `login/register/logout` retornar `403` com falha de CSRF, o client pode buscar novo CSRF e tentar novamente uma única vez.
