@@ -5,6 +5,39 @@ const GRID_ROW_PX = 90
 const GRID_PADDING_PX = 20
 const GRID_UNIT_THRESHOLD = 24
 
+export type WidgetSizeConstraints = {
+  minW: number
+  minH: number
+  maxW: number
+  maxH: number
+}
+
+const DEFAULT_WIDGET_SIZE_CONSTRAINTS: WidgetSizeConstraints = {
+  minW: 280,
+  minH: 190,
+  maxW: 900,
+  maxH: 680,
+}
+
+const WIDGET_SIZE_CONSTRAINTS: Record<string, WidgetSizeConstraints> = {
+  'visual-template-card': { minW: 220, minH: 160, maxW: 460, maxH: 320 },
+  'visual-template-gauge': { minW: 260, minH: 240, maxW: 520, maxH: 440 },
+  'visual-template-table': { minW: 420, minH: 300, maxW: 960, maxH: 720 },
+  'visual-template-bar': { minW: 380, minH: 260, maxW: 880, maxH: 560 },
+  'visual-template-line': { minW: 380, minH: 260, maxW: 880, maxH: 560 },
+  'visual-template-feed': { minW: 400, minH: 320, maxW: 840, maxH: 700 },
+  'visual-template-list': { minW: 400, minH: 320, maxW: 840, maxH: 700 },
+  'fortigate-system-status': { minW: 360, minH: 240, maxW: 760, maxH: 560 },
+  'fortigate-kpi-sessions': { minW: 260, minH: 180, maxW: 480, maxH: 360 },
+  'fortigate-network-traffic': { minW: 440, minH: 320, maxW: 960, maxH: 720 },
+  'fortigate-firewall-policies': { minW: 440, minH: 320, maxW: 960, maxH: 720 },
+  'fortigate-top-threats': { minW: 440, minH: 320, maxW: 960, maxH: 720 },
+  'fortigate-risk-posture': { minW: 460, minH: 360, maxW: 820, maxH: 700 },
+  'fortigate-interface-health': { minW: 440, minH: 340, maxW: 880, maxH: 700 },
+  'fortigate-recent-events': { minW: 440, minH: 340, maxW: 880, maxH: 700 },
+  'fortigate-anomaly-highlights': { minW: 420, minH: 320, maxW: 840, maxH: 680 },
+}
+
 type CreateWidgetInstanceOptions = {
   catalogId: string
   integrationId: string
@@ -21,6 +54,26 @@ function gridSizeToPixels(size: WidgetDefaultSize) {
   return {
     w: size.w * GRID_COLUMN_PX + GRID_PADDING_PX,
     h: size.h * GRID_ROW_PX + GRID_PADDING_PX,
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+export function getWidgetSizeConstraints(catalogId: string): WidgetSizeConstraints {
+  return WIDGET_SIZE_CONSTRAINTS[catalogId] ?? DEFAULT_WIDGET_SIZE_CONSTRAINTS
+}
+
+export function clampWidgetLayoutSize(
+  layout: WidgetLayout,
+  catalogId: string,
+): WidgetLayout {
+  const constraints = getWidgetSizeConstraints(catalogId)
+  return {
+    ...layout,
+    w: clamp(Number(layout.w) || constraints.minW, constraints.minW, constraints.maxW),
+    h: clamp(Number(layout.h) || constraints.minH, constraints.minH, constraints.maxH),
   }
 }
 

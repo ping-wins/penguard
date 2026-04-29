@@ -241,4 +241,106 @@ describe('DashboardCanvas build pane', () => {
     expect(wrapper.text()).toContain('Provider data unavailable')
     expect(wrapper.text()).toContain('Retry fields')
   })
+
+  it('zooms the workspace content without scaling the viewport grid', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const store = useDashboardStore()
+    const viewport = wrapper.get('[data-test="workspace-viewport"]')
+    const grid = wrapper.get('[data-test="workspace-grid"]')
+
+    expect(grid.attributes('style')).toContain('background-size: 80px 80px')
+
+    await viewport.trigger('wheel', {
+      ctrlKey: true,
+      deltaY: -240,
+      clientX: 300,
+      clientY: 180,
+    })
+
+    expect(store.zoom).toBeGreaterThan(1)
+    expect(grid.attributes('style')).toContain('background-size: 80px 80px')
+    expect(wrapper.get('[data-test="workspace-stage"]').attributes('style')).toContain('scale(')
+  })
+
+  it('supports Power BI style wheel and space-drag workspace panning', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const viewportWrapper = wrapper.get('[data-test="workspace-viewport"]')
+    const viewport = viewportWrapper.element as HTMLElement
+    viewport.scrollLeft = 100
+    viewport.scrollTop = 200
+
+    await viewportWrapper.trigger('wheel', {
+      shiftKey: true,
+      deltaY: 80,
+      deltaX: 0,
+    })
+    expect(viewport.scrollLeft).toBe(180)
+    expect(viewport.scrollTop).toBe(200)
+
+    await viewportWrapper.trigger('wheel', {
+      deltaY: 60,
+      deltaX: 0,
+    })
+    expect(viewport.scrollTop).toBe(260)
+
+    await viewportWrapper.trigger('keydown', { code: 'Space', key: ' ' })
+    await viewportWrapper.trigger('pointerdown', {
+      clientX: 300,
+      clientY: 200,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 260,
+      clientY: 170,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(viewport.scrollLeft).toBe(220)
+    expect(viewport.scrollTop).toBe(290)
+  })
 })

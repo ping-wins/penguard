@@ -6,6 +6,7 @@ import { fetchWidgetData } from '../../services/widgetDataClient'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
 import { visualTemplatesById } from '../../constants/visualTemplates'
 import { parseFieldBindingTransfer } from '../../utils/fieldDrag'
+import { clampWidgetLayoutSize } from '../../utils/widgetLayout'
 
 const props = defineProps<{
   instanceId: string
@@ -200,9 +201,9 @@ onBeforeUnmount(() => {
   currentController?.abort()
 })
 
-// Dimensões exatas em pixels
-const widthPx = computed(() => props.layout.w)
-const heightPx = computed(() => props.layout.h)
+const clampedLayout = computed(() => clampWidgetLayoutSize(props.layout, props.catalogId))
+const widthPx = computed(() => clampedLayout.value.w)
+const heightPx = computed(() => clampedLayout.value.h)
 
 function handleRemove() {
   store.removeWidget(props.instanceId)
@@ -298,20 +299,29 @@ function onResize(e: PointerEvent) {
   let newX = initialX
   let newY = initialY
   
-  const minW = 150
-  const minH = 100
-
   if (resizeDir.includes('e')) {
-    newW = Math.max(minW, initialW + dx)
+    newW = initialW + dx
   } else if (resizeDir.includes('w')) {
-    newW = Math.max(minW, initialW - dx)
-    newX = initialX + (initialW - newW)
+    newW = initialW - dx
   }
   
   if (resizeDir.includes('s')) {
-    newH = Math.max(minH, initialH + dy)
+    newH = initialH + dy
   } else if (resizeDir.includes('n')) {
-    newH = Math.max(minH, initialH - dy)
+    newH = initialH - dy
+  }
+
+  const clamped = clampWidgetLayoutSize(
+    { x: newX, y: newY, w: newW, h: newH, z: props.layout.z },
+    props.catalogId,
+  )
+  newW = clamped.w
+  newH = clamped.h
+
+  if (resizeDir.includes('w')) {
+    newX = initialX + (initialW - newW)
+  }
+  if (resizeDir.includes('n')) {
     newY = initialY + (initialH - newH)
   }
   
@@ -329,6 +339,8 @@ function stopResize() {
 
 <template>
   <div
+    data-workspace-widget="true"
+    data-test="draggable-widget"
     class="absolute flex flex-col bg-theme-panel border border-theme-border rounded-md shadow-2xl transition-shadow group"
     :class="{ 'ring-2 ring-theme-primary/50 shadow-theme-primary/10': isDragging }"
     :style="{
@@ -406,17 +418,18 @@ function stopResize() {
     <!-- Handles - Visíveis no hover do container -->
     <div class="opacity-0 group-hover:opacity-100 transition-opacity">
       <!-- Edges -->
-      <div class="absolute top-0 left-2 right-2 h-1.5 cursor-ns-resize -translate-y-1/2" @pointerdown.stop="startResize($event, 'n')"></div>
-      <div class="absolute bottom-0 left-2 right-2 h-1.5 cursor-ns-resize translate-y-1/2" @pointerdown.stop="startResize($event, 's')"></div>
-      <div class="absolute top-2 bottom-2 left-0 w-1.5 cursor-ew-resize -translate-x-1/2" @pointerdown.stop="startResize($event, 'w')"></div>
-      <div class="absolute top-2 bottom-2 right-0 w-1.5 cursor-ew-resize translate-x-1/2" @pointerdown.stop="startResize($event, 'e')"></div>
+      <div data-test="resize-handle-n" class="absolute top-0 left-2 right-2 h-1.5 cursor-ns-resize -translate-y-1/2" @pointerdown.stop="startResize($event, 'n')"></div>
+      <div data-test="resize-handle-s" class="absolute bottom-0 left-2 right-2 h-1.5 cursor-ns-resize translate-y-1/2" @pointerdown.stop="startResize($event, 's')"></div>
+      <div data-test="resize-handle-w" class="absolute top-2 bottom-2 left-0 w-1.5 cursor-ew-resize -translate-x-1/2" @pointerdown.stop="startResize($event, 'w')"></div>
+      <div data-test="resize-handle-e" class="absolute top-2 bottom-2 right-0 w-1.5 cursor-ew-resize translate-x-1/2" @pointerdown.stop="startResize($event, 'e')"></div>
       
       <!-- Corners -->
-      <div class="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize -translate-x-1/2 -translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'nw')"></div>
-      <div class="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize translate-x-1/2 -translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'ne')"></div>
-      <div class="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize -translate-x-1/2 translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'sw')"></div>
+      <div data-test="resize-handle-nw" class="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize -translate-x-1/2 -translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'nw')"></div>
+      <div data-test="resize-handle-ne" class="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize translate-x-1/2 -translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'ne')"></div>
+      <div data-test="resize-handle-sw" class="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize -translate-x-1/2 translate-y-1/2 z-10" @pointerdown.stop="startResize($event, 'sw')"></div>
       
       <div 
+        data-test="resize-handle-se"
         class="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5 hover:text-theme-primary transition-colors text-theme-text-muted z-10" 
         @pointerdown.stop="startResize($event, 'se')"
       >

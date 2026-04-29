@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useProviderDataStore } from '../../stores/useProviderDataStore'
@@ -32,6 +32,8 @@ const {
 } = storeToRefs(providerDataStore)
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleViewportKeyDown)
+  window.addEventListener('keyup', handleViewportKeyUp)
   await integrationsStore.fetchIntegrations()
   if (integrationsStore.hasFortigate) {
     await loadFortigateBuildPaneData()
@@ -54,6 +56,22 @@ const visualPresetCountLabel = computed(() => `${catalogItems.value.length} pres
 const isVisualCatalogLoading = computed(() => !dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 const isVisualCatalogEmpty = computed(() => dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 let buildPaneDataLoad: Promise<void> | null = null
+
+const WORKSPACE_WIDTH_PX = 7200
+const WORKSPACE_HEIGHT_PX = 4800
+const WORKSPACE_GRID_SIZE_PX = 80
+const MIN_ZOOM = 0.2
+const MAX_ZOOM = 3
+
+const workspaceViewport = ref<HTMLElement | null>(null)
+const viewportScroll = ref({ x: 0, y: 0 })
+const isSpacePanning = ref(false)
+const isViewportPanning = ref(false)
+
+let panStartX = 0
+let panStartY = 0
+let panStartScrollLeft = 0
+let panStartScrollTop = 0
 
 const expandedFolders = ref<Record<string, boolean>>({
   'system': true
@@ -131,6 +149,23 @@ function handleFieldDrop(payload: { instanceId: string, binding: WidgetFieldBind
   dashboardStore.bindFieldToWidget(payload.instanceId, payload.binding)
 }
 
+const workspaceSurfaceStyle = computed(() => ({
+  width: `${WORKSPACE_WIDTH_PX * dashboardStore.zoom}px`,
+  height: `${WORKSPACE_HEIGHT_PX * dashboardStore.zoom}px`,
+}))
+
+const workspaceStageStyle = computed(() => ({
+  width: `${WORKSPACE_WIDTH_PX}px`,
+  height: `${WORKSPACE_HEIGHT_PX}px`,
+  transform: `scale(${dashboardStore.zoom})`,
+}))
+
+const workspaceGridStyle = computed(() => ({
+  backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)',
+  backgroundSize: `${WORKSPACE_GRID_SIZE_PX}px ${WORKSPACE_GRID_SIZE_PX}px`,
+  backgroundPosition: `${-(viewportScroll.value.x % WORKSPACE_GRID_SIZE_PX)}px ${-(viewportScroll.value.y % WORKSPACE_GRID_SIZE_PX)}px`,
+}))
+
 // Map from catalogId to component
 const widgetMap: Record<string, any> = {
   'fortigate-system-status': WidgetHealth,
@@ -186,14 +221,107 @@ function fieldTypeLabel(field: ProviderDataField) {
   return field.unit ? `${field.type} / ${field.unit}` : field.type
 }
 
-function handleWheel(e: WheelEvent) {
-  if (e.ctrlKey || e.metaKey) {
-    e.preventDefault()
-    const zoomSensitivity = 0.001
-    const newZoom = dashboardStore.zoom - e.deltaY * zoomSensitivity
-    dashboardStore.setZoom(Math.max(0.2, Math.min(newZoom, 3))) // Zoom entre 20% e 300%
+function clampZoom(value: number) {
+  return Math.max(MIN_ZOOM, Math.min(value, MAX_ZOOM))
+}
+
+function syncViewportScroll() {
+  const viewport = workspaceViewport.value
+  if (!viewport) return
+  viewportScroll.value = {
+    x: viewport.scrollLeft,
+    y: viewport.scrollTop,
   }
 }
+
+function handleWheel(e: WheelEvent) {
+  const viewport = workspaceViewport.value
+  if (!viewport) return
+
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const previousZoom = dashboardStore.zoom
+    const zoomSensitivity = 0.001
+    const nextZoom = clampZoom(previousZoom - e.deltaY * zoomSensitivity)
+    if (nextZoom === previousZoom) return
+
+    const rect = viewport.getBoundingClientRect()
+    const pointerX = e.clientX - rect.left
+    const pointerY = e.clientY - rect.top
+    const logicalX = (viewport.scrollLeft + pointerX) / previousZoom
+    const logicalY = (viewport.scrollTop + pointerY) / previousZoom
+
+    dashboardStore.setZoom(nextZoom)
+
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = Math.max(0, logicalX * nextZoom - pointerX)
+      viewport.scrollTop = Math.max(0, logicalY * nextZoom - pointerY)
+      syncViewportScroll()
+    })
+    return
+  }
+
+  e.preventDefault()
+  if (e.shiftKey) {
+    viewport.scrollLeft += e.deltaY + e.deltaX
+  } else {
+    viewport.scrollLeft += e.deltaX
+    viewport.scrollTop += e.deltaY
+  }
+  syncViewportScroll()
+}
+
+function handleViewportKeyDown(event: KeyboardEvent) {
+  if (event.code !== 'Space' || isEditableTarget(event.target)) return
+  event.preventDefault()
+  isSpacePanning.value = true
+}
+
+function handleViewportKeyUp(event: KeyboardEvent) {
+  if (event.code !== 'Space') return
+  event.preventDefault()
+  isSpacePanning.value = false
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(target.closest('input, textarea, select, button, [contenteditable="true"]'))
+}
+
+function startViewportPan(event: PointerEvent) {
+  const viewport = workspaceViewport.value
+  if (!viewport || (!isSpacePanning.value && event.button !== 1)) return
+  if ((event.target as HTMLElement | null)?.closest('[data-workspace-widget="true"]')) return
+
+  event.preventDefault()
+  isViewportPanning.value = true
+  panStartX = event.clientX
+  panStartY = event.clientY
+  panStartScrollLeft = viewport.scrollLeft
+  panStartScrollTop = viewport.scrollTop
+
+  window.addEventListener('pointermove', handleViewportPan)
+  window.addEventListener('pointerup', stopViewportPan)
+}
+
+function handleViewportPan(event: PointerEvent) {
+  if (!isViewportPanning.value || !workspaceViewport.value) return
+  workspaceViewport.value.scrollLeft = panStartScrollLeft - (event.clientX - panStartX)
+  workspaceViewport.value.scrollTop = panStartScrollTop - (event.clientY - panStartY)
+  syncViewportScroll()
+}
+
+function stopViewportPan() {
+  isViewportPanning.value = false
+  window.removeEventListener('pointermove', handleViewportPan)
+  window.removeEventListener('pointerup', stopViewportPan)
+}
+
+onBeforeUnmount(() => {
+  stopViewportPan()
+  window.removeEventListener('keydown', handleViewportKeyDown)
+  window.removeEventListener('keyup', handleViewportKeyUp)
+})
 </script>
 
 <template>
@@ -216,37 +344,58 @@ function handleWheel(e: WheelEvent) {
 
     <div class="flex flex-1 overflow-hidden relative">
       <!-- Canvas Area -->
-      <main class="flex-1 h-full relative overflow-auto bg-theme-bg no-scrollbar" @wheel="handleWheel">
-        <div class="absolute inset-0 origin-top-left" :style="{ transform: `scale(${dashboardStore.zoom})`, width: `${100/dashboardStore.zoom}%`, height: `${100/dashboardStore.zoom}%` }">
-          
-          <!-- Grid Background -->
-          <div class="absolute inset-0 z-0 opacity-10 pointer-events-none pattern-grid bg-fixed" 
-               style="background-image: linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px); background-size: 80px 80px;">
-          </div>
-          
-          <DraggableWidget
-            v-for="widget in activeWidgets"
-            :key="widget.instanceId"
-            :instance-id="widget.instanceId"
-            :catalog-id="widget.catalogId"
-            :integration-id="widget.integrationId"
-            :layout="widget.layout"
-            :field-bindings="widget.fieldBindings ?? []"
-            @field-drop="handleFieldDrop"
-            v-slot="{ widgetData, fieldBindings }"
+      <main
+        ref="workspaceViewport"
+        data-test="workspace-viewport"
+        tabindex="0"
+        class="flex-1 h-full relative overflow-auto bg-theme-bg no-scrollbar outline-none"
+        :class="{
+          'cursor-grab': isSpacePanning && !isViewportPanning,
+          'cursor-grabbing': isViewportPanning,
+        }"
+        :style="workspaceGridStyle"
+        @wheel="handleWheel"
+        @scroll="syncViewportScroll"
+        @keydown="handleViewportKeyDown"
+        @keyup="handleViewportKeyUp"
+        @pointerdown="startViewportPan"
+      >
+        <div
+          data-test="workspace-grid"
+          class="pointer-events-none absolute inset-0 z-0 opacity-10 pattern-grid"
+          :style="workspaceGridStyle"
+        />
+
+        <div class="relative z-10" :style="workspaceSurfaceStyle">
+          <div
+            data-test="workspace-stage"
+            class="absolute left-0 top-0 origin-top-left"
+            :style="workspaceStageStyle"
           >
-            <component
-              :is="getWidgetComponent(widget.catalogId)"
-              v-if="getWidgetComponent(widget.catalogId)"
-              :data="widgetData"
+            <DraggableWidget
+              v-for="widget in activeWidgets"
+              :key="widget.instanceId"
+              :instance-id="widget.instanceId"
               :catalog-id="widget.catalogId"
               :integration-id="widget.integrationId"
-              :field-bindings="fieldBindings"
-            />
-            <div v-else class="text-gray-500 text-sm flex h-full items-center justify-center">
-              Component not found for {{ widget.catalogId }}
-            </div>
-          </DraggableWidget>
+              :layout="widget.layout"
+              :field-bindings="widget.fieldBindings ?? []"
+              @field-drop="handleFieldDrop"
+              v-slot="{ widgetData, fieldBindings }"
+            >
+              <component
+                :is="getWidgetComponent(widget.catalogId)"
+                v-if="getWidgetComponent(widget.catalogId)"
+                :data="widgetData"
+                :catalog-id="widget.catalogId"
+                :integration-id="widget.integrationId"
+                :field-bindings="fieldBindings"
+              />
+              <div v-else class="text-gray-500 text-sm flex h-full items-center justify-center">
+                Component not found for {{ widget.catalogId }}
+              </div>
+            </DraggableWidget>
+          </div>
         </div>
       </main>
 
