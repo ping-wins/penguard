@@ -1,0 +1,22 @@
+{
+  "id": "inc_01",
+  "title": "Possible port scan",
+  "severity": "high",
+  "status": "open",
+  "source": "siem_kowalski",
+  "entities": {
+    "sourceIp": "192.0.2.10",
+    "endpointId": "end_01"
+  },
+  "summary": "Multiple denied connections from the same source in a short window.",
+  "timeline": [
+    {
+      "id": "tl_01",
+      "type": "incident.created",
+      "message": "Kowalski created the incident from detection rule network_scan_burst.",
+      "createdAt": "2026-05-08T12:01:00.000Z"
+    }
+  ],
+  "createdAt": "2026-05-08T12:01:00.000Z",
+  "updatedAt": "2026-05-08T12:01:00.000Z"
+}

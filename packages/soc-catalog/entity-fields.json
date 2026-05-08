@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "sourceIp",
+      "label": "Source IP",
+      "type": "ip_address"
+    },
+    {
+      "id": "destinationIp",
+      "label": "Destination IP",
+      "type": "ip_address"
+    },
+    {
+      "id": "hostname",
+      "label": "Hostname",
+      "type": "string"
+    },
+    {
+      "id": "username",
+      "label": "Username",
+      "type": "string"
+    },
+    {
+      "id": "integrationId",
+      "label": "Integration ID",
+      "type": "identifier"
+    },
+    {
+      "id": "endpointId",
+      "label": "Endpoint ID",
+      "type": "identifier"
+    },
+    {
+      "id": "incidentId",
+      "label": "Incident ID",
+      "type": "identifier"
+    }
+  ]
+}

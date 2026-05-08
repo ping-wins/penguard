@@ -18,6 +18,9 @@ services:
       FORTIDASHBOARD_KEYCLOAK_REALM: fortidashboard
       FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
       FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: dev-client-secret
+      FORTIDASHBOARD_SIEM_KOWALSKI_URL: http://siem-kowalski:8000
+      FORTIDASHBOARD_SOAR_SKIPPER_URL: http://soar-skipper:8000
+      FORTIDASHBOARD_XDR_RICO_URL: http://xdr-rico:8000
     ports:
       - "${FORTIDASHBOARD_API_PORT:-8000}:8000"
     depends_on:
@@ -56,6 +59,64 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  siem-kowalski:
+    build:
+      context: .
+      dockerfile: apps/siem_kowalski/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  soar-skipper:
+    build:
+      context: .
+      dockerfile: apps/soar_skipper/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  xdr-rico:
+    build:
+      context: .
+      dockerfile: apps/xdr_rico/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${FORTIDASHBOARD_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   db:
     image: postgres:16-alpine
