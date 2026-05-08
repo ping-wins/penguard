@@ -4,12 +4,16 @@ export type ProviderDataField = {
   type: string
   unit?: string
   source: string
+  provider?: string
+  integrationType?: string
+  integrationId?: string
   recommendedVisuals?: string[]
 }
 
 export type ProviderDataGroup = {
   id: string
   name: string
+  category?: string
   fields: ProviderDataField[]
 }
 
@@ -42,19 +46,20 @@ async function errorFromResponse(response: Response) {
   return new ProviderDataApiError('Unable to load provider data fields', response.status)
 }
 
-function normalizeGroups(groups: unknown): ProviderDataGroup[] {
+function normalizeGroups(groups: unknown, provider?: string): ProviderDataGroup[] {
   if (!Array.isArray(groups)) return []
   return groups
     .filter((group): group is Record<string, unknown> => Boolean(group) && typeof group === 'object')
     .map((group) => ({
       id: String(group.id ?? ''),
       name: String(group.name ?? group.id ?? 'Data group'),
-      fields: normalizeFields(group.fields),
+      category: typeof group.category === 'string' ? group.category : undefined,
+      fields: normalizeFields(group.fields, provider),
     }))
     .filter(group => group.id.length > 0)
 }
 
-function normalizeFields(fields: unknown): ProviderDataField[] {
+function normalizeFields(fields: unknown, provider?: string): ProviderDataField[] {
   if (!Array.isArray(fields)) return []
   return fields
     .filter((field): field is Record<string, unknown> => Boolean(field) && typeof field === 'object')
@@ -64,6 +69,9 @@ function normalizeFields(fields: unknown): ProviderDataField[] {
       type: String(field.type ?? 'unknown'),
       unit: typeof field.unit === 'string' ? field.unit : undefined,
       source: String(field.source ?? ''),
+      provider: typeof field.provider === 'string' ? field.provider : provider,
+      integrationType: typeof field.integrationType === 'string' ? field.integrationType : provider,
+      integrationId: typeof field.integrationId === 'string' ? field.integrationId : undefined,
       recommendedVisuals: Array.isArray(field.recommendedVisuals)
         ? field.recommendedVisuals.filter((item): item is string => typeof item === 'string')
         : [],
@@ -87,5 +95,44 @@ export async function fetchFortigateDataFields({
   return {
     provider: String(payload.provider ?? 'fortigate'),
     groups: normalizeGroups(payload.groups),
+  }
+}
+
+export async function fetchProviderDataFields({
+  integrationTypes,
+  fetcher = globalThis.fetch.bind(globalThis),
+}: {
+  integrationTypes: string[]
+  fetcher?: Fetcher
+}): Promise<ProviderDataFieldsResponse> {
+  const uniqueTypes = Array.from(new Set(integrationTypes.filter(Boolean)))
+  if (uniqueTypes.length === 0) return { provider: 'soc', groups: [] }
+
+  const responses = await Promise.all(uniqueTypes.map(async (integrationType) => {
+    const response = await fetcher(`/api/providers/${encodeURIComponent(integrationType)}/data-fields`, {
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      throw await errorFromResponse(response)
+    }
+    const payload = await parseJson(response)
+    const provider = String(payload.provider ?? integrationType)
+    return {
+      provider,
+      groups: normalizeGroups(payload.groups, provider).map(group => ({
+        ...group,
+        id: `${provider}.${group.id}`,
+        fields: group.fields.map(field => ({
+          ...field,
+          provider,
+          integrationType: field.integrationType ?? provider,
+        })),
+      })),
+    }
+  }))
+
+  return {
+    provider: 'soc',
+    groups: responses.flatMap(response => response.groups),
   }
 }

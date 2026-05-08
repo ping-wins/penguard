@@ -198,7 +198,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (!widget) return
 
     const existingBindings = widget.fieldBindings ?? []
-    if (existingBindings.some(existing => existing.fieldId === binding.fieldId)) {
+    if (existingBindings.some(existing => (
+      existing.fieldId === binding.fieldId
+      && existing.source === binding.source
+      && existing.integrationId === binding.integrationId
+    ))) {
       return
     }
 

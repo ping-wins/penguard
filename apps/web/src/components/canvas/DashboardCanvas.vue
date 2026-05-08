@@ -16,6 +16,7 @@ import WidgetInterfaceHealth from '../widgets/WidgetInterfaceHealth.vue'
 import WidgetRecentEvents from '../widgets/WidgetRecentEvents.vue'
 import WidgetAnomalyHighlights from '../widgets/WidgetAnomalyHighlights.vue'
 import WidgetEmptyVisual from '../widgets/WidgetEmptyVisual.vue'
+import WidgetGenericData from '../widgets/WidgetGenericData.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
 import type { WidgetFieldBinding } from '../../types/dashboard'
@@ -59,6 +60,16 @@ const dataFieldCountLabel = computed(() => `${dataFieldCount.value} field${dataF
 const visualPresetCountLabel = computed(() => `${catalogItems.value.length} preset${catalogItems.value.length === 1 ? '' : 's'} ready`)
 const isVisualCatalogLoading = computed(() => !dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 const isVisualCatalogEmpty = computed(() => dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
+const catalogGroups = computed(() => {
+  const groups = new Map<string, { id: string, label: string, items: typeof catalogItems.value }>()
+  for (const item of catalogItems.value) {
+    const key = item.integrationType || item.source || 'custom'
+    const label = categoryLabelForIntegration(key)
+    if (!groups.has(key)) groups.set(key, { id: key, label, items: [] })
+    groups.get(key)?.items.push(item)
+  }
+  return Array.from(groups.values())
+})
 let buildPaneDataLoad: Promise<void> | null = null
 
 const WORKSPACE_WIDTH_PX = 200000
@@ -117,12 +128,13 @@ async function loadBuildPaneData() {
   buildPaneDataLoad = (async () => {
     const tasks: Array<Promise<unknown>> = []
     tasks.push(dashboardStore.fetchCatalog(connectedIntegrationTypes.value))
-    if (!providerDataStore.isLoaded && !providerDataStore.isLoading) {
-      if (integrationsStore.hasFortigate) {
-        tasks.push(providerDataStore.fetchFortigateFields())
+    if (!providerDataStore.isLoading) {
+      if (integrationsStore.hasWorkspaceIntegrations) {
+        tasks.push(providerDataStore.fetchFieldsForIntegrations(integrationsStore.integrations))
       }
     }
     await Promise.all(tasks)
+    expandDataFieldGroups()
   })()
   try {
     await buildPaneDataLoad
@@ -132,8 +144,7 @@ async function loadBuildPaneData() {
 }
 
 function handleAddVisualTemplate(templateId: string) {
-  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
-  dashboardStore.addVisualTemplate(templateId, firstFortigate?.id ?? '')
+  dashboardStore.addVisualTemplate(templateId, '')
 }
 
 function setWorkspaceWidgetDragData(
@@ -212,8 +223,7 @@ function handleWorkspaceDrop(event: DragEvent) {
     return
   }
 
-  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
-  dashboardStore.addVisualTemplate(payload.catalogId, firstFortigate?.id ?? '', position)
+  dashboardStore.addVisualTemplate(payload.catalogId, '', position)
 }
 
 function retryVisualPresets() {
@@ -221,7 +231,30 @@ function retryVisualPresets() {
 }
 
 function retryProviderFields() {
-  providerDataStore.fetchFortigateFields()
+  providerDataStore.fetchFieldsForIntegrations(integrationsStore.integrations).then(expandDataFieldGroups)
+}
+
+function expandDataFieldGroups() {
+  for (const group of dataFieldGroups.value) {
+    if (expandedFolders.value[group.id] === undefined) {
+      expandedFolders.value[group.id] = true
+    }
+  }
+}
+
+function categoryLabelForIntegration(integrationType: string) {
+  switch (integrationType) {
+    case 'fortigate':
+      return 'Network / FortiGate'
+    case 'siem_kowalski':
+      return 'SIEM / Incidents'
+    case 'xdr_rico':
+      return 'XDR / Endpoints'
+    case 'soar_skipper':
+      return 'SOAR / Playbooks'
+    default:
+      return 'Other Integrations'
+  }
 }
 
 function fieldBindingFromProviderField(
@@ -234,7 +267,9 @@ function fieldBindingFromProviderField(
     type: field.type,
     unit: field.unit,
     source: field.source,
-    provider: providerDataStore.provider,
+    provider: field.provider ?? providerDataStore.provider,
+    integrationType: field.integrationType ?? field.provider,
+    integrationId: field.integrationId,
     groupId: group.id,
     groupName: group.name,
   }
@@ -332,7 +367,12 @@ const widgetMap: Record<string, any> = {
   'fortigate-risk-posture': WidgetRiskPosture,
   'fortigate-interface-health': WidgetInterfaceHealth,
   'fortigate-recent-events': WidgetRecentEvents,
-  'fortigate-anomaly-highlights': WidgetAnomalyHighlights
+  'fortigate-anomaly-highlights': WidgetAnomalyHighlights,
+  'soc-incidents-by-severity': WidgetGenericData,
+  'soc-recent-incidents': WidgetGenericData,
+  'soc-top-entities': WidgetGenericData,
+  'xdr-endpoint-health': WidgetGenericData,
+  'soar-active-playbook-runs': WidgetGenericData
 }
 
 function getIconForKind(kind: string) {
@@ -713,19 +753,27 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div v-else class="grid grid-cols-2 gap-2">
-                <div
-                  v-for="item in catalogItems"
-                  :key="item.id"
-                  @click="handleAddWidget(item.id)"
-                  @dragstart="handleCatalogWidgetDragStart($event, item.id)"
-                  class="bg-theme-bg border border-theme-border p-3 rounded hover:border-theme-primary/50 hover:bg-theme-border transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer group text-center"
-                  :title="item.title"
-                  :data-test="`catalog-widget-${item.id}`"
-                  draggable="true"
-                >
-                  <component :is="getIconForKind(item.kind)" :size="24" class="text-theme-text-muted group-hover:text-theme-primary transition-colors" />
-                  <span class="text-[10px] leading-tight font-medium text-theme-text-muted group-hover:text-theme-text">{{ item.title }}</span>
+              <div v-else class="flex flex-col gap-3">
+                <div v-for="group in catalogGroups" :key="group.id" class="flex flex-col gap-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <h4 class="text-[10px] font-semibold uppercase tracking-wider text-theme-text-muted">{{ group.label }}</h4>
+                    <span class="text-[10px] text-theme-text-muted">{{ group.items.length }}</span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div
+                      v-for="item in group.items"
+                      :key="item.id"
+                      @click="handleAddWidget(item.id)"
+                      @dragstart="handleCatalogWidgetDragStart($event, item.id)"
+                      class="bg-theme-bg border border-theme-border p-3 rounded hover:border-theme-primary/50 hover:bg-theme-border transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer group text-center"
+                      :title="item.title"
+                      :data-test="`catalog-widget-${item.id}`"
+                      draggable="true"
+                    >
+                      <component :is="getIconForKind(item.kind)" :size="24" class="text-theme-text-muted group-hover:text-theme-primary transition-colors" />
+                      <span class="text-[10px] leading-tight font-medium text-theme-text-muted group-hover:text-theme-text">{{ item.title }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -766,7 +814,7 @@ onBeforeUnmount(() => {
             <div class="border-b border-theme-border pb-3">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">FortiGate data model</h3>
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">SOC data model</h3>
                   <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
                     Fields available for empty visual templates.
                   </p>
@@ -780,10 +828,10 @@ onBeforeUnmount(() => {
             <div v-if="isDataFieldsLoading" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
               <div class="flex items-center gap-2 font-medium text-theme-text">
                 <RefreshCcw :size="14" class="animate-spin text-theme-primary" />
-                <span>Loading FortiGate fields</span>
-              </div>
-              <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                Preparing normalized provider fields for live visual binding.
+                  <span>Loading SOC fields</span>
+                </div>
+                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                  Preparing normalized provider fields for live visual binding.
               </p>
             </div>
             <div v-else-if="dataFieldsError" class="rounded border border-red-500/30 bg-red-500/10 p-3 text-sm">
@@ -804,7 +852,7 @@ onBeforeUnmount(() => {
             <div v-else-if="dataFieldGroups.length === 0" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
               <div class="font-medium text-theme-text">No provider fields available</div>
               <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                No FortiGate field groups returned by the provider data endpoint.
+                No SOC field groups returned by the provider data endpoint.
               </p>
             </div>
             
@@ -821,6 +869,9 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div v-if="expandedFolders[group.id]" class="flex flex-col ml-6 pl-2 border-l border-theme-border py-1 gap-1">
+                  <div v-if="group.category" class="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-theme-text-muted">
+                    {{ group.category }}
+                  </div>
                   <div
                     v-for="field in group.fields"
                     :key="fieldKey(field)"

@@ -1,0 +1,48 @@
+{
+  "provider": "siem_kowalski",
+  "groups": [
+    {
+      "id": "incidents",
+      "name": "Incident Data",
+      "category": "SIEM / Incidents",
+      "fields": [
+        {
+          "id": "total",
+          "label": "Open Incidents",
+          "type": "number",
+          "unit": "count",
+          "source": "soc-incidents-by-severity",
+          "recommendedVisuals": ["card", "gauge"]
+        },
+        {
+          "id": "items",
+          "label": "Incidents by Severity",
+          "type": "array",
+          "source": "soc-incidents-by-severity",
+          "recommendedVisuals": ["bar", "table"]
+        },
+        {
+          "id": "incidents",
+          "label": "Recent Incidents",
+          "type": "array",
+          "source": "soc-recent-incidents",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "incidents.severity",
+          "label": "Incident Severity",
+          "type": "category",
+          "source": "soc-recent-incidents",
+          "recommendedVisuals": ["feed", "bar"]
+        },
+        {
+          "id": "entities",
+          "label": "Top Entities",
+          "type": "array",
+          "source": "soc-top-entities",
+          "recommendedVisuals": ["table", "list"]
+        }
+      ]
+    }
+  ]
+}

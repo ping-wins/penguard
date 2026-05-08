@@ -63,6 +63,19 @@ const eventsBinding: WidgetFieldBinding = {
   groupName: 'Events',
 }
 
+const incidentsBinding: WidgetFieldBinding = {
+  fieldId: 'total',
+  label: 'Open Incidents',
+  type: 'number',
+  unit: 'count',
+  source: 'soc-incidents-by-severity',
+  provider: 'siem_kowalski',
+  integrationType: 'siem_kowalski',
+  integrationId: 'int_kowalski_01',
+  groupId: 'incidents',
+  groupName: 'Incident Data',
+}
+
 describe('WidgetEmptyVisual', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -96,6 +109,35 @@ describe('WidgetEmptyVisual', () => {
     expect(wrapper.get('[data-test="custom-card-value"]').text()).toBe('74%')
     expect(wrapper.text()).toContain('CPU Usage')
     expect(wrapper.text()).not.toContain('Drop a live data field here')
+  })
+
+  it('uses the field integration id when a custom visual is bound to Penguin data', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      widgetId: 'soc-incidents-by-severity',
+      integrationId: 'int_kowalski_01',
+      refreshedAt: '2026-05-08T12:00:00.000Z',
+      status: 'ready',
+      data: { total: 7, items: [{ severity: 'high', count: 7 }] },
+      meta: { source: 'siem_kowalski', cacheTtlSeconds: 5, refreshIntervalSeconds: 5 },
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(WidgetEmptyVisual, {
+      props: {
+        catalogId: 'visual-template-card',
+        integrationId: '',
+        fieldBindings: [incidentsBinding],
+      } as any,
+    })
+
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/widgets/soc-incidents-by-severity/data?integrationId=int_kowalski_01',
+      expect.objectContaining({ credentials: 'include' }),
+    )
+    expect(wrapper.get('[data-test="custom-card-value"]').text()).toBe('7')
+    expect(wrapper.text()).toContain('Open Incidents')
   })
 
   it('renders bound numeric fields as bar chart rows from one shared source request', async () => {

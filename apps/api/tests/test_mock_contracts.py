@@ -152,6 +152,37 @@ def test_fortigate_provider_data_fields_describe_powerbi_like_model():
     }
 
 
+def test_penguin_provider_data_fields_are_grouped_for_custom_visuals():
+    response = client.get("/api/providers/siem_kowalski/data-fields")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "siem_kowalski"
+    assert payload["groups"][0]["id"] == "incidents"
+    assert payload["groups"][0]["category"] == "SIEM / Incidents"
+    assert payload["groups"][0]["fields"][0] == {
+        "id": "total",
+        "label": "Open Incidents",
+        "type": "number",
+        "unit": "count",
+        "source": "soc-incidents-by-severity",
+        "recommendedVisuals": ["card", "gauge"],
+    }
+
+
+def test_soc_provider_data_fields_aggregate_penguin_categories():
+    response = client.get("/api/providers/soc/data-fields")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "soc"
+    assert {group["category"] for group in payload["groups"]} >= {
+        "SIEM / Incidents",
+        "XDR / Endpoints",
+        "SOAR / Playbooks",
+    }
+
+
 def test_widget_data_returns_normalized_system_status():
     response = client.get(
         "/api/widgets/fortigate-system-status/data",

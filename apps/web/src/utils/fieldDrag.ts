@@ -29,6 +29,8 @@ export function parseFieldBindingTransfer(dataTransfer: DataTransfer | null): Wi
       unit: typeof parsed.unit === 'string' ? parsed.unit : undefined,
       source: parsed.source,
       provider: typeof parsed.provider === 'string' ? parsed.provider : undefined,
+      integrationType: typeof parsed.integrationType === 'string' ? parsed.integrationType : undefined,
+      integrationId: typeof parsed.integrationId === 'string' ? parsed.integrationId : undefined,
       groupId: typeof parsed.groupId === 'string' ? parsed.groupId : undefined,
       groupName: typeof parsed.groupName === 'string' ? parsed.groupName : undefined,
     }

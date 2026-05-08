@@ -29,6 +29,8 @@ export type WidgetFieldBinding = {
   unit?: string
   source: string
   provider?: string
+  integrationType?: string
+  integrationId?: string
   groupId?: string
   groupName?: string
 }

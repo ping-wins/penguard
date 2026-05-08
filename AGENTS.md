@@ -605,14 +605,19 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Add retries/backoff for internal Penguin service calls.
 - [x] Extend audit log actions for first Penguin mutating gateway routes.
 - [x] Require matching `integrationId` before serving Penguin widget data.
+- [x] Add Power BI-like provider data fields for `siem_kowalski`, `xdr_rico` and `soar_skipper`.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
 
 - [x] Keep workspace, custom visuals, FortiGate widgets, integration CRUD and audit drawer.
 - [x] Add Penguin connector cards in the integrations drawer.
+- [x] Group the integrations drawer by Fortinet Providers, Penguin SOC Lite and Endpoint Sensor/Future.
 - [x] Load workspace widget catalog from connected integration types instead of FortiGate only.
 - [x] Insert widgets with the matching provider `integrationId`.
+- [x] Group Visual presets by integration category in the Build Panel.
+- [x] Load SOC data fields for all connected integrations and bind custom visuals with the field-specific `integrationId`.
+- [x] Add generic bar, feed, table and status-list renderers for SOC preset widgets.
 - [ ] Add SOC navigation area for Incidents, Endpoints and Playbooks.
 - [ ] Add incident list and incident detail panel.
 - [ ] Add endpoint inventory and endpoint timeline panel.

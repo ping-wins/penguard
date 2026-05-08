@@ -119,12 +119,34 @@ describe('Sidebar integrations panel', () => {
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Penguin tools')
+    expect(wrapper.text()).toContain('Penguin SOC Lite')
     expect(wrapper.text()).toContain('Kowalski SIEM-lite')
     expect(wrapper.text()).toContain('XDR/EDR-lite manager')
     expect(wrapper.text()).toContain('SOAR-lite workflows')
     expect(wrapper.text()).toContain('Connected as Kowalski SIEM')
     expect(wrapper.get('[data-test="penguin-connect-siem_kowalski"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-test="penguin-connect-xdr_rico"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('groups integration connectors by provider category', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      items: [],
+    })))
+
+    const wrapper = mount(Sidebar)
+
+    await wrapper.get('[title="Integrações SOC"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Fortinet Providers')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Adicionar FortiGate')
+    expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Penguin SOC Lite')
+    expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Kowalski SIEM-lite')
+    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Endpoint Sensor / Future')
+    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('agent_private')
+    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Future onboarding')
+    expect(wrapper.find('[data-test="penguin-connect-agent_private"]').exists()).toBe(false)
   })
 })
