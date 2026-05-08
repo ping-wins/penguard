@@ -1,0 +1,186 @@
+from fastapi.testclient import TestClient
+
+from app.auth import dependencies as auth_dependencies
+from app.main import app
+from app.routers import integrations as integrations_router
+from app.routers import widgets as widgets_router
+
+
+class FakeSocClient:
+    def __init__(self, responses=None):
+        self.responses = responses or {}
+        self.calls = []
+
+    def request(
+        self,
+        method,
+        path,
+        *,
+        json=None,
+        params=None,
+        headers=None,
+        pass_through_statuses=None,
+    ):
+        self.calls.append(
+            {
+                "method": method,
+                "path": path,
+                "json": json,
+                "params": params,
+                "headers": headers,
+                "passThroughStatuses": pass_through_statuses,
+            }
+        )
+        response = self.responses.get(path)
+        if callable(response):
+            return response(method=method, path=path, json=json, params=params)
+        return response or {"items": []}
+
+
+class FakeFortiGateWidgetService:
+    def get_widget_data(self, widget_id, integration_id, *, owner_user_id):
+        assert widget_id == "fortigate-recent-events"
+        assert integration_id == "int_fgt_01"
+        assert owner_user_id
+        return {
+            "data": {
+                "events": [
+                    {
+                        "timestamp": "2026-05-08T12:00:00Z",
+                        "severity": "medium",
+                        "sourceIp": "192.0.2.10",
+                        "destinationIp": "198.51.100.20",
+                        "action": "deny",
+                        "type": "traffic",
+                        "subtype": "forward",
+                        "message": "Denied connection",
+                    }
+                ]
+            }
+        }
+
+
+def csrf_headers(client: TestClient) -> dict[str, str]:
+    response = client.get("/api/auth/csrf")
+    return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
+def teardown_function():
+    app.dependency_overrides.clear()
+
+
+def test_soc_widget_catalog_returns_soc_widgets():
+    client = TestClient(app)
+
+    response = client.get("/api/widget-catalog", params={"integrationType": "soc"})
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["items"]} >= {
+        "soc-incidents-by-severity",
+        "soc-recent-incidents",
+        "soc-top-entities",
+        "xdr-endpoint-health",
+        "soar-active-playbook-runs",
+    }
+
+
+def test_soc_incidents_by_severity_widget_aggregates_incidents():
+    client = TestClient(app)
+    fake_siem = FakeSocClient(
+        {
+            "/incidents": {
+                "items": [
+                    {"id": "inc_01", "severity": "high", "entities": {"sourceIp": "192.0.2.10"}},
+                    {"id": "inc_02", "severity": "high", "entities": {"sourceIp": "192.0.2.10"}},
+                    {"id": "inc_03", "severity": "medium", "entities": {"hostname": "host-01"}},
+                ]
+            }
+        }
+    )
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+
+    response = client.get("/api/widgets/soc-incidents-by-severity/data")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "items": [
+            {"severity": "high", "count": 2},
+            {"severity": "medium", "count": 1},
+        ],
+        "total": 3,
+    }
+
+
+def test_xdr_endpoint_health_widget_aggregates_endpoint_health():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient(
+        {
+            "/endpoints": {
+                "items": [
+                    {"id": "end_01", "health": "healthy"},
+                    {"id": "end_02", "health": "warning"},
+                    {"id": "end_03", "health": "warning"},
+                ]
+            }
+        }
+    )
+    app.dependency_overrides[widgets_router.get_xdr_client] = lambda: fake_xdr
+
+    response = client.get("/api/widgets/xdr-endpoint-health/data")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["summary"] == {"healthy": 1, "warning": 2}
+    assert response.json()["data"]["total"] == 3
+
+
+def test_soar_active_playbook_runs_widget_filters_completed_runs():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "/playbook-runs": {
+                "items": [
+                    {"id": "run_01", "status": "waiting_approval"},
+                    {"id": "run_02", "status": "completed"},
+                ]
+            }
+        }
+    )
+    app.dependency_overrides[widgets_router.get_soar_client] = lambda: fake_soar
+
+    response = client.get("/api/widgets/soar-active-playbook-runs/data")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "runs": [{"id": "run_01", "status": "waiting_approval"}],
+        "count": 1,
+    }
+
+
+def test_ingest_fortigate_events_posts_normalized_events_to_siem():
+    client = TestClient(app)
+    fake_siem = FakeSocClient(
+        {
+            "/events": lambda **kwargs: {
+                "id": f"evt_{len(fake_siem.calls)}",
+                "eventType": kwargs["json"]["eventType"],
+            }
+        }
+    )
+    app.dependency_overrides[integrations_router.get_fortigate_widget_service] = (
+        lambda: FakeFortiGateWidgetService()
+    )
+    app.dependency_overrides[integrations_router.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/soc/fortigate/int_fgt_01/ingest-events",
+        headers=csrf_headers(client),
+    )
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="soc.fortigate_events.ingested"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["createdCount"] == 1
+    assert fake_siem.calls[0]["json"]["eventType"] == "network.deny"
+    assert fake_siem.calls[0]["json"]["entities"]["integrationId"] == "int_fgt_01"
+    assert audit["items"][0]["details"]["count"] == 1

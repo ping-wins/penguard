@@ -116,3 +116,17 @@ def test_run_without_sensitive_or_approval_nodes_completes():
     assert body["dryRun"] is True
     assert body["status"] == "completed"
     assert [step["status"] for step in body["steps"]] == ["completed", "completed"]
+
+
+def test_list_playbook_runs_filters_by_status():
+    response = client.post("/incidents/inc_789/playbooks/pb_port_scan_triage/run")
+    assert response.status_code == 201
+
+    all_runs = client.get("/playbook-runs")
+    waiting_runs = client.get("/playbook-runs", params={"status": "waiting_approval"})
+    completed_runs = client.get("/playbook-runs", params={"status": "completed"})
+
+    assert all_runs.status_code == 200
+    assert response.json()["id"] in {run["id"] for run in all_runs.json()}
+    assert response.json()["id"] in {run["id"] for run in waiting_runs.json()}
+    assert response.json()["id"] not in {run["id"] for run in completed_runs.json()}

@@ -1,5 +1,6 @@
+from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -15,10 +16,29 @@ from app.integrations.fortigate.service import (
     MockFortiGateIntegrationService,
 )
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
+from app.routers.soc import get_siem_client
+from app.routers.widgets import (
+    FortiGateWidgetService,
+    get_fortigate_widget_service,
+)
 
 router = APIRouter(tags=["integrations"])
 FortiGateService = FortiGateIntegrationService | MockFortiGateIntegrationService
 AuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
+
+
+class SocClient(Protocol):
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        pass_through_statuses: set[int] | None = None,
+    ) -> dict[str, Any]:
+        pass
 
 
 class FortiGateIntegrationCreate(BaseModel):
@@ -212,6 +232,89 @@ def list_fortigate_health_checks(
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Integration not found") from exc
+
+
+@router.post("/soc/fortigate/{integration_id}/ingest-events")
+def ingest_fortigate_events_into_siem(
+    integration_id: str,
+    request: Request,
+    widget_service: Annotated[FortiGateWidgetService, Depends(get_fortigate_widget_service)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    try:
+        widget_payload = widget_service.get_widget_data(
+            "fortigate-recent-events",
+            integration_id,
+            owner_user_id=str(current_user["id"]),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+
+    events = widget_payload.get("data", {}).get("events", [])
+    created_events = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        created_events.append(
+            siem_client.request(
+                "POST",
+                "/events",
+                json=_fortigate_event_to_siem_event(event, integration_id=integration_id),
+            )
+        )
+
+    audit_store.record(
+        action="soc.fortigate_events.ingested",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "count": len(created_events),
+            "service": "siem_kowalski",
+        },
+    )
+    return {
+        "integrationId": integration_id,
+        "createdCount": len(created_events),
+        "eventIds": [event.get("id") for event in created_events if event.get("id")],
+    }
+
+
+def _fortigate_event_to_siem_event(
+    event: dict[str, Any],
+    *,
+    integration_id: str,
+) -> dict[str, Any]:
+    action = str(event.get("action") or "").lower()
+    event_type = "network.deny" if action in {"deny", "blocked", "block"} else "network.event"
+    return {
+        "source": "fortigate",
+        "eventType": event_type,
+        "severity": str(event.get("severity") or "informational").lower(),
+        "occurredAt": event.get("timestamp") or _now_iso(),
+        "entities": {
+            "sourceIp": event.get("sourceIp"),
+            "destinationIp": event.get("destinationIp"),
+            "integrationId": integration_id,
+        },
+        "attributes": {
+            "action": event.get("action"),
+            "type": event.get("type"),
+            "subtype": event.get("subtype"),
+            "message": event.get("message"),
+            "count": 1,
+        },
+    }
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _client_ip(request: Request) -> str:

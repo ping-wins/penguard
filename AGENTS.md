@@ -538,8 +538,8 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Generate incidents from detection matches.
 - [x] Add incident status transitions: `open`, `triaged`, `contained`, `resolved`, `false_positive`.
 - [x] Add incident timeline events.
-- [ ] Ingest FortiGate normalized events from the existing provider.
-- [ ] Expose incident widgets for count by severity, recent incidents and top entities.
+- [x] Ingest FortiGate normalized events from the existing provider.
+- [x] Expose incident widgets for count by severity, recent incidents and top entities.
 
 ### soar_skipper: SOAR-lite
 
@@ -560,7 +560,7 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Implement endpoint event ingestion.
 - [x] Add endpoint timeline.
 - [ ] Correlate endpoints with incidents by IP, hostname and username.
-- [ ] Add endpoint health widgets.
+- [x] Add endpoint health widgets.
 - [x] Add simulator endpoint/source for demo without installing the agent.
 - [x] Ensure endpoint tokens are hashed and never returned after creation.
 
@@ -595,7 +595,7 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [ ] Add endpoint inventory and endpoint timeline panel.
 - [ ] Add basic playbook builder using forms/list of steps.
 - [ ] Add playbook simulation and run result UI.
-- [ ] Add SOC widgets to the catalog: incidents by severity, recent incidents, endpoint health, active playbook runs.
+- [x] Add SOC widgets to the catalog: incidents by severity, recent incidents, endpoint health, active playbook runs.
 - [ ] Add empty/loading/error states for each SOC-lite tool.
 - [ ] Keep the UX enterprise/SOC-oriented, not a toy automation demo.
 

@@ -264,6 +264,18 @@ def get_playbook_run(run_id: str) -> PlaybookRun:
     return run
 
 
+@app.get("/playbook-runs", response_model=list[PlaybookRun])
+def list_playbook_runs(status: RunStatus | None = None) -> list[PlaybookRun]:
+    runs = sorted(
+        playbook_runs.values(),
+        key=lambda run: run.created_at,
+        reverse=True,
+    )
+    if status is not None:
+        return [run for run in runs if run.status == status]
+    return runs
+
+
 def _get_playbook_or_404(playbook_id: str) -> Playbook:
     playbook = playbooks.get(playbook_id)
     if playbook is None:
