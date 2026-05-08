@@ -228,3 +228,23 @@ def test_simulate_prints_deterministic_events(capsys):
         "connection.snapshot",
     ]
     assert {event["occurredAt"] for event in output} == {"2026-05-08T12:00:00.000Z"}
+
+
+def test_default_command_launches_tui(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(cli, "run_tui", lambda: calls.append("tui"))
+
+    main([])
+
+    assert calls == ["tui"]
+
+
+def test_tui_command_launches_tui(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(cli, "run_tui", lambda: calls.append("tui"))
+
+    main(["tui"])
+
+    assert calls == ["tui"]

@@ -279,6 +279,12 @@ def print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def run_tui() -> None:
+    from agent_private.tui import run_tui as start_tui
+
+    start_tui()
+
+
 def _common_parent() -> argparse.ArgumentParser:
     parent = argparse.ArgumentParser(add_help=False)
     parent.add_argument(
@@ -303,7 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="agent-private",
         description="Safe explicit FortiDashboard endpoint telemetry CLI.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("tui", help="Open the interactive endpoint sensor TUI.")
     subparsers.add_parser("identity", help="Print host identity JSON.")
     common = _common_parent()
     subparsers.add_parser("heartbeat", parents=[common], help="Build or post a heartbeat event.")
@@ -352,6 +359,10 @@ def _identity_context() -> tuple[dict[str, str], list[str]]:
 def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command is None or args.command == "tui":
+        run_tui()
+        return
 
     if args.command == "identity":
         print_json(build_identity_payload())

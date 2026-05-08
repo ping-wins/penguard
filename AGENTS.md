@@ -70,7 +70,7 @@ apps/
   siem_kowalski/       # SIEM-lite headless app
   soar_skipper/        # SOAR-lite headless workflow app
   xdr_rico/            # XDR/EDR-lite manager app
-  agent_private/       # Optional endpoint sensor/CLI
+  agent_private/       # Optional endpoint sensor TUI and automation CLI
 
 packages/
   contracts/           # Shared schemas, fixtures and generated API clients
@@ -354,7 +354,7 @@ MVP limits:
 - No credential harvesting.
 - No hidden behavior. The agent is for lab/demo telemetry.
 
-For demo speed, provide both a real Python CLI and a simulator mode that emits believable telemetry.
+For demo speed, provide a real Python TUI as the default operator flow, keep CLI commands for automation/tests and provide a simulator mode that emits believable telemetry.
 
 ## Frontend Direction
 
@@ -503,6 +503,7 @@ Penguin tool commands:
 - `cd apps/soar_skipper && uv run pytest`
 - `cd apps/xdr_rico && uv run pytest`
 - `cd apps/agent_private && uv run pytest`
+- `cd apps/agent_private && uv run agent-private`: open the endpoint sensor TUI for enrollment and telemetry.
 - `cd apps/agent_private && uv run agent-private simulate --endpoint-id demo-endpoint-01`: print deterministic endpoint telemetry without sending it.
 - `cd apps/agent_private && uv run agent-private heartbeat --endpoint-id demo-endpoint-01 --api-url http://localhost:8000 --enrollment-token <token> --post`: send one heartbeat through the BFF to `xdr_rico`.
 
@@ -581,7 +582,8 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 ### agent_private
 
-- [x] Implement CLI config and enrollment-token based posting.
+- [x] Implement TUI-first endpoint sensor flow with local config and manual telemetry sends.
+- [x] Keep CLI config and enrollment-token based posting for automation and tests.
 - [x] Send heartbeat with hostname, OS, local IPs and current user.
 - [x] Collect process snapshot with `psutil`.
 - [x] Collect network connection snapshot with `psutil`.
