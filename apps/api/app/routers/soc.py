@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated, Any, Protocol
 
-from fastapi import APIRouter, Body, Depends, Header, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
 
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user
@@ -20,6 +20,7 @@ class SocClient(Protocol):
         json: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        pass_through_statuses: set[int] | None = None,
     ) -> dict[str, Any]:
         pass
 
@@ -306,26 +307,31 @@ def create_endpoint_event(
     request: Request,
     payload: Annotated[dict[str, Any], Body()],
     client: Annotated[SocClient, Depends(get_xdr_client)],
-    current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
-    _csrf: Annotated[None, Depends(require_csrf)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> dict:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Endpoint enrollment token required",
+        )
     response = client.request(
         "POST",
         "/endpoint-events",
         json=payload,
-        headers={"Authorization": authorization} if authorization else None,
+        headers={"Authorization": authorization},
+        pass_through_statuses={401, 403},
     )
-    _audit(
-        audit_store,
-        request=request,
-        current_user=current_user,
+    audit_store.record(
         action="xdr.endpoint_event.created",
+        outcome="success",
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
         details={
             "endpointId": payload.get("endpointId"),
             "eventType": payload.get("eventType"),
             "service": "xdr_rico",
+            "actorType": "agent_private",
         },
     )
     return response

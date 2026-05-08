@@ -15,7 +15,16 @@ class FakeSocClient:
         self.response = response or {"ok": True}
         self.calls: list[dict] = []
 
-    def request(self, method: str, path: str, *, json=None, params=None, headers=None) -> dict:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json=None,
+        params=None,
+        headers=None,
+        pass_through_statuses=None,
+    ) -> dict:
         self.calls.append(
             {
                 "method": method,
@@ -23,13 +32,23 @@ class FakeSocClient:
                 "json": json,
                 "params": params,
                 "headers": headers,
+                "pass_through_statuses": pass_through_statuses,
             }
         )
         return self.response
 
 
 class FailingSocClient:
-    def request(self, method: str, path: str, *, json=None, params=None, headers=None) -> dict:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json=None,
+        params=None,
+        headers=None,
+        pass_through_statuses=None,
+    ) -> dict:
         raise HTTPException(status_code=503, detail="service unavailable")
 
 
@@ -77,6 +96,7 @@ def test_siem_event_gateway_forwards_payload_and_audits():
             },
             "params": None,
             "headers": None,
+            "pass_through_statuses": None,
         }
     ]
     assert audit["items"][0]["details"]["service"] == "siem_kowalski"
@@ -99,6 +119,7 @@ def test_siem_incident_list_gateway_forwards_filters():
         "json": None,
         "params": {"limit": 25, "status": "open", "severity": "high"},
         "headers": None,
+        "pass_through_statuses": None,
     }
 
 
@@ -181,6 +202,30 @@ def test_xdr_endpoint_event_gateway_forwards_enrollment_authorization():
 
     assert response.status_code == 200
     assert fake_xdr.calls[0]["headers"] == {"Authorization": "Bearer demo-enrollment-token"}
+    assert fake_xdr.calls[0]["pass_through_statuses"] == {401, 403}
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="xdr.endpoint_event.created"
+    )
+    assert audit["items"][0]["details"]["actorType"] == "agent_private"
+
+
+def test_xdr_endpoint_event_gateway_requires_enrollment_authorization():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient({"ok": True})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00.000Z",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Endpoint enrollment token required"
+    assert fake_xdr.calls == []
 
 
 def test_service_client_wraps_internal_list_payloads(monkeypatch):
@@ -196,6 +241,95 @@ def test_service_client_wraps_internal_list_payloads(monkeypatch):
     )
 
     assert client.request("GET", "/incidents") == {"items": [{"id": "inc_01"}]}
+
+
+def test_service_client_can_pass_through_selected_internal_statuses(monkeypatch):
+    def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
+        return Response(401, json={"detail": "token rejected"})
+
+    monkeypatch.setattr(soc_client_module.httpx, "request", fake_request)
+
+    client = SocServiceClient(
+        base_url="http://xdr-rico:8000",
+        service_name="xdr_rico",
+        timeout_seconds=1.0,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        client.request("POST", "/endpoint-events", pass_through_statuses={401})
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "token rejected"
+
+
+def test_service_client_retries_request_errors(monkeypatch):
+    calls = 0
+
+    def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise soc_client_module.httpx.RequestError("connection reset")
+        return Response(200, json={"ok": True})
+
+    monkeypatch.setattr(soc_client_module.httpx, "request", fake_request)
+    client = SocServiceClient(
+        base_url="http://siem-kowalski:8000",
+        service_name="siem_kowalski",
+        timeout_seconds=1.0,
+        max_attempts=2,
+        backoff_seconds=0.0,
+    )
+
+    assert client.request("GET", "/events") == {"ok": True}
+    assert calls == 2
+
+
+def test_service_client_retries_5xx_responses(monkeypatch):
+    responses = [
+        Response(502, json={"detail": "bad gateway"}),
+        Response(200, json={"ok": True}),
+    ]
+
+    def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr(soc_client_module.httpx, "request", fake_request)
+    client = SocServiceClient(
+        base_url="http://siem-kowalski:8000",
+        service_name="siem_kowalski",
+        timeout_seconds=1.0,
+        max_attempts=2,
+        backoff_seconds=0.0,
+    )
+
+    assert client.request("GET", "/events") == {"ok": True}
+    assert responses == []
+
+
+def test_service_client_does_not_retry_422_responses(monkeypatch):
+    calls = 0
+
+    def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
+        nonlocal calls
+        calls += 1
+        return Response(422, json={"detail": "validation failed"})
+
+    monkeypatch.setattr(soc_client_module.httpx, "request", fake_request)
+    client = SocServiceClient(
+        base_url="http://siem-kowalski:8000",
+        service_name="siem_kowalski",
+        timeout_seconds=1.0,
+        max_attempts=2,
+        backoff_seconds=0.0,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        client.request("GET", "/events")
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Invalid request for siem_kowalski"
+    assert calls == 1
 
 
 @pytest.mark.parametrize(

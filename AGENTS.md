@@ -480,13 +480,16 @@ Existing commands:
 - `cd apps/web && pnpm test`: run frontend tests.
 - `cd apps/web && pnpm build`: build frontend.
 
-Commands to add as Penguin tools land:
+Penguin tool commands:
 
 - `docker compose up -d --build siem-kowalski soar-skipper xdr-rico redis`
+- `docker compose exec api uv run --no-dev python scripts/seed_soc_demo.py`: seed demo SOC events, endpoint telemetry and default playbooks from inside the Compose network.
 - `cd apps/siem_kowalski && uv run pytest`
 - `cd apps/soar_skipper && uv run pytest`
 - `cd apps/xdr_rico && uv run pytest`
 - `cd apps/agent_private && uv run pytest`
+- `cd apps/agent_private && uv run agent-private simulate --endpoint-id demo-endpoint-01`: print deterministic endpoint telemetry without sending it.
+- `cd apps/agent_private && uv run agent-private heartbeat --endpoint-id demo-endpoint-01 --api-url http://localhost:8000 --enrollment-token <token> --post`: send one heartbeat through the BFF to `xdr_rico`.
 
 Keep Docker Compose portable across Linux and Windows. Do not mount host `node_modules` into containers.
 
@@ -523,7 +526,7 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Add `apps/xdr_rico` scaffold with FastAPI, Pytest, Ruff and Dockerfile.
 - [x] Add `apps/agent_private` scaffold as Python CLI package.
 - [x] Add service health checks for each Penguin service.
-- [ ] Add local seed command for demo incidents, endpoints and playbooks.
+- [x] Add local seed command for demo incidents, endpoints and playbooks.
 
 ### siem_kowalski: SIEM-lite
 
@@ -563,14 +566,14 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 ### agent_private
 
-- [ ] Implement CLI config and enrollment.
-- [ ] Send heartbeat with hostname, OS, local IPs and current user.
-- [ ] Collect process snapshot with `psutil`.
-- [ ] Collect network connection snapshot with `psutil`.
+- [x] Implement CLI config and enrollment-token based posting.
+- [x] Send heartbeat with hostname, OS, local IPs and current user.
+- [x] Collect process snapshot with `psutil`.
+- [x] Collect network connection snapshot with `psutil`.
 - [ ] Optional: monitor selected directories with `watchdog`.
-- [ ] Add retry/backoff for offline backend.
-- [ ] Add simulator mode for deterministic demo data.
-- [ ] Document safe installation/run commands for Linux and Windows.
+- [x] Add retry/backoff for offline backend.
+- [x] Add simulator mode for deterministic demo data.
+- [x] Document safe installation/run commands for Linux and Windows.
 
 ### apps/api Gateway
 
@@ -580,7 +583,7 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Add gateway routes for SOAR-lite playbooks/runs.
 - [x] Add gateway routes for XDR-lite endpoints/timeline.
 - [x] Add service-to-service client with timeouts and error normalization.
-- [ ] Add retries/backoff for internal Penguin service calls.
+- [x] Add retries/backoff for internal Penguin service calls.
 - [x] Extend audit log actions for first Penguin mutating gateway routes.
 - [ ] Add admin-only audit filters for SOC actions.
 
