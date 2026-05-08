@@ -1,0 +1,148 @@
+from fastapi.testclient import TestClient
+
+from app.main import app, reset_state
+
+
+def client() -> TestClient:
+    reset_state()
+    return TestClient(app)
+
+
+def enrollment_headers(test_client: TestClient) -> dict[str, str]:
+    response = test_client.post("/enrollments", json={"displayName": "Demo endpoint"})
+    return {"Authorization": f"Bearer {response.json()['token']}"}
+
+
+def test_enrollment_token_is_returned_once_and_not_persisted_in_plaintext():
+    test_client = client()
+
+    response = test_client.post("/enrollments", json={"displayName": "Demo laptop"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["displayName"] == "Demo laptop"
+    assert body["token"].startswith("xdr_enroll_")
+    assert "tokenHash" not in body
+
+    second_response = test_client.post("/enrollments", json={"hostnameHint": "host-01"})
+
+    assert second_response.status_code == 201
+    assert second_response.json()["token"] != body["token"]
+    assert body["token"] not in repr(app.state.xdr_store.enrollments)
+
+
+def test_endpoint_event_ingestion_upserts_endpoint_metadata():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+
+    response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+            "hostname": "demo-endpoint-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": "SOC-DEMO\\analyst",
+            "health": "healthy",
+            "attributes": {"os": "Linux"},
+        },
+    )
+
+    assert response.status_code == 201
+    endpoint = test_client.get("/endpoints/end_01").json()
+    assert endpoint["id"] == "end_01"
+    assert endpoint["hostname"] == "demo-endpoint-01"
+    assert endpoint["ipAddresses"] == ["192.0.2.50"]
+    assert endpoint["currentUser"] == "SOC-DEMO\\analyst"
+    assert endpoint["lastSeenAt"] == "2026-05-08T12:00:00Z"
+    assert endpoint["health"] == "healthy"
+    assert "token" not in endpoint
+
+
+def test_endpoint_timeline_is_newest_first():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    for occurred_at, event_type in [
+        ("2026-05-08T12:00:00Z", "heartbeat"),
+        ("2026-05-08T12:01:00Z", "process.snapshot"),
+        ("2026-05-08T12:02:00Z", "suspicious.process"),
+    ]:
+        response = test_client.post(
+            "/endpoint-events",
+            headers=headers,
+            json={
+                "endpointId": "end_01",
+                "eventType": event_type,
+                "occurredAt": occurred_at,
+                "hostname": "demo-endpoint-01",
+                "attributes": {"eventType": event_type},
+            },
+        )
+        assert response.status_code == 201
+
+    timeline = test_client.get("/endpoints/end_01/timeline").json()
+
+    assert [item["eventType"] for item in timeline["items"]] == [
+        "suspicious.process",
+        "process.snapshot",
+        "heartbeat",
+    ]
+
+
+def test_endpoint_events_require_valid_enrollment_token():
+    test_client = client()
+
+    missing_response = test_client.post(
+        "/endpoint-events",
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+        },
+    )
+    invalid_response = test_client.post(
+        "/endpoint-events",
+        headers={"Authorization": "Bearer invalid-demo-token"},
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+        },
+    )
+
+    assert missing_response.status_code == 401
+    assert invalid_response.status_code == 401
+    assert test_client.get("/endpoints/end_01").status_code == 404
+
+
+def test_missing_endpoint_returns_404_for_detail_and_timeline():
+    test_client = client()
+
+    detail_response = test_client.get("/endpoints/missing")
+    timeline_response = test_client.get("/endpoints/missing/timeline")
+
+    assert detail_response.status_code == 404
+    assert timeline_response.status_code == 404
+
+
+def test_simulator_creates_deterministic_demo_endpoint_and_events():
+    test_client = client()
+
+    response = test_client.post("/simulator/events")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["endpoint"]["id"] == "demo-endpoint-01"
+    assert body["createdEvents"] == 4
+    endpoint = test_client.get("/endpoints/demo-endpoint-01").json()
+    assert endpoint["hostname"] == "demo-endpoint-01"
+    assert endpoint["health"] == "warning"
+    timeline = test_client.get("/endpoints/demo-endpoint-01/timeline").json()
+    assert [item["eventType"] for item in timeline["items"]] == [
+        "suspicious.process",
+        "connection.snapshot",
+        "process.snapshot",
+        "heartbeat",
+    ]

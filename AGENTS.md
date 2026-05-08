@@ -510,9 +510,9 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 - [x] Create `packages/soc-catalog` with severities, event classes, entity fields, playbook node types and widget metadata.
 - [x] Add schemas/fixtures for `SecurityEvent`, `Incident`, `Endpoint`, `EndpointEvent`, `Playbook`, `PlaybookRun` and `PlaybookStepRun`.
-- [ ] Document internal-service auth between `apps/api` and Penguin tools.
-- [ ] Add architecture doc for FortiDashboard + Penguin tools data flow.
-- [ ] Register threat model for phishing, supply-chain, insider, malicious playbook, endpoint spoofing and secret leakage.
+- [x] Document internal-service auth between `apps/api` and Penguin tools.
+- [x] Add architecture doc for FortiDashboard + Penguin tools data flow.
+- [x] Register threat model for phishing, supply-chain, insider, malicious playbook, endpoint spoofing and secret leakage.
 - [ ] Keep `AGENTS.md` updated whenever contracts, service boundaries or backlog ownership changes.
 
 ### Platform and Infrastructure
@@ -527,36 +527,39 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 ### siem_kowalski: SIEM-lite
 
-- [ ] Implement event ingestion with raw and normalized payload storage.
+- [x] Implement first in-memory event ingestion with normalized payload storage.
+- [ ] Add persisted raw event payload storage before production hardening.
 - [ ] Implement detection rule model with safe expression evaluation.
-- [ ] Add initial rules: port scan, denied-traffic burst, high CPU/memory risk, repeated failed login, suspicious endpoint connection.
-- [ ] Generate incidents from detection matches.
-- [ ] Add incident status transitions: `open`, `triaged`, `contained`, `resolved`, `false_positive`.
-- [ ] Add incident timeline events.
+- [x] Add initial hardcoded rules: port scan, denied-traffic burst, repeated failed login, suspicious endpoint connection.
+- [ ] Add high CPU/memory risk rule from FortiGate/system telemetry.
+- [x] Generate incidents from detection matches.
+- [x] Add incident status transitions: `open`, `triaged`, `contained`, `resolved`, `false_positive`.
+- [x] Add incident timeline events.
 - [ ] Ingest FortiGate normalized events from the existing provider.
 - [ ] Expose incident widgets for count by severity, recent incidents and top entities.
 
 ### soar_skipper: SOAR-lite
 
-- [ ] Implement playbook schema as validated graph/list of nodes.
-- [ ] Implement node types: trigger, condition, enrich IP, case note, approval, notify, recommend FortiGate block, webhook dry-run.
-- [ ] Implement playbook simulation endpoint.
-- [ ] Implement playbook run state machine and step history.
-- [ ] Require human approval for any step marked sensitive.
-- [ ] Audit playbook create/update/simulate/run/approve actions.
-- [ ] Add default disabled playbooks for port scan triage and suspicious endpoint triage.
+- [x] Implement playbook schema as validated graph/list of nodes.
+- [x] Implement node types: trigger, condition, enrich IP, case note, approval, notify, recommend FortiGate block, webhook dry-run.
+- [x] Implement playbook simulation endpoint.
+- [x] Implement first dry-run playbook run state machine and step history.
+- [x] Require human approval for any step marked sensitive.
+- [x] Audit playbook create/update/simulate/run actions through the BFF gateway.
+- [ ] Add approval endpoint and audit playbook approve actions.
+- [x] Add default disabled playbooks for port scan triage and suspicious endpoint triage.
 - [ ] Prepare API boundary for future AI/MCP playbook drafting.
 
 ### xdr_rico: XDR/EDR-lite
 
-- [ ] Implement endpoint enrollment token flow.
-- [ ] Implement endpoint inventory and heartbeat.
-- [ ] Implement endpoint event ingestion.
-- [ ] Add endpoint timeline.
+- [x] Implement endpoint enrollment token flow.
+- [x] Implement endpoint inventory and heartbeat.
+- [x] Implement endpoint event ingestion.
+- [x] Add endpoint timeline.
 - [ ] Correlate endpoints with incidents by IP, hostname and username.
 - [ ] Add endpoint health widgets.
-- [ ] Add simulator endpoint/source for demo without installing the agent.
-- [ ] Ensure endpoint tokens are hashed or encrypted and never returned after creation.
+- [x] Add simulator endpoint/source for demo without installing the agent.
+- [x] Ensure endpoint tokens are hashed and never returned after creation.
 
 ### agent_private
 
@@ -573,11 +576,12 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 - [x] Keep Keycloak BFF auth, CSRF, sessions and admin RBAC.
 - [x] Keep FortiGate integration, widgets, workspace persistence and audit log.
-- [ ] Add gateway routes for SIEM-lite events/incidents.
-- [ ] Add gateway routes for SOAR-lite playbooks/runs.
-- [ ] Add gateway routes for XDR-lite endpoints/timeline.
-- [ ] Add service-to-service client with timeouts, retries and error normalization.
-- [ ] Extend audit log actions for Penguin tools.
+- [x] Add gateway routes for SIEM-lite events/incidents.
+- [x] Add gateway routes for SOAR-lite playbooks/runs.
+- [x] Add gateway routes for XDR-lite endpoints/timeline.
+- [x] Add service-to-service client with timeouts and error normalization.
+- [ ] Add retries/backoff for internal Penguin service calls.
+- [x] Extend audit log actions for first Penguin mutating gateway routes.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
@@ -607,12 +611,12 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 ### Quality and Review
 
-- [ ] Add unit tests for event normalization and detection rules.
-- [ ] Add unit tests for incident state transitions.
-- [ ] Add unit tests for playbook schema validation and run state machine.
-- [ ] Add tests proving sensitive playbook actions require approval.
-- [ ] Add tests proving audit logs redact secrets and endpoint tokens.
-- [ ] Add tests for endpoint spoofing/invalid enrollment token.
+- [x] Add unit tests for event normalization and detection rules.
+- [x] Add unit tests for incident state transitions.
+- [x] Add unit tests for playbook schema validation and run state machine.
+- [x] Add tests proving sensitive playbook actions require approval.
+- [x] Add tests proving audit logs redact secrets and endpoint tokens.
+- [x] Add tests for endpoint spoofing/invalid enrollment token.
 - [ ] Add smoke test for full demo chain: FortiGate/demo event -> incident -> endpoint context -> playbook dry-run -> dashboard render.
 - [ ] Run `git diff --check` before every commit.
 

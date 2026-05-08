@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     keycloak_realm: str = "fortidashboard"
     keycloak_client_id: str = "fortidashboard-bff"
     keycloak_client_secret: str = "dev-client-secret"
+    siem_kowalski_url: str = "http://localhost:8011"
+    soar_skipper_url: str = "http://localhost:8012"
+    xdr_rico_url: str = "http://localhost:8013"
+    internal_service_timeout_seconds: float = 3.0
 
     model_config = SettingsConfigDict(
         env_file=".env",
