@@ -4,7 +4,11 @@ from typing import Annotated, Any, Protocol
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
 
 from app.auth.csrf_dependency import require_csrf
-from app.auth.dependencies import get_auth_audit_store, get_current_api_user
+from app.auth.dependencies import (
+    get_auth_audit_store,
+    get_current_api_user,
+    require_admin_user,
+)
 from app.core.config import get_settings
 from app.soc.client import SocServiceClient
 
@@ -274,6 +278,31 @@ def get_playbook_run(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return client.request("GET", f"/playbook-runs/{run_id}")
+
+
+@router.post("/soc/playbook-runs/{run_id}/approve")
+def approve_playbook_run(
+    run_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(require_admin_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    response = client.request("POST", f"/playbook-runs/{run_id}/approve", json={})
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook_run.approved",
+        details={
+            "runId": run_id,
+            "playbookId": response.get("playbookId"),
+            "incidentId": response.get("incidentId"),
+            "service": "soar_skipper",
+        },
+    )
+    return response
 
 
 @router.get("/weapons/endpoints")

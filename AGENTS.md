@@ -549,7 +549,7 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Implement first dry-run playbook run state machine and step history.
 - [x] Require human approval for any step marked sensitive.
 - [x] Audit playbook create/update/simulate/run actions through the BFF gateway.
-- [ ] Add approval endpoint and audit playbook approve actions.
+- [x] Add approval endpoint and audit playbook approve actions.
 - [x] Add default disabled playbooks for port scan triage and suspicious endpoint triage.
 - [ ] Prepare API boundary for future AI/MCP playbook drafting.
 

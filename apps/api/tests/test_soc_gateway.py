@@ -144,6 +144,51 @@ def test_soar_playbook_run_gateway_forwards_and_audits():
     assert audit["items"][0]["details"]["runId"] == "pbr_01"
 
 
+def test_soar_playbook_run_approval_requires_admin():
+    client = TestClient(app)
+    fake_soar = FakeSocClient({"id": "pbr_01", "status": "completed"})
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_01/approve",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 403
+    assert fake_soar.calls == []
+
+
+def test_soar_playbook_run_approval_forwards_and_audits_for_admin():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "pbr_01",
+            "incidentId": "inc_01",
+            "playbookId": "pb_01",
+            "status": "completed",
+        }
+    )
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.require_admin_user] = lambda: {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "roles": ["admin"],
+    }
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_01/approve",
+        headers=csrf_headers(client),
+    )
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="soc.playbook_run.approved"
+    )
+
+    assert response.status_code == 200
+    assert fake_soar.calls[0]["path"] == "/playbook-runs/pbr_01/approve"
+    assert audit["items"][0]["actor"]["id"] == "usr_admin"
+    assert audit["items"][0]["details"]["runId"] == "pbr_01"
+
+
 def test_xdr_enrollment_gateway_does_not_log_token():
     client = TestClient(app)
     fake_xdr = FakeSocClient(

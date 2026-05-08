@@ -264,6 +264,26 @@ def get_playbook_run(run_id: str) -> PlaybookRun:
     return run
 
 
+@app.post("/playbook-runs/{run_id}/approve", response_model=PlaybookRun)
+def approve_playbook_run(run_id: str) -> PlaybookRun:
+    run = playbook_runs.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook run not found")
+    approved = run.model_copy(
+        update={
+            "status": "completed",
+            "steps": [
+                step.model_copy(update={"status": "completed"})
+                if step.status == "waiting_approval"
+                else step
+                for step in run.steps
+            ],
+        }
+    )
+    playbook_runs[run_id] = approved
+    return approved
+
+
 @app.get("/playbook-runs", response_model=list[PlaybookRun])
 def list_playbook_runs(status: RunStatus | None = None) -> list[PlaybookRun]:
     runs = sorted(

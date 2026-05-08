@@ -130,3 +130,15 @@ def test_list_playbook_runs_filters_by_status():
     assert response.json()["id"] in {run["id"] for run in all_runs.json()}
     assert response.json()["id"] in {run["id"] for run in waiting_runs.json()}
     assert response.json()["id"] not in {run["id"] for run in completed_runs.json()}
+
+
+def test_approve_playbook_run_completes_waiting_steps():
+    response = client.post("/incidents/inc_approved/playbooks/pb_port_scan_triage/run")
+    assert response.status_code == 201
+
+    approve_response = client.post(f"/playbook-runs/{response.json()['id']}/approve")
+
+    assert approve_response.status_code == 200
+    body = approve_response.json()
+    assert body["status"] == "completed"
+    assert {step["status"] for step in body["steps"]} == {"completed"}
