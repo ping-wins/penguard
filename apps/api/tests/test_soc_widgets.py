@@ -60,6 +60,22 @@ class FakeFortiGateWidgetService:
         }
 
 
+class FakePenguinToolIntegrationService:
+    def __init__(self, tool_type: str) -> None:
+        self.tool_type = tool_type
+
+    def get(self, *, integration_id: str, owner_user_id: str):
+        assert owner_user_id
+        if integration_id != "int_penguin_01":
+            return None
+        return {
+            "id": "int_penguin_01",
+            "type": self.tool_type,
+            "name": self.tool_type,
+            "status": "connected",
+        }
+
+
 def csrf_headers(client: TestClient) -> dict[str, str]:
     response = client.get("/api/auth/csrf")
     return {"X-CSRF-Token": response.json()["csrfToken"]}
@@ -98,8 +114,14 @@ def test_soc_incidents_by_severity_widget_aggregates_incidents():
         }
     )
     app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
+        lambda: FakePenguinToolIntegrationService("siem_kowalski")
+    )
 
-    response = client.get("/api/widgets/soc-incidents-by-severity/data")
+    response = client.get(
+        "/api/widgets/soc-incidents-by-severity/data",
+        params={"integrationId": "int_penguin_01"},
+    )
 
     assert response.status_code == 200
     assert response.json()["data"] == {
@@ -125,8 +147,14 @@ def test_xdr_endpoint_health_widget_aggregates_endpoint_health():
         }
     )
     app.dependency_overrides[widgets_router.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
+        lambda: FakePenguinToolIntegrationService("xdr_rico")
+    )
 
-    response = client.get("/api/widgets/xdr-endpoint-health/data")
+    response = client.get(
+        "/api/widgets/xdr-endpoint-health/data",
+        params={"integrationId": "int_penguin_01"},
+    )
 
     assert response.status_code == 200
     assert response.json()["data"]["summary"] == {"healthy": 1, "warning": 2}
@@ -146,14 +174,39 @@ def test_soar_active_playbook_runs_widget_filters_completed_runs():
         }
     )
     app.dependency_overrides[widgets_router.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
+        lambda: FakePenguinToolIntegrationService("soar_skipper")
+    )
 
-    response = client.get("/api/widgets/soar-active-playbook-runs/data")
+    response = client.get(
+        "/api/widgets/soar-active-playbook-runs/data",
+        params={"integrationId": "int_penguin_01"},
+    )
 
     assert response.status_code == 200
     assert response.json()["data"] == {
         "runs": [{"id": "run_01", "status": "waiting_approval"}],
         "count": 1,
     }
+
+
+def test_soc_widget_requires_matching_penguin_integration():
+    client = TestClient(app)
+    fake_siem = FakeSocClient({"/incidents": {"items": []}})
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
+        lambda: FakePenguinToolIntegrationService("xdr_rico")
+    )
+
+    missing_id = client.get("/api/widgets/soc-incidents-by-severity/data")
+    wrong_type = client.get(
+        "/api/widgets/soc-incidents-by-severity/data",
+        params={"integrationId": "int_penguin_01"},
+    )
+
+    assert missing_id.status_code == 422
+    assert wrong_type.status_code == 404
+    assert fake_siem.calls == []
 
 
 def test_ingest_fortigate_events_posts_normalized_events_to_siem():

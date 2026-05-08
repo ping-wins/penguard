@@ -23,7 +23,7 @@ describe('DashboardCanvas build pane', () => {
     vi.unstubAllGlobals()
   })
 
-  it('separates FortiGate presets from empty visuals and loads live provider fields from the API', async () => {
+  it('separates integration presets from empty visuals and loads live provider fields from the API', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/api/auth/csrf')) {
@@ -39,10 +39,16 @@ describe('DashboardCanvas build pane', () => {
               host: 'https://192.0.2.118',
               status: 'connected',
             },
+            {
+              id: 'int_kowalski_01',
+              type: 'siem_kowalski',
+              name: 'Kowalski SIEM',
+              status: 'connected',
+            },
           ],
         }))
       }
-      if (url.startsWith('/api/widget-catalog')) {
+      if (url.endsWith('integrationType=fortigate')) {
         return Promise.resolve(jsonResponse({
           items: [
             {
@@ -53,6 +59,21 @@ describe('DashboardCanvas build pane', () => {
               requiredCapabilities: ['system'],
               defaultSize: { w: 3, h: 2 },
               dataEndpoint: '/api/widgets/fortigate-system-status/data',
+            },
+          ],
+        }))
+      }
+      if (url.endsWith('integrationType=siem_kowalski')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'kowalski-open-incidents',
+              title: 'Open Incidents',
+              kind: 'kpi',
+              source: 'siem_kowalski',
+              requiredCapabilities: ['incidents'],
+              defaultSize: { w: 3, h: 2 },
+              dataEndpoint: '/api/widgets/kowalski-open-incidents/data',
             },
           ],
         }))
@@ -107,10 +128,11 @@ describe('DashboardCanvas build pane', () => {
       credentials: 'include',
     })
     expect(wrapper.text()).toContain('Visual analysis')
-    expect(wrapper.text()).toContain('1 preset ready')
+    expect(wrapper.text()).toContain('2 presets ready')
     expect(wrapper.text()).toContain('Template binding: Data fields')
-    expect(wrapper.text()).toContain('FortiGate presets')
+    expect(wrapper.text()).toContain('Integration presets')
     expect(wrapper.text()).toContain('System Status')
+    expect(wrapper.text()).toContain('Open Incidents')
     expect(wrapper.text()).toContain('Criar dados ao seu visual')
     expect(wrapper.text()).toContain('Card')
 
@@ -122,6 +144,14 @@ describe('DashboardCanvas build pane', () => {
         integrationId: 'int_fgt_01',
       }),
     ])
+
+    await wrapper.get('[data-test="catalog-widget-kowalski-open-incidents"]').trigger('click')
+    expect(dashboardStore.activeWidgets).toContainEqual(
+      expect.objectContaining({
+        catalogId: 'kowalski-open-incidents',
+        integrationId: 'int_kowalski_01',
+      }),
+    )
 
     await wrapper.get('[data-test="build-tab-data"]').trigger('click')
     await flushPromises()
@@ -151,7 +181,7 @@ describe('DashboardCanvas build pane', () => {
     expect(dataTransfer.effectAllowed).toBe('copy')
   })
 
-  it('shows loading and empty states for FortiGate visual presets', async () => {
+  it('shows loading and empty states for integration visual presets', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
@@ -179,12 +209,12 @@ describe('DashboardCanvas build pane', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Loading FortiGate presets')
+    expect(wrapper.text()).toContain('Loading widget presets')
 
     dashboardStore.isCatalogLoaded = true
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('No FortiGate presets available')
+    expect(wrapper.text()).toContain('No widget presets available')
     expect(wrapper.text()).toContain('Catalog status: unavailable; visual templates remain available')
   })
 

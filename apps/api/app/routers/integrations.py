@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -16,6 +16,13 @@ from app.integrations.fortigate.service import (
     MockFortiGateIntegrationService,
 )
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
+from app.integrations.penguin_tools import (
+    MockPenguinToolIntegrationService,
+    PenguinToolConnectionFailed,
+    PenguinToolIntegrationService,
+    SqlAlchemyPenguinToolIntegrationStore,
+    build_penguin_tool_clients,
+)
 from app.routers.soc import get_siem_client
 from app.routers.widgets import (
     FortiGateWidgetService,
@@ -24,7 +31,9 @@ from app.routers.widgets import (
 
 router = APIRouter(tags=["integrations"])
 FortiGateService = FortiGateIntegrationService | MockFortiGateIntegrationService
+PenguinToolService = PenguinToolIntegrationService | MockPenguinToolIntegrationService
 AuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
+PenguinToolType = Literal["siem_kowalski", "soar_skipper", "xdr_rico"]
 
 
 class SocClient(Protocol):
@@ -58,6 +67,15 @@ class FortiGateConnectionTest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class PenguinToolIntegrationCreate(BaseModel):
+    type: PenguinToolType
+    name: str | None = None
+
+
+class PenguinToolConnectionTest(BaseModel):
+    type: PenguinToolType
+
+
 @lru_cache
 def get_fortigate_integration_service() -> FortiGateService:
     settings = get_settings()
@@ -70,6 +88,22 @@ def get_fortigate_integration_service() -> FortiGateService:
                 settings.token_encryption_key or settings.secret_key
             ),
         )
+    )
+
+
+@lru_cache
+def get_penguin_tool_integration_service() -> PenguinToolService:
+    settings = get_settings()
+    if settings.mock_mode:
+        return MockPenguinToolIntegrationService()
+    return PenguinToolIntegrationService(
+        store=SqlAlchemyPenguinToolIntegrationStore(database_url=settings.database_url),
+        clients=build_penguin_tool_clients(
+            siem_kowalski_url=settings.siem_kowalski_url,
+            soar_skipper_url=settings.soar_skipper_url,
+            xdr_rico_url=settings.xdr_rico_url,
+            timeout_seconds=settings.internal_service_timeout_seconds,
+        ),
     )
 
 
@@ -138,33 +172,137 @@ def test_fortigate_connection(
     )
 
 
+@router.post("/integrations/penguin-tools/test")
+def test_penguin_tool_connection(
+    payload: PenguinToolConnectionTest,
+    service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    return service.test_connection(tool_type=payload.type)
+
+
+@router.post(
+    "/integrations/penguin-tools",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_penguin_tool_integration(
+    request: Request,
+    payload: PenguinToolIntegrationCreate,
+    service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    try:
+        created = service.create(
+            owner_user_id=str(current_user["id"]),
+            tool_type=payload.type,
+            name=payload.name,
+        )
+    except PenguinToolConnectionFailed as exc:
+        audit_store.record(
+            action="integration.penguin_tool.created",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=str(current_user["id"]),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "type": payload.type,
+                "service": payload.type,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.penguin_tool.created",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": created["id"],
+            "type": created["type"],
+            "service": created["type"],
+        },
+    )
+    return created
+
+
 @router.get("/integrations")
 def list_integrations(
-    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    fortigate_service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
-    return service.list(owner_user_id=str(current_user["id"]))
+    owner_user_id = str(current_user["id"])
+    fortigate_items = fortigate_service.list(owner_user_id=owner_user_id).get("items", [])
+    penguin_items = penguin_service.list(owner_user_id=owner_user_id).get("items", [])
+    return {"items": [*fortigate_items, *penguin_items]}
 
 
 @router.delete("/integrations/{integration_id}")
 def delete_integration(
     integration_id: str,
     request: Request,
-    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    fortigate_service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
-    deleted = service.delete(
+    owner_user_id = str(current_user["id"])
+    if not integration_id.startswith("int_fgt_"):
+        penguin_integration = penguin_service.get(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        if penguin_integration is None:
+            audit_store.record(
+                action="integration.penguin_tool.deleted",
+                outcome="failed",
+                email=current_user.get("email"),
+                user_id=owner_user_id,
+                client_ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                details={
+                    "integrationId": integration_id,
+                    "error": "Integration not found",
+                },
+            )
+            raise HTTPException(status_code=404, detail="Integration not found")
+        deleted = penguin_service.delete(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        if deleted:
+            audit_store.record(
+                action="integration.penguin_tool.deleted",
+                outcome="success",
+                email=current_user.get("email"),
+                user_id=owner_user_id,
+                client_ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                details={
+                    "integrationId": integration_id,
+                    "type": (penguin_integration or {}).get("type"),
+                },
+            )
+            return {"deleted": True, "id": integration_id}
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    deleted = fortigate_service.delete(
         integration_id=integration_id,
-        owner_user_id=str(current_user["id"]),
+        owner_user_id=owner_user_id,
     )
     if not deleted:
         audit_store.record(
             action="integration.fortigate.deleted",
             outcome="failed",
             email=current_user.get("email"),
-            user_id=str(current_user["id"]),
+            user_id=owner_user_id,
             client_ip=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
             details={
@@ -177,7 +315,7 @@ def delete_integration(
         action="integration.fortigate.deleted",
         outcome="success",
         email=current_user.get("email"),
-        user_id=str(current_user["id"]),
+        user_id=owner_user_id,
         client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         details={"integrationId": integration_id},

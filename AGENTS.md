@@ -85,13 +85,15 @@ docs/
 Runtime shape for the MVP:
 
 ```txt
-Browser -> apps/api -> internal Penguin services
-Browser -> apps/api -> FortiGate provider
+Browser -> apps/api -> optional Penguin tool integrations
+Browser -> apps/api -> optional FortiGate integrations
 Penguin services -> Postgres + Redis
 agent_private -> apps/api or xdr_rico enrollment endpoint
 ```
 
 Use a shared Postgres instance for MVP, but keep service-owned tables/modules. Add Redis when background workers land. Avoid Kafka, OpenSearch, service mesh, or multi-database complexity before the demo.
+
+Important product boundary: Penguin tools are not fixed dashboard tabs. They are optional providers, like FortiGate. A user connects `siem_kowalski`, `xdr_rico`, or `soar_skipper` from the integrations drawer; only connected providers expose widget presets and data to the workspace.
 
 ## Stack
 
@@ -143,6 +145,19 @@ Current capabilities to preserve:
 FortiGate event outputs should feed `siem_kowalski` as normalized security events when SIEM-lite ingestion lands.
 
 ## Penguin Tools Architecture
+
+Penguin tools must be integrated through `apps/api` before their widgets appear in the workspace. The BFF owns per-user integration records in `penguin_tool_integrations`, probes each local service through its `/health` endpoint, and exposes provider-specific widget catalogs through `GET /api/widget-catalog?integrationType=<tool>`.
+
+Current connector contract:
+
+```txt
+POST /api/integrations/penguin-tools/test  # body: { "type": "siem_kowalski" | "xdr_rico" | "soar_skipper" }
+POST /api/integrations/penguin-tools       # body: { "type": "...", "name": "optional display name" }
+GET  /api/integrations                     # returns FortiGate and connected Penguin tools
+DELETE /api/integrations/{integrationId}   # removes FortiGate or Penguin tool integration
+```
+
+Workspace widgets for Penguin tools always require `integrationId`. Do not add global/demo SOC widgets that bypass the integration model.
 
 ### siem_kowalski: SIEM-lite
 
@@ -579,23 +594,29 @@ Development should optimize for clean architecture over emergency delivery. Work
 
 - [x] Keep Keycloak BFF auth, CSRF, sessions and admin RBAC.
 - [x] Keep FortiGate integration, widgets, workspace persistence and audit log.
+- [x] Add per-user optional integrations for `siem_kowalski`, `xdr_rico` and `soar_skipper`.
+- [x] Add Penguin tool test/connect/list/delete endpoints through the BFF.
 - [x] Add gateway routes for SIEM-lite events/incidents.
 - [x] Add gateway routes for SOAR-lite playbooks/runs.
 - [x] Add gateway routes for XDR-lite endpoints/timeline.
 - [x] Add service-to-service client with timeouts and error normalization.
 - [x] Add retries/backoff for internal Penguin service calls.
 - [x] Extend audit log actions for first Penguin mutating gateway routes.
+- [x] Require matching `integrationId` before serving Penguin widget data.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
 
 - [x] Keep workspace, custom visuals, FortiGate widgets, integration CRUD and audit drawer.
+- [x] Add Penguin connector cards in the integrations drawer.
+- [x] Load workspace widget catalog from connected integration types instead of FortiGate only.
+- [x] Insert widgets with the matching provider `integrationId`.
 - [ ] Add SOC navigation area for Incidents, Endpoints and Playbooks.
 - [ ] Add incident list and incident detail panel.
 - [ ] Add endpoint inventory and endpoint timeline panel.
 - [ ] Add basic playbook builder using forms/list of steps.
 - [ ] Add playbook simulation and run result UI.
-- [x] Add SOC widgets to the catalog: incidents by severity, recent incidents, endpoint health, active playbook runs.
+- [x] Add SOC widgets to provider catalogs: incidents by severity, recent incidents, endpoint health, active playbook runs.
 - [ ] Add empty/loading/error states for each SOC-lite tool.
 - [ ] Keep the UX enterprise/SOC-oriented, not a toy automation demo.
 
@@ -620,6 +641,8 @@ Development should optimize for clean architecture over emergency delivery. Work
 - [x] Add tests proving sensitive playbook actions require approval.
 - [x] Add tests proving audit logs redact secrets and endpoint tokens.
 - [x] Add tests for endpoint spoofing/invalid enrollment token.
+- [x] Add API tests for optional Penguin tool integrations and widget `integrationId` enforcement.
+- [x] Add frontend tests for Penguin connector cards and connected-provider widget catalogs.
 - [ ] Add smoke test for full demo chain: FortiGate/demo event -> incident -> endpoint context -> playbook dry-run -> dashboard render.
 - [ ] Run `git diff --check` before every commit.
 

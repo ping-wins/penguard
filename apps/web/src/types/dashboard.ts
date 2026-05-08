@@ -16,6 +16,7 @@ export type WidgetCatalogItem = {
   title: string
   kind: string
   source: string
+  integrationType?: string
   requiredCapabilities: string[]
   defaultSize: WidgetDefaultSize
   dataEndpoint: string

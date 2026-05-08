@@ -69,6 +69,8 @@ importers:
 
   packages/contracts: {}
 
+  packages/soc-catalog: {}
+
   packages/widget-catalog: {}
 
 packages:

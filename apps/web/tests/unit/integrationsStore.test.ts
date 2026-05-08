@@ -65,6 +65,73 @@ describe('useIntegrationsStore', () => {
     expect(store.integrations.map(item => item.id)).toEqual(['int_fgt_02'])
   })
 
+  it('tests a Penguin tool with CSRF credentials', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      ok: true,
+      status: 'connected',
+      service: 'siem_kowalski',
+      capabilities: ['events', 'incidents'],
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useIntegrationsStore()
+
+    await expect(store.testPenguinTool('siem_kowalski')).resolves.toEqual({
+      success: true,
+      data: {
+        ok: true,
+        status: 'connected',
+        service: 'siem_kowalski',
+        capabilities: ['events', 'incidents'],
+      },
+    })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/penguin-tools/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ type: 'siem_kowalski' }),
+    })
+  })
+
+  it('adds a Penguin tool integration and updates local state', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const responseBody = {
+      id: 'int_kowalski_01',
+      type: 'siem_kowalski',
+      name: 'Kowalski SIEM',
+      status: 'connected',
+      capabilities: ['events', 'incidents'],
+      lastCheckedAt: '2026-05-08T12:00:00.000Z',
+    }
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(responseBody))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useIntegrationsStore()
+
+    await expect(store.addPenguinTool('siem_kowalski', 'Kowalski SIEM')).resolves.toEqual({
+      success: true,
+      data: responseBody,
+    })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/penguin-tools', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ type: 'siem_kowalski', name: 'Kowalski SIEM' }),
+    })
+    expect(store.integrations).toEqual([responseBody])
+  })
+
   it('keeps local integrations when removal fails', async () => {
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'

@@ -98,4 +98,33 @@ describe('Sidebar integrations panel', () => {
 
     wrapper.unmount()
   })
+
+  it('shows Penguin tool connector cards with connected state', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      items: [
+        {
+          id: 'int_kowalski_01',
+          type: 'siem_kowalski',
+          name: 'Kowalski SIEM',
+          status: 'connected',
+          capabilities: ['events', 'incidents'],
+        },
+      ],
+    })))
+
+    const wrapper = mount(Sidebar)
+
+    await wrapper.get('[title="Integrações SOC"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Penguin tools')
+    expect(wrapper.text()).toContain('Kowalski SIEM-lite')
+    expect(wrapper.text()).toContain('XDR/EDR-lite manager')
+    expect(wrapper.text()).toContain('SOAR-lite workflows')
+    expect(wrapper.text()).toContain('Connected as Kowalski SIEM')
+    expect(wrapper.get('[data-test="penguin-connect-siem_kowalski"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="penguin-connect-xdr_rico"]').attributes('disabled')).toBeUndefined()
+  })
 })

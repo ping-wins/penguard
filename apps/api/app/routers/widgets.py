@@ -11,10 +11,18 @@ from app.integrations.fortigate.widgets import (
     FortiGateWidgetDataService,
     MockFortiGateWidgetDataService,
 )
+from app.integrations.penguin_tools import (
+    MockPenguinToolIntegrationService,
+    PenguinToolIntegrationService,
+    SqlAlchemyPenguinToolIntegrationStore,
+    build_penguin_tool_clients,
+    expected_tool_type_for_widget,
+)
 from app.routers.soc import get_siem_client, get_soar_client, get_xdr_client
 
 router = APIRouter(tags=["widgets"])
 FortiGateWidgetService = FortiGateWidgetDataService | MockFortiGateWidgetDataService
+PenguinToolService = PenguinToolIntegrationService | MockPenguinToolIntegrationService
 SOC_WIDGET_IDS = {
     "soc-incidents-by-severity",
     "soc-recent-incidents",
@@ -53,10 +61,29 @@ def get_fortigate_widget_service() -> FortiGateWidgetService:
     )
 
 
+@lru_cache
+def get_penguin_tool_integration_service() -> PenguinToolService:
+    settings = get_settings()
+    if settings.mock_mode:
+        return MockPenguinToolIntegrationService()
+    return PenguinToolIntegrationService(
+        store=SqlAlchemyPenguinToolIntegrationStore(database_url=settings.database_url),
+        clients=build_penguin_tool_clients(
+            siem_kowalski_url=settings.siem_kowalski_url,
+            soar_skipper_url=settings.soar_skipper_url,
+            xdr_rico_url=settings.xdr_rico_url,
+            timeout_seconds=settings.internal_service_timeout_seconds,
+        ),
+    )
+
+
 @router.get("/widgets/{widget_id}/data")
 def get_widget_data(
     widget_id: str,
     service: Annotated[FortiGateWidgetService, Depends(get_fortigate_widget_service)],
+    penguin_service: Annotated[
+        PenguinToolService, Depends(get_penguin_tool_integration_service)
+    ],
     siem_client: Annotated[SocWidgetClient, Depends(get_siem_client)],
     xdr_client: Annotated[SocWidgetClient, Depends(get_xdr_client)],
     soar_client: Annotated[SocWidgetClient, Depends(get_soar_client)],
@@ -64,8 +91,18 @@ def get_widget_data(
     integration_id: Annotated[str | None, Query(alias="integrationId")] = None,
 ) -> dict:
     if widget_id in SOC_WIDGET_IDS:
+        if integration_id is None:
+            raise HTTPException(status_code=422, detail="integrationId is required")
+        expected_type = expected_tool_type_for_widget(widget_id)
+        integration = penguin_service.get(
+            integration_id=integration_id,
+            owner_user_id=str(current_user["id"]),
+        )
+        if integration is None or integration.get("type") != expected_type:
+            raise HTTPException(status_code=404, detail="Widget data not found")
         return _soc_widget_data(
             widget_id,
+            integration_id=integration_id,
             siem_client=siem_client,
             xdr_client=xdr_client,
             soar_client=soar_client,
@@ -85,6 +122,7 @@ def get_widget_data(
 def _soc_widget_data(
     widget_id: str,
     *,
+    integration_id: str,
     siem_client: SocWidgetClient,
     xdr_client: SocWidgetClient,
     soar_client: SocWidgetClient,
@@ -115,7 +153,7 @@ def _soc_widget_data(
             raise HTTPException(status_code=404, detail="Widget data not found")
     return {
         "widgetId": widget_id,
-        "integrationId": "soc",
+        "integrationId": integration_id,
         "status": "ready",
         "data": data,
         "meta": {

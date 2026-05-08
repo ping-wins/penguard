@@ -35,22 +35,25 @@ onMounted(async () => {
   window.addEventListener('keydown', handleViewportKeyDown)
   window.addEventListener('keyup', handleViewportKeyUp)
   await integrationsStore.fetchIntegrations()
-  if (integrationsStore.hasFortigate) {
-    await loadFortigateBuildPaneData()
+  if (integrationsStore.hasWorkspaceIntegrations) {
+    await loadBuildPaneData()
   }
   await dashboardStore.loadWorkspace()
   centerWorkspaceOnOrigin()
 })
 
-watch(() => integrationsStore.hasFortigate, (has) => {
-  if (has) {
-    loadFortigateBuildPaneData()
+watch(() => integrationsStore.connectedIntegrationTypes.join('|'), (typesKey) => {
+  if (typesKey) {
+    loadBuildPaneData()
+  } else {
+    dashboardStore.fetchCatalog([])
   }
 })
 
 const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
 const fortigateIntegrations = computed(() => integrationsStore.integrations.filter(i => i.type === 'fortigate'))
+const connectedIntegrationTypes = computed(() => integrationsStore.connectedIntegrationTypes)
 const dataFieldCount = computed(() => dataFieldGroups.value.reduce((total, group) => total + group.fields.length, 0))
 const dataFieldCountLabel = computed(() => `${dataFieldCount.value} field${dataFieldCount.value === 1 ? '' : 's'} available`)
 const visualPresetCountLabel = computed(() => `${catalogItems.value.length} preset${catalogItems.value.length === 1 ? '' : 's'} ready`)
@@ -93,22 +96,31 @@ function toggleFolder(id: string) {
   expandedFolders.value[id] = !expandedFolders.value[id]
 }
 
+function integrationForCatalogId(catalogId: string) {
+  const catalogItem = catalogItems.value.find(item => item.id === catalogId)
+  const integrationType = catalogItem?.integrationType || catalogItem?.source
+  if (integrationType) {
+    return integrationsStore.integrations.find(integration => integration.type === integrationType)
+  }
+  return integrationsStore.integrations[0]
+}
+
 function handleAddWidget(catalogId: string) {
-  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
-  if (firstFortigate) {
-    dashboardStore.addWidget(catalogId, firstFortigate.id)
+  const integration = integrationForCatalogId(catalogId)
+  if (integration) {
+    dashboardStore.addWidget(catalogId, integration.id)
   }
 }
 
-async function loadFortigateBuildPaneData() {
+async function loadBuildPaneData() {
   if (buildPaneDataLoad) return buildPaneDataLoad
   buildPaneDataLoad = (async () => {
     const tasks: Array<Promise<unknown>> = []
-    if (!dashboardStore.isCatalogLoaded && dashboardStore.catalogItems.length === 0) {
-      tasks.push(dashboardStore.fetchCatalog())
-    }
+    tasks.push(dashboardStore.fetchCatalog(connectedIntegrationTypes.value))
     if (!providerDataStore.isLoaded && !providerDataStore.isLoading) {
-      tasks.push(providerDataStore.fetchFortigateFields())
+      if (integrationsStore.hasFortigate) {
+        tasks.push(providerDataStore.fetchFortigateFields())
+      }
     }
     await Promise.all(tasks)
   })()
@@ -191,20 +203,21 @@ function handleWorkspaceDrop(event: DragEvent) {
   event.preventDefault()
   event.stopPropagation()
 
-  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
   const position = workspacePointFromEvent(event)
 
   if (payload.kind === 'catalog') {
-    if (!firstFortigate) return
-    dashboardStore.addWidget(payload.catalogId, firstFortigate.id, position)
+    const integration = integrationForCatalogId(payload.catalogId)
+    if (!integration) return
+    dashboardStore.addWidget(payload.catalogId, integration.id, position)
     return
   }
 
+  const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
   dashboardStore.addVisualTemplate(payload.catalogId, firstFortigate?.id ?? '', position)
 }
 
 function retryVisualPresets() {
-  dashboardStore.fetchCatalog()
+  dashboardStore.fetchCatalog(connectedIntegrationTypes.value)
 }
 
 function retryProviderFields() {
@@ -486,7 +499,7 @@ onBeforeUnmount(() => {
       <h1 class="text-xl font-medium tracking-tight">{{ workspaceName }}</h1>
       
       <button 
-        v-if="integrationsStore.hasFortigate"
+        v-if="integrationsStore.hasWorkspaceIntegrations"
         @click="isBuildPaneOpen = !isBuildPaneOpen" 
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
         :class="isBuildPaneOpen ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
@@ -586,7 +599,7 @@ onBeforeUnmount(() => {
 
       <!-- Build Pane (Power BI style) -->
       <aside 
-        v-if="integrationsStore.hasFortigate"
+        v-if="integrationsStore.hasWorkspaceIntegrations"
         class="h-full bg-theme-panel border-l border-theme-border transition-all duration-300 flex flex-col z-30 shrink-0"
         :style="{ width: isBuildPaneOpen ? '300px' : '0px', opacity: isBuildPaneOpen ? 1 : 0 }"
       >
@@ -657,7 +670,7 @@ onBeforeUnmount(() => {
                 <div class="min-w-0">
                   <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">Visual analysis</h3>
                   <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
-                    FortiGate presets and reusable templates for the SOC canvas.
+                    Connected integration presets and reusable templates for the SOC canvas.
                   </p>
                 </div>
                 <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-2 py-1 text-[10px] font-medium text-theme-text-muted">
@@ -668,14 +681,14 @@ onBeforeUnmount(() => {
 
             <section class="flex flex-col gap-2">
               <div class="flex items-center justify-between gap-2">
-                <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">FortiGate presets</h3>
+                <h3 class="text-xs font-medium text-theme-text-muted uppercase tracking-wider">Integration presets</h3>
                 <span v-if="catalogItems.length > 0" class="text-[10px] text-theme-text-muted">{{ visualPresetCountLabel }}</span>
               </div>
 
               <div v-if="isVisualCatalogLoading" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
                 <div class="flex items-center gap-2 font-medium text-theme-text">
                   <RefreshCcw :size="14" class="animate-spin text-theme-primary" />
-                  <span>Loading FortiGate presets</span>
+                  <span>Loading widget presets</span>
                 </div>
                 <p class="mt-1 text-xs leading-snug text-theme-text-muted">
                   Catalog metadata is loading for this workspace.
@@ -685,7 +698,7 @@ onBeforeUnmount(() => {
               <div v-else-if="isVisualCatalogEmpty" class="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
                 <div class="flex items-center gap-2 font-medium text-amber-200">
                   <AlertTriangle :size="14" />
-                  <span>No FortiGate presets available</span>
+                  <span>No widget presets available</span>
                 </div>
                 <p class="mt-1 text-xs leading-snug text-theme-text-muted">
                   Catalog status: unavailable; visual templates remain available.

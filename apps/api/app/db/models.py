@@ -91,6 +91,34 @@ class FortiGateHealthCheckModel(Base):
     )
 
 
+class PenguinToolIntegrationModel(Base):
+    __tablename__ = "penguin_tool_integrations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    host: Mapped[str] = mapped_column(String(2048), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="connected", index=True)
+    capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    last_checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
 class WorkspaceSpecModel(Base):
     __tablename__ = "workspace_specs"
 
