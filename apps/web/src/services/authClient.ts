@@ -122,6 +122,10 @@ export async function registerWithBrowserSession({
   return fetchBrowserSession(fetcher)
 }
 
+export function ssoKerberosLoginUrl(): string {
+  return '/api/auth/sso/kerberos/init'
+}
+
 export async function logoutBrowserSession(
   fetcher: Fetcher = globalThis.fetch.bind(globalThis),
 ): Promise<BrowserSession> {

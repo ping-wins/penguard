@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useThemeStore } from '../stores/useThemeStore'
-import { Shield } from 'lucide-vue-next'
+import { ssoKerberosLoginUrl } from '../services/authClient'
+import { Shield, KeyRound } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -25,6 +26,10 @@ async function handleLogin() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSsoLogin() {
+  window.location.href = ssoKerberosLoginUrl()
 }
 </script>
 
@@ -72,14 +77,30 @@ async function handleLogin() {
           />
         </div>
 
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           :disabled="loading"
           class="w-full text-white font-medium py-3 rounded-lg mt-2 transition-all flex justify-center disabled:opacity-50 hover:brightness-110 shadow-lg"
           :style="{ backgroundColor: themeStore.primary }"
         >
           <span v-if="loading">Autenticando...</span>
           <span v-else>Entrar no Workspace</span>
+        </button>
+
+        <div class="flex items-center gap-3 my-2">
+          <div class="h-px flex-1 bg-theme-border"></div>
+          <span class="text-xs uppercase tracking-wider text-theme-text-muted">ou</span>
+          <div class="h-px flex-1 bg-theme-border"></div>
+        </div>
+
+        <button
+          type="button"
+          :disabled="loading"
+          @click="handleSsoLogin"
+          class="w-full font-medium py-3 rounded-lg transition-all flex items-center justify-center gap-2 border border-theme-border bg-theme-bg text-theme-text disabled:opacity-50 hover:brightness-110"
+        >
+          <KeyRound :size="18" />
+          <span>Login with SSO (Kerberos)</span>
         </button>
 
         <p class="text-center text-sm text-theme-text-muted mt-4">

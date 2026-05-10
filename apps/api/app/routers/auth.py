@@ -1,4 +1,8 @@
+import logging
+from secrets import token_urlsafe
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
@@ -10,11 +14,13 @@ from app.auth.dependencies import (
     get_csrf_guard,
 )
 from app.auth.errors import AuthProviderError
+from app.auth.keycloak import KeycloakClient
 from app.auth.rate_limit import InMemoryRateLimiter
 from app.auth.service import AuthService
 from app.core.config import get_settings
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
@@ -87,9 +93,9 @@ def set_session_cookie(response: Response, session_id: str) -> None:
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,
-        httponly=True,
+        httponly=settings.session_cookie_httponly,
         secure=settings.session_cookie_secure,
-        samesite="lax",
+        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
         path="/",
     )
 
@@ -207,6 +213,94 @@ def get_current_session(request: Request) -> dict:
     return {"authenticated": True, "user": user}
 
 
+@router.get("/auth/sso/kerberos/init")
+def sso_kerberos_init(request: Request) -> RedirectResponse:
+    settings = get_settings()
+    if settings.mock_mode:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SSO is not available in mock mode",
+        )
+    keycloak = KeycloakClient(
+        base_url=settings.keycloak_base_url,
+        browser_base_url=settings.keycloak_browser_base_url,
+        realm=settings.keycloak_realm,
+        client_id=settings.keycloak_client_id,
+        client_secret=settings.keycloak_client_secret,
+        verify_ssl=settings.keycloak_verify_ssl,
+    )
+    state = token_urlsafe(24)
+    auth_url = keycloak.authorization_url(
+        redirect_uri=settings.sso_redirect_uri,
+        state=state,
+        kc_idp_hint=request.query_params.get("kc_idp_hint"),
+    )
+    request.session["sso_state"] = state
+    return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/auth/sso/kerberos/callback")
+def sso_kerberos_callback(
+    request: Request,
+    audit_store: AuthAuditStore = AUTH_AUDIT_STORE_DEP,
+    auth_service: AuthService = AUTH_SERVICE_DEP,
+) -> RedirectResponse:
+    settings = get_settings()
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    stored_state = request.session.pop("sso_state", None)
+    if not code or not state or stored_state is None or state != stored_state:
+        audit_store.record(
+            action="sso_kerberos",
+            outcome="state_mismatch",
+            client_ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid SSO callback state",
+        )
+    try:
+        result = auth_service.sso_login(
+            code=code,
+            redirect_uri=settings.sso_redirect_uri,
+        )
+    except AuthProviderError as error:
+        audit_store.record(
+            action="sso_kerberos",
+            outcome=error.audit_outcome,
+            client_ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+    except Exception as exc:
+        logger.exception("SSO callback failed: %s", exc)
+        audit_store.record(
+            action="sso_kerberos",
+            outcome="callback_error",
+            client_ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"SSO callback failed: {type(exc).__name__}",
+        )
+    audit_store.record(
+        action="sso_kerberos",
+        outcome="success",
+        email=result.payload["user"]["email"],
+        user_id=result.payload["user"]["id"],
+        client_ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    response = RedirectResponse(
+        url=settings.sso_post_login_url,
+        status_code=status.HTTP_302_FOUND,
+    )
+    set_session_cookie(response, result.session_id)
+    return response
+
+
 @router.post("/auth/logout")
 def logout(
     request: Request,
@@ -230,8 +324,8 @@ def logout(
     response.delete_cookie(
         key=settings.session_cookie_name,
         path="/",
-        httponly=True,
+        httponly=settings.session_cookie_httponly,
         secure=settings.session_cookie_secure,
-        samesite="lax",
+        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
     )
     return payload

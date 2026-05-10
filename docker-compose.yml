@@ -10,16 +10,28 @@ services:
       FORTIDASHBOARD_MOCK_MODE: ${FORTIDASHBOARD_MOCK_MODE:-false}
       FORTIDASHBOARD_SESSION_COOKIE_NAME: fortidashboard_session
       FORTIDASHBOARD_SESSION_COOKIE_SECURE: "false"
+      FORTIDASHBOARD_SESSION_COOKIE_SAMESITE: lax
+      FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY: "true"
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SAMESITE: lax
+      SESSION_COOKIE_HTTPONLY: "true"
       FORTIDASHBOARD_CSRF_COOKIE_NAME: fortidashboard_csrf
       FORTIDASHBOARD_CSRF_HEADER_NAME: X-CSRF-Token
       FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS:-10}
       FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
-      FORTIDASHBOARD_KEYCLOAK_BASE_URL: http://keycloak:8080
+      FORTIDASHBOARD_KEYCLOAK_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BASE_URL:-http://fortidashboard.local:9080}
       FORTIDASHBOARD_KEYCLOAK_REALM: fortidashboard
       FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
       FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: dev-client-secret
+      FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: ${FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL:-false}
+      FORTIDASHBOARD_OIDC_ISSUER: ${FORTIDASHBOARD_OIDC_ISSUER:-http://fortidashboard.local:9080/realms/fortidashboard}
+      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL:-http://fortidashboard.local:9080}
+      FORTIDASHBOARD_SSO_REDIRECT_URI: ${FORTIDASHBOARD_SSO_REDIRECT_URI:-http://fortidashboard.local:8000/api/auth/sso/kerberos/callback}
+      FORTIDASHBOARD_SSO_POST_LOGIN_URL: ${FORTIDASHBOARD_SSO_POST_LOGIN_URL:-http://fortidashboard.local:5173/}
     ports:
       - "${FORTIDASHBOARD_API_PORT:-8000}:8000"
+    extra_hosts:
+      - "fortidashboard.local:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -80,11 +92,25 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KRB5_CONFIG: /etc/krb5.conf
+      JAVA_OPTS_APPEND: >-
+        -Dsun.security.krb5.allowWeakCrypto=true
+        -Djava.security.krb5.conf=/etc/krb5.conf
+        -Djava.security.properties=/opt/keycloak/conf/java-security-override.properties
     ports:
       - "${FORTIDASHBOARD_KEYCLOAK_PORT:-8080}:8080"
+    extra_hosts:
+      - "fortidashboard.local:192.168.56.10"
+      - "dc01.fortidashboard.local:192.168.56.10"
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
+      - ./fortidashboard.keytab:/opt/keycloak/conf/fortidashboard.keytab:ro
+      - ./krb5.conf:/etc/krb5.conf:ro
+      - ./infra/keycloak/java-security-override.properties:/opt/keycloak/conf/java-security-override.properties:ro
 
 volumes:
   fortidashboard_db:

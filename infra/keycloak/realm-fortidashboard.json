@@ -28,12 +28,36 @@
       "secret": "dev-client-secret",
       "serviceAccountsEnabled": true,
       "directAccessGrantsEnabled": true,
-      "standardFlowEnabled": false,
+      "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "redirectUris": [],
-      "webOrigins": []
+      "redirectUris": [
+        "http://localhost:8000/api/auth/sso/kerberos/callback",
+        "http://api:8000/api/auth/sso/kerberos/callback"
+      ],
+      "webOrigins": ["http://localhost:5173", "http://localhost:8000"]
     }
   ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "kerberos-fortidashboard",
+        "providerId": "kerberos",
+        "subComponents": {},
+        "config": {
+          "priority": ["0"],
+          "enabled": ["true"],
+          "kerberosRealm": ["FORTIDASHBOARD.LOCAL"],
+          "serverPrincipal": ["HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL"],
+          "keyTab": ["/opt/keycloak/conf/fortidashboard.keytab"],
+          "debug": ["false"],
+          "allowPasswordAuthentication": ["false"],
+          "updateProfileFirstLogin": ["false"],
+          "cachePolicy": ["DEFAULT"],
+          "editMode": ["UNSYNCED"]
+        }
+      }
+    ]
+  },
   "users": [
     {
       "username": "service-account-fortidashboard-bff",
