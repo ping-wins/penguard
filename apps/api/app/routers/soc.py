@@ -127,6 +127,14 @@ def list_incidents(
     )
 
 
+@router.get("/soc/rules")
+def list_detection_rules(
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", "/rules")
+
+
 @router.get("/soc/incidents/{incident_id}")
 def get_incident(
     incident_id: str,
@@ -134,6 +142,31 @@ def get_incident(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return client.request("GET", f"/incidents/{incident_id}")
+
+
+@router.get("/soc/incidents/{incident_id}/endpoint-context")
+def get_incident_endpoint_context(
+    incident_id: str,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    xdr_client: Annotated[SocClient, Depends(get_xdr_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+) -> dict:
+    incident = siem_client.request("GET", f"/incidents/{incident_id}")
+    entities = incident.get("entities")
+    if not isinstance(entities, dict):
+        entities = {}
+    endpoint_context = xdr_client.request(
+        "POST",
+        "/correlations/endpoint-context",
+        json={"entities": entities, "limit": limit},
+    )
+    return {
+        "incidentId": incident_id,
+        "incident": incident,
+        "items": endpoint_context.get("items", []),
+        "total": endpoint_context.get("total", 0),
+    }
 
 
 @router.patch("/soc/incidents/{incident_id}")

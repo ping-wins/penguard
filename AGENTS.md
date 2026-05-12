@@ -173,8 +173,8 @@ Purpose: convert telemetry into incidents.
 Current capabilities:
 
 - Ingest normalized events from FortiGate, endpoint telemetry, manual/demo events and future providers.
-- Store first-cut in-memory events and incidents.
-- Apply initial hardcoded detections: port scan, denied-traffic burst, repeated failed login and suspicious endpoint connection.
+- Persist raw events, generated incidents and incident timelines in service-owned SQL tables.
+- Apply safe declarative detections for port scan, denied-traffic burst, repeated failed login, suspicious endpoint connection and FortiGate resource pressure.
 - Generate incidents with severity, status, timeline and related entities.
 - Expose incident widgets: severity counts, recent incidents and top entities.
 
@@ -183,6 +183,7 @@ Gateway API:
 ```txt
 POST  /api/soc/events
 GET   /api/soc/events
+GET   /api/soc/rules
 GET   /api/soc/incidents
 GET   /api/soc/incidents/{incidentId}
 PATCH /api/soc/incidents/{incidentId}
@@ -222,8 +223,9 @@ Current capabilities:
 
 - Create enrollment tokens.
 - Ingest endpoint events.
-- Track endpoint inventory, heartbeat, hostname, OS, IPs, current user and health.
-- Expose endpoint timelines and health widgets.
+- Persist endpoint enrollment token hashes, inventory, heartbeat, hostname, OS, IPs, current user, health and timelines in service-owned SQL tables.
+- Correlate endpoints with SIEM incidents by endpoint ID, IP, hostname and username.
+- Expose endpoint timelines, incident endpoint context and health widgets.
 - Provide simulator data for demos without installing the agent.
 
 Gateway API:
@@ -232,6 +234,7 @@ Gateway API:
 GET  /api/weapons/endpoints
 GET  /api/weapons/endpoints/{endpointId}
 GET  /api/weapons/endpoints/{endpointId}/timeline
+GET  /api/soc/incidents/{incidentId}/endpoint-context
 POST /api/weapons/enrollments
 POST /api/weapons/endpoint-events
 ```
@@ -405,9 +408,9 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add incident status transitions and timelines.
 - [x] Ingest normalized FortiGate events through the gateway.
 - [x] Expose incident widgets.
-- [ ] Add persisted raw event payload storage.
-- [ ] Implement a safe detection rule model/expression evaluator.
-- [ ] Add high CPU/memory risk rule from FortiGate/system telemetry.
+- [x] Add persisted raw event payload storage.
+- [x] Implement a safe detection rule model/expression evaluator.
+- [x] Add high CPU/memory risk rule from FortiGate/system telemetry.
 
 ### soar_skipper
 
@@ -425,12 +428,13 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Implement endpoint enrollment token flow.
 - [x] Implement endpoint inventory, heartbeat and timeline.
 - [x] Implement endpoint event ingestion.
+- [x] Persist endpoint inventory, timeline and enrollment token hashes.
 - [x] Add endpoint health widgets.
 - [x] Add simulator source.
 - [x] Hash endpoint tokens and never return them after creation.
 - [x] Implement TUI-first `agent_private` flow plus CLI automation commands.
 - [x] Collect heartbeat, process snapshot and network connection snapshot.
-- [ ] Correlate endpoints with incidents by IP, hostname and username.
+- [x] Correlate endpoints with incidents by endpoint ID, IP, hostname and username.
 - [ ] Add optional directory monitoring with `watchdog`.
 
 ### apps/api Gateway

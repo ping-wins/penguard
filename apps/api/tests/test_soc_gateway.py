@@ -123,6 +123,91 @@ def test_siem_incident_list_gateway_forwards_filters():
     }
 
 
+def test_siem_rule_list_gateway_forwards_to_kowalski():
+    client = TestClient(app)
+    fake_siem = FakeSocClient(
+        {
+            "items": [
+                {
+                    "id": "fortigate_resource_pressure",
+                    "title": "FortiGate resource pressure",
+                    "conditions": [],
+                }
+            ]
+        }
+    )
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.get("/api/soc/rules")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "fortigate_resource_pressure"
+    assert fake_siem.calls[0] == {
+        "method": "GET",
+        "path": "/rules",
+        "json": None,
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+
+
+def test_incident_endpoint_context_gateway_correlates_siem_incident_with_xdr():
+    client = TestClient(app)
+    incident = {
+        "id": "inc_01",
+        "title": "Suspicious endpoint connection",
+        "severity": "high",
+        "status": "open",
+        "entities": {
+            "sourceIp": "192.0.2.50",
+            "hostname": "demo-endpoint-01",
+            "username": "analyst",
+        },
+    }
+    fake_siem = FakeSocClient(incident)
+    fake_xdr = FakeSocClient(
+        {
+            "incidentEntities": incident["entities"],
+            "items": [
+                {
+                    "endpoint": {"id": "end_01", "hostname": "demo-endpoint-01"},
+                    "score": 100,
+                    "matchedFields": [
+                        {"field": "sourceIp", "value": "192.0.2.50"},
+                        {"field": "hostname", "value": "demo-endpoint-01"},
+                    ],
+                    "timeline": [],
+                }
+            ],
+            "total": 1,
+        }
+    )
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.get(
+        "/api/soc/incidents/inc_01/endpoint-context",
+        params={"limit": 3},
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["path"] == "/incidents/inc_01"
+    assert fake_xdr.calls[0] == {
+        "method": "POST",
+        "path": "/correlations/endpoint-context",
+        "json": {"entities": incident["entities"], "limit": 3},
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+    body = response.json()
+    assert body["incidentId"] == "inc_01"
+    assert body["incident"] == incident
+    assert body["total"] == 1
+    assert body["items"][0]["endpoint"]["id"] == "end_01"
+
+
 def test_soar_playbook_run_gateway_forwards_and_audits():
     client = TestClient(app)
     fake_soar = FakeSocClient({"id": "pbr_01", "status": "waiting_approval"})

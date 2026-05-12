@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import main
 from app.main import app
 
 client = TestClient(app)
@@ -24,6 +25,13 @@ def _event_payload(
         "entities": {"sourceIp": source_ip, "username": "analyst"},
         "attributes": attributes,
     }
+
+
+def _clear_legacy_memory_lists() -> None:
+    for attr in ("events", "incidents"):
+        value = getattr(main, attr, None)
+        if isinstance(value, list):
+            value.clear()
 
 
 def test_post_events_stores_event_with_generated_id_and_detects_network_scan():
@@ -73,6 +81,87 @@ def test_detection_thresholds_create_expected_incidents():
         for incident in incidents
     )
     assert not any(below_threshold["id"] in incident["eventIds"] for incident in incidents)
+
+
+def test_lists_detection_rules_with_safe_condition_metadata():
+    response = client.get("/rules")
+
+    assert response.status_code == 200
+    rules = response.json()
+    rule_ids = {rule["id"] for rule in rules}
+    assert rule_ids >= {
+        "network_scan",
+        "denied_traffic_burst",
+        "repeated_failed_login",
+        "suspicious_endpoint_connection",
+        "fortigate_resource_pressure",
+    }
+    resource_rule = next(rule for rule in rules if rule["id"] == "fortigate_resource_pressure")
+    assert resource_rule["match"] == "any"
+    assert {condition["operator"] for condition in resource_rule["conditions"]} == {"gte"}
+    assert {condition["path"] for condition in resource_rule["conditions"]} == {
+        "attributes.cpuPercent",
+        "attributes.memoryPercent",
+    }
+
+
+def test_high_cpu_or_memory_telemetry_creates_resource_pressure_incident():
+    cpu_event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:00:00.000Z",
+            "entities": {"integrationId": "int_fgt_01", "hostname": "fortigate-lab"},
+            "attributes": {"cpuPercent": 91, "memoryPercent": 42},
+        },
+    ).json()
+    memory_event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:01:00.000Z",
+            "entities": {"integrationId": "int_fgt_01", "hostname": "fortigate-lab"},
+            "attributes": {"cpuPercent": 15, "memoryPercent": 94},
+        },
+    ).json()
+
+    incidents = client.get("/incidents", params={"severity": "high"}).json()
+
+    resource_incidents = [
+        incident for incident in incidents if incident["title"] == "FortiGate resource pressure"
+    ]
+    assert {event_id for incident in resource_incidents for event_id in incident["eventIds"]} >= {
+        cpu_event["id"],
+        memory_event["id"],
+    }
+    assert {incident["ruleId"] for incident in resource_incidents} == {
+        "fortigate_resource_pressure"
+    }
+
+
+def test_gte_conditions_reject_non_numeric_values_without_evaluating_strings():
+    event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:00:00.000Z",
+            "entities": {"integrationId": "int_fgt_01"},
+            "attributes": {
+                "cpuPercent": "__import__('os').system('id')",
+                "memoryPercent": "not-a-number",
+            },
+        },
+    ).json()
+
+    incidents = client.get("/incidents").json()
+
+    assert not any(event["id"] in incident["eventIds"] for incident in incidents)
 
 
 def test_lists_events_newest_first_with_limit_and_event_type_filter():
@@ -125,3 +214,42 @@ def test_patch_incident_status_appends_timeline_item():
 def test_incident_404s_for_missing_detail_and_patch():
     assert client.get("/incidents/inc_missing").status_code == 404
     assert client.patch("/incidents/inc_missing", json={"status": "resolved"}).status_code == 404
+
+
+def test_events_and_incidents_survive_legacy_memory_clear():
+    event = client.post(
+        "/events",
+        json=_event_payload("network.scan", source_ip="192.0.2.201"),
+    ).json()
+
+    _clear_legacy_memory_lists()
+
+    events = client.get("/events", params={"eventType": "network.scan"}).json()
+    incidents = client.get("/incidents", params={"severity": "high"}).json()
+
+    assert any(item["id"] == event["id"] for item in events)
+    assert any(
+        incident["title"] == "Possible port scan" and event["id"] in incident["eventIds"]
+        for incident in incidents
+    )
+
+
+def test_incident_status_update_survives_legacy_memory_clear():
+    event = client.post(
+        "/events",
+        json=_event_payload("network.scan", source_ip="192.0.2.202"),
+    ).json()
+    incident = next(
+        incident
+        for incident in client.get("/incidents").json()
+        if event["id"] in incident["eventIds"]
+    )
+
+    response = client.patch(f"/incidents/{incident['id']}", json={"status": "triaged"})
+    _clear_legacy_memory_lists()
+    detail = client.get(f"/incidents/{incident['id']}")
+
+    assert response.status_code == 200
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "triaged"
+    assert detail.json()["timeline"][-1]["status"] == "triaged"
