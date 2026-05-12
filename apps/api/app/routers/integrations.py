@@ -1,9 +1,12 @@
+import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+logger = logging.getLogger(__name__)
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
@@ -128,6 +131,12 @@ def create_fortigate_integration(
             verify_tls=payload.verify_tls,
         )
     except FortiGateConnectionFailed as exc:
+        logger.warning(
+            "FortiGate integration probe failed: host=%s verify_tls=%s error=%s",
+            payload.host,
+            payload.verify_tls,
+            exc,
+        )
         audit_store.record(
             action="integration.fortigate.created",
             outcome="failed",

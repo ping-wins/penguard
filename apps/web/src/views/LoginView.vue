@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useThemeStore } from '../stores/useThemeStore'
 import { ssoKerberosLoginUrl } from '../services/authClient'
-import { Shield, KeyRound } from 'lucide-vue-next'
+import { Shield, KeyRound, AlertTriangle, X } from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
@@ -14,6 +15,24 @@ const email = ref('')
 const password = ref('')
 const errorMsg = ref('')
 const loading = ref(false)
+const ssoUnavailable = ref(false)
+
+const SSO_ERROR_MESSAGES: Record<string, string> = {
+  unavailable: 'O login SSO Kerberos está indisponível para uso. Você precisa estar conectado ao domínio Active Directory corporativo para utilizar essa autenticação.',
+  state_mismatch: 'A sessão SSO expirou ou foi invalidada. Tente novamente.',
+  mock_mode: 'O login SSO Kerberos está desativado neste ambiente.',
+}
+
+const ssoErrorText = ref('')
+
+onMounted(() => {
+  const ssoError = route.query.sso_error
+  if (typeof ssoError === 'string' && ssoError.length > 0) {
+    ssoErrorText.value = SSO_ERROR_MESSAGES[ssoError] ?? SSO_ERROR_MESSAGES.unavailable
+    ssoUnavailable.value = true
+    router.replace({ name: 'login', query: {} })
+  }
+})
 
 async function handleLogin() {
   errorMsg.value = ''
@@ -31,12 +50,52 @@ async function handleLogin() {
 function handleSsoLogin() {
   window.location.href = ssoKerberosLoginUrl()
 }
+
+function dismissSsoPopup() {
+  ssoUnavailable.value = false
+}
 </script>
 
 <template>
   <div class="min-h-screen w-full bg-theme-bg flex items-center justify-center pattern-grid relative p-4">
     <!-- Gradient Background -->
     <div class="absolute inset-0 z-0 opacity-20 pointer-events-none transition-colors duration-1000" :style="{ background: `radial-gradient(circle at top left, ${themeStore.primary}, transparent 70%)` }"></div>
+
+    <!-- SSO Unavailable Modal -->
+    <div
+      v-if="ssoUnavailable"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="w-full max-w-md bg-theme-panel border border-theme-border rounded-2xl shadow-2xl p-6 relative">
+        <button
+          type="button"
+          @click="dismissSsoPopup"
+          class="absolute top-3 right-3 text-theme-text-muted hover:text-theme-text"
+          aria-label="Fechar"
+        >
+          <X :size="18" />
+        </button>
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center bg-amber-500/15 text-amber-400 shrink-0">
+            <AlertTriangle :size="20" />
+          </div>
+          <div class="flex-1">
+            <h2 class="text-lg font-semibold text-theme-text mb-2">SSO Kerberos indisponível</h2>
+            <p class="text-sm text-theme-text-muted leading-relaxed">{{ ssoErrorText }}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          @click="dismissSsoPopup"
+          class="w-full mt-5 text-white font-medium py-2.5 rounded-lg transition-all hover:brightness-110"
+          :style="{ backgroundColor: themeStore.primary }"
+        >
+          Entendi
+        </button>
+      </div>
+    </div>
 
     <div class="w-full max-w-md bg-theme-panel border border-theme-border rounded-2xl shadow-2xl p-8 relative z-10">
       <div class="flex flex-col items-center mb-8">

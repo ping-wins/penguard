@@ -1,5 +1,6 @@
 import logging
 from secrets import token_urlsafe
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -213,30 +214,39 @@ def get_current_session(request: Request) -> dict:
     return {"authenticated": True, "user": user}
 
 
+def sso_failure_redirect(reason: str) -> RedirectResponse:
+    settings = get_settings()
+    target = settings.sso_failure_redirect_url
+    separator = "&" if "?" in target else "?"
+    url = f"{target}{separator}{urlencode({'sso_error': reason})}"
+    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+
+
 @router.get("/auth/sso/kerberos/init")
 def sso_kerberos_init(request: Request) -> RedirectResponse:
     settings = get_settings()
     if settings.mock_mode:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SSO is not available in mock mode",
+        return sso_failure_redirect("mock_mode")
+    try:
+        keycloak = KeycloakClient(
+            base_url=settings.keycloak_base_url,
+            browser_base_url=settings.keycloak_browser_base_url,
+            realm=settings.keycloak_realm,
+            client_id=settings.keycloak_client_id,
+            client_secret=settings.keycloak_client_secret,
+            verify_ssl=settings.keycloak_verify_ssl,
         )
-    keycloak = KeycloakClient(
-        base_url=settings.keycloak_base_url,
-        browser_base_url=settings.keycloak_browser_base_url,
-        realm=settings.keycloak_realm,
-        client_id=settings.keycloak_client_id,
-        client_secret=settings.keycloak_client_secret,
-        verify_ssl=settings.keycloak_verify_ssl,
-    )
-    state = token_urlsafe(24)
-    auth_url = keycloak.authorization_url(
-        redirect_uri=settings.sso_redirect_uri,
-        state=state,
-        kc_idp_hint=request.query_params.get("kc_idp_hint"),
-    )
-    request.session["sso_state"] = state
-    return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+        state = token_urlsafe(24)
+        auth_url = keycloak.authorization_url(
+            redirect_uri=settings.sso_redirect_uri,
+            state=state,
+            kc_idp_hint=request.query_params.get("kc_idp_hint"),
+        )
+        request.session["sso_state"] = state
+        return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+    except Exception as exc:
+        logger.exception("SSO init failed: %s", exc)
+        return sso_failure_redirect("unavailable")
 
 
 @router.get("/auth/sso/kerberos/callback")
@@ -249,6 +259,15 @@ def sso_kerberos_callback(
     code = request.query_params.get("code")
     state = request.query_params.get("state")
     stored_state = request.session.pop("sso_state", None)
+    provider_error = request.query_params.get("error")
+    if provider_error:
+        audit_store.record(
+            action="sso_kerberos",
+            outcome=f"idp_error:{provider_error}",
+            client_ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        return sso_failure_redirect("unavailable")
     if not code or not state or stored_state is None or state != stored_state:
         audit_store.record(
             action="sso_kerberos",
@@ -256,10 +275,7 @@ def sso_kerberos_callback(
             client_ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid SSO callback state",
-        )
+        return sso_failure_redirect("state_mismatch")
     try:
         result = auth_service.sso_login(
             code=code,
@@ -272,7 +288,7 @@ def sso_kerberos_callback(
             client_ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        return sso_failure_redirect("unavailable")
     except Exception as exc:
         logger.exception("SSO callback failed: %s", exc)
         audit_store.record(
@@ -281,10 +297,7 @@ def sso_kerberos_callback(
             client_ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"SSO callback failed: {type(exc).__name__}",
-        ) from exc
+        return sso_failure_redirect("unavailable")
     audit_store.record(
         action="sso_kerberos",
         outcome="success",

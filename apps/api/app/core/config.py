@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     oidc_issuer: str = "http://fortidashboard.local:9080/realms/fortidashboard"
     sso_redirect_uri: str = "http://fortidashboard.local:8000/api/auth/sso/kerberos/callback"
     sso_post_login_url: str = "http://fortidashboard.local:5173/"
+    sso_failure_redirect_url: str = "http://fortidashboard.local:5173/login"
     sso_state_cookie_name: str = "fortidashboard_sso_state"
     siem_kowalski_url: str = "http://localhost:8011"
     soar_skipper_url: str = "http://localhost:8012"

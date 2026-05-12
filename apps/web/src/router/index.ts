@@ -31,10 +31,9 @@ const router = createRouter({
 })
 
 // Navigation Guard
-router.beforeEach(async (to, _from, next) => {
+router.beforeEach(async (to) => {
   const authStore = useAuthStore()
-  
-  // Hydrate session if it's the first load
+
   if (!authStore.isInitialized) {
     await authStore.fetchSession()
   }
@@ -42,12 +41,12 @@ router.beforeEach(async (to, _from, next) => {
   const isAuthenticated = authStore.isAuthenticated
 
   if (to.meta.requiresAuth && !isAuthenticated) {
-    next({ name: 'login' })
-  } else if (!to.meta.requiresAuth && isAuthenticated && (to.name === 'login' || to.name === 'register')) {
-    next({ name: 'dashboard' })
-  } else {
-    next()
+    return { name: 'login' }
   }
+  if (!to.meta.requiresAuth && isAuthenticated && (to.name === 'login' || to.name === 'register')) {
+    return { name: 'dashboard' }
+  }
+  return true
 })
 
 export default router
