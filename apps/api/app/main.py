@@ -8,6 +8,7 @@ from app.routers import (
     health,
     integrations,
     providers,
+    soc,
     widget_catalog,
     widgets,
     workspaces,
@@ -33,6 +34,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
+app.include_router(soc.router, prefix="/api")
 app.include_router(widget_catalog.router, prefix="/api")
 app.include_router(widgets.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")

@@ -1,0 +1,34 @@
+{
+  "provider": "soar_skipper",
+  "groups": [
+    {
+      "id": "playbooks",
+      "name": "Playbook Run Data",
+      "category": "SOAR / Playbooks",
+      "fields": [
+        {
+          "id": "count",
+          "label": "Active Playbook Runs",
+          "type": "number",
+          "unit": "count",
+          "source": "soar-active-playbook-runs",
+          "recommendedVisuals": ["card", "gauge"]
+        },
+        {
+          "id": "runs",
+          "label": "Playbook Runs",
+          "type": "array",
+          "source": "soar-active-playbook-runs",
+          "recommendedVisuals": ["table", "feed"]
+        },
+        {
+          "id": "runs.status",
+          "label": "Run Status",
+          "type": "category",
+          "source": "soar-active-playbook-runs",
+          "recommendedVisuals": ["table", "bar"]
+        }
+      ]
+    }
+  ]
+}

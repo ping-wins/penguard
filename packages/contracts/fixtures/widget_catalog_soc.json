@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "soc-incidents-by-severity",
+      "title": "Incidents by Severity",
+      "kind": "bar",
+      "source": "siem_kowalski",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/soc-incidents-by-severity/data",
+      "template": "bar-chart",
+      "dataGroup": "incidents",
+      "fieldBindings": {
+        "category": "incident.severity",
+        "value": "incident.count"
+      }
+    },
+    {
+      "id": "soc-recent-incidents",
+      "title": "Recent Incidents",
+      "kind": "feed",
+      "source": "siem_kowalski",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soc-recent-incidents/data",
+      "template": "incident-feed",
+      "dataGroup": "incidents",
+      "fieldBindings": {
+        "items": "incident.items"
+      }
+    },
+    {
+      "id": "soc-top-entities",
+      "title": "Top Entities",
+      "kind": "table",
+      "source": "siem_kowalski",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soc-top-entities/data",
+      "template": "entity-table",
+      "dataGroup": "entities",
+      "fieldBindings": {
+        "rows": "entity.items"
+      }
+    },
+    {
+      "id": "xdr-endpoint-health",
+      "title": "Endpoint Health",
+      "kind": "status-list",
+      "source": "xdr_rico",
+      "requiredCapabilities": ["endpoints"],
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/xdr-endpoint-health/data",
+      "template": "endpoint-health",
+      "dataGroup": "endpoints",
+      "fieldBindings": {
+        "items": "endpoint.items",
+        "summary": "endpoint.health"
+      }
+    },
+    {
+      "id": "soar-active-playbook-runs",
+      "title": "Active Playbook Runs",
+      "kind": "table",
+      "source": "soar_skipper",
+      "requiredCapabilities": ["playbook_runs"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soar-active-playbook-runs/data",
+      "template": "playbook-run-table",
+      "dataGroup": "playbooks",
+      "fieldBindings": {
+        "rows": "playbookRun.items"
+      }
+    }
+  ]
+}

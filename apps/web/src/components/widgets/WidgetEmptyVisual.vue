@@ -59,12 +59,18 @@ const isLoadingLiveData = ref(false)
 let requestId = 0
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
-const sourceIds = computed(() => {
-  return Array.from(new Set(
-    boundFields.value
-      .map(field => field.source)
-      .filter(source => source.length > 0),
-  ))
+const sourceRequests = computed(() => {
+  const requests = new Map<string, { key: string, source: string, integrationId: string }>()
+  for (const field of boundFields.value) {
+    if (!field.source) continue
+    const integrationId = field.integrationId ?? props.integrationId ?? ''
+    if (!integrationId) continue
+    const key = sourceSnapshotKey(field.source, integrationId)
+    if (!requests.has(key)) {
+      requests.set(key, { key, source: field.source, integrationId })
+    }
+  }
+  return Array.from(requests.values())
 })
 
 const icon = computed(() => {
@@ -88,7 +94,9 @@ const icon = computed(() => {
 
 const resolvedFields = computed<ResolvedField[]>(() => {
   return boundFields.value.map((binding) => {
-    const snapshot = sourceSnapshots.value[binding.source]
+    const snapshot = sourceSnapshots.value[
+      sourceSnapshotKey(binding.source, binding.integrationId ?? props.integrationId ?? '')
+    ]
     const rawValue = extractFieldValue(snapshot?.data ?? {}, binding.fieldId)
     return {
       binding,
@@ -173,7 +181,7 @@ async function loadLiveData(options: { showLoading?: boolean } = {}) {
   const currentRequestId = requestId
   clearRefreshTimer()
 
-  if (!props.integrationId || sourceIds.value.length === 0) {
+  if (sourceRequests.value.length === 0) {
     sourceSnapshots.value = {}
     isLoadingLiveData.value = false
     return
@@ -183,16 +191,16 @@ async function loadLiveData(options: { showLoading?: boolean } = {}) {
     isLoadingLiveData.value = true
   }
 
-  const results = await Promise.all(sourceIds.value.map(async (source) => {
+  const results = await Promise.all(sourceRequests.value.map(async (request) => {
     try {
       const result = await fetchWidgetData({
-        dataEndpoint: `/api/widgets/${encodeURIComponent(source)}/data`,
-        integrationId: props.integrationId ?? '',
+        dataEndpoint: `/api/widgets/${encodeURIComponent(request.source)}/data`,
+        integrationId: request.integrationId,
       })
-      return { source, result }
+      return { ...request, result }
     } catch (error: any) {
       return {
-        source,
+        ...request,
         result: {
           state: 'error' as const,
           errorKind: 'network' as const,
@@ -207,9 +215,9 @@ async function loadLiveData(options: { showLoading?: boolean } = {}) {
   const nextSnapshots: Record<string, SourceSnapshot> = { ...sourceSnapshots.value }
   let nextRefreshInterval: number | null = null
 
-  for (const { source, result } of results) {
+  for (const { key, result } of results) {
     if (result.state === 'ready') {
-      nextSnapshots[source] = {
+      nextSnapshots[key] = {
         state: 'ready',
         data: result.data,
         response: result.response,
@@ -222,9 +230,9 @@ async function loadLiveData(options: { showLoading?: boolean } = {}) {
           : Math.min(nextRefreshInterval, refreshInterval)
       }
     } else {
-      nextSnapshots[source] = {
+      nextSnapshots[key] = {
         state: 'error',
-        data: nextSnapshots[source]?.data ?? {},
+        data: nextSnapshots[key]?.data ?? {},
         response: 'response' in result ? result.response : undefined,
         errorMessage: result.errorMessage,
       }
@@ -234,6 +242,10 @@ async function loadLiveData(options: { showLoading?: boolean } = {}) {
   sourceSnapshots.value = nextSnapshots
   isLoadingLiveData.value = false
   scheduleRefresh(nextRefreshInterval)
+}
+
+function sourceSnapshotKey(source: string, integrationId: string) {
+  return `${source}::${integrationId}`
 }
 
 function getPathValue(data: Record<string, unknown>, path: string) {
@@ -548,7 +560,7 @@ function severityDotClass(severity: SignalSeverity) {
 }
 
 watch(
-  () => `${props.integrationId ?? ''}|${sourceIds.value.join('|')}`,
+  () => sourceRequests.value.map(request => request.key).join('|'),
   () => {
     loadLiveData()
   },

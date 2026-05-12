@@ -16,6 +16,7 @@ export type WidgetCatalogItem = {
   title: string
   kind: string
   source: string
+  integrationType?: string
   requiredCapabilities: string[]
   defaultSize: WidgetDefaultSize
   dataEndpoint: string
@@ -28,6 +29,8 @@ export type WidgetFieldBinding = {
   unit?: string
   source: string
   provider?: string
+  integrationType?: string
+  integrationId?: string
   groupId?: string
   groupName?: string
 }

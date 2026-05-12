@@ -1,0 +1,17 @@
+{
+  "id": "evt_01",
+  "source": "fortigate",
+  "eventType": "network.deny",
+  "severity": "medium",
+  "occurredAt": "2026-05-08T12:00:00.000Z",
+  "entities": {
+    "sourceIp": "192.0.2.10",
+    "destinationIp": "198.51.100.20",
+    "integrationId": "int_fgt_01"
+  },
+  "attributes": {
+    "policyId": "12",
+    "action": "deny",
+    "count": 25
+  }
+}

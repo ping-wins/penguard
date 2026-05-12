@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf import CsrfGuard
@@ -80,3 +80,18 @@ def get_current_api_user(request: Request) -> dict[str, Any]:
             detail="Authentication required",
         )
     return user
+
+
+CURRENT_API_USER_DEP = Depends(get_current_api_user)
+
+
+def require_admin_user(
+    current_user: dict[str, Any] = CURRENT_API_USER_DEP,
+) -> dict[str, Any]:
+    roles = current_user.get("roles") or []
+    if "admin" not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator role required",
+        )
+    return current_user

@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History, Clock3 } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { useAuditStore } from '../../stores/useAuditStore'
+import AuditFeed from '../audit/AuditFeed.vue'
 import { useRouter } from 'vue-router'
+import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
+const auditStore = useAuditStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -22,8 +26,61 @@ const fgForm = ref({
 })
 const fgTestResult = ref<any>(null)
 const fgTestError = ref<string | null>(null)
+const penguinTestResults = ref<Record<PenguinToolType, any | null>>({
+  siem_kowalski: null,
+  xdr_rico: null,
+  soar_skipper: null,
+})
+const penguinErrors = ref<Record<PenguinToolType, string | null>>({
+  siem_kowalski: null,
+  xdr_rico: null,
+  soar_skipper: null,
+})
+const integrationGroupsOpen = ref({
+  fortinet: true,
+  penguin: true,
+  endpoint: false,
+})
+const penguinTools: Array<{
+  type: PenguinToolType
+  title: string
+  description: string
+  defaultName: string
+}> = [
+  {
+    type: 'siem_kowalski',
+    title: 'Kowalski SIEM-lite',
+    description: 'Events, detections, incidents and investigation widgets.',
+    defaultName: 'Kowalski SIEM',
+  },
+  {
+    type: 'xdr_rico',
+    title: 'XDR/EDR-lite manager',
+    description: 'Endpoint inventory, heartbeat and timeline widgets.',
+    defaultName: 'Rico XDR',
+  },
+  {
+    type: 'soar_skipper',
+    title: 'SOAR-lite workflows',
+    description: 'Playbooks, dry-run response and approval widgets.',
+    defaultName: 'Skipper SOAR',
+  },
+]
 const canSubmitFortigate = computed(() => {
   return fgForm.value.host.trim().length > 0 && fgForm.value.apiKey.trim().length > 0
+})
+const fortigateIntegrations = computed(() => {
+  return integrationsStore.integrations.filter(integration => integration.type === 'fortigate')
+})
+const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
+const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
+const auditTitle = computed(() => isAdmin.value ? 'Admin audit trail' : 'My audit trail')
+const auditSubtitle = computed(() => isAdmin.value ? 'Global SOC activity' : 'Your browser session activity')
+const drawerWidth = computed(() => {
+  if (activeTab.value === 'none') return '0px'
+  if (activeTab.value === 'audit') return '420px'
+  if (activeTab.value === 'integrations') return '380px'
+  return '320px'
 })
 
 const chatInput = ref('')
@@ -31,18 +88,28 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
 ])
 const isThinking = ref(false)
-const auditActivityPreview = [
-  { action: 'login', label: 'Login attempts', status: 'tracked' },
-  { action: 'integration.fortigate.created', label: 'Integration changes', status: 'tracked' },
-  { action: 'workspace.updated', label: 'Canvas edits', status: 'tracked' },
-]
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit') {
+  const isClosingCurrentTab = activeTab.value === tab
+  if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
+    auditStore.stopPolling()
+  }
 
-function toggleTab(tab: 'chat' | 'settings' | 'integrations') {
   if (activeTab.value !== tab && tab === 'integrations') {
     integrationsStore.fetchIntegrations()
   }
-  activeTab.value = activeTab.value === tab ? 'none' : tab
+  if (activeTab.value !== tab && tab === 'audit') {
+    auditStore.startPolling({ scope: auditScope.value, limit: 50, intervalMs: 5000 })
+  }
+  activeTab.value = isClosingCurrentTab ? 'none' : tab
 }
+
+function refreshAuditTrail() {
+  auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
+}
+
+onBeforeUnmount(() => {
+  auditStore.stopPolling()
+})
 
 async function handleTestFortigate() {
   fgTestResult.value = null
@@ -74,10 +141,48 @@ async function handleRemoveIntegration(integrationId: string) {
   }
 }
 
+function connectedPenguinTool(type: PenguinToolType) {
+  return integrationsStore.integrations.find(integration => integration.type === type)
+}
+
+function toggleIntegrationGroup(group: keyof typeof integrationGroupsOpen.value) {
+  integrationGroupsOpen.value[group] = !integrationGroupsOpen.value[group]
+}
+
+async function handleTestPenguinTool(type: PenguinToolType) {
+  penguinTestResults.value[type] = null
+  penguinErrors.value[type] = null
+  const res = await integrationsStore.testPenguinTool(type)
+  if (res.success) {
+    penguinTestResults.value[type] = res.data
+  } else {
+    penguinErrors.value[type] = res.error ?? 'Connection failed'
+  }
+}
+
+async function handleAddPenguinTool(type: PenguinToolType, name: string) {
+  penguinErrors.value[type] = null
+  const res = await integrationsStore.addPenguinTool(type, name)
+  if (res.success) {
+    penguinTestResults.value[type] = res.data
+  } else {
+    penguinErrors.value[type] = res.error ?? 'Failed to add integration'
+  }
+}
+
+function integrationForCatalogItem(item: { source?: string, integrationType?: string }) {
+  const integrationType = item.integrationType || item.source
+  if (integrationType) {
+    return integrationsStore.integrations.find(integration => integration.type === integrationType)
+  }
+  return integrationsStore.integrations[0]
+}
+
 function handleAddWidget(catalogId: string, integrationId?: string) {
   if (!integrationId) {
-    const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
-    integrationId = firstFortigate?.id
+    const catalogItem = store.catalogItems.find(item => item.id === catalogId)
+    const integration = catalogItem ? integrationForCatalogItem(catalogItem) : integrationsStore.integrations[0]
+    integrationId = integration?.id
   }
   if (integrationId) {
     store.addWidget(catalogId, integrationId)
@@ -100,19 +205,19 @@ function handleChatSubmit() {
   setTimeout(() => {
     isThinking.value = false
     
-    if (!integrationsStore.hasFortigate) {
-      chatMessages.value.push({ role: 'assistant', text: 'Você precisa conectar uma integração FortiGate primeiro antes de adicionar widgets!' })
+    if (!integrationsStore.hasWorkspaceIntegrations) {
+      chatMessages.value.push({ role: 'assistant', text: 'Você precisa conectar uma integração primeiro antes de adicionar widgets!' })
       return
     }
 
     // NLP MOCK logic
     const lowerText = text.toLowerCase()
     let found = false
-    const firstFortigate = integrationsStore.integrations.find(i => i.type === 'fortigate')
     for (const item of store.catalogItems) {
       if (lowerText.includes(item.title.toLowerCase()) || lowerText.includes(item.id.split('-').pop() || '')) {
-        if (firstFortigate) {
-          handleAddWidget(item.id, firstFortigate.id)
+        const integration = integrationForCatalogItem(item)
+        if (integration) {
+          handleAddWidget(item.id, integration.id)
           chatMessages.value.push({ role: 'assistant', text: `Adicionei o painel "${item.title}" para você!` })
           found = true
         }
@@ -162,6 +267,15 @@ function handleChatSubmit() {
         >
           <Plug :size="20" />
         </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'audit' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('audit')"
+          title="Audit Trail"
+        >
+          <History :size="20" />
+        </div>
       </nav>
       
       <div class="mt-auto flex flex-col gap-2">
@@ -181,7 +295,7 @@ function handleChatSubmit() {
     <!-- Drawer Panel -->
     <div 
       class="h-full bg-theme-panel border-r border-theme-border flex flex-col transition-all duration-300 overflow-hidden z-10"
-      :style="{ width: activeTab !== 'none' ? '320px' : '0px', opacity: activeTab !== 'none' ? 1 : 0 }"
+      :style="{ width: drawerWidth, opacity: activeTab !== 'none' ? 1 : 0 }"
     >
       <!-- Chat Tab -->
       <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full w-[320px] shrink-0">
@@ -220,147 +334,261 @@ function handleChatSubmit() {
       </div>
 
       <!-- Integrations Tab -->
-      <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full w-[320px] shrink-0 overflow-y-auto">
-        <h2 class="font-bold text-lg mb-4 text-theme-text">Integrações SOC</h2>
-        
-        <!-- List existing integrations -->
-        <div class="mb-6 flex flex-col gap-3">
-          <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Conectadas</h3>
-          
-          <div v-if="integrationsStore.isLoading" class="text-sm text-theme-text-muted">Carregando...</div>
-          <div v-else-if="integrationsStore.integrations.length === 0" class="text-sm text-theme-text-muted italic">Nenhuma integração conectada.</div>
-          
-          <div v-for="intg in integrationsStore.integrations" :key="intg.id" class="p-3 border border-theme-border rounded-lg bg-theme-bg">
-            <div class="flex items-start justify-between gap-2 mb-1">
-              <div class="min-w-0">
-                <span class="font-medium text-theme-text text-sm truncate block">{{ intg.name }}</span>
-                <div v-if="intg.host" class="text-xs text-theme-text-muted font-mono truncate" :title="intg.host">
-                  {{ intg.host }}
+      <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full w-[380px] shrink-0 overflow-y-auto">
+        <div class="mb-4">
+          <h2 class="font-bold text-lg text-theme-text">Integrações SOC</h2>
+          <p class="mt-1 text-xs text-theme-text-muted">
+            Connect live providers first; SOC-lite tools unlock their own workspace widgets.
+          </p>
+        </div>
+
+        <div v-if="integrationsStore.isLoading" class="mb-3 rounded border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-text-muted">
+          Carregando integrações...
+        </div>
+
+        <div class="flex flex-col gap-4">
+          <section data-test="integration-group-fortinet" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
+            <button
+              type="button"
+              data-test="integration-toggle-fortinet"
+              class="mb-3 flex w-full items-start justify-between gap-3 text-left"
+              :aria-expanded="integrationGroupsOpen.fortinet ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('fortinet')"
+            >
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.fortinet ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
+                <div class="min-w-0">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Fortinet Providers</h3>
+                  <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                    Real read-only FortiGate access for live firewall telemetry.
+                  </p>
                 </div>
-                <div class="text-xs text-theme-text-muted capitalize">{{ intg.type }}</div>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
-                  {{ intg.status }}
-                </span>
+              <span
+                class="shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium"
+                :class="fortigateIntegrations.length > 0 ? 'border-green-500/30 bg-green-500/20 text-green-400' : 'border-theme-border bg-theme-panel text-theme-text-muted'"
+              >
+                {{ fortigateIntegrations.length > 0 ? 'Connected' : 'Not connected' }}
+              </span>
+            </button>
+
+            <div v-if="integrationGroupsOpen.fortinet" class="mb-3 flex flex-col gap-2">
+              <div v-if="!integrationsStore.isLoading && fortigateIntegrations.length === 0" class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted">
+                No Fortinet provider connected.
+              </div>
+
+              <div v-for="intg in fortigateIntegrations" :key="intg.id" class="rounded border border-theme-border bg-theme-panel p-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-theme-text">{{ intg.name }}</span>
+                    <div v-if="intg.host" class="truncate font-mono text-xs text-theme-text-muted" :title="intg.host">
+                      {{ intg.host }}
+                    </div>
+                    <div class="text-xs text-theme-text-muted">fortigate</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span class="rounded border border-green-500/30 bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
+                      {{ intg.status }}
+                    </span>
+                    <button
+                      type="button"
+                      class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                      :disabled="integrationsStore.isDeleting[intg.id]"
+                      title="Remover integração"
+                      @click="handleRemoveIntegration(intg.id)"
+                    >
+                      <Trash2 :size="14" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="integrationGroupsOpen.fortinet" class="grid grid-cols-2 gap-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">Nome</label>
+                <input v-model="fgForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">Host (URL)</label>
+                <input v-model="fgForm.host" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="col-span-2 flex flex-col gap-1">
+                <label class="text-xs text-theme-text">API Key</label>
+                <input v-model="fgForm.apiKey" type="password" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <label class="col-span-2 flex cursor-pointer items-center gap-2">
+                <input v-model="fgForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
+                <span class="text-xs text-theme-text">Verificar TLS/SSL</span>
+              </label>
+
+              <div v-if="fgTestResult" class="col-span-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
+                <div class="mb-1 font-medium text-green-400">Conexão bem-sucedida!</div>
+                <div class="text-theme-text-muted">Hostname: {{ fgTestResult.device?.hostname }}</div>
+                <div class="text-theme-text-muted">Modelo: {{ fgTestResult.device?.model }}</div>
+              </div>
+
+              <div v-if="fgTestError" class="col-span-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
+                {{ fgTestError }}
+              </div>
+
+              <div class="col-span-2 flex gap-2">
                 <button
-                  type="button"
-                  class="p-1 rounded text-theme-text-muted hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
-                  :disabled="integrationsStore.isDeleting[intg.id]"
-                  title="Remover integração"
-                  @click="handleRemoveIntegration(intg.id)"
+                  @click="handleTestFortigate"
+                  class="flex-1 rounded border border-theme-border px-3 py-1.5 text-sm font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
+                  :disabled="integrationsStore.isTesting || !canSubmitFortigate"
                 >
-                  <Trash2 :size="14" />
+                  <span v-if="integrationsStore.isTesting">Testando...</span>
+                  <span v-else>Testar Conexão</span>
+                </button>
+                <button
+                  @click="handleSaveFortigate"
+                  class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  :disabled="!canSubmitFortigate"
+                >
+                  Salvar
                 </button>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Domain trust and audit affordances -->
-        <div class="mb-6 flex flex-col gap-3">
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Domain verification</h3>
-            <span class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200">
-              DNS TXT pending
-            </span>
-          </div>
+            <h4 v-if="integrationGroupsOpen.fortinet" class="sr-only">Adicionar FortiGate</h4>
+          </section>
 
-          <div class="rounded border border-theme-border bg-theme-bg p-3">
-            <div class="flex items-start gap-2">
-              <ShieldCheck :size="16" class="mt-0.5 shrink-0 text-theme-primary" />
-              <div class="min-w-0">
-                <div class="text-sm font-medium text-theme-text">Tenant domain claim</div>
-                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                  Static preview for SaaS branding. Activation waits for DNS proof.
-                </p>
-                <div class="mt-2 rounded border border-theme-border bg-theme-panel px-2 py-1 font-mono text-[10px] text-theme-text-muted">
-                  _fortidashboard.your-domain.example
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded border border-theme-border bg-theme-bg p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 text-sm font-medium text-theme-text">
-                <History :size="15" class="text-theme-primary" />
-                <span>Audit activity</span>
-              </div>
-              <span class="text-[10px] uppercase tracking-wider text-theme-text-muted">Preview</span>
-            </div>
-
-            <div class="flex flex-col gap-2">
-              <div
-                v-for="item in auditActivityPreview"
-                :key="item.action"
-                class="flex items-center justify-between gap-2 text-xs"
-              >
+          <section data-test="integration-group-penguin" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
+            <button
+              type="button"
+              data-test="integration-toggle-penguin"
+              class="mb-3 flex w-full items-start justify-between gap-3 text-left"
+              :aria-expanded="integrationGroupsOpen.penguin ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('penguin')"
+            >
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.penguin ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
                 <div class="min-w-0">
-                  <div class="truncate font-medium text-theme-text">{{ item.label }}</div>
-                  <div class="truncate font-mono text-[10px] text-theme-text-muted">{{ item.action }}</div>
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Penguin SOC Lite</h3>
+                  <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                    Penguin tools connected through the BFF.
+                  </p>
                 </div>
-                <span class="flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                  <Clock3 :size="10" />
-                  {{ item.status }}
-                </span>
+              </div>
+              <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
+                {{ penguinTools.filter(tool => connectedPenguinTool(tool.type)).length }}/{{ penguinTools.length }} connected
+              </span>
+            </button>
+
+            <div v-if="integrationGroupsOpen.penguin" class="grid grid-cols-1 gap-2">
+              <div
+                v-for="tool in penguinTools"
+                :key="tool.type"
+                class="rounded border border-theme-border bg-theme-panel p-3"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium text-theme-text">{{ tool.title }}</div>
+                    <p class="mt-1 text-xs leading-snug text-theme-text-muted">{{ tool.description }}</p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <span
+                      v-if="connectedPenguinTool(tool.type)"
+                      class="rounded border border-green-500/30 bg-green-500/20 px-2 py-0.5 text-[10px] font-medium text-green-400"
+                    >
+                      Connected
+                    </span>
+                    <button
+                      v-if="connectedPenguinTool(tool.type)"
+                      type="button"
+                      class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                      :disabled="integrationsStore.isDeleting[connectedPenguinTool(tool.type)?.id || '']"
+                      title="Remover integração"
+                      @click="handleRemoveIntegration(connectedPenguinTool(tool.type)?.id || '')"
+                    >
+                      <Trash2 :size="13" />
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="connectedPenguinTool(tool.type)" class="mt-2 text-xs text-theme-text-muted">
+                  Connected as {{ connectedPenguinTool(tool.type)?.name || connectedPenguinTool(tool.type)?.id }}
+                </div>
+
+                <div v-if="penguinTestResults[tool.type] && !connectedPenguinTool(tool.type)" class="mt-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
+                  <div class="font-medium text-green-400">Service reachable</div>
+                  <div class="text-theme-text-muted">
+                    {{ penguinTestResults[tool.type]?.status || 'connected' }}
+                  </div>
+                </div>
+
+                <div v-if="penguinErrors[tool.type]" class="mt-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
+                  {{ penguinErrors[tool.type] }}
+                </div>
+
+                <div class="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    class="flex-1 rounded border border-theme-border px-2 py-1.5 text-xs font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
+                    :disabled="integrationsStore.isTesting"
+                    :data-test="`penguin-test-${tool.type}`"
+                    @click="handleTestPenguinTool(tool.type)"
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    class="flex-1 rounded bg-theme-primary px-2 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    :disabled="Boolean(connectedPenguinTool(tool.type))"
+                    :data-test="`penguin-connect-${tool.type}`"
+                    @click="handleAddPenguinTool(tool.type, tool.defaultName)"
+                  >
+                    Connect
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <!-- Add New Integration Form -->
-        <div class="flex flex-col gap-3 pt-4 border-t border-theme-border">
-          <h3 class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Adicionar FortiGate</h3>
-          
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-theme-text">Nome</label>
-            <input v-model="fgForm.name" type="text" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-theme-text">Host (URL)</label>
-            <input v-model="fgForm.host" type="text" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="text-xs text-theme-text">API Key</label>
-            <input v-model="fgForm.apiKey" type="password" class="w-full bg-theme-bg border border-theme-border rounded px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-          </div>
-
-          <label class="flex items-center gap-2 mt-1 cursor-pointer">
-            <input v-model="fgForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
-            <span class="text-xs text-theme-text">Verificar TLS/SSL</span>
-          </label>
-
-          <div v-if="fgTestResult" class="mt-2 p-2 rounded bg-green-500/10 border border-green-500/20 text-xs">
-            <div class="text-green-400 font-medium mb-1">Conexão bem-sucedida!</div>
-            <div class="text-theme-text-muted">Hostname: {{ fgTestResult.device?.hostname }}</div>
-            <div class="text-theme-text-muted">Modelo: {{ fgTestResult.device?.model }}</div>
-          </div>
-
-          <div v-if="fgTestError" class="mt-2 p-2 rounded bg-red-500/10 border border-red-500/20 text-xs text-red-400">
-            {{ fgTestError }}
-          </div>
-
-          <div class="flex gap-2 mt-2">
-            <button 
-              @click="handleTestFortigate" 
-              class="flex-1 py-1.5 px-3 rounded border border-theme-border text-sm font-medium hover:bg-theme-border transition-colors text-theme-text-muted hover:text-theme-text disabled:opacity-50"
-              :disabled="integrationsStore.isTesting || !canSubmitFortigate"
+          <section data-test="integration-group-endpoint" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
+            <button
+              type="button"
+              data-test="integration-toggle-endpoint"
+              class="flex w-full items-start justify-between gap-3 text-left"
+              :class="integrationGroupsOpen.endpoint ? 'mb-3' : ''"
+              :aria-expanded="integrationGroupsOpen.endpoint ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('endpoint')"
             >
-              <span v-if="integrationsStore.isTesting">Testando...</span>
-              <span v-else>Testar Conexão</span>
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.endpoint ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Endpoint Sensor / Future</h3>
+              </div>
+              <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
+                Future onboarding
+              </span>
             </button>
-            <button 
-              @click="handleSaveFortigate" 
-              class="flex-1 py-1.5 px-3 rounded bg-theme-primary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              :disabled="!canSubmitFortigate"
-            >
-              Salvar
-            </button>
-          </div>
+
+            <div v-if="integrationGroupsOpen.endpoint" class="flex items-start justify-between gap-3">
+              <div class="min-w-0 pl-6">
+                <div class="mt-2 text-sm font-medium text-theme-text">agent_private</div>
+                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                  Lab endpoint sensor for future onboarding into xdr_rico. It is not a dashboard integration yet.
+                </p>
+              </div>
+            </div>
+          </section>
         </div>
+      </div>
+
+      <!-- Audit Tab -->
+      <div v-if="activeTab === 'audit'" class="h-full w-[420px] shrink-0 p-4">
+        <AuditFeed
+          :events="auditStore.events"
+          :is-loading="auditStore.isLoading"
+          :error="auditStore.error"
+          :title="auditTitle"
+          :subtitle="auditSubtitle"
+          @refresh="refreshAuditTrail"
+        />
       </div>
     </div>
   </div>

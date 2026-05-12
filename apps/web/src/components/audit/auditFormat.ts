@@ -22,6 +22,7 @@ const ACTION_LABELS: Record<string, string> = {
   'integration.fortigate.deleted': 'FortiGate integration removed',
   'integration.fortigate.health_checked': 'FortiGate health check',
   'workspace.updated': 'Workspace updated',
+  'audit.events.viewed': 'Audit trail viewed',
 }
 
 function isSecretKey(key: string) {

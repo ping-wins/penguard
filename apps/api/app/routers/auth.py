@@ -272,7 +272,7 @@ def sso_kerberos_callback(
             client_ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        raise HTTPException(status_code=error.status_code, detail=error.detail)
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
     except Exception as exc:
         logger.exception("SSO callback failed: %s", exc)
         audit_store.record(
@@ -284,7 +284,7 @@ def sso_kerberos_callback(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"SSO callback failed: {type(exc).__name__}",
-        )
+        ) from exc
     audit_store.record(
         action="sso_kerberos",
         outcome="success",

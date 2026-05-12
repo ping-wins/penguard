@@ -1,0 +1,17 @@
+{
+  "id": "endevt_01",
+  "endpointId": "end_01",
+  "eventType": "process.snapshot",
+  "occurredAt": "2026-05-08T12:00:00.000Z",
+  "hostname": "demo-endpoint-01",
+  "ipAddresses": ["192.0.2.50"],
+  "attributes": {
+    "processes": [
+      {
+        "pid": 1200,
+        "name": "powershell.exe",
+        "username": "SOC-DEMO\\analyst"
+      }
+    ]
+  }
+}

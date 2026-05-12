@@ -12,6 +12,8 @@ type WidgetInsertPosition = {
   y: number
 }
 
+const DEFAULT_CATALOG_TYPES = ['fortigate']
+
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref<WorkspaceWidget[]>([])
   const workspaceName = ref('SOC Overview')
@@ -23,22 +25,51 @@ export const useDashboardStore = defineStore('dashboard', () => {
   let saveTimeout: ReturnType<typeof setTimeout> | null = null
   let maxZIndex = 100
 
-  async function fetchCatalog() {
-    try {
-      const res = await fetch('/api/widget-catalog?integrationType=fortigate', {
-        credentials: 'include'
-      })
-      if (!res.ok) {
-        throw new Error(`Widget catalog failed with HTTP ${res.status}`)
-      }
-      const data = await res.json()
-      catalogItems.value = data.items || []
-    } catch (e) {
-      console.error('Failed to fetch widget catalog', e)
-      catalogItems.value = (catalogFixture as { items: WidgetCatalogItem[] }).items || []
-    } finally {
+  async function fetchCatalog(integrationTypes: string[] = DEFAULT_CATALOG_TYPES) {
+    const uniqueTypes = Array.from(new Set(integrationTypes.filter(Boolean)))
+    isCatalogLoaded.value = false
+
+    if (uniqueTypes.length === 0) {
+      catalogItems.value = []
       isCatalogLoaded.value = true
+      return
     }
+
+    const itemsById = new Map<string, WidgetCatalogItem>()
+
+    await Promise.all(uniqueTypes.map(async (integrationType) => {
+      try {
+        const res = await fetch(`/api/widget-catalog?integrationType=${encodeURIComponent(integrationType)}`, {
+          credentials: 'include'
+        })
+        if (!res.ok) {
+          throw new Error(`Widget catalog failed with HTTP ${res.status}`)
+        }
+        const data = await res.json()
+        for (const item of data.items || []) {
+          if (itemsById.has(item.id)) continue
+          itemsById.set(item.id, {
+            ...item,
+            integrationType: item.integrationType || integrationType,
+          })
+        }
+      } catch (e) {
+        console.error(`Failed to fetch widget catalog for ${integrationType}`, e)
+      }
+    }))
+
+    if (itemsById.size === 0 && uniqueTypes.includes('fortigate')) {
+      for (const item of (catalogFixture as { items: WidgetCatalogItem[] }).items || []) {
+        if (itemsById.has(item.id)) continue
+        itemsById.set(item.id, {
+          ...item,
+          integrationType: item.integrationType || 'fortigate',
+        })
+      }
+    }
+
+    catalogItems.value = Array.from(itemsById.values())
+    isCatalogLoaded.value = true
   }
 
   function syncMaxZIndex() {
@@ -167,7 +198,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (!widget) return
 
     const existingBindings = widget.fieldBindings ?? []
-    if (existingBindings.some(existing => existing.fieldId === binding.fieldId)) {
+    if (existingBindings.some(existing => (
+      existing.fieldId === binding.fieldId
+      && existing.source === binding.source
+      && existing.integrationId === binding.integrationId
+    ))) {
       return
     }
 

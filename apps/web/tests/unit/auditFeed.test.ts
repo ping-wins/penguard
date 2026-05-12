@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditFeed from '../../src/components/audit/AuditFeed.vue'
 import { formatAuditEvent } from '../../src/components/audit/auditFormat'
 import { fetchAuditEvents } from '../../src/services/auditClient'
@@ -29,6 +29,11 @@ describe('audit feed', () => {
     setActivePinia(createPinia())
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
   it('fetches audit events with browser credentials and a bounded limit', async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [loginEvent] }))
 
@@ -37,6 +42,16 @@ describe('audit feed', () => {
     })
 
     expect(fetcher).toHaveBeenCalledWith('/api/audit/events?limit=25', {
+      credentials: 'include',
+    })
+  })
+
+  it('fetches admin audit events from the admin endpoint when scoped globally', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [loginEvent] }))
+
+    await fetchAuditEvents({ limit: 500, scope: 'admin', fetcher })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=100', {
       credentials: 'include',
     })
   })
@@ -52,6 +67,8 @@ describe('audit feed', () => {
       .toBe('FortiGate integration removed')
     expect(formatAuditEvent({ ...loginEvent, action: 'workspace.updated' }).title)
       .toBe('Workspace updated')
+    expect(formatAuditEvent({ ...loginEvent, action: 'audit.events.viewed' }).title)
+      .toBe('Audit trail viewed')
     expect(formatAuditEvent({ ...loginEvent, action: 'tenant.unknown.action' }).title)
       .toBe('tenant.unknown.action')
   })
@@ -94,9 +111,47 @@ describe('audit feed', () => {
     expect(store.isLoading).toBe(false)
   })
 
+  it('loads admin scoped events through the store', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse({ items: [loginEvent] }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuditStore()
+    await store.fetchEvents({ scope: 'admin', limit: 20 })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=20', {
+      credentials: 'include',
+    })
+    expect(store.events).toEqual([loginEvent])
+    expect(store.scope).toBe('admin')
+  })
+
+  it('polls audit events until polling is stopped', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [loginEvent] }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAuditStore()
+    store.startPolling({ scope: 'admin', limit: 10, intervalMs: 2000 })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=10', {
+      credentials: 'include',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+
+    store.stopPolling()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it('renders loading, empty, error, and event rows without exposing secrets', () => {
     expect(mount(AuditFeed, { props: { isLoading: true, events: [] } }).text())
       .toContain('Loading audit trail')
+    expect(mount(AuditFeed, { props: { title: 'Admin audit trail', subtitle: 'Global SOC activity', events: [] } }).text())
+      .toContain('Global SOC activity')
     expect(mount(AuditFeed, { props: { events: [] } }).text())
       .toContain('No sensitive activity recorded')
     expect(mount(AuditFeed, { props: { events: [], error: 'Audit unavailable' } }).text())

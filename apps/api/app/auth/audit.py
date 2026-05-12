@@ -84,9 +84,17 @@ class InMemoryAuthAuditStore:
         *,
         limit: int = 50,
         user_id: str | None = None,
+        actor_user_id: str | None = None,
+        action: str | None = None,
+        outcome: str | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
+        effective_user_id = actor_user_id if actor_user_id is not None else user_id
         events = [
-            event for event in self.events if user_id is None or event.user_id == user_id
+            event
+            for event in self.events
+            if (effective_user_id is None or event.user_id == effective_user_id)
+            and (action is None or event.action == action)
+            and (outcome is None or event.outcome == outcome)
         ]
         events = sorted(
             events,
@@ -145,13 +153,21 @@ class SqlAlchemyAuthAuditStore:
         *,
         limit: int = 50,
         user_id: str | None = None,
+        actor_user_id: str | None = None,
+        action: str | None = None,
+        outcome: str | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         from sqlalchemy import select
 
         with self.session_factory() as db:
             statement = select(AuthAuditEventModel)
-            if user_id is not None:
-                statement = statement.where(AuthAuditEventModel.user_id == user_id)
+            effective_user_id = actor_user_id if actor_user_id is not None else user_id
+            if effective_user_id is not None:
+                statement = statement.where(AuthAuditEventModel.user_id == effective_user_id)
+            if action is not None:
+                statement = statement.where(AuthAuditEventModel.action == action)
+            if outcome is not None:
+                statement = statement.where(AuthAuditEventModel.outcome == outcome)
             rows = db.execute(
                 statement.order_by(AuthAuditEventModel.created_at.desc()).limit(limit)
             ).scalars()

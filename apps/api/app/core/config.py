@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     sso_redirect_uri: str = "http://fortidashboard.local:8000/api/auth/sso/kerberos/callback"
     sso_post_login_url: str = "http://fortidashboard.local:5173/"
     sso_state_cookie_name: str = "fortidashboard_sso_state"
+    siem_kowalski_url: str = "http://localhost:8011"
+    soar_skipper_url: str = "http://localhost:8012"
+    xdr_rico_url: str = "http://localhost:8013"
+    internal_service_timeout_seconds: float = 3.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

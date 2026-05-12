@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "trigger.incident_created",
+      "label": "Incident Created",
+      "sensitive": false
+    },
+    {
+      "id": "condition.severity",
+      "label": "Severity Condition",
+      "sensitive": false
+    },
+    {
+      "id": "enrich.ip",
+      "label": "Enrich IP",
+      "sensitive": false
+    },
+    {
+      "id": "case.note",
+      "label": "Create Case Note",
+      "sensitive": false
+    },
+    {
+      "id": "approval.required",
+      "label": "Require Approval",
+      "sensitive": false
+    },
+    {
+      "id": "notify.webhook",
+      "label": "Notify Webhook",
+      "sensitive": false
+    },
+    {
+      "id": "fortigate.recommend_block",
+      "label": "Recommend FortiGate Block",
+      "sensitive": true
+    }
+  ]
+}

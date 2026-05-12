@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "id": "network.deny",
+      "label": "Denied Network Traffic",
+      "defaultSeverity": "medium",
+      "entityFields": ["sourceIp", "destinationIp", "integrationId"]
+    },
+    {
+      "id": "network.scan",
+      "label": "Possible Network Scan",
+      "defaultSeverity": "high",
+      "entityFields": ["sourceIp", "destinationIp"]
+    },
+    {
+      "id": "auth.failed_login",
+      "label": "Failed Login",
+      "defaultSeverity": "medium",
+      "entityFields": ["username", "sourceIp"]
+    },
+    {
+      "id": "endpoint.process_snapshot",
+      "label": "Endpoint Process Snapshot",
+      "defaultSeverity": "low",
+      "entityFields": ["endpointId", "hostname", "username"]
+    },
+    {
+      "id": "endpoint.suspicious_connection",
+      "label": "Suspicious Endpoint Connection",
+      "defaultSeverity": "high",
+      "entityFields": ["endpointId", "hostname", "destinationIp"]
+    }
+  ]
+}

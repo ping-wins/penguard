@@ -35,6 +35,10 @@ const catalogItem = computed(() => store.catalogItems.find(c => c.id === props.c
 const visualTemplate = computed(() => visualTemplatesById[props.catalogId])
 const isVisualTemplate = computed(() => Boolean(visualTemplate.value))
 const widgetTitle = computed(() => catalogItem.value?.title ?? visualTemplate.value?.title ?? props.catalogId)
+const rendererOwnsEmptyState = computed(() => {
+  const source = catalogItem.value?.source
+  return source === 'siem_kowalski' || source === 'xdr_rico' || source === 'soar_skipper'
+})
 
 let currentController: AbortController | null = null
 let requestId = 0
@@ -75,7 +79,13 @@ const hasRenderableData = computed(() => {
 
 const isBlockingError = computed(() => Boolean(fetchError.value) && !hasWidgetData.value)
 const isStaleWarning = computed(() => Boolean(fetchError.value) && hasWidgetData.value)
-const isEmpty = computed(() => !isLoading.value && !fetchError.value && hasWidgetData.value && !hasRenderableData.value)
+const isEmpty = computed(() => (
+  !rendererOwnsEmptyState.value
+  && !isLoading.value
+  && !fetchError.value
+  && hasWidgetData.value
+  && !hasRenderableData.value
+))
 
 const statusIcon = computed(() => {
   if (fetchErrorKind.value === 'invalid_connection') return WifiOff

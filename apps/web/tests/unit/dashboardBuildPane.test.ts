@@ -23,7 +23,7 @@ describe('DashboardCanvas build pane', () => {
     vi.unstubAllGlobals()
   })
 
-  it('separates FortiGate presets from empty visuals and loads live provider fields from the API', async () => {
+  it('separates integration presets from empty visuals and loads live provider fields from the API', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/api/auth/csrf')) {
@@ -39,10 +39,16 @@ describe('DashboardCanvas build pane', () => {
               host: 'https://192.0.2.118',
               status: 'connected',
             },
+            {
+              id: 'int_kowalski_01',
+              type: 'siem_kowalski',
+              name: 'Kowalski SIEM',
+              status: 'connected',
+            },
           ],
         }))
       }
-      if (url.startsWith('/api/widget-catalog')) {
+      if (url.endsWith('integrationType=fortigate')) {
         return Promise.resolve(jsonResponse({
           items: [
             {
@@ -57,6 +63,21 @@ describe('DashboardCanvas build pane', () => {
           ],
         }))
       }
+      if (url.endsWith('integrationType=siem_kowalski')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'soc-incidents-by-severity',
+              title: 'Incidents by Severity',
+              kind: 'bar',
+              source: 'siem_kowalski',
+              requiredCapabilities: ['incidents'],
+              defaultSize: { w: 4, h: 3 },
+              dataEndpoint: '/api/widgets/soc-incidents-by-severity/data',
+            },
+          ],
+        }))
+      }
       if (url.startsWith('/api/providers/fortigate/data-fields')) {
         return Promise.resolve(jsonResponse({
           provider: 'fortigate',
@@ -64,6 +85,7 @@ describe('DashboardCanvas build pane', () => {
             {
               id: 'system',
               name: 'System Data',
+              category: 'Network / FortiGate',
               fields: [
                 {
                   id: 'system.cpu',
@@ -72,6 +94,28 @@ describe('DashboardCanvas build pane', () => {
                   unit: 'percent',
                   source: 'fortigate-system-status',
                   recommendedVisuals: ['kpi'],
+                },
+              ],
+            },
+          ],
+        }))
+      }
+      if (url.startsWith('/api/providers/siem_kowalski/data-fields')) {
+        return Promise.resolve(jsonResponse({
+          provider: 'siem_kowalski',
+          groups: [
+            {
+              id: 'incidents',
+              name: 'Incident Data',
+              category: 'SIEM / Incidents',
+              fields: [
+                {
+                  id: 'total',
+                  label: 'Open Incidents',
+                  type: 'number',
+                  unit: 'count',
+                  source: 'soc-incidents-by-severity',
+                  recommendedVisuals: ['card'],
                 },
               ],
             },
@@ -106,11 +150,16 @@ describe('DashboardCanvas build pane', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/providers/fortigate/data-fields', {
       credentials: 'include',
     })
+    expect(fetcher).toHaveBeenCalledWith('/api/providers/siem_kowalski/data-fields', {
+      credentials: 'include',
+    })
     expect(wrapper.text()).toContain('Visual analysis')
-    expect(wrapper.text()).toContain('1 preset ready')
+    expect(wrapper.text()).toContain('2 presets ready')
     expect(wrapper.text()).toContain('Template binding: Data fields')
-    expect(wrapper.text()).toContain('FortiGate presets')
+    expect(wrapper.text()).toContain('Network / FortiGate')
+    expect(wrapper.text()).toContain('SIEM / Incidents')
     expect(wrapper.text()).toContain('System Status')
+    expect(wrapper.text()).toContain('Incidents by Severity')
     expect(wrapper.text()).toContain('Criar dados ao seu visual')
     expect(wrapper.text()).toContain('Card')
 
@@ -119,19 +168,31 @@ describe('DashboardCanvas build pane', () => {
     expect(dashboardStore.activeWidgets).toEqual([
       expect.objectContaining({
         catalogId: 'visual-template-card',
-        integrationId: 'int_fgt_01',
+        integrationId: '',
       }),
     ])
+
+    await wrapper.get('[data-test="catalog-widget-soc-incidents-by-severity"]').trigger('click')
+    expect(dashboardStore.activeWidgets).toContainEqual(
+      expect.objectContaining({
+        catalogId: 'soc-incidents-by-severity',
+        integrationId: 'int_kowalski_01',
+      }),
+    )
 
     await wrapper.get('[data-test="build-tab-data"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('FortiGate data model')
-    expect(wrapper.text()).toContain('1 field available')
+    expect(wrapper.text()).toContain('SOC data model')
+    expect(wrapper.text()).toContain('2 fields available')
     expect(wrapper.text()).toContain('Fields available for empty visual templates')
     expect(wrapper.text()).toContain('Available Fields')
+    expect(wrapper.text()).toContain('Network / FortiGate')
     expect(wrapper.text()).toContain('System Data')
+    expect(wrapper.text()).toContain('SIEM / Incidents')
+    expect(wrapper.text()).toContain('Incident Data')
     expect(wrapper.text()).toContain('CPU Usage')
+    expect(wrapper.text()).toContain('Open Incidents')
     expect(wrapper.text()).toContain('number')
     expect(wrapper.text()).toContain('Live')
 
@@ -149,9 +210,21 @@ describe('DashboardCanvas build pane', () => {
     )
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'system.cpu')
     expect(dataTransfer.effectAllowed).toBe('copy')
+
+    const socTransfer = {
+      setData: vi.fn(),
+      effectAllowed: '',
+    }
+    await wrapper.get('[data-test="data-field-total"]').trigger('dragstart', {
+      dataTransfer: socTransfer,
+    })
+    expect(socTransfer.setData).toHaveBeenCalledWith(
+      'application/x-fortidashboard-provider-field',
+      expect.stringContaining('"integrationId":"int_kowalski_01"'),
+    )
   })
 
-  it('shows loading and empty states for FortiGate visual presets', async () => {
+  it('shows loading and empty states for integration visual presets', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
@@ -179,12 +252,12 @@ describe('DashboardCanvas build pane', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Loading FortiGate presets')
+    expect(wrapper.text()).toContain('Loading widget presets')
 
     dashboardStore.isCatalogLoaded = true
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('No FortiGate presets available')
+    expect(wrapper.text()).toContain('No widget presets available')
     expect(wrapper.text()).toContain('Catalog status: unavailable; visual templates remain available')
   })
 
@@ -570,7 +643,7 @@ describe('DashboardCanvas build pane', () => {
     expect(store.activeWidgets).toHaveLength(1)
     expect(store.activeWidgets[0]).toEqual(expect.objectContaining({
       catalogId: 'visual-template-card',
-      integrationId: 'int_fgt_01',
+      integrationId: '',
     }))
     expect(store.activeWidgets[0].layout).toEqual(expect.objectContaining({
       x: 140,

@@ -1,9 +1,13 @@
+import base64
+import json
 from dataclasses import dataclass
 from urllib.parse import urlencode, urljoin
 
 import httpx
 
 from app.auth.errors import AuthProviderError
+
+FORTIDASHBOARD_REALM_ROLES = ("admin", "analyst")
 
 
 @dataclass(frozen=True)
@@ -12,6 +16,7 @@ class KeycloakTokenSet:
     refresh_token: str | None
     expires_in: int
     refresh_expires_in: int | None = None
+    roles: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,7 @@ class KeycloakClient:
             refresh_token=payload.get("refresh_token"),
             expires_in=payload["expires_in"],
             refresh_expires_in=payload.get("refresh_expires_in"),
+            roles=self._realm_roles(payload["access_token"]),
         )
 
     def create_user(self, *, email: str, password: str, display_name: str) -> KeycloakUser:
@@ -146,7 +152,11 @@ class KeycloakClient:
         email = (
             payload.get("email")
             or (preferred_username if "@" in preferred_username else None)
-            or (f"{preferred_username}@fortidashboard.local" if preferred_username else f"{sub}@fortidashboard.local")
+            or (
+                f"{preferred_username}@fortidashboard.local"
+                if preferred_username
+                else f"{sub}@fortidashboard.local"
+            )
         )
         display_name = (
             payload.get("name")
@@ -173,6 +183,25 @@ class KeycloakClient:
             context="service_account",
         )
         return response.json()["access_token"]
+
+    def _realm_roles(self, access_token: str) -> list[str]:
+        try:
+            encoded_payload = access_token.split(".")[1]
+            padding = "=" * (-len(encoded_payload) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(encoded_payload + padding))
+        except (IndexError, ValueError, json.JSONDecodeError):
+            return ["analyst"]
+
+        roles = payload.get("realm_access", {}).get("roles", [])
+        if not isinstance(roles, list):
+            return ["analyst"]
+
+        product_roles = [
+            role
+            for role in roles
+            if isinstance(role, str) and role in FORTIDASHBOARD_REALM_ROLES
+        ]
+        return product_roles or ["analyst"]
 
     def _split_display_name(self, display_name: str) -> tuple[str, str]:
         parts = display_name.strip().split(maxsplit=1)

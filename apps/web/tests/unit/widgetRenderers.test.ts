@@ -7,6 +7,7 @@ import WidgetInterfaceHealth from '../../src/components/widgets/WidgetInterfaceH
 import WidgetRecentEvents from '../../src/components/widgets/WidgetRecentEvents.vue'
 import WidgetRiskPosture from '../../src/components/widgets/WidgetRiskPosture.vue'
 import WidgetThreats from '../../src/components/widgets/WidgetThreats.vue'
+import WidgetGenericData from '../../src/components/widgets/WidgetGenericData.vue'
 
 describe('FortiGate widget renderers', () => {
   it('renders live FortiGate identity and health fields', () => {
@@ -32,6 +33,78 @@ describe('FortiGate widget renderers', () => {
     expect(wrapper.text()).toContain('25')
     expect(wrapper.text()).toContain('Uptime')
     expect(wrapper.text()).toContain('1d 1h 40m')
+  })
+
+  it('renders generic SOC bar, feed and status-list preset payloads', () => {
+    const bar = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'soc-incidents-by-severity',
+        data: {
+          items: [
+            { severity: 'high', count: 2 },
+            { severity: 'medium', count: 1 },
+          ],
+          total: 3,
+        },
+      },
+    })
+
+    expect(bar.text()).toContain('Incidents by Severity')
+    expect(bar.text()).toContain('high')
+    expect(bar.text()).toContain('2')
+
+    const feed = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'soc-recent-incidents',
+        data: {
+          incidents: [{
+            title: 'Possible port scan',
+            severity: 'high',
+            status: 'open',
+            summary: 'Multiple denied connections',
+          }],
+        },
+      },
+    })
+
+    expect(feed.text()).toContain('Recent Incidents')
+    expect(feed.text()).toContain('Possible port scan')
+    expect(feed.text()).toContain('open')
+
+    const statusList = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'xdr-endpoint-health',
+        data: {
+          endpoints: [{ hostname: 'win-lab-01', health: 'warning', os: 'Windows' }],
+          summary: { warning: 1 },
+          total: 1,
+        },
+      },
+    })
+
+    expect(statusList.text()).toContain('Endpoint Health')
+    expect(statusList.text()).toContain('win-lab-01')
+    expect(statusList.text()).toContain('warning')
+  })
+
+  it('explains empty SOC preset states with first-setup next actions', () => {
+    const incidents = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'soc-incidents-by-severity',
+        data: { items: [], total: 0 },
+      },
+    })
+    const endpoints = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'xdr-endpoint-health',
+        data: { endpoints: [], summary: {}, total: 0 },
+      },
+    })
+
+    expect(incidents.text()).toContain('No incidents yet')
+    expect(incidents.text()).toContain('Seed SOC demo data or ingest FortiGate events')
+    expect(endpoints.text()).toContain('No endpoints yet')
+    expect(endpoints.text()).toContain('run agent_private')
   })
 
   it('does not render missing FortiGate uptime as zero seconds', () => {

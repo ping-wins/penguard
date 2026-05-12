@@ -82,6 +82,22 @@
         }
       ],
       "realmRoles": ["analyst"]
+    },
+    {
+      "username": "admin@example.com",
+      "email": "admin@example.com",
+      "firstName": "SOC",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "correct-horse-battery-staple",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
     }
   ]
 }

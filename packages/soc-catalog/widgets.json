@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "id": "soc-incidents-by-severity",
+      "title": "Incidents by Severity",
+      "source": "siem_kowalski",
+      "kind": "bar",
+      "template": "bar-chart",
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/soc-incidents-by-severity/data"
+    },
+    {
+      "id": "soc-recent-incidents",
+      "title": "Recent Incidents",
+      "source": "siem_kowalski",
+      "kind": "feed",
+      "template": "incident-feed",
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soc-recent-incidents/data"
+    },
+    {
+      "id": "soc-top-entities",
+      "title": "Top Entities",
+      "source": "siem_kowalski",
+      "kind": "table",
+      "template": "entity-table",
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soc-top-entities/data"
+    },
+    {
+      "id": "xdr-endpoint-health",
+      "title": "Endpoint Health",
+      "source": "xdr_rico",
+      "kind": "status-list",
+      "template": "endpoint-health",
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/xdr-endpoint-health/data"
+    },
+    {
+      "id": "soar-active-playbook-runs",
+      "title": "Active Playbook Runs",
+      "source": "soar_skipper",
+      "kind": "table",
+      "template": "table",
+      "defaultSize": { "w": 5, "h": 3 },
+      "dataEndpoint": "/api/widgets/soar-active-playbook-runs/data"
+    }
+  ]
+}

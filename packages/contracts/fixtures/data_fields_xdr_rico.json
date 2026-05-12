@@ -1,0 +1,41 @@
+{
+  "provider": "xdr_rico",
+  "groups": [
+    {
+      "id": "endpoints",
+      "name": "Endpoint Data",
+      "category": "XDR / Endpoints",
+      "fields": [
+        {
+          "id": "total",
+          "label": "Total Endpoints",
+          "type": "number",
+          "unit": "count",
+          "source": "xdr-endpoint-health",
+          "recommendedVisuals": ["card", "gauge"]
+        },
+        {
+          "id": "endpoints",
+          "label": "Endpoint Inventory",
+          "type": "array",
+          "source": "xdr-endpoint-health",
+          "recommendedVisuals": ["table", "status-list"]
+        },
+        {
+          "id": "endpoints.health",
+          "label": "Endpoint Health",
+          "type": "category",
+          "source": "xdr-endpoint-health",
+          "recommendedVisuals": ["status-list", "bar"]
+        },
+        {
+          "id": "endpoints.hostname",
+          "label": "Endpoint Hostname",
+          "type": "string",
+          "source": "xdr-endpoint-health",
+          "recommendedVisuals": ["table", "feed"]
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useAuthStore } from './useAuthStore'
 
+export type PenguinToolType = 'siem_kowalski' | 'xdr_rico' | 'soar_skipper'
+
 export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
@@ -10,6 +12,14 @@ export const useIntegrationsStore = defineStore('integrations', () => {
   const error = ref<string | null>(null)
 
   const hasFortigate = computed(() => integrations.value.some(i => i.type === 'fortigate'))
+  const hasWorkspaceIntegrations = computed(() => integrations.value.length > 0)
+  const connectedIntegrationTypes = computed(() => {
+    return Array.from(new Set(
+      integrations.value
+        .map(item => item.type)
+        .filter((type): type is string => typeof type === 'string' && type.length > 0),
+    ))
+  })
 
   async function fetchIntegrations() {
     isLoading.value = true
@@ -97,6 +107,69 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
+  async function testPenguinTool(type: PenguinToolType) {
+    isTesting.value = true
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch('/api/integrations/penguin-tools/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({ type })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.ok === true) {
+          return { success: true, data }
+        }
+        return { success: false, error: data.error?.message ?? 'Connection failed' }
+      }
+      return { success: false, error: await responseErrorMessage(res, 'Connection failed') }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    } finally {
+      isTesting.value = false
+    }
+  }
+
+  async function addPenguinTool(type: PenguinToolType, name?: string) {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const body: { type: PenguinToolType, name?: string } = { type }
+      if (name?.trim()) body.name = name.trim()
+
+      const res = await fetch('/api/integrations/penguin-tools', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const idx = integrations.value.findIndex(i => i.id === data.id)
+        if (idx >= 0) integrations.value[idx] = data
+        else integrations.value.push(data)
+
+        return { success: true, data }
+      }
+      return { success: false, error: await responseErrorMessage(res, 'Failed to add integration') }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
   async function removeIntegration(integrationId: string) {
     isDeleting.value[integrationId] = true
     try {
@@ -129,9 +202,13 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     isDeleting,
     error,
     hasFortigate,
+    hasWorkspaceIntegrations,
+    connectedIntegrationTypes,
     fetchIntegrations,
     testFortigate,
     addFortigate,
+    testPenguinTool,
+    addPenguinTool,
     removeIntegration
   }
 })
