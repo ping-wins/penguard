@@ -6,6 +6,8 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.store import SiemStore
+
 SERVICE_NAME = "siem_kowalski"
 IncidentStatus = Literal["open", "triaged", "contained", "resolved", "false_positive"]
 RuleOperator = Literal["equals", "gte", "exists", "contains"]
@@ -13,9 +15,7 @@ RuleMatch = Literal["all", "any"]
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="siem_kowalski", version="0.1.0")
-
-events: list["SecurityEvent"] = []
-incidents: list["Incident"] = []
+store = SiemStore()
 
 
 class SecurityEvent(BaseModel):
@@ -162,6 +162,18 @@ def _detect_incident(event: SecurityEvent) -> Incident | None:
     )
 
 
+def _dump(model: BaseModel) -> dict[str, Any]:
+    return model.model_dump(by_alias=True, mode="json")
+
+
+def _load_event(payload: dict[str, Any]) -> SecurityEvent:
+    return SecurityEvent(**payload)
+
+
+def _load_incident(payload: dict[str, Any]) -> Incident:
+    return Incident(**payload)
+
+
 def _matches_rule(event: SecurityEvent, rule: DetectionRule) -> bool:
     if rule.event_types and event.event_type not in rule.event_types:
         return False
@@ -242,11 +254,22 @@ def list_rules(enabled: bool | None = None) -> list[DetectionRule]:
 @app.post("/events", response_model=SecurityEvent)
 def create_event(event: SecurityEvent) -> SecurityEvent:
     stored_event = event.model_copy(update={"id": event.id or _new_id("evt")})
-    events.append(stored_event)
+    store.add_event(
+        _dump(stored_event),
+        event_type=stored_event.event_type,
+        severity=stored_event.severity,
+        occurred_at=stored_event.occurred_at,
+    )
 
     incident = _detect_incident(stored_event)
     if incident is not None:
-        incidents.append(incident)
+        store.add_incident(
+            _dump(incident),
+            rule_id=incident.rule_id,
+            severity=incident.severity,
+            status=incident.status,
+            created_at=incident.created_at,
+        )
 
     logger.info(
         "siem_event_ingested event_id=%s event_type=%s severity=%s incident_created=%s "
@@ -255,8 +278,8 @@ def create_event(event: SecurityEvent) -> SecurityEvent:
         stored_event.event_type,
         stored_event.severity,
         incident is not None,
-        len(events),
-        len(incidents),
+        store.count_events(),
+        store.count_incidents(),
     )
     return stored_event
 
@@ -266,18 +289,15 @@ def list_events(
     limit: int | None = Query(default=None, ge=1),
     event_type: str | None = Query(default=None, alias="eventType"),
 ) -> list[SecurityEvent]:
-    filtered_events = [
-        event for event in reversed(events) if event_type is None or event.event_type == event_type
-    ]
+    payloads = store.list_events(limit=limit, event_type=event_type)
+    filtered_events = [_load_event(payload) for payload in payloads]
     logger.info(
         "siem_events_list event_type=%s limit=%s returned=%s total=%s",
         event_type,
         limit,
-        len(filtered_events[:limit]) if limit is not None else len(filtered_events),
-        len(events),
+        len(filtered_events),
+        store.count_events(),
     )
-    if limit is not None:
-        return filtered_events[:limit]
     return filtered_events
 
 
@@ -287,48 +307,47 @@ def list_incidents(
     severity: str | None = None,
 ) -> list[Incident]:
     results = [
-        incident
-        for incident in reversed(incidents)
-        if (status is None or incident.status == status)
-        and (severity is None or incident.severity == severity)
+        _load_incident(payload)
+        for payload in store.list_incidents(status=status, severity=severity)
     ]
     logger.info(
         "siem_incidents_list status=%s severity=%s returned=%s total=%s",
         status,
         severity,
         len(results),
-        len(incidents),
+        store.count_incidents(),
     )
     return results
 
 
 @app.get("/incidents/{incident_id}", response_model=Incident)
 def get_incident(incident_id: str) -> Incident:
-    for incident in incidents:
-        if incident.id == incident_id:
-            return incident
+    payload = store.get_incident(incident_id)
+    if payload is not None:
+        return _load_incident(payload)
     raise HTTPException(status_code=404, detail="Incident not found")
 
 
 @app.patch("/incidents/{incident_id}", response_model=Incident)
 def update_incident_status(incident_id: str, patch: IncidentStatusPatch) -> Incident:
-    for index, incident in enumerate(incidents):
-        if incident.id == incident_id:
-            updated = incident.model_copy(
-                update={
-                    "status": patch.status,
-                    "timeline": [
-                        *incident.timeline,
-                        _timeline_item(f"Status changed to {patch.status}.", status=patch.status),
-                    ],
-                }
-            )
-            incidents[index] = updated
-            logger.info(
-                "siem_incident_status_updated incident_id=%s status=%s timeline_items=%s",
-                incident_id,
-                patch.status,
-                len(updated.timeline),
-            )
-            return updated
+    payload = store.get_incident(incident_id)
+    if payload is not None:
+        incident = _load_incident(payload)
+        updated = incident.model_copy(
+            update={
+                "status": patch.status,
+                "timeline": [
+                    *incident.timeline,
+                    _timeline_item(f"Status changed to {patch.status}.", status=patch.status),
+                ],
+            }
+        )
+        store.update_incident(_dump(updated), severity=updated.severity, status=updated.status)
+        logger.info(
+            "siem_incident_status_updated incident_id=%s status=%s timeline_items=%s",
+            incident_id,
+            patch.status,
+            len(updated.timeline),
+        )
+        return updated
     raise HTTPException(status_code=404, detail="Incident not found")

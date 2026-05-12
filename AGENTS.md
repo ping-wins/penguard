@@ -173,7 +173,7 @@ Purpose: convert telemetry into incidents.
 Current capabilities:
 
 - Ingest normalized events from FortiGate, endpoint telemetry, manual/demo events and future providers.
-- Store first-cut in-memory events and incidents.
+- Persist raw events, generated incidents and incident timelines in service-owned SQL tables.
 - Apply safe declarative detections for port scan, denied-traffic burst, repeated failed login, suspicious endpoint connection and FortiGate resource pressure.
 - Generate incidents with severity, status, timeline and related entities.
 - Expose incident widgets: severity counts, recent incidents and top entities.
@@ -408,7 +408,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add incident status transitions and timelines.
 - [x] Ingest normalized FortiGate events through the gateway.
 - [x] Expose incident widgets.
-- [ ] Add persisted raw event payload storage.
+- [x] Add persisted raw event payload storage.
 - [x] Implement a safe detection rule model/expression evaluator.
 - [x] Add high CPU/memory risk rule from FortiGate/system telemetry.
 
