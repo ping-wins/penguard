@@ -373,6 +373,151 @@ AI-created widgets must be drafts with `fieldBindings[]`, allowed provider field
 references, layout suggestions and validation before insertion into
 workspace manifests.
 
+## Known Lab Setup Issues
+
+These bit us during the FortiGate live-fire test on 2026-05-12 and should be
+fixed (or documented as deliberate constraints) before relying on real scans
+for the MVP video. Until then, prefer synthetic events over depending on the
+end-to-end nmap pipeline for demo footage.
+
+- **Single-tenant scans are silent against bridged hosts.** Bridge-mode VMs on
+  the same `/24` as the FortiGate management interface stay on the L2 segment,
+  so the firewall never routes the packets and Forward Traffic logs stay
+  empty. Scans only show up when traffic crosses interfaces (e.g. LAN → WAN
+  via `port2 → port1`).
+- **VMware NAT puts the FortiGate WAN behind the host.** With `port1` on
+  vmnet8 (DHCP, `192.168.23.0/24`) and `port2` bridged on the real LAN, the
+  FortiGate itself can reach the internet, but VMs on the LAN need the
+  FortiGate as their default gateway and a working `port2 → port1` policy.
+- **A policy with `set logtraffic all` is mandatory.** Even when packets cross
+  interfaces, an accept policy without that flag leaves the dashboard widgets
+  empty.
+- **The current FortiGate→SIEM ingest is manual.** Operators must call
+  `POST /api/soc/fortigate/{integrationId}/ingest-events`. Auto-ingest is part
+  of the MVP demo backlog below.
+- **`denied_traffic_burst` detection requires `attributes.count >= 20` on a
+  single event.** `_fortigate_event_to_siem_event` writes one event per deny
+  with `count=1`, so the rule will not fire from raw FortiGate ingestion until
+  we aggregate denies per source before forwarding. Use synthetic events with
+  inflated counts (or run the seed script) when the demo flow needs an
+  incident.
+- **VMware bridge ARP can show the host's MAC for a bridged guest.** When the
+  scan from Debian reports the Samsung OUI for `192.168.0.100`, that is a
+  bridge quirk — `ssh admin@192.168.0.100` and the FortiGate banner are the
+  authoritative check.
+- **The lab FortiGate VM warned "File System Check Recommended" after an
+  unsafe reboot.** Run `execute disk list` / `execute disk scan <ref>` before
+  long demos to avoid mid-recording reboots.
+
+## MVP Demo Video Roadmap
+
+Goal: record a single end-to-end video that shows:
+
+1. A workstation triggers an incident (real scan or seeded synthetic event).
+2. FortiDashboard pops an alert with an AI-generated incident analysis.
+3. The analyst converts the alert into an incident ticket with a triage level
+   (T1/T2/T3).
+4. From the ticket, the AI suggests containment actions. The analyst approves
+   and the AI drafts a `soar_skipper` playbook that contains the incident.
+5. The playbook runs (dry-run for the MVP), reports success, and the ticket
+   transitions to "Contained" with an audit trail.
+
+The work below is grouped in phases. Each phase ends with something
+demo-ready, so the video can be recorded after Phase 4 even if Phase 5 polish
+slips. Treat the phases as sequential dependencies; do not start a later
+phase before the previous one is mergeable.
+
+### Phase 1 — Reliable incident generation
+
+- Decide a deterministic demo trigger. The recommended default is a "demo
+  source" seed (`scripts/seed_soc_demo.py` extension) that posts a burst of
+  `network.deny` events with `attributes.count` already above the
+  `denied_traffic_burst` threshold. The real-nmap path stays as a stretch
+  goal once the topology issues above are resolved.
+- Add `apps/api/app/routers/integrations.py:_fortigate_event_to_siem_event`
+  aggregation so a burst of denies from the same source IP collapses into a
+  single SIEM event with the real `count`. Until that lands, document the
+  synthetic seed as the demo path.
+- Add a "Replay demo incident" admin-only endpoint (`POST /api/soc/demo/replay`)
+  that resets and re-injects the seed so the video can be re-shot quickly.
+- Audit the seed action (`soc.demo.replay`) so we can prove the trigger came
+  from the demo path and not from production traffic.
+
+### Phase 2 — Incident tickets and triage console
+
+- Extend the SIEM incident model (`apps/siem_kowalski/app/store.py` + gateway
+  in `apps/api/app/routers/soc.py`) with `triageLevel` ("T1" | "T2" | "T3"),
+  `ticketStatus` ("new" | "investigating" | "contained" | "closed"),
+  `assigneeUserId` and `aiAnalysisId` foreign key. Default `triageLevel`
+  derived from `severity` (critical/high → T1, medium → T2, low/info → T3,
+  configurable per realm).
+- Expose ticket CRUD through the gateway:
+  - `GET /api/soc/tickets?triage=T1&status=new`
+  - `GET /api/soc/tickets/{ticketId}` (includes incident + AI analysis +
+    playbook run summary)
+  - `PATCH /api/soc/tickets/{ticketId}` (status transitions, triage change,
+    assignment)
+- Add a frontend SOC navigation entry "Tickets" with three lanes (T1/T2/T3),
+  filters (status, severity, source provider) and a detail drawer that mirrors
+  the manifest pattern. Reuse the existing audit drawer styling.
+- Wire every ticket mutation through the audit trail
+  (`soc.ticket.created`, `soc.ticket.updated`, `soc.ticket.assigned`,
+  `soc.ticket.closed`).
+
+### Phase 3 — AI assistant integration
+
+- Add a typed provider abstraction at `apps/api/app/ai/` with adapters for the
+  Anthropic API (default), an OpenAI-compatible endpoint and an offline
+  "scripted" provider used in tests and demos without network access. The
+  provider lives behind `Settings.ai_provider` and `Settings.ai_api_key`.
+- Implement the cockpit assistant tools listed in the AI backlog
+  (`list_data_fields`, `draft_widget`, `validate_widget`,
+  `simulate_widget_data`, `add_widget_draft_to_workspace`) plus
+  `analyze_incident` and `suggest_containment` for the new flow. All tools
+  return drafts; nothing persists until a human confirms.
+- Surface AI output through `POST /api/soc/incidents/{incidentId}/analyze` and
+  `POST /api/soc/incidents/{incidentId}/containment-suggestions`. Persist the
+  analysis on the incident so the ticket and the popup share the same record.
+- Frontend: replace the mock chat in `Sidebar.vue` with a real chat that calls
+  these endpoints, render the analysis as a toast/popup when an incident is
+  raised, and offer a "Open as ticket" CTA that transitions Phase 2 ticket
+  creation.
+
+### Phase 4 — AI-drafted containment playbooks
+
+- Add `POST /api/soc/tickets/{ticketId}/draft-playbook` that asks the AI
+  provider for a containment plan, validates the response against
+  `packages/soc-catalog/playbook-node-types.json`, and stores it as a `draft`
+  playbook owned by the requesting user.
+- Frontend: from the ticket detail, surface a "Suggest containment" button
+  that shows the draft playbook diff with an explanation. The CTA splits into
+  "Simulate" (dry-run) and "Approve & run" (still dry-run for MVP). Both
+  flows go through the existing `soar_skipper` approval pipeline.
+- On successful dry-run, automatically transition the ticket to
+  `contained` and append a "Threat contained" timeline entry referencing the
+  playbook run. The audit trail must record both the AI suggestion and the
+  human approval.
+- Keep destructive steps gated behind `dry_run`. Real execution stays out of
+  the MVP demo; the AI must never bypass the AGENTS.md AI safety rules.
+
+### Phase 5 — Demo polish and recording prep
+
+- Add toast/banner notifications for new SIEM incidents using a Pinia store
+  fed by a 5s poll of `GET /api/soc/incidents?since=`.
+- Add a "Walkthrough" demo recipe in `docs/` that lists the exact clicks for
+  the video and the synthetic event commands. Keep it next to the
+  troubleshooting playbook above.
+- Add a smoke test (`apps/web/tests` + `apps/api/tests`) covering the demo
+  chain: seed event → incident → AI analysis → ticket → draft playbook →
+  dry-run → contained. The test should run in CI without an AI provider via
+  the scripted adapter from Phase 3.
+- Record the video against a known-good docker compose snapshot. Capture
+  before/after screenshots in `docs/mvp/` and link them from the README once
+  the recording is locked.
+
+Done when Phase 4 demo video is captured and Phase 5 smoke test is green in
+CI. Until then, the synthetic-event path is the recommended demo source.
+
 ## Commands
 
 Repository:
@@ -510,8 +655,23 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Add `draft` status for AI-generated playbooks and widgets.
 - [ ] Implement AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
 - [ ] Implement `list_data_fields`, `draft_widget`, `validate_widget`, `simulate_widget_data` and `add_widget_draft_to_workspace`.
+- [ ] Implement `analyze_incident` and `suggest_containment` tools for the MVP demo flow (Phase 3).
+- [ ] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft validated against `packages/soc-catalog/playbook-node-types.json` (Phase 4).
+- [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
+
+### MVP Demo (cross-cutting)
+
+- [ ] Phase 1 — Deterministic synthetic incident seed + `/api/soc/demo/replay` endpoint.
+- [ ] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion.
+- [ ] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
+- [ ] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
+- [ ] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
+- [ ] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + popup component on the dashboard.
+- [ ] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Suggest containment" flow with dry-run only.
+- [ ] Phase 5 — Toast/banner notifications for new SIEM incidents.
+- [ ] Phase 5 — Demo walkthrough doc + smoke test covering seed → incident → AI → ticket → playbook → contained.
 
 ### Quality
 
