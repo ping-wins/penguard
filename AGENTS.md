@@ -109,6 +109,16 @@ SSO/Kerberos support:
 - `SessionMiddleware` stores OAuth state in the `f_session` cookie.
 - Local AD/Kerberos lab values live in `docker-compose.yml`, `krb5.conf`, `.env` or local host configuration. Do not move secrets or lab-specific keytabs into tracked docs.
 - `fortidashboard.keytab` must remain untracked.
+- **Full setup guide:** `configSSOKerberosKeycloak.md` at the repo root has
+  the step-by-step for Active Directory (svc account, SPN, `ktpass` keytab,
+  DNS records, enctype tuning), the Keycloak side (realm import, Kerberos
+  user federation, browser flow), `.env` / `docker-compose` wiring,
+  workstation Group Policy / Firefox `network.negotiate-auth.trusted-uris`,
+  smoke test (`kvno HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL`) and a
+  troubleshooting matrix (clock skew, duplicate SPN, enctype mismatch,
+  redirect URI loops, `state_mismatch`). Anyone picking up the lab from a
+  clean machine should read it before touching `krb5.conf` or the realm
+  import file.
 
 Relevant config keys:
 
