@@ -6,6 +6,12 @@ import { useAuthStore } from './useAuthStore'
 import { visualTemplatesById } from '../constants/visualTemplates'
 import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
 import type { WidgetCatalogItem, WidgetFieldBinding, WorkspaceWidget } from '../types/dashboard'
+import {
+  deleteWorkspace as apiDeleteWorkspace,
+  listWorkspaces as apiListWorkspaces,
+  type WorkspaceOrigin,
+  type WorkspaceSummary,
+} from '../services/workspaceClient'
 
 type WidgetInsertPosition = {
   x: number
@@ -17,6 +23,9 @@ const DEFAULT_CATALOG_TYPES = ['fortigate']
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref<WorkspaceWidget[]>([])
   const workspaceName = ref('SOC Overview')
+  const activeWorkspaceId = ref('ws_default')
+  const activeWorkspaceOrigin = ref<WorkspaceOrigin | null>(null)
+  const workspaces = ref<WorkspaceSummary[]>([])
   const zoom = ref(1)
   const isInitialized = ref(false)
   const isCatalogLoaded = ref(false)
@@ -76,25 +85,55 @@ export const useDashboardStore = defineStore('dashboard', () => {
     maxZIndex = Math.max(100, ...activeWidgets.value.map(widget => widget.layout?.z || 0))
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(workspaceId?: string) {
+    const targetId = workspaceId ?? activeWorkspaceId.value
+    activeWorkspaceId.value = targetId
     try {
-      const res = await fetch('/api/workspaces/ws_default', { credentials: 'include' })
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(targetId)}`, {
+        credentials: 'include',
+      })
       if (res.ok) {
         const data = await res.json()
         activeWidgets.value = normalizeWorkspaceWidgets(data.widgets || [])
         workspaceName.value = data.name || 'SOC Overview'
+        activeWorkspaceOrigin.value = data.origin ?? null
       } else {
         activeWidgets.value = normalizeWorkspaceWidgets(workspaceFixture.widgets as WorkspaceWidget[])
         workspaceName.value = workspaceFixture.name
+        activeWorkspaceOrigin.value = null
       }
     } catch (e) {
       console.error('Failed to load workspace', e)
       activeWidgets.value = normalizeWorkspaceWidgets(workspaceFixture.widgets as WorkspaceWidget[])
       workspaceName.value = workspaceFixture.name
+      activeWorkspaceOrigin.value = null
     } finally {
       syncMaxZIndex()
       isInitialized.value = true
     }
+  }
+
+  async function refreshWorkspaceList() {
+    try {
+      workspaces.value = await apiListWorkspaces()
+    } catch (e) {
+      console.error('Failed to list workspaces', e)
+      workspaces.value = []
+    }
+  }
+
+  async function switchWorkspace(workspaceId: string) {
+    if (workspaceId === activeWorkspaceId.value) return
+    await loadWorkspace(workspaceId)
+    await refreshWorkspaceList()
+  }
+
+  async function deleteWorkspaceById(workspaceId: string) {
+    await apiDeleteWorkspace(workspaceId)
+    if (workspaceId === activeWorkspaceId.value) {
+      await loadWorkspace('ws_default')
+    }
+    await refreshWorkspaceList()
   }
 
   async function saveWorkspace() {
@@ -102,9 +141,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (!authStore.csrfToken) {
       await authStore.fetchCsrf()
     }
-    
+
     try {
-      await fetch('/api/workspaces/ws_default', {
+      await fetch(`/api/workspaces/${encodeURIComponent(activeWorkspaceId.value)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -218,6 +257,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
   return {
     activeWidgets,
     workspaceName,
+    activeWorkspaceId,
+    activeWorkspaceOrigin,
+    workspaces,
     zoom,
     isInitialized,
     isCatalogLoaded,
@@ -226,6 +268,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     fetchCatalog,
     loadWorkspace,
     saveWorkspace,
+    refreshWorkspaceList,
+    switchWorkspace,
+    deleteWorkspaceById,
     updateWidgetPosition,
     updateWidgetSize,
     bringToFront,
