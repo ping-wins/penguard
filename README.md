@@ -34,13 +34,20 @@ Keycloak com o valor que está no `.env` (o realm import vem com o literal
 `dev-client-secret` para deploys novos):
 
 ```bash
+# Linux / macOS / WSL (precisa de curl + jq):
 ./scripts/sync-keycloak-client-secret.sh
+```
+
+```powershell
+# Windows PowerShell (sem dependências externas):
+./scripts/sync-keycloak-client-secret.ps1
 ```
 
 O script usa a admin REST API do Keycloak para sobrescrever o secret do
 client `fortidashboard-bff` com o que está no `.env`. Sem ele, BFF e
-Keycloak ficam com secrets diferentes e o callback OAuth falha com
-`invalid_client`.
+Keycloak ficam com secrets diferentes e qualquer chamada que toque o
+provider (login, register, callback SSO) falha com `invalid_client`
+(502 Bad Gateway na cockpit).
 
 ## Subir em produção (TLS + reverse proxy)
 
