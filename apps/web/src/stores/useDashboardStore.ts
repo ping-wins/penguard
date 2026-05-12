@@ -9,6 +9,7 @@ import type { WidgetCatalogItem, WidgetFieldBinding, WorkspaceWidget } from '../
 import {
   deleteWorkspace as apiDeleteWorkspace,
   listWorkspaces as apiListWorkspaces,
+  rebindWidgetIntegration as apiRebindWidget,
   type WorkspaceOrigin,
   type WorkspaceSummary,
 } from '../services/workspaceClient'
@@ -134,6 +135,23 @@ export const useDashboardStore = defineStore('dashboard', () => {
       await loadWorkspace('ws_default')
     }
     await refreshWorkspaceList()
+  }
+
+  async function rebindWidget(instanceId: string, integrationId: string) {
+    const result = await apiRebindWidget(activeWorkspaceId.value, instanceId, integrationId)
+    const widget = activeWidgets.value.find((w) => w.instanceId === instanceId)
+    if (widget) {
+      widget.integrationId = integrationId
+      if (Array.isArray(widget.fieldBindings) && widget.fieldBindings.length) {
+        widget.fieldBindings = widget.fieldBindings.map((binding) => ({
+          ...binding,
+          integrationId,
+        }))
+      }
+    }
+    if (result?.origin) {
+      activeWorkspaceOrigin.value = result.origin
+    }
   }
 
   async function saveWorkspace() {
@@ -271,6 +289,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     refreshWorkspaceList,
     switchWorkspace,
     deleteWorkspaceById,
+    rebindWidget,
     updateWidgetPosition,
     updateWidgetSize,
     bringToFront,

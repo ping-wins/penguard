@@ -57,6 +57,16 @@ class WorkspaceStore(Protocol):
     ) -> dict | None:
         pass
 
+    def rebind_widget_integration(
+        self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        instance_id: str,
+        integration_id: str,
+    ) -> dict | None:
+        pass
+
     def create_workspace_from_manifest(
         self,
         *,
@@ -159,6 +169,12 @@ class PublishTemplateRequest(BaseModel):
 
 class InstallTemplateRequest(BaseModel):
     workspace_id: str | None = Field(default=None, alias="workspaceId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class WidgetRebindRequest(BaseModel):
+    integration_id: str = Field(alias="integrationId", min_length=1, max_length=64)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -354,6 +370,51 @@ def delete_workspace(
         details={"workspaceId": workspace_id},
     )
     return {"deleted": True, "id": workspace_id}
+
+
+@router.patch("/workspaces/{workspace_id}/widgets/{instance_id}/integration")
+def rebind_widget_integration(
+    workspace_id: str,
+    instance_id: str,
+    payload: WidgetRebindRequest,
+    request: Request,
+    store: Annotated[WorkspaceStore | None, Depends(get_workspace_store)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuthAuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    if store is None:
+        raise HTTPException(status_code=503, detail="Workspace store unavailable")
+    owner_user_id = str(current_user["id"])
+    integration_map = _resolve_integration_bindings(owner_user_id)
+    valid_integration_ids = set(integration_map.values())
+    if payload.integration_id not in valid_integration_ids:
+        raise HTTPException(
+            status_code=404,
+            detail="Integration not found for current user",
+        )
+    updated = store.rebind_widget_integration(
+        workspace_id=workspace_id,
+        owner_user_id=owner_user_id,
+        instance_id=instance_id,
+        integration_id=payload.integration_id,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Widget not found in workspace")
+    audit_store.record(
+        action="workspace.widget.rebound",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "workspaceId": workspace_id,
+            "instanceId": instance_id,
+            "integrationId": payload.integration_id,
+        },
+    )
+    return updated
 
 
 @router.put("/workspaces/{workspace_id}/presentation")
