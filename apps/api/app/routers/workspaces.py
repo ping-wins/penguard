@@ -229,12 +229,18 @@ def install_community_template(
         raise HTTPException(status_code=422, detail=f"Template manifest invalid: {exc}") from exc
 
     workspace_id = payload.workspace_id or f"ws_{token_urlsafe(8)}"
-    presentation = manifest.presentation.model_dump(by_alias=True) if manifest.presentation else None
+    presentation = (
+        manifest.presentation.model_dump(by_alias=True) if manifest.presentation else None
+    )
     owner_user_id = str(current_user["id"])
     integration_map = _resolve_integration_bindings(owner_user_id)
     widgets = manifest_to_widgets(manifest, integration_id_by_provider=integration_map)
     missing_providers = sorted(
-        {w.provider_type for w in manifest.widgets if w.provider_type not in integration_map and w.provider_type != "generic"}
+        {
+            w.provider_type
+            for w in manifest.widgets
+            if w.provider_type not in integration_map and w.provider_type != "generic"
+        }
     )
     origin = {
         "type": "template",
@@ -470,9 +476,7 @@ def export_workspace(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     presentation = workspace.get("presentation")
-    presentation_model = (
-        PresentationMetadata.model_validate(presentation) if presentation else None
-    )
+    presentation_model = PresentationMetadata.model_validate(presentation) if presentation else None
     manifest = build_manifest(
         workspace=workspace,
         exported_by_email=current_user.get("email"),
@@ -525,7 +529,11 @@ def import_workspace(
     integration_map = _resolve_integration_bindings(owner_user_id)
     widgets = manifest_to_widgets(manifest, integration_id_by_provider=integration_map)
     missing_providers = sorted(
-        {w.provider_type for w in manifest.widgets if w.provider_type not in integration_map and w.provider_type != "generic"}
+        {
+            w.provider_type
+            for w in manifest.widgets
+            if w.provider_type not in integration_map and w.provider_type != "generic"
+        }
     )
     origin = {
         "type": "imported",

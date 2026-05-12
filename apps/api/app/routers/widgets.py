@@ -83,9 +83,7 @@ def get_penguin_tool_integration_service() -> PenguinToolService:
 def get_widget_data(
     widget_id: str,
     service: Annotated[FortiGateWidgetService, Depends(get_fortigate_widget_service)],
-    penguin_service: Annotated[
-        PenguinToolService, Depends(get_penguin_tool_integration_service)
-    ],
+    penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     siem_client: Annotated[SocWidgetClient, Depends(get_siem_client)],
     xdr_client: Annotated[SocWidgetClient, Depends(get_xdr_client)],
     soar_client: Annotated[SocWidgetClient, Depends(get_soar_client)],
@@ -267,8 +265,7 @@ def _top_entities(incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
             entity_key = (str(key), str(value))
             counts[entity_key] = counts.get(entity_key, 0) + 1
     rows = [
-        {"field": field, "value": value, "count": count}
-        for (field, value), count in counts.items()
+        {"field": field, "value": value, "count": count} for (field, value), count in counts.items()
     ]
     return sorted(rows, key=lambda row: row["count"], reverse=True)[:10]
 

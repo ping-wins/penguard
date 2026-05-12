@@ -32,9 +32,15 @@
       "implicitFlowEnabled": false,
       "redirectUris": [
         "http://localhost:8000/api/auth/sso/kerberos/callback",
+        "http://fortidashboard.local:8000/api/auth/sso/kerberos/callback",
         "http://api:8000/api/auth/sso/kerberos/callback"
       ],
-      "webOrigins": ["http://localhost:5173", "http://localhost:8000"]
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://fortidashboard.local:5173",
+        "http://fortidashboard.local:8000"
+      ]
     }
   ],
   "components": {

@@ -19,15 +19,22 @@ services:
       FORTIDASHBOARD_CSRF_HEADER_NAME: X-CSRF-Token
       FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS:-10}
       FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
-      FORTIDASHBOARD_KEYCLOAK_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BASE_URL:-http://fortidashboard.local:9080}
+      # Internal container-to-container URL. Do not point this at localhost or
+      # fortidashboard.local; the API container must reach the Keycloak service
+      # on the Docker network.
+      FORTIDASHBOARD_KEYCLOAK_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080}
       FORTIDASHBOARD_KEYCLOAK_REALM: fortidashboard
       FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
       FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
       FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: ${FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL:-false}
-      FORTIDASHBOARD_OIDC_ISSUER: ${FORTIDASHBOARD_OIDC_ISSUER:-http://fortidashboard.local:9080/realms/fortidashboard}
-      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL:-http://fortidashboard.local:9080}
-      FORTIDASHBOARD_SSO_REDIRECT_URI: ${FORTIDASHBOARD_SSO_REDIRECT_URI:-http://fortidashboard.local:8000/api/auth/sso/kerberos/callback}
-      FORTIDASHBOARD_SSO_POST_LOGIN_URL: ${FORTIDASHBOARD_SSO_POST_LOGIN_URL:-http://fortidashboard.local:5173/}
+      # Browser-facing URLs. Defaults work on Linux/Windows host browsers via
+      # localhost. For AD/Kerberos SSO, override these to fortidashboard.local
+      # in .env so the SPN and browser origin match.
+      FORTIDASHBOARD_OIDC_ISSUER: ${FORTIDASHBOARD_OIDC_ISSUER:-http://localhost:8080/realms/fortidashboard}
+      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL:-http://localhost:8080}
+      FORTIDASHBOARD_SSO_REDIRECT_URI: ${FORTIDASHBOARD_SSO_REDIRECT_URI:-http://localhost:8000/api/auth/sso/kerberos/callback}
+      FORTIDASHBOARD_SSO_POST_LOGIN_URL: ${FORTIDASHBOARD_SSO_POST_LOGIN_URL:-http://localhost:5173/}
+      FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL: ${FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL:-http://localhost:5173/login}
       FORTIDASHBOARD_SIEM_KOWALSKI_URL: http://siem-kowalski:8000
       FORTIDASHBOARD_SOAR_SKIPPER_URL: http://soar-skipper:8000
       FORTIDASHBOARD_XDR_RICO_URL: http://xdr-rico:8000
@@ -65,7 +72,7 @@ services:
       CHOKIDAR_USEPOLLING: "true"
       PNPM_STORE_DIR: /pnpm/store
       API_HOST: http://api:8000
-      FRONTEND_URL: http://localhost:5173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     command: >
       sh -c "pnpm install --frozen-lockfile && pnpm --filter @fortidashboard/web dev --host 0.0.0.0"
     depends_on:
@@ -179,7 +186,7 @@ services:
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
-      - ./fortidashboard.keytab:/opt/keycloak/conf/fortidashboard.keytab:ro
+      - ${FORTIDASHBOARD_KEYTAB_PATH:-./infra/keycloak/empty-keytab.placeholder}:/opt/keycloak/conf/fortidashboard.keytab:ro
       - ./krb5.conf:/etc/krb5.conf:ro
       - ./infra/keycloak/java-security-override.properties:/opt/keycloak/conf/java-security-override.properties:ro
 

@@ -69,6 +69,38 @@ def test_endpoint_event_ingestion_upserts_endpoint_metadata():
     assert "token" not in endpoint
 
 
+def test_windows_security_endpoint_events_are_accepted_and_timeline_visible():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+
+    response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_win_dc01",
+            "eventType": "auth.failed_login",
+            "occurredAt": "2026-05-12T13:30:00Z",
+            "hostname": "WIN-SOC-DC01",
+            "ipAddresses": ["192.0.2.10"],
+            "currentUser": "FORTIDASHBOARD\\felipe",
+            "health": "warning",
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4625,
+                "count": 6,
+                "sourceIp": "192.0.2.77",
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["endpoint"]["id"] == "end_win_dc01"
+    assert body["endpoint"]["health"] == "warning"
+    assert body["timelineItem"]["eventType"] == "auth.failed_login"
+    assert body["timelineItem"]["title"] == "Auth Failed Login"
+
+
 def test_endpoint_timeline_is_newest_first():
     test_client = client()
     headers = enrollment_headers(test_client)

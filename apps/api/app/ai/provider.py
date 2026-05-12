@@ -81,16 +81,14 @@ class AIProvider(Protocol):
         context: IncidentContext,
         *,
         locale: str = "pt-BR",
-    ) -> IncidentAnalysis:
-        ...
+    ) -> IncidentAnalysis: ...
 
     def suggest_containment(
         self,
         context: IncidentContext,
         *,
         locale: str = "pt-BR",
-    ) -> ContainmentSuggestion:
-        ...
+    ) -> ContainmentSuggestion: ...
 
 
 def _is_english(locale: str | None) -> bool:
@@ -133,7 +131,10 @@ class ScriptedAIProvider:
         if english:
             hosts_label = ", ".join(iocs[:3]) or "no IoCs extracted"
             next_steps = [
-                f"Validate the scope of `{context.title}` against the affected hosts ({hosts_label}).",
+                (
+                    f"Validate the scope of `{context.title}` against the affected "
+                    f"hosts ({hosts_label})."
+                ),
                 "Confirm the FortiGate policy that produced the deny and tighten it if needed.",
                 "Open a contained ticket and link any related endpoint timelines.",
             ]
@@ -152,7 +153,8 @@ class ScriptedAIProvider:
             ]
             headline = f"{context.title} — severidade {context.severity.upper()}"
             summary = (
-                f"Incidente {context.incident_id} disparou a regra {context.rule_id or 'desconhecida'}. "
+                f"Incidente {context.incident_id} disparou a regra "
+                f"{context.rule_id or 'desconhecida'}. "
                 f"Sugestão de triagem: {suggested_triage}. "
                 f"{context.summary or 'Sem resumo registrado ainda.'}"
             )
@@ -202,7 +204,10 @@ class ScriptedAIProvider:
                 ),
                 ContainmentStep(
                     title="Collect endpoint telemetry",
-                    description="Pull the last 30 minutes of process snapshots from the affected endpoint via xdr_rico.",
+                    description=(
+                        "Pull the last 30 minutes of process snapshots from the "
+                        "affected endpoint via xdr_rico."
+                    ),
                     playbook_node_type="endpoint.collect_telemetry",
                     severity="low",
                     requires_approval=False,
@@ -234,7 +239,10 @@ class ScriptedAIProvider:
                 ),
                 ContainmentStep(
                     title="Coletar telemetria do endpoint",
-                    description="Puxar os últimos 30 minutos de snapshots de processos do endpoint afetado via xdr_rico.",
+                    description=(
+                        "Puxar os últimos 30 minutos de snapshots de processos do "
+                        "endpoint afetado via xdr_rico."
+                    ),
                     playbook_node_type="endpoint.collect_telemetry",
                     severity="low",
                     requires_approval=False,
@@ -252,8 +260,12 @@ class ScriptedAIProvider:
         )
 
     def _extract_iocs(self, context: IncidentContext) -> list[str]:
-        haystack = json.dumps(context.entities) + " " + " ".join(
-            item.get("message", "") for item in context.timeline if isinstance(item, dict)
+        haystack = (
+            json.dumps(context.entities)
+            + " "
+            + " ".join(
+                item.get("message", "") for item in context.timeline if isinstance(item, dict)
+            )
         )
         ips = sorted(set(self._IOC_PATTERN.findall(haystack)))
         return ips[:10]
@@ -486,12 +498,16 @@ def _build_containment_prompt(context: IncidentContext, *, locale: str = "pt-BR"
         "summary": context.summary,
         "entities": context.entities,
     }
-    instructions = _CONTAINMENT_INSTRUCTIONS_EN if _is_english(locale) else _CONTAINMENT_INSTRUCTIONS_PT
+    instructions = (
+        _CONTAINMENT_INSTRUCTIONS_EN if _is_english(locale) else _CONTAINMENT_INSTRUCTIONS_PT
+    )
     header = "Incident:" if _is_english(locale) else "Incidente:"
     return instructions + "\n\n" + header + "\n" + json.dumps(body, indent=2)
 
 
-def _parse_analysis(raw: str, *, context: IncidentContext, locale: str = "pt-BR") -> IncidentAnalysis:
+def _parse_analysis(
+    raw: str, *, context: IncidentContext, locale: str = "pt-BR"
+) -> IncidentAnalysis:
     data = _extract_json(raw)
     if not isinstance(data, dict):
         logger.warning("AI analyze response was not a JSON object; falling back to scripted")
@@ -514,7 +530,9 @@ def _parse_analysis(raw: str, *, context: IncidentContext, locale: str = "pt-BR"
     )
 
 
-def _parse_containment(raw: str, *, context: IncidentContext, locale: str = "pt-BR") -> ContainmentSuggestion:
+def _parse_containment(
+    raw: str, *, context: IncidentContext, locale: str = "pt-BR"
+) -> ContainmentSuggestion:
     data = _extract_json(raw)
     if not isinstance(data, dict):
         logger.warning("AI containment response was not a JSON object; falling back to scripted")

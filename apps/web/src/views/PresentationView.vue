@@ -117,7 +117,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen w-full bg-theme-bg text-theme-text flex flex-col" :style="{ background: themeStore.bg || '#0a0a0f' }">
+  <div class="min-h-screen w-full bg-theme-bg text-theme-text flex flex-col" :style="{ background: 'var(--theme-bg, #0a0a0f)' }">
     <div class="flex items-center justify-between px-6 py-3 border-b border-theme-border">
       <div class="flex items-center gap-3">
         <button type="button" @click="exit" class="text-theme-text-muted hover:text-theme-text flex items-center gap-1">

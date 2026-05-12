@@ -91,8 +91,8 @@ def test_integration_create_records_sanitized_audit_event():
         client_factory=healthy_client_factory,
     )
     audit_store = InMemoryAuthAuditStore()
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
@@ -115,9 +115,7 @@ def test_integration_create_records_sanitized_audit_event():
             },
         )
     finally:
-        app.dependency_overrides.pop(
-            integrations_router.get_fortigate_integration_service, None
-        )
+        app.dependency_overrides.pop(integrations_router.get_fortigate_integration_service, None)
         app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
@@ -157,8 +155,8 @@ def test_integration_create_failure_records_sanitized_audit_event():
         client_factory=lambda *, host, api_key, verify_tls: FailingFortiGateClient(),
     )
     audit_store = InMemoryAuthAuditStore()
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
@@ -181,9 +179,7 @@ def test_integration_create_failure_records_sanitized_audit_event():
             },
         )
     finally:
-        app.dependency_overrides.pop(
-            integrations_router.get_fortigate_integration_service, None
-        )
+        app.dependency_overrides.pop(integrations_router.get_fortigate_integration_service, None)
         app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
@@ -212,8 +208,8 @@ def test_integration_delete_records_sanitized_audit_event():
         client_factory=healthy_client_factory,
     )
     audit_store = InMemoryAuthAuditStore()
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
@@ -240,9 +236,7 @@ def test_integration_delete_records_sanitized_audit_event():
             headers=csrf_headers(client),
         )
     finally:
-        app.dependency_overrides.pop(
-            integrations_router.get_fortigate_integration_service, None
-        )
+        app.dependency_overrides.pop(integrations_router.get_fortigate_integration_service, None)
         app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
@@ -268,8 +262,8 @@ def test_integration_delete_failure_records_audit_event():
         client_factory=healthy_client_factory,
     )
     audit_store = InMemoryAuthAuditStore()
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
@@ -302,9 +296,7 @@ def test_integration_delete_failure_records_audit_event():
             headers=csrf_headers(client),
         )
     finally:
-        app.dependency_overrides.pop(
-            integrations_router.get_fortigate_integration_service, None
-        )
+        app.dependency_overrides.pop(integrations_router.get_fortigate_integration_service, None)
         app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
@@ -507,9 +499,7 @@ def test_admin_audit_events_returns_cross_user_events_and_records_read_event():
     payload = response.json()
     assert {item["actor"]["id"] for item in payload["items"]} == {"usr_owner", "usr_other"}
     assert "must-not-leak" not in response.text
-    owner_event = next(
-        item for item in payload["items"] if item["actor"]["id"] == "usr_owner"
-    )
+    owner_event = next(item for item in payload["items"] if item["actor"]["id"] == "usr_owner")
     assert owner_event["details"]["apiKey"] == "[REDACTED]"
     assert audit_store.events[-1].action == "audit.events.viewed"
     assert audit_store.events[-1].outcome == "success"
@@ -570,8 +560,7 @@ def test_admin_audit_events_filters_by_actor_action_and_outcome():
 
     assert response.status_code == 200
     assert [
-        (item["actor"]["id"], item["action"], item["outcome"])
-        for item in response.json()["items"]
+        (item["actor"]["id"], item["action"], item["outcome"]) for item in response.json()["items"]
     ] == [("usr_other", "login", "failed")]
     assert audit_store.events[-1].details == {
         "scope": "admin",

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditFeed from '../../src/components/audit/AuditFeed.vue'
 import { formatAuditEvent } from '../../src/components/audit/auditFormat'
+import { i18n, setLocale } from '../../src/i18n'
 import { fetchAuditEvents } from '../../src/services/auditClient'
 import { useAuditStore } from '../../src/stores/useAuditStore'
 
@@ -27,6 +28,13 @@ const loginEvent = {
 describe('audit feed', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn().mockReturnValue(null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    })
+    setLocale('en-US')
   })
 
   afterEach(() => {
@@ -148,26 +156,30 @@ describe('audit feed', () => {
   })
 
   it('renders loading, empty, error, and event rows without exposing secrets', () => {
-    expect(mount(AuditFeed, { props: { isLoading: true, events: [] } }).text())
+    expect(mountAuditFeed({ isLoading: true, events: [] }).text())
       .toContain('Loading audit trail')
-    expect(mount(AuditFeed, { props: { title: 'Admin audit trail', subtitle: 'Global SOC activity', events: [] } }).text())
+    expect(mountAuditFeed({
+      title: 'Admin audit trail',
+      subtitle: 'Global SOC activity',
+      events: [],
+    }).text())
       .toContain('Global SOC activity')
-    expect(mount(AuditFeed, { props: { events: [] } }).text())
+    expect(mountAuditFeed({ events: [] }).text())
       .toContain('No sensitive activity recorded')
-    expect(mount(AuditFeed, { props: { events: [], error: 'Audit unavailable' } }).text())
+    expect(mountAuditFeed({ events: [], error: 'Audit unavailable' }).text())
       .toContain('Audit unavailable')
 
-    const wrapper = mount(AuditFeed, {
-      props: {
-        events: [{
+    const wrapper = mountAuditFeed({
+      events: [
+        {
           ...loginEvent,
           action: 'integration.fortigate.created',
           details: {
             integrationId: 'int_fgt_01',
             apiKey: 'plain-secret-key',
           },
-        }],
-      },
+        },
+      ],
     })
 
     expect(wrapper.text()).toContain('FortiGate integration created')
@@ -177,3 +189,12 @@ describe('audit feed', () => {
     expect(wrapper.text()).not.toContain('plain-secret-key')
   })
 })
+
+function mountAuditFeed(props: Record<string, unknown>) {
+  return mount(AuditFeed, {
+    props,
+    global: {
+      plugins: [i18n],
+    },
+  })
+}

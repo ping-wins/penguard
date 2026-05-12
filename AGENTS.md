@@ -109,6 +109,9 @@ SSO/Kerberos support:
 - `SessionMiddleware` stores OAuth state in the `f_session` cookie.
 - Local AD/Kerberos lab values live in `docker-compose.yml`, `krb5.conf`, `.env` or local host configuration. Do not move secrets or lab-specific keytabs into tracked docs.
 - `fortidashboard.keytab` must remain untracked.
+- Docker Compose mounts `infra/keycloak/empty-keytab.placeholder` by default so
+  Linux/Windows developers can boot the stack before AD exists. Real Kerberos
+  labs must set `FORTIDASHBOARD_KEYTAB_PATH=./fortidashboard.keytab`.
 - **Full setup guide:** `configSSOKerberosKeycloak.md` at the repo root has
   the step-by-step for Active Directory (svc account, SPN, `ktpass` keytab,
   DNS records, enctype tuning), the Keycloak side (realm import, Kerberos
@@ -124,14 +127,32 @@ Relevant config keys:
 
 ```txt
 FORTIDASHBOARD_KEYCLOAK_BASE_URL
+FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL
 FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL
 FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL
+FORTIDASHBOARD_KEYTAB_PATH
 FORTIDASHBOARD_OIDC_ISSUER
 FORTIDASHBOARD_SSO_REDIRECT_URI
 FORTIDASHBOARD_SSO_POST_LOGIN_URL
 FORTIDASHBOARD_SESSION_COOKIE_SAMESITE
 FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY
 ```
+
+Compose URL rules:
+
+- `FORTIDASHBOARD_KEYCLOAK_BASE_URL` is the API-to-Keycloak URL. In Docker
+  Compose it is sourced from `FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL` and
+  must default to `http://keycloak:8080`, not a browser hostname.
+- `FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL`,
+  `FORTIDASHBOARD_OIDC_ISSUER`, `FORTIDASHBOARD_SSO_REDIRECT_URI` and
+  `FORTIDASHBOARD_SSO_POST_LOGIN_URL` are browser/host-facing values. The
+  default local demo path is `localhost`; AD/Kerberos labs may override them to
+  `fortidashboard.local`.
+- Kerberos/SPNEGO requires the browser-facing Keycloak hostname to match the
+  service principal in `infra/keycloak/realm-fortidashboard.json`
+  (`HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL`). Do not point
+  `FORTIDASHBOARD_KEYCLOAK_BASE_URL` at that browser hostname from inside the
+  API container.
 
 ## FortiGate Provider
 
@@ -173,6 +194,13 @@ First setup behavior:
 - The lite services start with empty in-memory stores.
 - Empty incident, endpoint, entity or playbook widgets are expected until `seed_soc_demo.py`, FortiGate ingest or endpoint telemetry populates them.
 - Useful logs include `soc_service_*`, `soc_widget_data_*`, `siem_*`, `xdr_*` and `soar_*`.
+
+Realization plan:
+
+- Keep `docs/architecture/penguin-tools-realization-plan.md` updated when a
+  demo/scripted boundary becomes a real provider capability.
+- Demo data must be labeled as demo-only. Live data should identify its source:
+  FortiGate, Windows/AD, `agent_private`, manual event or simulator.
 
 ## SOC-Lite Services
 
@@ -844,6 +872,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add schemas/fixtures for `SecurityEvent`, `Incident`, `Endpoint`, `EndpointEvent`, `Playbook`, `PlaybookRun` and `PlaybookStepRun`.
 - [x] Document internal-service auth in `docs/api/internal-service-auth.md`.
 - [x] Add architecture docs for Penguin tools data flow and threat model.
+- [x] Document demo/scripted boundaries and real Penguin tool use cases.
 - [x] Add Redis and health checks for Penguin services.
 - [ ] Persist Penguin service data beyond the current in-memory MVP stores.
 - [ ] Keep this file updated when contracts, service boundaries or ownership changes.
@@ -858,6 +887,9 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add persisted raw event payload storage.
 - [x] Implement a safe detection rule model/expression evaluator.
 - [x] Add high CPU/memory risk rule from FortiGate/system telemetry.
+- [x] Add Windows/AD event normalization for failed logons, privileged logons and server file-change signals.
+- [x] Add rules for AD failed-login bursts, privileged logon on unusual host and critical server file changes.
+- [ ] Label demo events, simulator events and live provider events distinctly in incidents and widgets.
 
 ### soar_skipper
 
@@ -868,6 +900,10 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Require approval for sensitive steps.
 - [x] Audit create/update/simulate/run/approve actions.
 - [x] Add default disabled playbooks.
+- [x] Persist playbooks and run history in SQL tables.
+- [x] Expose `GET /node-types` and `/api/soc/playbook-node-types` as the contract for the future n8n-like visual builder.
+- [ ] Add safe real connector boundaries for case note, audit note, notification dry-run and webhook dry-run.
+- [ ] Add explicit live-vs-dry-run UI/API flags for every playbook step.
 - [ ] Prepare AI/MCP-safe playbook drafting boundary.
 
 ### xdr_rico And agent_private
@@ -882,6 +918,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Implement TUI-first `agent_private` flow plus CLI automation commands.
 - [x] Collect heartbeat, process snapshot and network connection snapshot.
 - [x] Correlate endpoints with incidents by endpoint ID, IP, hostname and username.
+- [ ] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM.
+- [x] Add Windows Security Event collection for failed logons and privileged logons.
 - [ ] Add optional directory monitoring with `watchdog`.
 
 ### apps/api Gateway
@@ -895,10 +933,13 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Extend audit log actions for first Penguin mutating routes.
 - [x] Require matching `integrationId` before serving Penguin widget data.
 - [x] Add provider data fields for Penguin tools.
+- [x] Forward Windows/AD endpoint events from `xdr_rico` to `siem_kowalski` after authenticated agent ingestion.
 - [x] Define and persist versioned workspace manifests as the canonical workspace format.
 - [x] Add manifest share/import/export endpoints with schema validation and secret rejection.
 - [x] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
 - [x] Add provider-binding resolution so shared manifests do not expose another user's private `integrationId`.
+- [ ] Add Windows Server AD/Kerberos SSO smoke test and operator checklist.
+- [ ] Add scheduled FortiGate event ingestion control with aggregation status.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
@@ -920,6 +961,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add manifest import/export UX with validation errors that users can understand.
 - [x] Add presentation export UX based on the current workspace manifest.
 - [x] Allow per-widget integration rebind so imported workspaces can be reconnected without re-importing.
+- [ ] Add visible badges for live, seeded demo, simulator and scripted AI data.
+- [ ] Add endpoint detail panel with timeline and related incidents.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP

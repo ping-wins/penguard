@@ -21,7 +21,9 @@ class DangerousDefaultSecretError(RuntimeError):
 
 class Settings(BaseSettings):
     app_name: str = "FortiDashboard API"
-    database_url: str = "postgresql+psycopg://fortidashboard:fortidashboard@localhost:5432/fortidashboard"
+    database_url: str = (
+        "postgresql+psycopg://fortidashboard:fortidashboard@localhost:5432/fortidashboard"
+    )
     secret_key: str = "dev-only-change-me"
     token_encryption_key: str | None = None
     mock_mode: bool = False
@@ -51,16 +53,16 @@ class Settings(BaseSettings):
     csrf_header_name: str = "X-CSRF-Token"
     auth_rate_limit_max_attempts: int = 10
     auth_rate_limit_window_seconds: int = 60
-    keycloak_base_url: str = "http://fortidashboard.local:9080"
-    keycloak_browser_base_url: str = "http://fortidashboard.local:9080"
+    keycloak_base_url: str = "http://localhost:8080"
+    keycloak_browser_base_url: str = "http://localhost:8080"
     keycloak_realm: str = "fortidashboard"
     keycloak_client_id: str = "fortidashboard-bff"
     keycloak_client_secret: str = "dev-client-secret"
     keycloak_verify_ssl: bool = False
-    oidc_issuer: str = "http://fortidashboard.local:9080/realms/fortidashboard"
-    sso_redirect_uri: str = "http://fortidashboard.local:8000/api/auth/sso/kerberos/callback"
-    sso_post_login_url: str = "http://fortidashboard.local:5173/"
-    sso_failure_redirect_url: str = "http://fortidashboard.local:5173/login"
+    oidc_issuer: str = "http://localhost:8080/realms/fortidashboard"
+    sso_redirect_uri: str = "http://localhost:8000/api/auth/sso/kerberos/callback"
+    sso_post_login_url: str = "http://localhost:5173/"
+    sso_failure_redirect_url: str = "http://localhost:5173/login"
     sso_state_cookie_name: str = "fortidashboard_sso_state"
     siem_kowalski_url: str = "http://localhost:8011"
     soar_skipper_url: str = "http://localhost:8012"
@@ -89,7 +91,10 @@ def _reject_dangerous_defaults(settings: Settings) -> None:
     offenders: list[str] = []
     if settings.secret_key in DANGEROUS_DEFAULT_SECRETS:
         offenders.append("FORTIDASHBOARD_SECRET_KEY")
-    if not settings.token_encryption_key or settings.token_encryption_key in DANGEROUS_DEFAULT_SECRETS:
+    if (
+        not settings.token_encryption_key
+        or settings.token_encryption_key in DANGEROUS_DEFAULT_SECRETS
+    ):
         offenders.append("FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY")
     if settings.keycloak_client_secret in DANGEROUS_DEFAULT_SECRETS:
         offenders.append("FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET")

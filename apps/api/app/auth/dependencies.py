@@ -71,9 +71,7 @@ def get_current_api_user(request: Request) -> dict[str, Any]:
     if settings.mock_mode:
         return dict(load_fixture("auth_me_authenticated")["user"])
 
-    user = get_auth_service().get_current_user(
-        request.cookies.get(settings.session_cookie_name)
-    )
+    user = get_auth_service().get_current_user(request.cookies.get(settings.session_cookie_name))
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

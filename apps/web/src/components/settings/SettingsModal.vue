@@ -60,9 +60,9 @@ async function handleLogout() {
 
 const keycloakAccountUrl = computed(() => {
   // Best-effort: derive from window origin; falls back to a sensible default.
-  if (typeof window === 'undefined') return 'http://fortidashboard.local:9080/realms/fortidashboard/account'
-  const port = '9080'
-  const host = window.location.hostname || 'fortidashboard.local'
+  if (typeof window === 'undefined') return 'http://localhost:8080/realms/fortidashboard/account'
+  const port = '8080'
+  const host = window.location.hostname || 'localhost'
   return `http://${host}:${port}/realms/fortidashboard/account`
 })
 

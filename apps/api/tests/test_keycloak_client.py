@@ -33,9 +33,7 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
         return httpx.Response(
             200,
             json={
-                "access_token": unsigned_token(
-                    {"realm_access": {"roles": ["admin", "analyst"]}}
-                ),
+                "access_token": unsigned_token({"realm_access": {"roles": ["admin", "analyst"]}}),
                 "refresh_token": "keycloak-refresh-token",
                 "expires_in": 300,
                 "refresh_expires_in": 1800,

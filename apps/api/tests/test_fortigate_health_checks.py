@@ -132,8 +132,8 @@ def test_health_checks_endpoint_returns_404_for_missing_integration():
         ),
         client_factory=lambda *, host, api_key, verify_tls: HealthyFortiGateClient(),
     )
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "usr_owner",
@@ -146,9 +146,7 @@ def test_health_checks_endpoint_returns_404_for_missing_integration():
     try:
         response = client.get("/api/integrations/fortigate/int_missing/health-checks")
     finally:
-        app.dependency_overrides.pop(
-            integrations_router.get_fortigate_integration_service, None
-        )
+        app.dependency_overrides.pop(integrations_router.get_fortigate_integration_service, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
     assert response.status_code == 404

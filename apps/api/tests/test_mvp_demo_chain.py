@@ -55,7 +55,12 @@ class FakeSiem:
             note = body.get("note")
             if note:
                 incident.setdefault("timeline", []).append(
-                    {"id": f"tl_{len(incident['timeline']) + 1}", "type": "note", "message": note, "occurredAt": "2026-05-12T00:00:00Z"}
+                    {
+                        "id": f"tl_{len(incident['timeline']) + 1}",
+                        "type": "note",
+                        "message": note,
+                        "occurredAt": "2026-05-12T00:00:00Z",
+                    }
                 )
             return incident
         raise AssertionError(f"unexpected SIEM call {method} {path}")
@@ -74,15 +79,24 @@ class FakeSiem:
             incident_id = f"inc_{self._inc_seq:03d}"
             incident: dict[str, Any] = {
                 "id": incident_id,
-                "ruleId": "denied_traffic_burst" if event_type == "network.deny" else "high_severity_event",
-                "title": payload.get("attributes", {}).get("message") or f"Incident from {event_type}",
+                "ruleId": "denied_traffic_burst"
+                if event_type == "network.deny"
+                else "high_severity_event",
+                "title": payload.get("attributes", {}).get("message")
+                or f"Incident from {event_type}",
                 "severity": severity,
                 "status": "open",
-                "summary": payload.get("attributes", {}).get("message") or "Generated from demo replay",
+                "summary": payload.get("attributes", {}).get("message")
+                or "Generated from demo replay",
                 "entities": payload.get("entities") or {},
                 "createdAt": "2026-05-12T00:00:00Z",
                 "timeline": [
-                    {"id": "tl_1", "type": "system", "message": "Incident created", "occurredAt": "2026-05-12T00:00:00Z"}
+                    {
+                        "id": "tl_1",
+                        "type": "system",
+                        "message": "Incident created",
+                        "occurredAt": "2026-05-12T00:00:00Z",
+                    }
                 ],
                 "eventIds": [event_id],
                 "source": "kowalski",
@@ -127,7 +141,9 @@ class FakeSoar:
                     {
                         "nodeId": node["id"],
                         "nodeType": node["type"],
-                        "status": "waiting_approval" if node["type"] == "approval.required" else "completed",
+                        "status": "waiting_approval"
+                        if node["type"] == "approval.required"
+                        else "completed",
                         "sensitive": node["type"] == "fortigate.recommend_block",
                     }
                     for node in pb["nodes"]
@@ -244,10 +260,7 @@ def test_mvp_demo_chain_runs_end_to_end():
             "soc.ticket.playbook_drafted",
         ):
             assert required in actions, f"missing audit action {required}"
-        assert (
-            "soc.ticket.contained" in actions
-            or "soc.ticket.containment_paused" in actions
-        )
+        assert "soc.ticket.contained" in actions or "soc.ticket.containment_paused" in actions
     finally:
         app.dependency_overrides.pop(soc_router.get_siem_client, None)
         app.dependency_overrides.pop(soc_router.get_soar_client, None)

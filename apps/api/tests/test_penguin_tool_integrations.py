@@ -47,9 +47,7 @@ class FakePenguinToolIntegrationService:
             "capabilities": ["events", "incidents"],
             "lastCheckedAt": "2026-05-08T12:00:00.000Z",
         }
-        self.created.append(
-            {"owner_user_id": owner_user_id, "tool_type": tool_type, "name": name}
-        )
+        self.created.append({"owner_user_id": owner_user_id, "tool_type": tool_type, "name": name})
         self.connections[created["id"]] = created
         return created
 
@@ -78,8 +76,8 @@ def teardown_function():
 def test_penguin_tool_connection_test_uses_configured_service_and_audits_nothing_sensitive():
     client = TestClient(app)
     service = FakePenguinToolIntegrationService()
-    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = lambda: (
+        service
     )
 
     response = client.post(
@@ -100,8 +98,8 @@ def test_penguin_tool_connection_test_uses_configured_service_and_audits_nothing
 def test_penguin_tool_create_lists_as_optional_integration_and_audits():
     client = TestClient(app)
     service = FakePenguinToolIntegrationService()
-    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = lambda: (
+        service
     )
 
     response = client.post(
@@ -128,8 +126,8 @@ def test_penguin_tool_create_lists_as_optional_integration_and_audits():
 def test_delete_integration_removes_penguin_tool_when_not_a_fortigate_id():
     client = TestClient(app)
     service = FakePenguinToolIntegrationService()
-    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_penguin_tool_integration_service] = lambda: (
+        service
     )
 
     response = client.delete(

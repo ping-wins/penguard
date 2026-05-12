@@ -26,6 +26,7 @@ NodeType = Literal[
     "fortigate.recommend_block",
     "webhook.dry_run",
 ]
+NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
 RunStatus = Literal["completed", "waiting_approval"]
 StepStatus = Literal["completed", "waiting_approval"]
 
@@ -44,6 +45,21 @@ class PlaybookEdge(BaseModel):
 
     from_node: str = Field(alias="from", min_length=1)
     to_node: str = Field(alias="to", min_length=1)
+
+
+class NodeTypeDefinition(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: NodeType
+    label: str
+    category: NodeCategory
+    sensitive: bool = False
+    dry_run_only: bool = Field(default=True, alias="dryRunOnly")
+    config_schema: dict[str, Any] = Field(default_factory=dict, alias="configSchema")
+
+
+class NodeTypesResponse(BaseModel):
+    items: list[NodeTypeDefinition]
 
 
 class Playbook(BaseModel):
@@ -108,6 +124,99 @@ class PlaybookRun(BaseModel):
     status: RunStatus
     steps: list[PlaybookStepRun]
     created_at: datetime = Field(alias="createdAt")
+
+
+def _node_type_definitions() -> list[NodeTypeDefinition]:
+    return [
+        NodeTypeDefinition(
+            id="trigger.incident_created",
+            label="Incident Created",
+            category="trigger",
+            config_schema={"type": "object", "properties": {}},
+        ),
+        NodeTypeDefinition(
+            id="condition.severity",
+            label="Severity Condition",
+            category="condition",
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "severity": {
+                        "type": "array",
+                        "items": {"enum": ["low", "medium", "high", "critical"]},
+                    }
+                },
+                "required": ["severity"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="enrich.ip",
+            label="Enrich IP",
+            category="enrichment",
+            config_schema={
+                "type": "object",
+                "properties": {"field": {"type": "string"}},
+                "required": ["field"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="case.note",
+            label="Create Case Note",
+            category="action",
+            config_schema={
+                "type": "object",
+                "properties": {"template": {"type": "string"}},
+                "required": ["template"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="approval.required",
+            label="Require Approval",
+            category="control",
+            config_schema={
+                "type": "object",
+                "properties": {"role": {"type": "string", "default": "admin"}},
+            },
+        ),
+        NodeTypeDefinition(
+            id="notify.webhook",
+            label="Notify Webhook",
+            category="action",
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "mode": {"enum": ["dry_run"]},
+                    "channel": {"type": "string"},
+                },
+            },
+        ),
+        NodeTypeDefinition(
+            id="fortigate.recommend_block",
+            label="Recommend FortiGate Block",
+            category="action",
+            sensitive=True,
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "mode": {"enum": ["dry_run"]},
+                    "field": {"type": "string"},
+                },
+                "required": ["field"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="webhook.dry_run",
+            label="Webhook Dry Run",
+            category="action",
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "method": {"enum": ["POST"]},
+                },
+            },
+        ),
+    ]
 
 
 def _default_playbooks() -> list[Playbook]:
@@ -211,6 +320,13 @@ _seed_default_playbooks()
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
+
+
+@app.get("/node-types", response_model=NodeTypesResponse)
+def list_node_types() -> NodeTypesResponse:
+    items = _node_type_definitions()
+    logger.info("soar_node_types_list returned=%s", len(items))
+    return NodeTypesResponse(items=items)
 
 
 @app.get("/playbooks", response_model=list[Playbook])
