@@ -288,6 +288,41 @@ def test_service_client_wraps_internal_list_payloads(monkeypatch):
     assert client.request("GET", "/incidents") == {"items": [{"id": "inc_01"}]}
 
 
+def test_service_client_logs_request_result_without_auth_secrets(monkeypatch, caplog):
+    def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
+        assert headers == {"Authorization": "Bearer secret-enrollment-token"}
+        assert params == {"limit": 10, "token": "secret-query-token"}
+        return Response(200, json={"items": []})
+
+    monkeypatch.setattr(soc_client_module.httpx, "request", fake_request)
+    caplog.set_level("INFO", logger="uvicorn.error")
+    client = SocServiceClient(
+        base_url="http://xdr-rico:8000",
+        service_name="xdr_rico",
+        timeout_seconds=1.0,
+    )
+
+    assert client.request(
+        "GET",
+        "/endpoints",
+        params={"limit": 10, "token": "secret-query-token"},
+        headers={"Authorization": "Bearer secret-enrollment-token"},
+    ) == {"items": []}
+
+    assert (
+        "soc_service_request service=xdr_rico method=GET path=/endpoints attempt=1/2"
+        in caplog.text
+    )
+    assert (
+        "soc_service_response service=xdr_rico method=GET path=/endpoints "
+        "status_code=200 item_count=0"
+    ) in caplog.text
+    assert "secret-enrollment-token" not in caplog.text
+    assert "secret-query-token" not in caplog.text
+    assert "token=<redacted>" in caplog.text
+    assert "Authorization" not in caplog.text
+
+
 def test_service_client_can_pass_through_selected_internal_statuses(monkeypatch):
     def fake_request(method, url, json=None, params=None, headers=None, timeout=None):
         return Response(401, json={"detail": "token rejected"})

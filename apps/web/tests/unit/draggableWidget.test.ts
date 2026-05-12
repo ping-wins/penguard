@@ -249,6 +249,53 @@ describe('DraggableWidget', () => {
     expect(wrapper.text()).toContain('2026-04-26')
   })
 
+  it('lets SOC renderers handle empty ready payloads', async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      widgetId: 'soc-top-entities',
+      integrationId: 'int_siem_01',
+      refreshedAt: '2026-05-08T12:00:00.000Z',
+      status: 'ready',
+      data: { entities: [] },
+      meta: { source: 'siem_kowalski', cacheTtlSeconds: 5, refreshIntervalSeconds: 5 },
+    }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'soc-top-entities',
+      title: 'Top Entities',
+      kind: 'table',
+      source: 'siem_kowalski',
+      requiredCapabilities: ['incidents'],
+      defaultSize: { w: 5, h: 4 },
+      dataEndpoint: '/api/widgets/soc-top-entities/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_entities',
+        catalogId: 'soc-top-entities',
+        integrationId: 'int_siem_01',
+        layout: { x: 0, y: 0, w: 420, h: 280, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'renderer-empty-state' }, 'Renderer empty state'),
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Renderer empty state')
+    expect(wrapper.text()).not.toContain('The widget endpoint responded successfully')
+  })
+
   it('emits a field drop payload when a provider field is dropped onto a custom visual template', async () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)

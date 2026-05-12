@@ -87,6 +87,26 @@ describe('FortiGate widget renderers', () => {
     expect(statusList.text()).toContain('warning')
   })
 
+  it('explains empty SOC preset states with first-setup next actions', () => {
+    const incidents = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'soc-incidents-by-severity',
+        data: { items: [], total: 0 },
+      },
+    })
+    const endpoints = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'xdr-endpoint-health',
+        data: { endpoints: [], summary: {}, total: 0 },
+      },
+    })
+
+    expect(incidents.text()).toContain('No incidents yet')
+    expect(incidents.text()).toContain('Seed SOC demo data or ingest FortiGate events')
+    expect(endpoints.text()).toContain('No endpoints yet')
+    expect(endpoints.text()).toContain('run agent_private')
+  })
+
   it('does not render missing FortiGate uptime as zero seconds', () => {
     const wrapper = mount(WidgetHealth, {
       props: {

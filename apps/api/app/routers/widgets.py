@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Annotated, Any, Protocol
 
@@ -21,6 +22,7 @@ from app.integrations.penguin_tools import (
 from app.routers.soc import get_siem_client, get_soar_client, get_xdr_client
 
 router = APIRouter(tags=["widgets"])
+logger = logging.getLogger("uvicorn.error")
 FortiGateWidgetService = FortiGateWidgetDataService | MockFortiGateWidgetDataService
 PenguinToolService = PenguinToolIntegrationService | MockPenguinToolIntegrationService
 SOC_WIDGET_IDS = {
@@ -151,6 +153,12 @@ def _soc_widget_data(
             source = "soar_skipper"
         case _:
             raise HTTPException(status_code=404, detail="Widget data not found")
+    _log_soc_widget_data(
+        widget_id=widget_id,
+        integration_id=integration_id,
+        source=source,
+        data=data,
+    )
     return {
         "widgetId": widget_id,
         "integrationId": integration_id,
@@ -162,6 +170,65 @@ def _soc_widget_data(
             "refreshIntervalSeconds": 5,
         },
     }
+
+
+def _log_soc_widget_data(
+    *,
+    widget_id: str,
+    integration_id: str,
+    source: str,
+    data: dict[str, Any],
+) -> None:
+    summary = _soc_widget_summary(widget_id, data)
+    if _soc_widget_is_empty(widget_id, data):
+        logger.info(
+            "soc_widget_data_empty widget_id=%s integration_id=%s source=%s summary=%s "
+            "hint=seed_demo_data_or_ingest_events",
+            widget_id,
+            integration_id,
+            source,
+            summary,
+        )
+        return
+    logger.info(
+        "soc_widget_data_ready widget_id=%s integration_id=%s source=%s summary=%s",
+        widget_id,
+        integration_id,
+        source,
+        summary,
+    )
+
+
+def _soc_widget_summary(widget_id: str, data: dict[str, Any]) -> str:
+    match widget_id:
+        case "soc-incidents-by-severity":
+            return f"items={len(data.get('items', []))} total={data.get('total', 0)}"
+        case "soc-recent-incidents":
+            return f"incidents={len(data.get('incidents', []))} count={data.get('count', 0)}"
+        case "soc-top-entities":
+            return f"entities={len(data.get('entities', []))}"
+        case "xdr-endpoint-health":
+            return f"endpoints={len(data.get('endpoints', []))} total={data.get('total', 0)}"
+        case "soar-active-playbook-runs":
+            return f"runs={len(data.get('runs', []))} count={data.get('count', 0)}"
+        case _:
+            return "unknown"
+
+
+def _soc_widget_is_empty(widget_id: str, data: dict[str, Any]) -> bool:
+    match widget_id:
+        case "soc-incidents-by-severity":
+            return not data.get("items")
+        case "soc-recent-incidents":
+            return not data.get("incidents")
+        case "soc-top-entities":
+            return not data.get("entities")
+        case "xdr-endpoint-health":
+            return not data.get("endpoints")
+        case "soar-active-playbook-runs":
+            return not data.get("runs")
+        case _:
+            return False
 
 
 def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:

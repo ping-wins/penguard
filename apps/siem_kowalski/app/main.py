@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -7,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SERVICE_NAME = "siem_kowalski"
 IncidentStatus = Literal["open", "triaged", "contained", "resolved", "false_positive"]
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="siem_kowalski", version="0.1.0")
 
@@ -138,6 +140,16 @@ def create_event(event: SecurityEvent) -> SecurityEvent:
     if incident is not None:
         incidents.append(incident)
 
+    logger.info(
+        "siem_event_ingested event_id=%s event_type=%s severity=%s incident_created=%s "
+        "total_events=%s total_incidents=%s",
+        stored_event.id,
+        stored_event.event_type,
+        stored_event.severity,
+        incident is not None,
+        len(events),
+        len(incidents),
+    )
     return stored_event
 
 
@@ -149,6 +161,13 @@ def list_events(
     filtered_events = [
         event for event in reversed(events) if event_type is None or event.event_type == event_type
     ]
+    logger.info(
+        "siem_events_list event_type=%s limit=%s returned=%s total=%s",
+        event_type,
+        limit,
+        len(filtered_events[:limit]) if limit is not None else len(filtered_events),
+        len(events),
+    )
     if limit is not None:
         return filtered_events[:limit]
     return filtered_events
@@ -159,12 +178,20 @@ def list_incidents(
     status: IncidentStatus | None = None,
     severity: str | None = None,
 ) -> list[Incident]:
-    return [
+    results = [
         incident
         for incident in reversed(incidents)
         if (status is None or incident.status == status)
         and (severity is None or incident.severity == severity)
     ]
+    logger.info(
+        "siem_incidents_list status=%s severity=%s returned=%s total=%s",
+        status,
+        severity,
+        len(results),
+        len(incidents),
+    )
+    return results
 
 
 @app.get("/incidents/{incident_id}", response_model=Incident)
@@ -189,5 +216,11 @@ def update_incident_status(incident_id: str, patch: IncidentStatusPatch) -> Inci
                 }
             )
             incidents[index] = updated
+            logger.info(
+                "siem_incident_status_updated incident_id=%s status=%s timeline_items=%s",
+                incident_id,
+                patch.status,
+                len(updated.timeline),
+            )
             return updated
     raise HTTPException(status_code=404, detail="Incident not found")

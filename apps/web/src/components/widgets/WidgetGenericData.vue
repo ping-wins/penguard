@@ -16,6 +16,8 @@ type GenericWidgetMeta = {
   labelKeys: string[]
   valueKeys: string[]
   metaKeys: string[]
+  emptyTitle: string
+  emptyHint: string
 }
 
 const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
@@ -26,6 +28,8 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     labelKeys: ['severity', 'status', 'label'],
     valueKeys: ['count', 'value', 'total'],
     metaKeys: ['severity'],
+    emptyTitle: 'No incidents yet',
+    emptyHint: 'Seed SOC demo data or ingest FortiGate events to populate this chart.',
   },
   'soc-recent-incidents': {
     title: 'Recent Incidents',
@@ -34,6 +38,8 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     labelKeys: ['title', 'summary', 'id'],
     valueKeys: ['summary', 'status', 'severity'],
     metaKeys: ['status', 'severity', 'source'],
+    emptyTitle: 'No recent incidents yet',
+    emptyHint: 'Ingest SIEM events or run the SOC demo seed to create incident activity.',
   },
   'soc-top-entities': {
     title: 'Top Entities',
@@ -42,6 +48,8 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     labelKeys: ['value', 'field', 'hostname', 'sourceIp'],
     valueKeys: ['count', 'status', 'health'],
     metaKeys: ['field', 'type'],
+    emptyTitle: 'No entities yet',
+    emptyHint: 'Incidents are needed before top source IPs, hosts and users can be ranked.',
   },
   'xdr-endpoint-health': {
     title: 'Endpoint Health',
@@ -50,6 +58,8 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     labelKeys: ['hostname', 'name', 'id'],
     valueKeys: ['health', 'status', 'os'],
     metaKeys: ['os', 'currentUser', 'lastSeenAt'],
+    emptyTitle: 'No endpoints yet',
+    emptyHint: 'Create endpoint telemetry with the XDR simulator or run agent_private.',
   },
   'soar-active-playbook-runs': {
     title: 'Active Playbook Runs',
@@ -58,6 +68,8 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     labelKeys: ['name', 'playbookId', 'id'],
     valueKeys: ['status', 'currentStep', 'count'],
     metaKeys: ['status', 'incidentId'],
+    emptyTitle: 'No active runs yet',
+    emptyHint: 'Simulate or run a SOAR playbook to show step status here.',
   },
 }
 
@@ -68,6 +80,8 @@ const meta = computed(() => metadataByCatalogId[props.catalogId] ?? {
   labelKeys: ['label', 'name', 'id'],
   valueKeys: ['value', 'count', 'status'],
   metaKeys: ['source'],
+  emptyTitle: 'No data yet',
+  emptyHint: 'The endpoint responded successfully, but there is nothing to display.',
 })
 
 const rows = computed(() => {
@@ -151,8 +165,9 @@ function dotClass(severity: string) {
       </div>
     </div>
 
-    <div v-if="rows.length === 0" class="flex min-h-0 flex-1 items-center justify-center rounded border border-theme-border bg-theme-bg/50 p-4 text-center text-xs text-theme-text-muted">
-      No data returned for this SOC preset.
+    <div v-if="rows.length === 0" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded border border-theme-border bg-theme-bg/50 p-4 text-center text-xs text-theme-text-muted">
+      <span class="font-semibold text-theme-text">{{ meta.emptyTitle }}</span>
+      <span>{{ meta.emptyHint }}</span>
     </div>
 
     <div v-else-if="meta.kind === 'bar'" class="flex min-h-0 flex-1 flex-col justify-center gap-3">

@@ -190,6 +190,29 @@ def test_soar_active_playbook_runs_widget_filters_completed_runs():
     }
 
 
+def test_soc_widget_logs_empty_payload_for_first_setup(caplog):
+    client = TestClient(app)
+    fake_siem = FakeSocClient({"/incidents": {"items": []}})
+    caplog.set_level("INFO", logger="uvicorn.error")
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
+        lambda: FakePenguinToolIntegrationService("siem_kowalski")
+    )
+
+    response = client.get(
+        "/api/widgets/soc-top-entities/data",
+        params={"integrationId": "int_penguin_01"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {"entities": []}
+    assert (
+        "soc_widget_data_empty widget_id=soc-top-entities "
+        "integration_id=int_penguin_01 source=siem_kowalski summary=entities=0"
+    ) in caplog.text
+    assert "hint=seed_demo_data_or_ingest_events" in caplog.text
+
+
 def test_soc_widget_requires_matching_penguin_integration():
     client = TestClient(app)
     fake_siem = FakeSocClient({"/incidents": {"items": []}})

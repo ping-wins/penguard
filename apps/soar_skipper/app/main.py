@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict, deque
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -7,6 +8,7 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SERVICE_NAME = "soar_skipper"
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="soar_skipper", version="0.1.0")
 
@@ -185,7 +187,9 @@ def health() -> dict[str, str]:
 
 @app.get("/playbooks", response_model=list[Playbook])
 def list_playbooks() -> list[Playbook]:
-    return list(playbooks.values())
+    results = list(playbooks.values())
+    logger.info("soar_playbooks_list returned=%s", len(results))
+    return results
 
 
 @app.post("/playbooks", response_model=Playbook, status_code=status.HTTP_201_CREATED)
@@ -196,6 +200,12 @@ def create_playbook(playbook: Playbook) -> Playbook:
             detail=f"playbook {playbook.id} already exists",
         )
     playbooks[playbook.id] = playbook
+    logger.info(
+        "soar_playbook_created playbook_id=%s enabled=%s nodes=%s",
+        playbook.id,
+        playbook.enabled,
+        len(playbook.nodes),
+    )
     return playbook
 
 
@@ -213,13 +223,25 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
         )
     _get_playbook_or_404(playbook_id)
     playbooks[playbook_id] = playbook
+    logger.info(
+        "soar_playbook_updated playbook_id=%s enabled=%s nodes=%s",
+        playbook_id,
+        playbook.enabled,
+        len(playbook.nodes),
+    )
     return playbook
 
 
 @app.post("/playbooks/{playbook_id}/simulate", response_model=SimulationResponse)
 def simulate_playbook(playbook_id: str) -> SimulationResponse:
     playbook = _get_playbook_or_404(playbook_id)
-    return SimulationResponse(dry_run=True, valid=True, steps=_build_step_previews(playbook))
+    steps = _build_step_previews(playbook)
+    logger.info(
+        "soar_playbook_simulated playbook_id=%s steps=%s",
+        playbook_id,
+        len(steps),
+    )
+    return SimulationResponse(dry_run=True, valid=True, steps=steps)
 
 
 @app.post(
@@ -253,6 +275,16 @@ def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
         created_at=now,
     )
     playbook_runs[run.id] = run
+    logger.info(
+        "soar_playbook_run_created run_id=%s incident_id=%s playbook_id=%s status=%s "
+        "dry_run=%s steps=%s",
+        run.id,
+        incident_id,
+        playbook_id,
+        run.status,
+        run.dry_run,
+        len(run.steps),
+    )
     return run
 
 
@@ -281,6 +313,7 @@ def approve_playbook_run(run_id: str) -> PlaybookRun:
         }
     )
     playbook_runs[run_id] = approved
+    logger.info("soar_playbook_run_approved run_id=%s", run_id)
     return approved
 
 
@@ -292,7 +325,20 @@ def list_playbook_runs(status: RunStatus | None = None) -> list[PlaybookRun]:
         reverse=True,
     )
     if status is not None:
-        return [run for run in runs if run.status == status]
+        filtered_runs = [run for run in runs if run.status == status]
+        logger.info(
+            "soar_playbook_runs_list status=%s returned=%s total=%s",
+            status,
+            len(filtered_runs),
+            len(playbook_runs),
+        )
+        return filtered_runs
+    logger.info(
+        "soar_playbook_runs_list status=%s returned=%s total=%s",
+        status,
+        len(runs),
+        len(playbook_runs),
+    )
     return runs
 
 

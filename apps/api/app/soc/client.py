@@ -1,8 +1,11 @@
+import logging
 import time
 from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class SocServiceClient:
@@ -36,6 +39,15 @@ class SocServiceClient:
 
         for attempt in range(self.max_attempts):
             is_last_attempt = attempt == self.max_attempts - 1
+            logger.info(
+                "soc_service_request service=%s method=%s path=%s attempt=%s/%s params=%s",
+                self.service_name,
+                method.upper(),
+                path,
+                attempt + 1,
+                self.max_attempts,
+                _safe_log_params(cleaned_params),
+            )
             try:
                 response = httpx.request(
                     method,
@@ -46,6 +58,14 @@ class SocServiceClient:
                     timeout=self.timeout_seconds,
                 )
             except httpx.TimeoutException as exc:
+                logger.warning(
+                    "soc_service_timeout service=%s method=%s path=%s attempt=%s/%s",
+                    self.service_name,
+                    method.upper(),
+                    path,
+                    attempt + 1,
+                    self.max_attempts,
+                )
                 if not is_last_attempt:
                     self._backoff()
                     continue
@@ -54,6 +74,14 @@ class SocServiceClient:
                     detail=f"{self.service_name} timed out",
                 ) from exc
             except httpx.RequestError as exc:
+                logger.warning(
+                    "soc_service_unavailable service=%s method=%s path=%s attempt=%s/%s",
+                    self.service_name,
+                    method.upper(),
+                    path,
+                    attempt + 1,
+                    self.max_attempts,
+                )
                 if not is_last_attempt:
                     self._backoff()
                     continue
@@ -78,6 +106,14 @@ class SocServiceClient:
                     status_code=response.status_code,
                     payload=payload,
                 )
+            logger.info(
+                "soc_service_response service=%s method=%s path=%s status_code=%s item_count=%s",
+                self.service_name,
+                method.upper(),
+                path,
+                response.status_code,
+                _payload_item_count(payload),
+            )
             return payload
 
         raise RuntimeError("SOC service request retry loop exited unexpectedly")
@@ -97,6 +133,23 @@ def _clean_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
     if headers is None:
         return None
     return {key: value for key, value in headers.items() if value}
+
+
+def _safe_log_params(params: dict[str, Any] | None) -> str:
+    if not params:
+        return "{}"
+    rendered = []
+    for key, value in params.items():
+        if _is_sensitive_key(key):
+            rendered.append(f"{key}=<redacted>")
+        else:
+            rendered.append(f"{key}={value}")
+    return " ".join(rendered)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(marker in lowered for marker in ("token", "secret", "password", "api_key", "key"))
 
 
 def _is_retryable_status(status_code: int) -> bool:
@@ -121,6 +174,13 @@ def _response_payload(response: httpx.Response) -> dict[str, Any]:
             detail="Internal SOC service returned an invalid payload",
         )
     return payload
+
+
+def _payload_item_count(payload: dict[str, Any]) -> int | str:
+    items = payload.get("items")
+    if isinstance(items, list):
+        return len(items)
+    return "n/a"
 
 
 def _raise_internal_service_error(

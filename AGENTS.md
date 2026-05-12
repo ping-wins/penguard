@@ -159,6 +159,13 @@ DELETE /api/integrations/{integrationId}   # removes FortiGate or Penguin tool i
 
 Workspace widgets for Penguin tools always require `integrationId`. Do not add global/demo SOC widgets that bypass the integration model.
 
+First setup behavior: Penguin widgets are live, but the lite services start with
+empty in-memory stores. Empty incident, endpoint, entity or playbook widgets are
+expected until a contributor runs the SOC demo seed, ingests FortiGate events, or
+sends endpoint telemetry. Container logs should show `soc_service_*`,
+`soc_widget_data_*`, `siem_*`, `xdr_*` and `soar_*` events so an empty widget can
+be distinguished from a broken service call.
+
 ### siem_kowalski: SIEM-lite
 
 Purpose: convert telemetry into incidents.

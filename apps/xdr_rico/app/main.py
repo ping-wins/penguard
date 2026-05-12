@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Annotated, Literal
@@ -7,6 +8,7 @@ from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 SERVICE_NAME = "xdr_rico"
+logger = logging.getLogger("uvicorn.error")
 EndpointEventType = Literal[
     "heartbeat",
     "process.snapshot",
@@ -200,6 +202,15 @@ def ingest_endpoint_event(event: EndpointEventCreate) -> EndpointEventResponse:
         attributes=event.attributes,
     )
     store.timeline.setdefault(endpoint.id, []).append(timeline_item)
+    logger.info(
+        "xdr_endpoint_event_ingested endpoint_id=%s event_type=%s health=%s "
+        "total_endpoints=%s endpoint_timeline_items=%s",
+        endpoint.id,
+        event.event_type,
+        endpoint.health,
+        len(store.endpoints),
+        len(store.timeline.get(endpoint.id, [])),
+    )
     return EndpointEventResponse(endpoint=endpoint, timelineItem=timeline_item)
 
 
@@ -224,6 +235,12 @@ def create_enrollment(payload: EnrollmentCreate) -> EnrollmentResponse:
         createdAt=created_at,
         tokenHash=token_hash(token),
     )
+    logger.info(
+        "xdr_enrollment_created enrollment_id=%s display_name=%s hostname_hint=%s",
+        enrollment_id,
+        payload.display_name,
+        payload.hostname_hint,
+    )
     return EnrollmentResponse(
         id=enrollment_id,
         displayName=payload.display_name,
@@ -235,7 +252,9 @@ def create_enrollment(payload: EnrollmentCreate) -> EnrollmentResponse:
 
 @app.get("/endpoints", response_model=EndpointListResponse)
 def list_endpoints() -> EndpointListResponse:
-    return EndpointListResponse(items=list(get_store().endpoints.values()))
+    items = list(get_store().endpoints.values())
+    logger.info("xdr_endpoints_list returned=%s", len(items))
+    return EndpointListResponse(items=items)
 
 
 @app.get("/endpoints/{endpoint_id}", response_model=Endpoint)
@@ -251,6 +270,7 @@ def get_endpoint_timeline(endpoint_id: str) -> EndpointTimelineResponse:
         key=lambda item: item.occurred_at,
         reverse=True,
     )
+    logger.info("xdr_endpoint_timeline endpoint_id=%s returned=%s", endpoint_id, len(items))
     return EndpointTimelineResponse(endpointId=endpoint_id, items=items)
 
 
@@ -329,6 +349,11 @@ def create_simulator_events() -> SimulatorResponse:
     ]
     timeline_items = [ingest_endpoint_event(event).timeline_item for event in demo_events]
     endpoint = get_endpoint_or_404(endpoint_id)
+    logger.info(
+        "xdr_simulator_events_created endpoint_id=%s created_events=%s",
+        endpoint_id,
+        len(timeline_items),
+    )
     return SimulatorResponse(
         endpoint=endpoint,
         createdEvents=len(timeline_items),
