@@ -109,6 +109,16 @@ SSO/Kerberos support:
 - `SessionMiddleware` stores OAuth state in the `f_session` cookie.
 - Local AD/Kerberos lab values live in `docker-compose.yml`, `krb5.conf`, `.env` or local host configuration. Do not move secrets or lab-specific keytabs into tracked docs.
 - `fortidashboard.keytab` must remain untracked.
+- **Full setup guide:** `configSSOKerberosKeycloak.md` at the repo root has
+  the step-by-step for Active Directory (svc account, SPN, `ktpass` keytab,
+  DNS records, enctype tuning), the Keycloak side (realm import, Kerberos
+  user federation, browser flow), `.env` / `docker-compose` wiring,
+  workstation Group Policy / Firefox `network.negotiate-auth.trusted-uris`,
+  smoke test (`kvno HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL`) and a
+  troubleshooting matrix (clock skew, duplicate SPN, enctype mismatch,
+  redirect URI loops, `state_mismatch`). Anyone picking up the lab from a
+  clean machine should read it before touching `krb5.conf` or the realm
+  import file.
 
 Relevant config keys:
 
@@ -445,23 +455,33 @@ Delivered in this branch (`lucas/mvp-demo-roadmap`):
   `rawEventCount` and `createdCount` (aggregated) and records both in the
   `soc.fortigate_events.ingested` audit detail (`count` retained as an alias
   of `aggregatedCount` for backwards-compat with the existing test suite).
-- `POST /api/soc/demo/replay` injects a canned 3-event burst directly into
+- `POST /api/soc/demo/replay` injects canned events directly into
   `siem_kowalski`: an inbound port scan (`network.deny`, count 42), repeated
   SSH login failures (`auth.failed_login`, count 9) and an
   `endpoint.suspicious_connection` from the demo endpoint back to the
-  attacker IP. Every payload carries `source="demo.replay"` and a fresh
-  `demoRunId` so dashboards can filter the seed out of real telemetry. The
-  call audit-logs `soc.demo.replay` with the run id and event count, and
-  fails closed (502 + failure audit) if the SIEM rejects any of the events.
+  attacker IP. Every payload carries `source="demo.replay"`, an
+  `attackType` attribute (`port_scan` / `brute_force` / `c2_beacon`) and a
+  fresh `demoRunId` so dashboards can filter the seed out of real telemetry.
+  The endpoint accepts an optional JSON body
+  `{"attackTypes": ["port_scan", ...]}` so the analyst can replay a single
+  attack at a time (or the full canonical chain when the body is omitted).
+  The call audit-logs `soc.demo.replay` with the run id, event count and
+  the per-attack selection, and fails closed (502 + failure audit) if the
+  SIEM rejects any of the events.
 
 Delivered cockpit-side:
 
 - `services/workspaceClient.ts:replayDemoIncident()` wraps the new endpoint
   and reuses the workspace CSRF helpers.
 - `components/workspace/WorkspacePanel.vue` shows a yellow "MVP demo" panel
-  with a `Zap` "Replay" button. After a successful replay it surfaces the
-  last `demoRunId` and event count so the operator can re-run the recording
-  confident the seed actually fired.
+  with a `Zap` "Replay" button. Clicking it opens an inline attack picker:
+  one chip per individual attack (`Port scan`, `Brute force SSH`, `Beacon
+  C2 do endpoint`) plus a highlighted "Cadeia completa / Full chain"
+  button. Each chip injects only its attack so the analyst can re-record a
+  single phase without resetting the lab. After a successful replay the
+  panel surfaces the last `demoRunId`, the event count and the per-attack
+  list so the operator can re-run the recording confident the seed
+  actually fired.
 
 Still pending (next phase or stretch):
 
@@ -704,16 +724,72 @@ catalogs in `messages/pt-BR.ts` and `messages/en-US.ts`. Components use
 starts with `en` the cockpit boots in English, otherwise it falls back to
 pt-BR. `setLocale()` also keeps `<html lang>` in sync for accessibility.
 
-Translated surfaces in this release:
+Translated surfaces:
 
-- `views/LoginView.vue` and the SSO failure popup.
+- `views/LoginView.vue` + SSO failure popup.
+- `views/RegisterView.vue` (full form, error fallbacks, switch-link copy).
+- `views/PresentationView.vue` (title slide, content slide, navigation
+  controls, keyboard hint, severity labels).
 - `components/layout/Sidebar.vue` icon-bar tooltips (Dashboard, Assistant,
   Integrations, Workspaces, Tickets, Audit, Settings, Sign out).
-- `components/settings/SettingsModal.vue` (every label).
+- `components/settings/SettingsModal.vue` (every label, locale picker).
+- `components/tickets/TicketsPanel.vue` header, subtitle, filters, lane
+  labels and descriptions (driven by `computed(t)` so they live-switch
+  when the locale changes), ticket cards (status + severity badges),
+  detail drawer (open date, triage/status sections, entities + timeline
+  headers, all AI assistant copy including buttons, IoCs, next steps,
+  references and the containment plan, draft playbook + simulation block,
+  and the final "Threat contained" / "Containment paused at approval
+  gate" banner). References returned by the AI now render as clickable
+  anchors (`target="_blank"` + `rel="noopener noreferrer"`) so MITRE
+  ATT&CK, Fortinet docs and CVE links open in a new tab.
+- `components/workspace/WorkspacePanel.vue` fully translated: flash
+  messages, header/subtitle, MVP demo replay block, origin pill +
+  "Detalhes da origem" dialog, workspace list (badges, widget count,
+  briefing pill, delete tooltip, loading state), and every modal body
+  (export, import preview, publish form fields/placeholders, community
+  library filter + cards + install/remove buttons, presentation editor
+  including severity options, slide title/narration placeholders and
+  "Iniciar apresentação" / "Salvar"). Action labels (`actions` computed)
+  and `originBadge()` pull from `t()` so they live-switch with locale.
+- `components/audit/AuditFeed.vue` + `components/audit/auditFormat.ts`
+  fully translated: header title/subtitle (with per-scope variants —
+  admin vs `mine` audit trail — wired from `Sidebar.vue`), loading,
+  error and empty states, refresh aria-label, action labels for every
+  audit event (`login`, `register`, `logout`, FortiGate
+  created/deleted/health-checked, workspace updated, audit viewed) and
+  fallback strings (unknown actor / IP unavailable / user agent
+  unavailable / time unavailable). `formatAuditEvent()` reads from the
+  global `i18n` instance so the formatter stays a pure function.
+  `createdAtLabel()` now uses `getLocale()` for `Intl.DateTimeFormat`
+  so dates render in the active locale.
+- `components/layout/Sidebar.vue` chat box (assistant tab) fully
+  translated: header, initial greeting, "Analisando..." indicator,
+  input placeholder, integration-required warning, "Adicionei o painel
+  X" success and the "no match" fallback. Audit drawer title/subtitle
+  props swap between `audit.adminTitle` / `audit.mineTitle` based on
+  the `isAdmin` flag.
+
+The AI provider locale switch:
+
+- `IncidentAnalysis` and `ContainmentSuggestion` outputs now speak the
+  user's language. The backend `AIProvider.analyze_incident()` and
+  `suggest_containment()` methods accept a `locale` kwarg, and the
+  scripted adapter produces fully bilingual output (pt-BR / en-US).
+- The Anthropic and OpenAI-compatible adapters inject the locale into the
+  prompt instructions so the model is told to reply in the requested
+  language while still emitting strict JSON. References are explicitly
+  requested as URLs to MITRE ATT&CK, Fortinet docs and CVEs so the
+  cockpit can render them as hyperlinks.
+- The cockpit attaches the current locale to every AI call via the
+  `X-FortiDashboard-Locale` HTTP header; the gateway's
+  `_request_locale()` reads it (with an `Accept-Language` fallback)
+  before invoking the provider.
 
 Components still pending translation (incremental work tracked in the
-backlog): `WorkspacePanel.vue`, `TicketsPanel.vue`, `PresentationView.vue`,
-`RegisterView.vue`, and the audit drawer copy.
+backlog): the integrations tab in `Sidebar.vue` (Fortinet/Penguin/
+endpoint sections, connection state badges, form labels, test/connect
+buttons and error strings).
 
 ## Commands
 
@@ -863,7 +939,13 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add a sidebar `SettingsModal` with Profile / Appearance / Language tabs.
 - [x] Add `vue-i18n` with pt-BR + en-US catalogs and a persistent locale picker.
 - [x] Translate LoginView, SSO popup, sidebar tooltips and SettingsModal.
-- [ ] Translate WorkspacePanel, TicketsPanel, PresentationView, RegisterView and the audit drawer copy.
+- [x] Translate RegisterView, PresentationView and TicketsPanel (header, lanes, filters, detail drawer, AI assistant block).
+- [x] Render AI analysis references as clickable hyperlinks (`target="_blank"`).
+- [x] Pass the cockpit locale to AI calls (`X-FortiDashboard-Locale` header) so scripted/Anthropic/OpenAI providers reply in the user's language.
+- [x] Translate the WorkspacePanel dialog bodies (export preview, publish form, community library entries, presentation editor labels).
+- [x] Translate the audit drawer (AuditFeed header, scope-aware admin/mine titles, action labels in `auditFormat.ts`, fallback strings, locale-aware date formatting).
+- [x] Translate the Sidebar chat box (assistant tab) including bot replies and input placeholder.
+- [ ] Translate the Sidebar integrations tab (Fortinet/Penguin/endpoint sections, connection-state badges, form labels, test/connect buttons and error strings).
 - [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
 
 ### MVP Demo (cross-cutting)
@@ -878,6 +960,105 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Draft playbook" / "Apply (dry-run)" flow that auto-contains the ticket on success.
 - [x] Phase 5 — Toast/banner notifications for new SIEM incidents (`useIncidentToastsStore` + `IncidentToastContainer.vue`).
 - [x] Phase 5 — Demo walkthrough doc (`docs/mvp/walkthrough.md`) + smoke test covering seed → incident → AI → ticket → playbook → contained (`apps/api/tests/test_mvp_demo_chain.py`).
+
+### Production Readiness (MVP → real customer)
+
+The MVP demo flow works end-to-end, but several gaps must close before a
+customer can run FortiDashboard against their own SOC. Track each as a
+deliverable, not a nice-to-have. Order roughly by blast radius.
+
+Security hardening:
+
+- [ ] Rotate every default secret out of tracked files: Keycloak realm
+      `secret` (`dev-client-secret`), `FORTIDASHBOARD_SECRET_KEY`,
+      `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY`, `KC_BOOTSTRAP_ADMIN_PASSWORD`
+      and the seeded analyst/admin passwords. Provide a first-boot script
+      that fails closed when any of them still equal the default.
+- [ ] Disable `allow_weak_crypto` + `java-security-override.properties` and
+      the AES128 fallback once the lab is on AES256 only. Document the
+      production `krb5.conf` separately.
+- [ ] Force `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and require HTTPS
+      end-to-end (reverse proxy with TLS, HSTS, cookie `__Host-` prefix).
+- [ ] Extend the auth rate limiter to cover SSO callback, AI endpoints and
+      `POST /api/soc/demo/replay` (currently only `/login` is throttled).
+- [ ] Cap AI token usage per user/incident (`max_tokens`, budget per day) so
+      a runaway prompt cannot bankrupt the customer. Audit prompt + token
+      counts.
+- [ ] Add a secrets scanner to CI (e.g. `gitleaks`) so keytabs, JWTs and
+      FortiGate API keys cannot reach a PR.
+
+Persistence + multi-tenancy:
+
+- [ ] Replace the in-memory store in `apps/soar_skipper/app/main.py`
+      (`playbooks: dict[str, Playbook]`, `playbook_runs: dict[str, PlaybookRun]`)
+      with SQL-backed storage matching the `siem_kowalski` / `xdr_rico`
+      pattern. Restarting SOAR currently wipes every playbook + run.
+- [ ] Tenant-scope incidents, tickets, endpoints and playbook runs by the
+      authenticated user/org. Today the lite services are single-tenant and
+      the gateway only RBACs the surface, not the row.
+- [ ] Add a row-level retention policy (incidents, audit, demo replays)
+      with configurable TTL — required for LGPD/GDPR conversations.
+- [ ] Add Alembic migrations for every new SOC column added during the MVP
+      phases (verify `apps/api/migrations/versions/` covers ticket fields
+      and the new `attackType` audit detail).
+- [ ] Backup + restore runbook for Postgres + Redis. The cockpit imports
+      manifests, but there is no documented disaster recovery.
+
+Real telemetry path (so the customer can stop using `demo/replay`):
+
+- [ ] Auto-ingest FortiGate events on a schedule instead of requiring a
+      manual `POST /api/soc/fortigate/{id}/ingest-events`. Use Dramatiq +
+      Redis (already in stack) to poll per integration.
+- [ ] Resolve the lab-setup issues in this file (`set logtraffic all`,
+      bridged-host visibility) by shipping a one-page operator checklist
+      embedded in the cockpit "Integrations → FortiGate" panel.
+- [ ] Wire `agent_private` heartbeats into the same XDR ingestion path
+      currently exercised by the simulator so a customer can install the
+      sensor and see live endpoint data.
+- [ ] Surface ingestion lag in the cockpit (last successful poll per
+      integration, last incident raised) so the analyst knows the pipeline
+      is alive without grepping logs.
+
+Observability + ops:
+
+- [ ] Add structured JSON logging across BFF + lite services with a shared
+      `requestId` / `incidentId` correlation id. Today logs are
+      f-string-formatted and hard to ship to a SIEM.
+- [ ] Expose Prometheus metrics (`/metrics`) for request latency, AI call
+      durations, queue depth and detection rule hit counts.
+- [ ] Add `/health/ready` + `/health/live` separation (Postgres, Redis,
+      Keycloak, SIEM/SOAR/XDR reachability) and wire into the Docker
+      Compose healthchecks so dependent services start in the right order.
+- [ ] Ship docker-compose overrides (`docker-compose.prod.yml`) that flip
+      `start-dev` to `start`, pin image digests and drop the dev volumes.
+
+CI/CD + quality gates:
+
+- [ ] Add a GitHub Actions workflow that runs `pnpm test`, `vue-tsc`,
+      `pytest` and `ruff` on every PR. Today there is no `.github/workflows`
+      directory, so the test suite is informal.
+- [ ] Run the `test_mvp_demo_chain.py` smoke test inside CI so the demo
+      flow does not silently break between commits.
+- [ ] Add Playwright tests for the cockpit golden paths (login → replay
+      demo → triage → contain). Frontend currently has ~13 spec files —
+      enough for components but not for the demo path.
+- [ ] Run `git diff --check` and the secrets scanner in pre-commit so
+      whitespace and credential leaks are caught before push.
+
+Customer-facing UX gaps:
+
+- [ ] First-run / onboarding flow: bootstrap the first admin user, walk
+      through integration setup, surface "what to do next" instead of
+      dropping the user on an empty dashboard.
+- [ ] Richer empty/error/loading states per SOC-lite tool (already tracked
+      in Frontend Cockpit backlog — promote to MVP-blocking).
+- [ ] Finish the Sidebar integrations tab translation (`workspaces` is
+      done; the integrations form is still PT/EN-mixed hard-coded copy).
+- [ ] Document supported deployments (single-host docker compose vs
+      managed Postgres + managed Keycloak). Today `README.md` only covers
+      the dev stack.
+- [ ] Customer-facing changelog/release notes — required before any
+      external rollout so customers know what shipped.
 
 ### Quality
 

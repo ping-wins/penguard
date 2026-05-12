@@ -41,7 +41,7 @@ The total demo runs in **2-3 minutes** including the AI containment walkthrough.
 | Step | Action | What the camera shows |
 |------|--------|------------------------|
 | 1 | Sidebar (left rail) → `FolderTree` "Workspaces" tab | Workspace list, MVP demo panel, no tickets yet |
-| 2 | Click the yellow **Replay** button under "MVP demo" | Success toast: `Incidente demo injetado (3 eventos, run demo_…)` |
+| 2 | Click the yellow **Replay** button under "MVP demo", then pick **Cadeia completa / Full chain** in the popover (chips for `Port scan`, `Brute force SSH`, `Beacon C2 do endpoint` let you replay one attack at a time when re-recording a specific phase) | Success toast: `Demo injetado (3 eventos, run demo_…, ataques: Cadeia completa)` |
 | 3 | Bottom-right corner | Toast pops up: "New incident · T1 · Inbound port scan from 203.0.113.77" |
 | 4 | Sidebar → `Ticket` icon to open **SOC Tickets** | Three lanes (T1/T2/T3) populate; the port scan sits in T1 with status `new` |
 | 5 | Click the T1 ticket | Detail drawer opens with summary, entities, timeline |
@@ -64,7 +64,15 @@ $cookie = "fortidashboard_session=COOKIE"
 $csrf = (curl.exe -s -H "Cookie: $cookie" http://localhost:8000/api/auth/csrf | ConvertFrom-Json).csrfToken
 curl.exe -X POST -H "Cookie: $cookie" -H "X-CSRF-Token: $csrf" `
   http://localhost:8000/api/soc/demo/replay
+# Or pick a subset to replay only one attack at a time:
+curl.exe -X POST -H "Cookie: $cookie" -H "X-CSRF-Token: $csrf" `
+  -H "Content-Type: application/json" `
+  --data '{\"attackTypes\":[\"port_scan\"]}' `
+  http://localhost:8000/api/soc/demo/replay
 ```
+
+Allowed `attackTypes` values: `port_scan`, `brute_force`, `c2_beacon`. Omit the
+field (or pass an empty list) to inject the full canonical chain.
 
 The `demoRunId` lets you correlate the next set of tickets with the retake.
 

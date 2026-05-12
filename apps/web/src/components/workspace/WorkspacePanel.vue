@@ -20,7 +20,10 @@ import {
   Tag as TagIcon,
   RefreshCcw,
   Zap,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -35,7 +38,9 @@ import {
   readManifestFile,
   replayDemoIncident,
   updatePresentation,
+  DEMO_ATTACK_TYPES,
   type CommunityTemplate,
+  type DemoAttackType,
   type PresentationMetadata,
   type PresentationSlide,
   type WorkspaceManifest,
@@ -43,6 +48,7 @@ import {
   type WorkspaceSummary,
 } from '../../services/workspaceClient'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const dashboardStore = useDashboardStore()
@@ -109,9 +115,9 @@ async function handleExport() {
     const manifest = await exportWorkspace(activeWorkspaceId.value)
     lastExportedManifest.value = manifest
     downloadManifest(manifest)
-    successMsg.value = `Manifest exportado (${manifest.widgets.length} widgets).`
+    successMsg.value = t('workspaces.exportDialog.success', { count: manifest.widgets.length })
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao exportar workspace'
+    errorMsg.value = e?.message ?? t('workspaces.exportDialog.error')
   } finally {
     isBusy.value = false
   }
@@ -128,7 +134,7 @@ async function handleImportFileChange(event: Event) {
   try {
     importPreview.value = await readManifestFile(file)
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Arquivo inválido'
+    errorMsg.value = e?.message ?? t('workspaces.importDialog.invalidFile')
   }
 }
 
@@ -138,11 +144,11 @@ async function handleImportConfirm() {
   isBusy.value = true
   try {
     const result = await importWorkspace(importPreview.value)
-    successMsg.value = `Importado como ${result.id}. Trocando para o workspace…`
+    successMsg.value = t('workspaces.importDialog.success', { id: result.id })
     await dashboardStore.switchWorkspace(result.id)
     closeDialog()
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao importar manifest'
+    errorMsg.value = e?.message ?? t('workspaces.importDialog.error')
   } finally {
     isBusy.value = false
   }
@@ -152,7 +158,7 @@ async function handleImportConfirm() {
 async function handlePublish() {
   resetMessages()
   if (!publishForm.value.slug || !publishForm.value.title) {
-    errorMsg.value = 'Slug e título obrigatórios'
+    errorMsg.value = t('workspaces.publishDialog.required')
     return
   }
   isBusy.value = true
@@ -169,10 +175,10 @@ async function handlePublish() {
       tags,
       incidentId: publishForm.value.incidentId || undefined,
     })
-    successMsg.value = `Template "${publishForm.value.title}" publicado.`
+    successMsg.value = t('workspaces.publishDialog.success', { title: publishForm.value.title })
     publishForm.value = { slug: '', title: '', description: '', tagsText: '', incidentId: '' }
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao publicar template'
+    errorMsg.value = e?.message ?? t('workspaces.publishDialog.error')
   } finally {
     isBusy.value = false
   }
@@ -184,7 +190,7 @@ async function loadCommunity() {
   try {
     community.value = await listCommunityTemplates()
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao carregar biblioteca'
+    errorMsg.value = e?.message ?? t('workspaces.communityDialog.loadError')
   } finally {
     isBusy.value = false
   }
@@ -195,11 +201,11 @@ async function installTemplate(template: CommunityTemplate) {
   isBusy.value = true
   try {
     const result = await installCommunityTemplate(template.id)
-    successMsg.value = `"${template.title}" instalado. Trocando…`
+    successMsg.value = t('workspaces.communityDialog.installSuccess', { title: template.title })
     await dashboardStore.switchWorkspace(result.workspace.id)
     closeDialog()
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao instalar template'
+    errorMsg.value = e?.message ?? t('workspaces.communityDialog.installError')
   } finally {
     isBusy.value = false
   }
@@ -207,14 +213,14 @@ async function installTemplate(template: CommunityTemplate) {
 
 async function removeTemplate(template: CommunityTemplate) {
   resetMessages()
-  if (!confirm(`Remover template "${template.title}"?`)) return
+  if (!confirm(t('workspaces.communityDialog.removeConfirm', { title: template.title }))) return
   isBusy.value = true
   try {
     await deleteCommunityTemplate(template.id)
     community.value = community.value.filter((t) => t.id !== template.id)
-    successMsg.value = 'Template removido.'
+    successMsg.value = t('workspaces.communityDialog.removed')
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao remover template'
+    errorMsg.value = e?.message ?? t('workspaces.communityDialog.removeError')
   } finally {
     isBusy.value = false
   }
@@ -232,19 +238,55 @@ const filteredCommunity = computed(() => {
 })
 
 // ----- MVP Demo -----
-const lastDemoRun = ref<{ demoRunId: string; eventCount: number } | null>(null)
+const lastDemoRun = ref<{
+  demoRunId: string
+  eventCount: number
+  attackTypes: DemoAttackType[]
+} | null>(null)
+const demoPickerOpen = ref(false)
+const demoBusyType = ref<DemoAttackType | 'all' | null>(null)
 
-async function handleReplayDemo() {
+function attackTypeLabel(type: DemoAttackType | 'all'): string {
+  return t(`workspaces.mvpDemo.attackTypes.${type}`)
+}
+
+function formatAttackTypes(types: DemoAttackType[]): string {
+  if (!types.length) return ''
+  if (types.length === DEMO_ATTACK_TYPES.length) {
+    return attackTypeLabel('all')
+  }
+  return types.map((t) => attackTypeLabel(t)).join(', ')
+}
+
+function toggleDemoPicker() {
   resetMessages()
+  demoPickerOpen.value = !demoPickerOpen.value
+}
+
+async function handleReplayDemo(selection: DemoAttackType | 'all') {
+  resetMessages()
+  demoBusyType.value = selection
   isBusy.value = true
   try {
-    const result = await replayDemoIncident()
-    lastDemoRun.value = { demoRunId: result.demoRunId, eventCount: result.eventCount }
-    successMsg.value = `Incidente demo injetado (${result.eventCount} eventos, run ${result.demoRunId}).`
+    const result = await replayDemoIncident(
+      selection === 'all' ? undefined : [selection],
+    )
+    lastDemoRun.value = {
+      demoRunId: result.demoRunId,
+      eventCount: result.eventCount,
+      attackTypes: result.attackTypes,
+    }
+    successMsg.value = t('workspaces.mvpDemo.success', {
+      count: result.eventCount,
+      id: result.demoRunId,
+      types: formatAttackTypes(result.attackTypes),
+    })
+    demoPickerOpen.value = false
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao replay do demo'
+    errorMsg.value = e?.message ?? t('workspaces.mvpDemo.error')
   } finally {
     isBusy.value = false
+    demoBusyType.value = null
   }
 }
 
@@ -252,10 +294,10 @@ async function handleReplayDemo() {
 function hydratePresentationDraft() {
   const widgetList = widgets.value
   presentationDraft.value = {
-    title: dashboardStore.workspaceName + ' — Incident Briefing',
+    title: dashboardStore.workspaceName + t('workspaces.presentationDialog.defaultTitleSuffix'),
     incidentSummary: '',
     presenterName: authStore.user?.displayName ?? '',
-    audience: 'Executivo',
+    audience: t('workspaces.presentationDialog.defaultAudience'),
     severity: 'high',
     slides: widgetList.map((w: any) => ({
       widgetInstanceId: w.instanceId,
@@ -271,7 +313,7 @@ function addSlide(widgetInstanceId: string) {
   const widget = widgets.value.find((w: any) => w.instanceId === widgetInstanceId)
   presentationDraft.value.slides.push({
     widgetInstanceId,
-    title: widget?.catalogId ?? 'Slide',
+    title: widget?.catalogId ?? t('workspaces.presentationDialog.defaultSlideTitle'),
     narration: '',
     highlightFieldIds: [],
   })
@@ -296,9 +338,9 @@ async function savePresentation() {
   isBusy.value = true
   try {
     await updatePresentation(activeWorkspaceId.value, presentationDraft.value)
-    successMsg.value = 'Apresentação salva.'
+    successMsg.value = t('workspaces.presentationDialog.saveSuccess')
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao salvar apresentação'
+    errorMsg.value = e?.message ?? t('workspaces.presentationDialog.saveError')
   } finally {
     isBusy.value = false
   }
@@ -319,29 +361,35 @@ async function handleSwitch(workspaceId: string) {
 async function handleDelete(ws: WorkspaceSummary) {
   resetMessages()
   if (ws.id === 'ws_default') {
-    errorMsg.value = 'Workspace padrão não pode ser excluído.'
+    errorMsg.value = t('workspaces.cannotDeleteDefault')
     return
   }
-  if (!confirm(`Excluir workspace "${ws.name}"?`)) return
+  if (!confirm(t('workspaces.deleteConfirm', { name: ws.name }))) return
   try {
     await dashboardStore.deleteWorkspaceById(ws.id)
-    successMsg.value = 'Workspace excluído.'
+    successMsg.value = t('workspaces.deletedSuccess')
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao excluir'
+    errorMsg.value = e?.message ?? t('workspaces.deleteError')
   }
 }
 
 function originBadge(origin: WorkspaceOrigin | null | undefined) {
   if (!origin || origin.type === 'local') {
-    return { label: 'Local', color: 'border-theme-border bg-theme-bg/40 text-theme-text-muted' }
+    return {
+      label: t('workspaces.origins.local'),
+      color: 'border-theme-border bg-theme-bg/40 text-theme-text-muted',
+    }
   }
   if (origin.type === 'template') {
     return {
-      label: 'Da comunidade',
+      label: t('workspaces.origins.template'),
       color: 'border-purple-500/40 bg-purple-500/15 text-purple-300',
     }
   }
-  return { label: 'Importado', color: 'border-sky-500/40 bg-sky-500/15 text-sky-300' }
+  return {
+    label: t('workspaces.origins.imported'),
+    color: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
+  }
 }
 
 function originAuthor(origin: WorkspaceOrigin | null | undefined): string | null {
@@ -369,11 +417,36 @@ onMounted(() => {
 })
 
 const actions = computed(() => [
-  { kind: 'export', label: 'Exportar', icon: Download, hint: 'Baixar manifest JSON' },
-  { kind: 'import', label: 'Importar', icon: Upload, hint: 'Carregar manifest JSON' },
-  { kind: 'presentation', label: 'Apresentação', icon: Presentation, hint: 'Configurar slides para briefing' },
-  { kind: 'publish', label: 'Publicar', icon: Share2, hint: 'Compartilhar com comunidade' },
-  { kind: 'community', label: 'Biblioteca', icon: Library, hint: `${community.value.length} templates` },
+  {
+    kind: 'export',
+    label: t('workspaces.actions.export'),
+    icon: Download,
+    hint: t('workspaces.actionsHint.export'),
+  },
+  {
+    kind: 'import',
+    label: t('workspaces.actions.import'),
+    icon: Upload,
+    hint: t('workspaces.actionsHint.import'),
+  },
+  {
+    kind: 'presentation',
+    label: t('workspaces.actions.presentation'),
+    icon: Presentation,
+    hint: t('workspaces.actionsHint.presentation'),
+  },
+  {
+    kind: 'publish',
+    label: t('workspaces.actions.publish'),
+    icon: Share2,
+    hint: t('workspaces.actionsHint.publish'),
+  },
+  {
+    kind: 'community',
+    label: t('workspaces.actions.library'),
+    icon: Library,
+    hint: t('workspaces.actionsHint.library', { count: community.value.length }),
+  },
 ])
 </script>
 
@@ -385,17 +458,17 @@ const actions = computed(() => [
         <div>
           <h2 class="font-bold text-lg text-theme-text flex items-center gap-2">
             <Layers :size="18" />
-            Workspaces
+            {{ t('workspaces.title') }}
           </h2>
           <p class="text-xs text-theme-text-muted mt-1">
-            Crie, importe e publique briefings de incidente.
+            {{ t('workspaces.subtitle') }}
           </p>
         </div>
         <button
           type="button"
           @click="dashboardStore.refreshWorkspaceList()"
           class="text-theme-text-muted hover:text-theme-text"
-          title="Atualizar lista"
+          :title="t('workspaces.refreshTooltip')"
         >
           <RefreshCcw :size="16" />
         </button>
@@ -423,24 +496,52 @@ const actions = computed(() => [
         <div class="min-w-0">
           <div class="text-xs font-semibold uppercase tracking-wider text-amber-300 flex items-center gap-1">
             <Zap :size="13" />
-            MVP demo
+            {{ t('workspaces.mvpDemo.title') }}
           </div>
           <p class="mt-1 text-xs text-theme-text-muted leading-snug">
-            Injeta um incidente sintético (port scan + brute force + endpoint suspeito) no SIEM Kowalski para validar o pipeline sem depender do nmap.
+            {{ t('workspaces.mvpDemo.description') }}
           </p>
           <p v-if="lastDemoRun" class="mt-1 text-[11px] text-theme-text-muted">
-            Último: <span class="font-mono">{{ lastDemoRun.demoRunId }}</span> · {{ lastDemoRun.eventCount }} eventos
+            {{ t('workspaces.mvpDemo.lastRun', { id: lastDemoRun.demoRunId, count: lastDemoRun.eventCount, types: formatAttackTypes(lastDemoRun.attackTypes) }) }}
           </p>
         </div>
         <button
           type="button"
           :disabled="isBusy"
-          @click="handleReplayDemo"
+          :aria-expanded="demoPickerOpen ? 'true' : 'false'"
+          @click="toggleDemoPicker"
           class="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-amber-400/50 bg-amber-400/15 text-amber-200 text-xs font-semibold hover:bg-amber-400/30 disabled:opacity-50"
         >
           <Zap :size="13" />
-          Replay
+          {{ t('workspaces.mvpDemo.replay') }}
+          <component :is="demoPickerOpen ? ChevronDown : ChevronRight" :size="12" />
         </button>
+      </div>
+      <div v-if="demoPickerOpen" class="mt-3 flex flex-col gap-2">
+        <p class="text-[11px] text-theme-text-muted">{{ t('workspaces.mvpDemo.pickHint') }}</p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="type in DEMO_ATTACK_TYPES"
+            :key="type"
+            type="button"
+            :disabled="isBusy"
+            @click="handleReplayDemo(type)"
+            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-amber-400/40 bg-theme-bg/40 text-amber-200 text-[11px] font-medium hover:bg-amber-400/15 disabled:opacity-50"
+          >
+            <span v-if="demoBusyType === type" class="inline-block size-2 rounded-full bg-amber-300 animate-pulse" />
+            {{ attackTypeLabel(type) }}
+          </button>
+          <button
+            type="button"
+            :disabled="isBusy"
+            @click="handleReplayDemo('all')"
+            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-amber-400/60 bg-amber-400/15 text-amber-100 text-[11px] font-semibold hover:bg-amber-400/30 disabled:opacity-50"
+          >
+            <span v-if="demoBusyType === 'all'" class="inline-block size-2 rounded-full bg-amber-300 animate-pulse" />
+            <Zap :size="11" />
+            {{ attackTypeLabel('all') }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -459,14 +560,14 @@ const actions = computed(() => [
           {{ originBadge(currentOrigin).label }}
         </span>
         <button type="button" @click="openDialogKind('origin', currentOrigin)" class="text-xs text-theme-text-muted hover:text-theme-text underline">
-          Detalhes
+          {{ t('common.details') }}
         </button>
       </div>
       <p v-if="currentOrigin.templateTitle || currentOrigin.description" class="text-sm text-theme-text leading-snug">
         {{ currentOrigin.templateTitle || currentOrigin.description }}
       </p>
       <p v-if="originAuthor(currentOrigin)" class="mt-1 text-xs text-theme-text-muted">
-        por {{ originAuthor(currentOrigin) }}
+        {{ t('workspaces.origins.authorPrefix', { author: originAuthor(currentOrigin) }) }}
       </p>
       <div
         v-if="currentOrigin.missingProviderTypes && currentOrigin.missingProviderTypes.length"
@@ -474,8 +575,8 @@ const actions = computed(() => [
       >
         <AlertCircle :size="14" class="mt-0.5 shrink-0" />
         <div>
-          <div class="font-semibold mb-0.5">Providers ausentes</div>
-          <div>Conecte {{ currentOrigin.missingProviderTypes.join(', ') }} na aba Integrações para os widgets carregarem dados.</div>
+          <div class="font-semibold mb-0.5">{{ t('workspaces.origins.missingProvidersTitle') }}</div>
+          <div>{{ t('workspaces.origins.missingProviders', { providers: currentOrigin.missingProviderTypes.join(', ') }) }}</div>
         </div>
       </div>
     </div>
@@ -483,7 +584,7 @@ const actions = computed(() => [
     <!-- List -->
     <div class="flex-1 overflow-y-auto px-4 py-3">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted mb-2">
-        Seus workspaces ({{ workspaces.length }})
+        {{ t('workspaces.yourWorkspaces', { count: workspaces.length }) }}
       </h3>
       <ul v-if="workspaces.length" class="space-y-2">
         <li
@@ -500,7 +601,7 @@ const actions = computed(() => [
                   v-if="ws.id === activeWorkspaceId"
                   class="text-[10px] uppercase px-1.5 py-0.5 rounded border border-theme-primary/40 bg-theme-primary/10 text-theme-primary font-semibold"
                 >
-                  Ativo
+                  {{ t('workspaces.activeBadge') }}
                 </span>
               </div>
               <div class="flex items-center gap-2 text-xs text-theme-text-muted flex-wrap">
@@ -510,14 +611,14 @@ const actions = computed(() => [
                 >
                   {{ originBadge(ws.origin).label }}
                 </span>
-                <span>{{ ws.widgetCount }} widgets</span>
+                <span>{{ t('workspaces.widgetsLabel', { count: ws.widgetCount }) }}</span>
                 <span v-if="ws.hasPresentation" class="inline-flex items-center gap-1 text-amber-300">
                   <Presentation :size="11" />
-                  Briefing
+                  {{ t('workspaces.presentationBadge') }}
                 </span>
               </div>
               <div v-if="originAuthor(ws.origin)" class="text-xs text-theme-text-muted mt-1 truncate">
-                por {{ originAuthor(ws.origin) }}
+                {{ t('workspaces.origins.authorPrefix', { author: originAuthor(ws.origin) }) }}
               </div>
             </div>
             <div class="flex flex-col gap-1 shrink-0">
@@ -526,7 +627,7 @@ const actions = computed(() => [
                 type="button"
                 @click="handleDelete(ws)"
                 class="text-theme-text-muted hover:text-red-400 p-1 rounded hover:bg-red-500/10"
-                title="Excluir workspace"
+                :title="t('workspaces.deleteTooltip')"
               >
                 <Trash2 :size="14" />
               </button>
@@ -534,7 +635,7 @@ const actions = computed(() => [
           </div>
         </li>
       </ul>
-      <p v-else class="text-sm text-theme-text-muted italic">Carregando...</p>
+      <p v-else class="text-sm text-theme-text-muted italic">{{ t('workspaces.loadingList') }}</p>
     </div>
 
     <!-- ===== Modal ===== -->
@@ -549,7 +650,7 @@ const actions = computed(() => [
           type="button"
           @click="closeDialog"
           class="absolute top-3 right-3 text-theme-text-muted hover:text-theme-text"
-          aria-label="Fechar"
+          :aria-label="t('common.close')"
         >
           <X :size="18" />
         </button>
@@ -565,7 +666,7 @@ const actions = computed(() => [
 
         <!-- ORIGIN DETAILS -->
         <div v-if="openDialog === 'origin' && dialogPayload">
-          <h2 class="text-xl font-semibold mb-4 text-theme-text">Detalhes da origem</h2>
+          <h2 class="text-xl font-semibold mb-4 text-theme-text">{{ t('workspaces.originDetails.title') }}</h2>
           <div class="space-y-3 text-sm">
             <div class="flex items-center gap-2 text-theme-text-muted">
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs" :class="originBadge(dialogPayload).color">
@@ -576,45 +677,45 @@ const actions = computed(() => [
             </div>
             <dl class="grid grid-cols-3 gap-x-3 gap-y-3 text-sm">
               <template v-if="dialogPayload.templateTitle">
-                <dt class="col-span-1 text-theme-text-muted">Título</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.labelTitle') }}</dt>
                 <dd class="col-span-2 text-theme-text">{{ dialogPayload.templateTitle }}</dd>
               </template>
               <template v-if="dialogPayload.templateSlug">
-                <dt class="col-span-1 text-theme-text-muted">Slug</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.slug') }}</dt>
                 <dd class="col-span-2 font-mono text-theme-text">@{{ dialogPayload.templateSlug }}</dd>
               </template>
               <template v-if="dialogPayload.publishedByEmail">
-                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> Autor</dt>
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> {{ t('workspaces.originDetails.author') }}</dt>
                 <dd class="col-span-2 text-theme-text">{{ dialogPayload.publishedByEmail }}</dd>
               </template>
               <template v-if="dialogPayload.exportedByEmail">
-                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> Exportado por</dt>
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> {{ t('workspaces.originDetails.exportedBy') }}</dt>
                 <dd class="col-span-2 text-theme-text">{{ dialogPayload.exportedByEmail }}</dd>
               </template>
               <template v-if="dialogPayload.description || dialogPayload.templateDescription">
-                <dt class="col-span-1 text-theme-text-muted">Descrição</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.description') }}</dt>
                 <dd class="col-span-2 text-theme-text whitespace-pre-line">{{ dialogPayload.description || dialogPayload.templateDescription }}</dd>
               </template>
               <template v-if="dialogPayload.tags && dialogPayload.tags.length">
-                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><TagIcon :size="13" /> Tags</dt>
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><TagIcon :size="13" /> {{ t('workspaces.originDetails.tags') }}</dt>
                 <dd class="col-span-2 flex flex-wrap gap-1">
-                  <span v-for="t in dialogPayload.tags" :key="t" class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted">#{{ t }}</span>
+                  <span v-for="tag in dialogPayload.tags" :key="tag" class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted">#{{ tag }}</span>
                 </dd>
               </template>
               <template v-if="dialogPayload.incidentId">
-                <dt class="col-span-1 text-theme-text-muted">Incident ID</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.incidentId') }}</dt>
                 <dd class="col-span-2 font-mono text-theme-text">{{ dialogPayload.incidentId }}</dd>
               </template>
               <template v-if="dialogPayload.sourceWorkspaceId">
-                <dt class="col-span-1 text-theme-text-muted">Workspace de origem</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.sourceWorkspace') }}</dt>
                 <dd class="col-span-2 font-mono text-theme-text">{{ dialogPayload.sourceWorkspaceId }}</dd>
               </template>
               <template v-if="dialogPayload.installedAt || dialogPayload.importedAt || dialogPayload.exportedAt">
-                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><Clock :size="13" /> Data</dt>
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><Clock :size="13" /> {{ t('workspaces.originDetails.date') }}</dt>
                 <dd class="col-span-2 text-theme-text">{{ dialogPayload.installedAt || dialogPayload.importedAt || dialogPayload.exportedAt }}</dd>
               </template>
               <template v-if="dialogPayload.installCount !== undefined">
-                <dt class="col-span-1 text-theme-text-muted">Instalações</dt>
+                <dt class="col-span-1 text-theme-text-muted">{{ t('workspaces.originDetails.installs') }}</dt>
                 <dd class="col-span-2 text-theme-text">{{ dialogPayload.installCount }}</dd>
               </template>
             </dl>
@@ -623,9 +724,9 @@ const actions = computed(() => [
 
         <!-- EXPORT -->
         <div v-if="openDialog === 'export'">
-          <h2 class="text-xl font-semibold mb-2 text-theme-text">Exportar workspace</h2>
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.exportDialog.title') }}</h2>
           <p class="text-sm text-theme-text-muted mb-4">
-            Gera manifest JSON com layout, widgets e bindings. Sem credenciais.
+            {{ t('workspaces.exportDialog.description') }}
           </p>
           <button
             type="button"
@@ -634,29 +735,29 @@ const actions = computed(() => [
             class="px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
             :style="{ backgroundColor: themeStore.primary }"
           >
-            <span v-if="isBusy">Gerando...</span>
-            <span v-else>Baixar manifest.json</span>
+            <span v-if="isBusy">{{ t('workspaces.exportDialog.generating') }}</span>
+            <span v-else>{{ t('workspaces.exportDialog.download') }}</span>
           </button>
           <pre v-if="lastExportedManifest" class="mt-4 text-xs bg-theme-bg/60 p-3 rounded-lg max-h-72 overflow-auto border border-theme-border">{{ JSON.stringify(lastExportedManifest, null, 2) }}</pre>
         </div>
 
         <!-- IMPORT -->
         <div v-if="openDialog === 'import'">
-          <h2 class="text-xl font-semibold mb-2 text-theme-text">Importar workspace</h2>
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.importDialog.title') }}</h2>
           <p class="text-sm text-theme-text-muted mb-4">
-            Carregue manifest JSON. Após importar, o workspace fica disponível na lista lateral.
+            {{ t('workspaces.importDialog.description') }}
           </p>
           <label class="flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-theme-border cursor-pointer hover:brightness-110 text-theme-text">
             <FileJson :size="16" />
-            <span>{{ importFile?.name || 'Selecionar arquivo .json' }}</span>
+            <span>{{ importFile?.name || t('workspaces.importDialog.selectFile') }}</span>
             <input type="file" accept="application/json" @change="handleImportFileChange" class="hidden" />
           </label>
           <div v-if="importPreview" class="mt-4 text-sm text-theme-text space-y-1">
-            <div><b>Nome:</b> {{ importPreview.name }}</div>
-            <div><b>Widgets:</b> {{ importPreview.widgets?.length ?? 0 }}</div>
-            <div><b>Providers:</b> {{ importPreview.providerTypes?.join(', ') || '—' }}</div>
-            <div v-if="importPreview.metadata?.exportedByEmail"><b>Exportado por:</b> {{ importPreview.metadata.exportedByEmail }}</div>
-            <div v-if="importPreview.presentation"><b>Apresentação:</b> {{ importPreview.presentation.title }}</div>
+            <div><b>{{ t('workspaces.importDialog.previewName') }}</b> {{ importPreview.name }}</div>
+            <div><b>{{ t('workspaces.importDialog.previewWidgets') }}</b> {{ importPreview.widgets?.length ?? 0 }}</div>
+            <div><b>{{ t('workspaces.importDialog.previewProviders') }}</b> {{ importPreview.providerTypes?.join(', ') || '—' }}</div>
+            <div v-if="importPreview.metadata?.exportedByEmail"><b>{{ t('workspaces.importDialog.previewExportedBy') }}</b> {{ importPreview.metadata.exportedByEmail }}</div>
+            <div v-if="importPreview.presentation"><b>{{ t('workspaces.importDialog.previewPresentation') }}</b> {{ importPreview.presentation.title }}</div>
             <button
               type="button"
               :disabled="isBusy"
@@ -664,37 +765,37 @@ const actions = computed(() => [
               class="mt-4 px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
               :style="{ backgroundColor: themeStore.primary }"
             >
-              Importar como novo workspace
+              {{ t('workspaces.importDialog.confirm') }}
             </button>
           </div>
         </div>
 
         <!-- PUBLISH -->
         <div v-if="openDialog === 'publish'">
-          <h2 class="text-xl font-semibold mb-2 text-theme-text">Publicar na comunidade</h2>
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.publishDialog.title') }}</h2>
           <p class="text-sm text-theme-text-muted mb-4">
-            Disponibiliza este workspace para outros analistas instalarem.
+            {{ t('workspaces.publishDialog.description') }}
           </p>
           <div class="grid grid-cols-2 gap-3">
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Slug *</span>
-              <input v-model="publishForm.slug" placeholder="incident-port-scan-q2" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.publishDialog.slug') }}</span>
+              <input v-model="publishForm.slug" :placeholder="t('workspaces.publishDialog.slugPlaceholder')" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Título *</span>
-              <input v-model="publishForm.title" placeholder="Port Scan Briefing" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.publishDialog.titleField') }}</span>
+              <input v-model="publishForm.title" :placeholder="t('workspaces.publishDialog.titlePlaceholder')" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-2">
-              <span class="block mb-1 text-theme-text-muted">Descrição</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.publishDialog.descField') }}</span>
               <textarea v-model="publishForm.description" rows="3" class="w-full bg-theme-bg border border-theme-border rounded p-2"></textarea>
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Tags (vírgula)</span>
-              <input v-model="publishForm.tagsText" placeholder="incident, fortigate, exec" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.publishDialog.tagsField') }}</span>
+              <input v-model="publishForm.tagsText" :placeholder="t('workspaces.publishDialog.tagsPlaceholder')" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Incident ID</span>
-              <input v-model="publishForm.incidentId" placeholder="inc_..." class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.publishDialog.incidentField') }}</span>
+              <input v-model="publishForm.incidentId" :placeholder="t('workspaces.publishDialog.incidentPlaceholder')" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
           </div>
           <button
@@ -704,19 +805,19 @@ const actions = computed(() => [
             class="mt-4 px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
             :style="{ backgroundColor: themeStore.primary }"
           >
-            Publicar template
+            {{ t('workspaces.publishDialog.submit') }}
           </button>
         </div>
 
         <!-- COMMUNITY -->
         <div v-if="openDialog === 'community'">
-          <h2 class="text-xl font-semibold mb-2 text-theme-text">Biblioteca da comunidade</h2>
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.communityDialog.title') }}</h2>
           <input
             v-model="communityFilter"
-            placeholder="Filtrar por título, slug ou tag..."
+            :placeholder="t('workspaces.communityDialog.filter')"
             class="w-full bg-theme-bg border border-theme-border rounded p-2 mb-3"
           />
-          <p v-if="!filteredCommunity.length" class="text-sm text-theme-text-muted">Nenhum template encontrado.</p>
+          <p v-if="!filteredCommunity.length" class="text-sm text-theme-text-muted">{{ t('workspaces.communityDialog.empty') }}</p>
           <ul class="space-y-3">
             <li
               v-for="template in filteredCommunity"
@@ -729,7 +830,7 @@ const actions = computed(() => [
                     <span class="font-semibold text-theme-text">{{ template.title }}</span>
                     <span class="text-xs text-theme-text-muted">@{{ template.slug }}</span>
                   </div>
-                  <p class="text-sm text-theme-text-muted">{{ template.description || 'Sem descrição.' }}</p>
+                  <p class="text-sm text-theme-text-muted">{{ template.description || t('workspaces.communityDialog.noDescription') }}</p>
                   <div class="flex items-center gap-2 mt-2 flex-wrap">
                     <span
                       v-for="tag in template.tags"
@@ -740,7 +841,7 @@ const actions = computed(() => [
                     </span>
                   </div>
                   <div class="text-xs text-theme-text-muted mt-2">
-                    por {{ template.publishedByEmail || 'anônimo' }} · {{ template.installCount }} instalações
+                    {{ t('workspaces.communityDialog.author', { author: template.publishedByEmail || t('workspaces.communityDialog.anonymous') }) }} · {{ t('workspaces.communityDialog.installs', { count: template.installCount }) }}
                   </div>
                 </div>
                 <div class="flex flex-col gap-2 shrink-0">
@@ -751,7 +852,7 @@ const actions = computed(() => [
                     class="px-3 py-1.5 rounded-lg text-white text-sm hover:brightness-110 disabled:opacity-50"
                     :style="{ backgroundColor: themeStore.primary }"
                   >
-                    Instalar
+                    {{ t('workspaces.communityDialog.install') }}
                   </button>
                   <button
                     v-if="authStore.user?.id === template.publishedByUserId"
@@ -761,7 +862,7 @@ const actions = computed(() => [
                     class="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 text-sm hover:bg-red-500/10 disabled:opacity-50 flex items-center gap-1"
                   >
                     <Trash2 :size="14" />
-                    Remover
+                    {{ t('workspaces.communityDialog.remove') }}
                   </button>
                 </div>
               </div>
@@ -771,40 +872,40 @@ const actions = computed(() => [
 
         <!-- PRESENTATION EDITOR -->
         <div v-if="openDialog === 'presentation'">
-          <h2 class="text-xl font-semibold mb-2 text-theme-text">Modo apresentação</h2>
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.presentationDialog.title') }}</h2>
           <p class="text-sm text-theme-text-muted mb-4">
-            Estruture briefing para executivo: título, contexto e ordem dos slides.
+            {{ t('workspaces.presentationDialog.description') }}
           </p>
           <div class="grid grid-cols-2 gap-3">
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Título *</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.presentationDialog.titleField') }}</span>
               <input v-model="presentationDraft.title" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Apresentador</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.presentationDialog.presenter') }}</span>
               <input v-model="presentationDraft.presenterName" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Audiência</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.presentationDialog.audience') }}</span>
               <input v-model="presentationDraft.audience" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
             </label>
             <label class="text-sm text-theme-text col-span-1">
-              <span class="block mb-1 text-theme-text-muted">Severidade</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.presentationDialog.severity') }}</span>
               <select v-model="presentationDraft.severity" class="w-full bg-theme-bg border border-theme-border rounded p-2">
-                <option value="critical">Crítica</option>
-                <option value="high">Alta</option>
-                <option value="medium">Média</option>
-                <option value="low">Baixa</option>
-                <option value="informational">Informativa</option>
+                <option value="critical">{{ t('workspaces.presentationDialog.severityCritical') }}</option>
+                <option value="high">{{ t('workspaces.presentationDialog.severityHigh') }}</option>
+                <option value="medium">{{ t('workspaces.presentationDialog.severityMedium') }}</option>
+                <option value="low">{{ t('workspaces.presentationDialog.severityLow') }}</option>
+                <option value="informational">{{ t('workspaces.presentationDialog.severityInformational') }}</option>
               </select>
             </label>
             <label class="text-sm text-theme-text col-span-2">
-              <span class="block mb-1 text-theme-text-muted">Resumo do incidente</span>
+              <span class="block mb-1 text-theme-text-muted">{{ t('workspaces.presentationDialog.summary') }}</span>
               <textarea v-model="presentationDraft.incidentSummary" rows="3" class="w-full bg-theme-bg border border-theme-border rounded p-2"></textarea>
             </label>
           </div>
 
-          <h3 class="text-md font-semibold mt-5 mb-2 text-theme-text">Slides</h3>
+          <h3 class="text-md font-semibold mt-5 mb-2 text-theme-text">{{ t('workspaces.presentationDialog.slidesHeader') }}</h3>
           <ul class="space-y-2 mb-3">
             <li
               v-for="(slide, idx) in presentationDraft.slides"
@@ -815,16 +916,16 @@ const actions = computed(() => [
               <div class="flex-1 grid grid-cols-1 gap-2">
                 <input
                   v-model="slide.title"
-                  placeholder="Título do slide"
+                  :placeholder="t('workspaces.presentationDialog.slideTitle')"
                   class="w-full bg-theme-bg border border-theme-border rounded p-2 text-sm"
                 />
                 <textarea
                   v-model="slide.narration"
                   rows="2"
-                  placeholder="Narração / pontos-chave"
+                  :placeholder="t('workspaces.presentationDialog.slideNarration')"
                   class="w-full bg-theme-bg border border-theme-border rounded p-2 text-sm"
                 ></textarea>
-                <div class="text-xs text-theme-text-muted">Widget: {{ slide.widgetInstanceId }}</div>
+                <div class="text-xs text-theme-text-muted">{{ t('workspaces.presentationDialog.widgetLabel') }} {{ slide.widgetInstanceId }}</div>
               </div>
               <div class="flex flex-col gap-1">
                 <button type="button" @click="moveSlide(idx, -1)" class="text-theme-text-muted hover:text-theme-text text-sm">↑</button>
@@ -835,7 +936,7 @@ const actions = computed(() => [
           </ul>
 
           <div v-if="widgets.length > presentationDraft.slides.length" class="mb-3">
-            <p class="text-xs text-theme-text-muted mb-1">Adicionar widgets ao deck:</p>
+            <p class="text-xs text-theme-text-muted mb-1">{{ t('workspaces.presentationDialog.addWidgetsHint') }}</p>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="w in widgets.filter((widget: any) => !presentationDraft.slides.some((s: any) => s.widgetInstanceId === widget.instanceId))"
@@ -857,7 +958,7 @@ const actions = computed(() => [
               @click="savePresentation"
               class="px-4 py-2 rounded-lg border border-theme-border text-theme-text hover:brightness-110 disabled:opacity-50"
             >
-              Salvar
+              {{ t('workspaces.presentationDialog.saveBtn') }}
             </button>
             <button
               type="button"
@@ -867,7 +968,7 @@ const actions = computed(() => [
               :style="{ backgroundColor: themeStore.primary }"
             >
               <Presentation :size="16" />
-              Iniciar apresentação
+              {{ t('workspaces.presentationDialog.startBtn') }}
             </button>
           </div>
         </div>

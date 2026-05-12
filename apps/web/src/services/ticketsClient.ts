@@ -1,4 +1,5 @@
 import { useAuthStore } from '../stores/useAuthStore'
+import { getLocale } from '../i18n'
 
 export type TriageLevel = 'T1' | 'T2' | 'T3'
 export type TicketStatus = 'new' | 'investigating' | 'contained' | 'closed'
@@ -35,6 +36,10 @@ async function csrfHeaders(): Promise<Record<string, string>> {
   const auth = useAuthStore()
   if (!auth.csrfToken) await auth.fetchCsrf()
   return { 'X-CSRF-Token': auth.csrfToken }
+}
+
+function localeHeaders(): Record<string, string> {
+  return { 'X-FortiDashboard-Locale': getLocale() }
 }
 
 async function parseOrThrow<T>(response: Response, fallback: string): Promise<T> {
@@ -98,7 +103,7 @@ export type ContainmentSuggestion = {
 }
 
 export async function analyzeIncident(incidentId: string): Promise<IncidentAnalysis> {
-  const headers = await csrfHeaders()
+  const headers = { ...(await csrfHeaders()), ...localeHeaders() }
   const response = await fetch(`/api/soc/incidents/${encodeURIComponent(incidentId)}/analyze`, {
     method: 'POST',
     credentials: 'include',
@@ -153,7 +158,7 @@ export type ApplyContainmentResponse = {
 }
 
 export async function draftContainmentPlaybook(ticketId: string): Promise<PlaybookDraftResponse> {
-  const headers = await csrfHeaders()
+  const headers = { ...(await csrfHeaders()), ...localeHeaders() }
   const response = await fetch(
     `/api/soc/tickets/${encodeURIComponent(ticketId)}/draft-playbook`,
     {
@@ -183,7 +188,7 @@ export async function applyContainmentPlaybook(
 }
 
 export async function suggestContainment(incidentId: string): Promise<ContainmentSuggestion> {
-  const headers = await csrfHeaders()
+  const headers = { ...(await csrfHeaders()), ...localeHeaders() }
   const response = await fetch(
     `/api/soc/incidents/${encodeURIComponent(incidentId)}/containment-suggestions`,
     {

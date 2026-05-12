@@ -82,8 +82,8 @@ const fortigateIntegrations = computed(() => {
 })
 const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
 const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
-const auditTitle = computed(() => isAdmin.value ? 'Admin audit trail' : 'My audit trail')
-const auditSubtitle = computed(() => isAdmin.value ? 'Global SOC activity' : 'Your browser session activity')
+const auditTitle = computed(() => isAdmin.value ? t('audit.adminTitle') : t('audit.mineTitle'))
+const auditSubtitle = computed(() => isAdmin.value ? t('audit.adminSubtitle') : t('audit.mineSubtitle'))
 const drawerWidth = computed(() => {
   if (activeTab.value === 'none') return '0px'
   if (activeTab.value === 'audit') return '420px'
@@ -95,7 +95,7 @@ const drawerWidth = computed(() => {
 
 const chatInput = ref('')
 const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
-  { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
+  { role: 'assistant', text: t('chat.greeting') }
 ])
 const isThinking = ref(false)
 function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets') {
@@ -224,9 +224,9 @@ function handleChatSubmit() {
   
   setTimeout(() => {
     isThinking.value = false
-    
+
     if (!integrationsStore.hasWorkspaceIntegrations) {
-      chatMessages.value.push({ role: 'assistant', text: 'Você precisa conectar uma integração primeiro antes de adicionar widgets!' })
+      chatMessages.value.push({ role: 'assistant', text: t('chat.integrationRequired') })
       return
     }
 
@@ -238,15 +238,15 @@ function handleChatSubmit() {
         const integration = integrationForCatalogItem(item)
         if (integration) {
           handleAddWidget(item.id, integration.id)
-          chatMessages.value.push({ role: 'assistant', text: `Adicionei o painel "${item.title}" para você!` })
+          chatMessages.value.push({ role: 'assistant', text: t('chat.widgetAdded', { title: item.title }) })
           found = true
         }
         break
       }
     }
-    
+
     if (!found) {
-      chatMessages.value.push({ role: 'assistant', text: 'Não encontrei um painel exato para sua solicitação. Tente pedir por "System Status", "Top Threats" ou "Network".' })
+      chatMessages.value.push({ role: 'assistant', text: t('chat.widgetNotFound') })
     }
   }, 1000)
 }
@@ -337,11 +337,11 @@ function handleChatSubmit() {
     >
       <!-- Chat Tab -->
       <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full w-[320px] shrink-0">
-        <h2 class="font-bold text-lg mb-4 text-theme-text">Assistente IA</h2>
-        
+        <h2 class="font-bold text-lg mb-4 text-theme-text">{{ t('chat.header') }}</h2>
+
         <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-2 mb-4">
-          <div 
-            v-for="(msg, i) in chatMessages" 
+          <div
+            v-for="(msg, i) in chatMessages"
             :key="i"
             class="p-3 rounded-lg text-sm"
             :class="msg.role === 'user' ? 'bg-theme-primary/20 text-theme-text self-end ml-4' : 'bg-theme-border text-theme-text self-start mr-4'"
@@ -349,15 +349,15 @@ function handleChatSubmit() {
             {{ msg.text }}
           </div>
           <div v-if="isThinking" class="bg-theme-border text-theme-text-muted p-3 rounded-lg self-start text-xs italic animate-pulse">
-            Analisando...
+            {{ t('chat.thinking') }}
           </div>
         </div>
 
         <form @submit.prevent="handleChatSubmit" class="mt-auto relative">
-          <input 
-            v-model="chatInput" 
-            type="text" 
-            placeholder="Ex: Adicione ameaças..."
+          <input
+            v-model="chatInput"
+            type="text"
+            :placeholder="t('chat.inputPlaceholder')"
             class="w-full bg-theme-bg border border-theme-border rounded-lg pl-3 pr-10 py-2.5 text-sm focus:outline-none focus:border-theme-primary focus:ring-1 focus:ring-theme-primary text-theme-text"
             :disabled="isThinking"
           />
