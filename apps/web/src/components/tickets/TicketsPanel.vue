@@ -17,6 +17,7 @@ import {
   Loader2,
   X,
 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useTicketsStore } from '../../stores/useTicketsStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import {
@@ -33,6 +34,7 @@ import {
   type TriageLevel,
 } from '../../services/ticketsClient'
 
+const { t } = useI18n()
 const store = useTicketsStore()
 const themeStore = useThemeStore()
 
@@ -54,33 +56,33 @@ const playbookError = ref<string | null>(null)
 
 const tickets = computed(() => store.tickets)
 
-const lanes: { level: TriageLevel; label: string; description: string; color: string }[] = [
+const lanes = computed<{ level: TriageLevel; label: string; description: string; color: string }[]>(() => [
   {
     level: 'T1',
-    label: 'T1 · Critical',
-    description: 'Severity high/critical — immediate response',
+    label: t('tickets.lanes.T1Label'),
+    description: t('tickets.lanes.T1Description'),
     color: 'border-red-500/40 bg-red-500/10 text-red-300',
   },
   {
     level: 'T2',
-    label: 'T2 · Investigate',
-    description: 'Severity medium — analyst triage required',
+    label: t('tickets.lanes.T2Label'),
+    description: t('tickets.lanes.T2Description'),
     color: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
   },
   {
     level: 'T3',
-    label: 'T3 · Monitor',
-    description: 'Low/informational — backlog',
+    label: t('tickets.lanes.T3Label'),
+    description: t('tickets.lanes.T3Description'),
     color: 'border-sky-500/40 bg-sky-500/10 text-sky-300',
   },
-]
+])
 
-const statusOptions: { value: TicketStatus; label: string }[] = [
-  { value: 'new', label: 'New' },
-  { value: 'investigating', label: 'Investigating' },
-  { value: 'contained', label: 'Contained' },
-  { value: 'closed', label: 'Closed' },
-]
+const statusOptions = computed<{ value: TicketStatus; label: string }[]>(() => [
+  { value: 'new', label: t('tickets.status.new') },
+  { value: 'investigating', label: t('tickets.status.investigating') },
+  { value: 'contained', label: t('tickets.status.contained') },
+  { value: 'closed', label: t('tickets.status.closed') },
+])
 
 const triageOptions: TriageLevel[] = ['T1', 'T2', 'T3']
 
@@ -233,10 +235,10 @@ onBeforeUnmount(() => store.stopPolling())
       <div>
         <h2 class="font-bold text-lg text-theme-text flex items-center gap-2">
           <TicketIcon :size="18" />
-          SOC Tickets
+          {{ t('tickets.title') }}
         </h2>
         <p class="text-xs text-theme-text-muted mt-1">
-          Triagem T1/T2/T3 sobre incidentes do Kowalski SIEM. Atualiza a cada 8s.
+          {{ t('tickets.subtitle') }}
         </p>
       </div>
       <button
@@ -244,7 +246,7 @@ onBeforeUnmount(() => store.stopPolling())
         @click="store.refresh()"
         class="text-theme-text-muted hover:text-theme-text"
         :disabled="store.isLoading"
-        title="Atualizar agora"
+        :title="t('tickets.refreshTooltip')"
       >
         <RefreshCcw :size="16" :class="store.isLoading ? 'animate-spin' : ''" />
       </button>
@@ -254,19 +256,19 @@ onBeforeUnmount(() => store.stopPolling())
     <div class="px-4 py-2 border-b border-theme-border bg-theme-bg/30 flex items-center gap-2 flex-wrap text-xs">
       <Filter :size="14" class="text-theme-text-muted" />
       <select v-model="statusFilter" class="bg-theme-bg border border-theme-border rounded px-2 py-1 text-theme-text">
-        <option :value="null">Todos status</option>
+        <option :value="null">{{ t('tickets.filters.allStatuses') }}</option>
         <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
       <select v-model="severityFilter" class="bg-theme-bg border border-theme-border rounded px-2 py-1 text-theme-text">
-        <option :value="null">Toda severidade</option>
-        <option value="critical">Critical</option>
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
-        <option value="informational">Informational</option>
+        <option :value="null">{{ t('tickets.filters.allSeverities') }}</option>
+        <option value="critical">{{ t('tickets.severity.critical') }}</option>
+        <option value="high">{{ t('tickets.severity.high') }}</option>
+        <option value="medium">{{ t('tickets.severity.medium') }}</option>
+        <option value="low">{{ t('tickets.severity.low') }}</option>
+        <option value="informational">{{ t('tickets.severity.informational') }}</option>
       </select>
       <span class="ml-auto text-theme-text-muted">
-        Total: {{ tickets.length }}
+        {{ t('tickets.total', { count: tickets.length }) }}
       </span>
     </div>
 
@@ -312,14 +314,14 @@ onBeforeUnmount(() => store.stopPolling())
                     class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px]"
                     :class="statusBadgeClass(ticket.ticketStatus)"
                   >
-                    {{ ticket.ticketStatus }}
+                    {{ t('tickets.status.' + ticket.ticketStatus) }}
                   </span>
                 </div>
                 <div class="text-xs text-theme-text-muted truncate">{{ ticket.summary }}</div>
                 <div class="mt-1 flex items-center gap-2 text-[10px] text-theme-text-muted">
                   <span class="font-mono">{{ ticket.id }}</span>
                   <span>·</span>
-                  <span class="uppercase">{{ ticket.severity }}</span>
+                  <span class="uppercase">{{ t('tickets.severity.' + (ticket.severity || 'informational')) }}</span>
                   <span>·</span>
                   <Clock :size="10" />
                   <span>{{ formatTime(ticket.createdAt) }}</span>
@@ -330,7 +332,7 @@ onBeforeUnmount(() => store.stopPolling())
           </li>
         </ul>
         <div v-else class="px-3 py-3 text-xs text-theme-text-muted italic">
-          Sem tickets nesta lane.
+          {{ t('tickets.lanes.empty') }}
         </div>
       </section>
     </div>
@@ -353,12 +355,12 @@ onBeforeUnmount(() => store.stopPolling())
               </span>
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px]"
                 :class="statusBadgeClass(selected.ticketStatus)">
-                {{ selected.ticketStatus }}
+                {{ t('tickets.status.' + selected.ticketStatus) }}
               </span>
-              <span class="text-[10px] uppercase text-theme-text-muted">{{ selected.severity }}</span>
+              <span class="text-[10px] uppercase text-theme-text-muted">{{ t('tickets.severity.' + (selected.severity || 'informational')) }}</span>
             </div>
           </div>
-          <button type="button" @click="selected = null" class="text-theme-text-muted hover:text-theme-text">
+          <button type="button" @click="selected = null" class="text-theme-text-muted hover:text-theme-text" :aria-label="t('common.close')">
             <X :size="16" />
           </button>
         </div>
@@ -366,14 +368,14 @@ onBeforeUnmount(() => store.stopPolling())
         <div class="px-4 py-3 border-b border-theme-border">
           <p class="text-sm text-theme-text whitespace-pre-line">{{ selected.summary }}</p>
           <div class="mt-2 text-xs text-theme-text-muted">
-            Aberto em {{ formatTime(selected.createdAt) }}
+            {{ t('tickets.drawer.openedAt', { date: formatTime(selected.createdAt) }) }}
           </div>
         </div>
 
         <!-- Actions -->
         <div class="px-4 py-3 border-b border-theme-border space-y-3">
           <div>
-            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">Triage level</label>
+            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.triageLevel') }}</label>
             <div class="flex gap-2">
               <button
                 v-for="level in triageOptions"
@@ -391,7 +393,7 @@ onBeforeUnmount(() => store.stopPolling())
             </div>
           </div>
           <div>
-            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">Ticket status</label>
+            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.ticketStatus') }}</label>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="opt in statusOptions"
@@ -414,7 +416,7 @@ onBeforeUnmount(() => store.stopPolling())
           </div>
           <div v-if="isSavingPatch" class="text-xs text-theme-text-muted flex items-center gap-1">
             <Loader2 :size="12" class="animate-spin" />
-            Salvando...
+            {{ t('common.saving') }}
           </div>
         </div>
 
@@ -423,7 +425,7 @@ onBeforeUnmount(() => store.stopPolling())
           <div class="flex items-center justify-between mb-2">
             <h4 class="text-xs uppercase tracking-wider text-fuchsia-300 flex items-center gap-1">
               <Sparkles :size="13" />
-              AI assistant
+              {{ t('tickets.ai.header') }}
             </h4>
             <div class="flex gap-2">
               <button
@@ -434,7 +436,7 @@ onBeforeUnmount(() => store.stopPolling())
               >
                 <Loader2 v-if="isAnalyzing" :size="11" class="animate-spin" />
                 <Sparkles v-else :size="11" />
-                Analyze
+                {{ t('tickets.ai.analyze') }}
               </button>
               <button
                 type="button"
@@ -444,7 +446,7 @@ onBeforeUnmount(() => store.stopPolling())
               >
                 <Loader2 v-if="isContaining" :size="11" class="animate-spin" />
                 <Shield v-else :size="11" />
-                Suggest containment
+                {{ t('tickets.ai.suggestContainment') }}
               </button>
             </div>
           </div>
@@ -458,24 +460,24 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-fuchsia-100">{{ aiAnalysis.headline }}</span>
               <span class="text-xs font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
-                risk {{ aiAnalysis.riskScore }}/100
+                {{ t('tickets.ai.riskScore', { score: aiAnalysis.riskScore }) }}
               </span>
             </div>
             <p class="text-xs text-theme-text whitespace-pre-line leading-relaxed">{{ aiAnalysis.summary }}</p>
             <div class="text-xs">
-              <span class="text-theme-text-muted">Suggested:</span>
-              <span class="ml-1 text-fuchsia-200 font-semibold">{{ aiAnalysis.suggestedTriage }} · {{ aiAnalysis.suggestedTicketStatus }}</span>
+              <span class="text-theme-text-muted">{{ t('tickets.ai.suggestedLabel') }}</span>
+              <span class="ml-1 text-fuchsia-200 font-semibold">{{ aiAnalysis.suggestedTriage }} · {{ t('tickets.status.' + aiAnalysis.suggestedTicketStatus) }}</span>
               <button
                 type="button"
                 :disabled="isSavingPatch"
                 @click="applySuggestedAnalysis(selected!)"
                 class="ml-2 px-2 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/15 text-[10px] disabled:opacity-50"
               >
-                Apply
+                {{ t('common.apply') }}
               </button>
             </div>
             <div v-if="aiAnalysis.indicatorsOfCompromise?.length">
-              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">IoCs</div>
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.iocsLabel') }}</div>
               <div class="flex flex-wrap gap-1 mt-1">
                 <span
                   v-for="ioc in aiAnalysis.indicatorsOfCompromise"
@@ -487,15 +489,24 @@ onBeforeUnmount(() => store.stopPolling())
               </div>
             </div>
             <div v-if="aiAnalysis.nextSteps?.length">
-              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">Next steps</div>
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.nextStepsLabel') }}</div>
               <ol class="list-decimal list-inside text-xs text-theme-text space-y-0.5 mt-1">
                 <li v-for="(step, i) in aiAnalysis.nextSteps" :key="i">{{ step }}</li>
               </ol>
             </div>
             <div v-if="aiAnalysis.references?.length">
-              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">References</div>
-              <ul class="text-[10px] text-fuchsia-200 underline break-all">
-                <li v-for="ref in aiAnalysis.references" :key="ref">{{ ref }}</li>
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.referencesLabel') }}</div>
+              <ul class="text-[11px] space-y-0.5 mt-1">
+                <li v-for="ref in aiAnalysis.references" :key="ref" class="break-all">
+                  <a
+                    :href="ref"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2"
+                  >
+                    {{ ref }}
+                  </a>
+                </li>
               </ul>
             </div>
           </div>
@@ -503,7 +514,7 @@ onBeforeUnmount(() => store.stopPolling())
           <div v-if="aiContainment" class="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/30 space-y-2">
             <div class="text-sm font-semibold text-emerald-100 flex items-center gap-1">
               <Shield :size="13" />
-              Containment plan
+              {{ t('tickets.ai.containmentPlanLabel') }}
             </div>
             <p class="text-xs text-theme-text leading-relaxed">{{ aiContainment.summary }}</p>
             <ol class="space-y-2">
@@ -518,14 +529,14 @@ onBeforeUnmount(() => store.stopPolling())
                     class="text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wider"
                     :class="severityChipClass(step.severity)"
                   >
-                    {{ step.severity }}
+                    {{ t('tickets.severity.' + step.severity) }}
                   </span>
                 </div>
                 <p class="text-theme-text-muted leading-relaxed">{{ step.description }}</p>
                 <div class="mt-1 flex items-center gap-2 text-[10px] text-theme-text-muted">
                   <span class="font-mono">{{ step.playbookNodeType }}</span>
-                  <span v-if="step.requiresApproval" class="text-amber-300">requires approval</span>
-                  <span v-else class="text-emerald-300">auto-safe</span>
+                  <span v-if="step.requiresApproval" class="text-amber-300">{{ t('tickets.ai.requiresApproval') }}</span>
+                  <span v-else class="text-emerald-300">{{ t('tickets.ai.autoSafe') }}</span>
                 </div>
               </li>
             </ol>
@@ -538,11 +549,11 @@ onBeforeUnmount(() => store.stopPolling())
               >
                 <Loader2 v-if="isDrafting" :size="11" class="animate-spin" />
                 <Workflow v-else :size="11" />
-                Draft playbook
+                {{ t('tickets.ai.draftPlaybook') }}
               </button>
             </div>
             <p v-if="!playbookDraft" class="text-[10px] text-theme-text-muted italic mt-2">
-              Steps stay as drafts. "Draft playbook" sends the plan to soar_skipper as a disabled playbook + dry-run simulation.
+              {{ t('tickets.ai.draftHint') }}
             </p>
           </div>
 
@@ -555,7 +566,7 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-semibold text-emerald-100 flex items-center gap-1">
                 <Workflow :size="13" />
-                Draft playbook
+                {{ t('tickets.ai.draftPlaybook') }}
               </span>
               <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-200">
                 {{ playbookDraft.playbook.id }}
@@ -564,19 +575,19 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="text-xs text-theme-text-muted">{{ playbookDraft.playbook.name }}</div>
 
             <div>
-              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">Simulation</div>
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.simulationLabel') }}</div>
               <div class="text-xs flex items-center gap-2">
                 <span :class="playbookDraft.simulation.valid ? 'text-emerald-300' : 'text-red-300'">
-                  {{ playbookDraft.simulation.valid ? 'Valid (dry-run)' : 'Invalid' }}
+                  {{ playbookDraft.simulation.valid ? t('tickets.ai.simulationValid') : t('tickets.ai.simulationInvalid') }}
                 </span>
                 <span class="text-theme-text-muted">·</span>
-                <span class="text-theme-text">{{ playbookDraft.simulation.steps?.length || 0 }} steps</span>
+                <span class="text-theme-text">{{ t('tickets.ai.stepsCount', { count: playbookDraft.simulation.steps?.length || 0 }) }}</span>
               </div>
               <ol v-if="playbookDraft.simulation.steps?.length" class="mt-1 list-decimal list-inside text-[11px] text-theme-text space-y-0.5">
                 <li v-for="step in playbookDraft.simulation.steps" :key="step.nodeId">
                   <span class="font-mono">{{ step.nodeType }}</span>
                   <span class="text-theme-text-muted ml-1">→ {{ step.status }}</span>
-                  <span v-if="step.sensitive" class="ml-1 text-[10px] text-amber-300">sensitive</span>
+                  <span v-if="step.sensitive" class="ml-1 text-[10px] text-amber-300">{{ t('tickets.ai.sensitive') }}</span>
                 </li>
               </ol>
             </div>
@@ -590,10 +601,10 @@ onBeforeUnmount(() => store.stopPolling())
               >
                 <Loader2 v-if="isApplying" :size="12" class="animate-spin" />
                 <Play v-else :size="12" />
-                Apply (dry-run)
+                {{ t('tickets.ai.applyDryRun') }}
               </button>
               <p class="text-[10px] text-theme-text-muted self-center">
-                Sensitive steps stop at the approval gate. Nothing is pushed to FortiGate or endpoints.
+                {{ t('tickets.ai.safetyNote') }}
               </p>
             </div>
           </div>
@@ -601,22 +612,21 @@ onBeforeUnmount(() => store.stopPolling())
           <div v-if="applyResult" class="mt-3 p-3 rounded-lg border border-emerald-400/50 bg-emerald-500/15 text-xs space-y-1">
             <div class="font-semibold text-emerald-100 flex items-center gap-1">
               <CheckCircle2 :size="13" />
-              {{ applyResult.ticketStatus === 'contained' ? 'Threat contained' : 'Containment paused at approval gate' }}
+              {{ applyResult.ticketStatus === 'contained' ? t('tickets.ai.threatContained') : t('tickets.ai.containmentPaused') }}
             </div>
             <div class="text-theme-text-muted">
-              Run <span class="font-mono">{{ applyResult.run.id }}</span> · status
-              <span class="font-mono">{{ applyResult.run.status }}</span>
+              {{ t('tickets.ai.runStatus', { id: applyResult.run.id, status: applyResult.run.status }) }}
             </div>
           </div>
 
           <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">
-            Run "Analyze" to get an AI summary or "Suggest containment" to draft a plan. Nothing is executed automatically.
+            {{ t('tickets.ai.hint') }}
           </p>
         </div>
 
         <!-- Entities -->
         <div v-if="selected.entities && Object.keys(selected.entities).length" class="px-4 py-3 border-b border-theme-border">
-          <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">Entidades</h4>
+          <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">{{ t('tickets.drawer.entities') }}</h4>
           <dl class="text-xs grid grid-cols-3 gap-x-2 gap-y-1">
             <template v-for="(value, key) in selected.entities" :key="key">
               <dt class="col-span-1 text-theme-text-muted">{{ key }}</dt>
@@ -627,7 +637,7 @@ onBeforeUnmount(() => store.stopPolling())
 
         <!-- Timeline -->
         <div class="px-4 py-3">
-          <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">Timeline</h4>
+          <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">{{ t('tickets.drawer.timeline') }}</h4>
           <ul class="space-y-2">
             <li
               v-for="item in selected.timeline"

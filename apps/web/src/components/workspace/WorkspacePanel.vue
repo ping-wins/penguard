@@ -21,6 +21,7 @@ import {
   RefreshCcw,
   Zap,
 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -43,6 +44,7 @@ import {
   type WorkspaceSummary,
 } from '../../services/workspaceClient'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const dashboardStore = useDashboardStore()
@@ -109,9 +111,9 @@ async function handleExport() {
     const manifest = await exportWorkspace(activeWorkspaceId.value)
     lastExportedManifest.value = manifest
     downloadManifest(manifest)
-    successMsg.value = `Manifest exportado (${manifest.widgets.length} widgets).`
+    successMsg.value = t('workspaces.exportDialog.success', { count: manifest.widgets.length })
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao exportar workspace'
+    errorMsg.value = e?.message ?? t('workspaces.exportDialog.error')
   } finally {
     isBusy.value = false
   }
@@ -128,7 +130,7 @@ async function handleImportFileChange(event: Event) {
   try {
     importPreview.value = await readManifestFile(file)
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Arquivo inválido'
+    errorMsg.value = e?.message ?? t('workspaces.importDialog.invalidFile')
   }
 }
 
@@ -138,11 +140,11 @@ async function handleImportConfirm() {
   isBusy.value = true
   try {
     const result = await importWorkspace(importPreview.value)
-    successMsg.value = `Importado como ${result.id}. Trocando para o workspace…`
+    successMsg.value = t('workspaces.importDialog.success', { id: result.id })
     await dashboardStore.switchWorkspace(result.id)
     closeDialog()
   } catch (e: any) {
-    errorMsg.value = e?.message ?? 'Erro ao importar manifest'
+    errorMsg.value = e?.message ?? t('workspaces.importDialog.error')
   } finally {
     isBusy.value = false
   }

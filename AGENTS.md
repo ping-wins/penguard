@@ -704,16 +704,50 @@ catalogs in `messages/pt-BR.ts` and `messages/en-US.ts`. Components use
 starts with `en` the cockpit boots in English, otherwise it falls back to
 pt-BR. `setLocale()` also keeps `<html lang>` in sync for accessibility.
 
-Translated surfaces in this release:
+Translated surfaces:
 
-- `views/LoginView.vue` and the SSO failure popup.
+- `views/LoginView.vue` + SSO failure popup.
+- `views/RegisterView.vue` (full form, error fallbacks, switch-link copy).
+- `views/PresentationView.vue` (title slide, content slide, navigation
+  controls, keyboard hint, severity labels).
 - `components/layout/Sidebar.vue` icon-bar tooltips (Dashboard, Assistant,
   Integrations, Workspaces, Tickets, Audit, Settings, Sign out).
-- `components/settings/SettingsModal.vue` (every label).
+- `components/settings/SettingsModal.vue` (every label, locale picker).
+- `components/tickets/TicketsPanel.vue` header, subtitle, filters, lane
+  labels and descriptions (driven by `computed(t)` so they live-switch
+  when the locale changes), ticket cards (status + severity badges),
+  detail drawer (open date, triage/status sections, entities + timeline
+  headers, all AI assistant copy including buttons, IoCs, next steps,
+  references and the containment plan, draft playbook + simulation block,
+  and the final "Threat contained" / "Containment paused at approval
+  gate" banner). References returned by the AI now render as clickable
+  anchors (`target="_blank"` + `rel="noopener noreferrer"`) so MITRE
+  ATT&CK, Fortinet docs and CVE links open in a new tab.
+- `components/workspace/WorkspacePanel.vue` flash messages now go through
+  `t()` (export, import, replay errors and success texts). Full template
+  translation of the dialog bodies stays as incremental work in the
+  backlog.
+
+The AI provider locale switch:
+
+- `IncidentAnalysis` and `ContainmentSuggestion` outputs now speak the
+  user's language. The backend `AIProvider.analyze_incident()` and
+  `suggest_containment()` methods accept a `locale` kwarg, and the
+  scripted adapter produces fully bilingual output (pt-BR / en-US).
+- The Anthropic and OpenAI-compatible adapters inject the locale into the
+  prompt instructions so the model is told to reply in the requested
+  language while still emitting strict JSON. References are explicitly
+  requested as URLs to MITRE ATT&CK, Fortinet docs and CVEs so the
+  cockpit can render them as hyperlinks.
+- The cockpit attaches the current locale to every AI call via the
+  `X-FortiDashboard-Locale` HTTP header; the gateway's
+  `_request_locale()` reads it (with an `Accept-Language` fallback)
+  before invoking the provider.
 
 Components still pending translation (incremental work tracked in the
-backlog): `WorkspacePanel.vue`, `TicketsPanel.vue`, `PresentationView.vue`,
-`RegisterView.vue`, and the audit drawer copy.
+backlog): the WorkspacePanel dialog bodies (export preview, publish form,
+community library entries, presentation editor labels), the audit drawer
+copy, and the chat box in the sidebar.
 
 ## Commands
 
@@ -863,7 +897,10 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add a sidebar `SettingsModal` with Profile / Appearance / Language tabs.
 - [x] Add `vue-i18n` with pt-BR + en-US catalogs and a persistent locale picker.
 - [x] Translate LoginView, SSO popup, sidebar tooltips and SettingsModal.
-- [ ] Translate WorkspacePanel, TicketsPanel, PresentationView, RegisterView and the audit drawer copy.
+- [x] Translate RegisterView, PresentationView and TicketsPanel (header, lanes, filters, detail drawer, AI assistant block).
+- [x] Render AI analysis references as clickable hyperlinks (`target="_blank"`).
+- [x] Pass the cockpit locale to AI calls (`X-FortiDashboard-Locale` header) so scripted/Anthropic/OpenAI providers reply in the user's language.
+- [ ] Translate the WorkspacePanel dialog bodies (export preview, publish form, community library entries, presentation editor labels) and the audit drawer copy.
 - [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
 
 ### MVP Demo (cross-cutting)

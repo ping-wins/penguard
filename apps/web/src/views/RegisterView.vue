@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/useAuthStore'
 import { useThemeStore } from '../stores/useThemeStore'
 import { ShieldAlert } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
@@ -19,14 +21,14 @@ async function handleRegister() {
   errorMsg.value = ''
   loading.value = true
   try {
-    await authStore.register({ 
+    await authStore.register({
       displayName: displayName.value,
-      email: email.value, 
-      password: password.value 
+      email: email.value,
+      password: password.value,
     })
     router.push({ name: 'dashboard' })
   } catch (err: any) {
-    errorMsg.value = err.message || 'Erro ao registrar usuário'
+    errorMsg.value = err.message || t('auth.register.errorFallback')
   } finally {
     loading.value = false
   }
@@ -35,7 +37,6 @@ async function handleRegister() {
 
 <template>
   <div class="min-h-screen w-full bg-theme-bg flex items-center justify-center pattern-grid relative p-4">
-    <!-- Gradient Background -->
     <div class="absolute inset-0 z-0 opacity-20 pointer-events-none transition-colors duration-1000" :style="{ background: `radial-gradient(circle at top right, ${themeStore.primary}, transparent 70%)` }"></div>
 
     <div class="w-full max-w-md bg-theme-panel border border-theme-border rounded-2xl shadow-2xl p-8 relative z-10">
@@ -43,8 +44,8 @@ async function handleRegister() {
         <div class="w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-colors duration-500" :style="{ backgroundColor: `${themeStore.primary}20`, color: themeStore.primary }">
           <ShieldAlert :size="32" />
         </div>
-        <h1 class="text-2xl font-bold text-theme-text tracking-tight">Novo Analista</h1>
-        <p class="text-sm text-theme-text-muted mt-2">Solicitar acesso ao SOC</p>
+        <h1 class="text-2xl font-bold text-theme-text tracking-tight">{{ t('auth.register.title') }}</h1>
+        <p class="text-sm text-theme-text-muted mt-2">{{ t('auth.register.subtitle') }}</p>
       </div>
 
       <form @submit.prevent="handleRegister" class="flex flex-col gap-4">
@@ -53,54 +54,55 @@ async function handleRegister() {
         </div>
 
         <div class="flex flex-col gap-2">
-          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Nome Completo</label>
-          <input 
-            v-model="displayName" 
-            type="text" 
+          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">{{ t('auth.register.nameLabel') }}</label>
+          <input
+            v-model="displayName"
+            type="text"
             required
             class="w-full bg-theme-bg border border-theme-border rounded-lg p-2.5 text-theme-text focus:outline-none transition-colors"
             :style="{ outlineColor: themeStore.primary }"
-            placeholder="João Silva"
+            :placeholder="t('auth.register.namePlaceholder')"
           />
         </div>
 
         <div class="flex flex-col gap-2">
-          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Email Corporativo</label>
-          <input 
-            v-model="email" 
-            type="email" 
+          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">{{ t('auth.register.emailLabel') }}</label>
+          <input
+            v-model="email"
+            type="email"
             required
             class="w-full bg-theme-bg border border-theme-border rounded-lg p-2.5 text-theme-text focus:outline-none transition-colors"
             :style="{ outlineColor: themeStore.primary }"
-            placeholder="analyst@soc.local"
+            :placeholder="t('auth.register.emailPlaceholder')"
           />
         </div>
 
         <div class="flex flex-col gap-2">
-          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">Senha</label>
-          <input 
-            v-model="password" 
-            type="password" 
+          <label class="text-xs font-semibold text-theme-text-muted uppercase tracking-wider">{{ t('auth.register.passwordLabel') }}</label>
+          <input
+            v-model="password"
+            type="password"
             required
             minlength="8"
             class="w-full bg-theme-bg border border-theme-border rounded-lg p-2.5 text-theme-text focus:outline-none transition-colors"
             :style="{ outlineColor: themeStore.primary }"
-            placeholder="•••••••• (Mínimo 8 caracteres)"
+            :placeholder="t('auth.register.passwordPlaceholder')"
           />
         </div>
 
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           :disabled="loading"
           class="w-full text-white font-medium py-3 rounded-lg mt-4 transition-all flex justify-center disabled:opacity-50 hover:brightness-110 shadow-lg"
           :style="{ backgroundColor: themeStore.primary }"
         >
-          <span v-if="loading">Registrando...</span>
-          <span v-else>Criar Conta</span>
+          <span v-if="loading">{{ t('auth.register.submitLoading') }}</span>
+          <span v-else>{{ t('auth.register.submit') }}</span>
         </button>
 
         <p class="text-center text-sm text-theme-text-muted mt-4">
-          Já tem acesso? <router-link to="/login" class="transition-colors font-medium hover:brightness-110" :style="{ color: themeStore.primary }">Faça Login</router-link>
+          {{ t('auth.register.hasAccount') }}
+          <router-link to="/login" class="transition-colors font-medium hover:brightness-110" :style="{ color: themeStore.primary }">{{ t('auth.register.loginLink') }}</router-link>
         </p>
       </form>
     </div>

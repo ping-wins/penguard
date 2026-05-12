@@ -286,6 +286,20 @@ def _containment_to_dict(suggestion: ContainmentSuggestion) -> dict[str, Any]:
     }
 
 
+def _request_locale(request: Request) -> str:
+    """Resolve the locale to use for AI prompts. Trusts the
+    `X-FortiDashboard-Locale` header if present, otherwise falls back to a
+    light `Accept-Language` parse, and finally defaults to `pt-BR`.
+    """
+    explicit = request.headers.get("x-fortidashboard-locale")
+    if explicit and explicit.lower().startswith(("pt", "en")):
+        return "en-US" if explicit.lower().startswith("en") else "pt-BR"
+    accept = request.headers.get("accept-language", "")
+    if accept.lower().startswith("en"):
+        return "en-US"
+    return "pt-BR"
+
+
 @router.post("/soc/incidents/{incident_id}/analyze")
 def analyze_incident(
     incident_id: str,
@@ -298,8 +312,9 @@ def analyze_incident(
     incident = client.request("GET", f"/incidents/{incident_id}")
     context = _build_incident_context(incident)
     provider = get_ai_provider()
+    locale = _request_locale(request)
     try:
-        analysis = provider.analyze_incident(context)
+        analysis = provider.analyze_incident(context, locale=locale)
     except Exception as exc:  # noqa: BLE001
         _audit(
             audit_store,
@@ -373,8 +388,9 @@ def draft_containment_playbook(
     incident = siem_client.request("GET", f"/incidents/{ticket_id}")
     context = _build_incident_context(incident)
     provider = get_ai_provider()
+    locale = _request_locale(request)
     try:
-        suggestion = provider.suggest_containment(context)
+        suggestion = provider.suggest_containment(context, locale=locale)
     except Exception as exc:  # noqa: BLE001
         _audit(
             audit_store,
@@ -567,8 +583,9 @@ def suggest_incident_containment(
     incident = client.request("GET", f"/incidents/{incident_id}")
     context = _build_incident_context(incident)
     provider = get_ai_provider()
+    locale = _request_locale(request)
     try:
-        suggestion = provider.suggest_containment(context)
+        suggestion = provider.suggest_containment(context, locale=locale)
     except Exception as exc:  # noqa: BLE001
         _audit(
             audit_store,
