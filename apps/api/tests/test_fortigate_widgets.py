@@ -67,7 +67,7 @@ class FakeFortiGateClient:
                 "tx_bytes": 0,
                 "rx_packets": 0,
                 "tx_packets": 0,
-            }
+            },
         }
 
     def get_policies(self):
@@ -263,7 +263,7 @@ def test_fortigate_widget_service_returns_interfaces_policies_and_threats():
             "txBytes": 0,
             "rxPackets": 0,
             "txPackets": 0,
-        }
+        },
     ]
     assert policies["data"]["policies"][0]["name"] == "LAN to WAN"
     assert threats["data"]["threats"][0]["severity"] == "high"

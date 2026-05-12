@@ -3,37 +3,58 @@
     {
       "id": "trigger.incident_created",
       "label": "Incident Created",
-      "sensitive": false
+      "category": "trigger",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "condition.severity",
       "label": "Severity Condition",
-      "sensitive": false
+      "category": "condition",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "enrich.ip",
       "label": "Enrich IP",
-      "sensitive": false
+      "category": "enrichment",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "case.note",
       "label": "Create Case Note",
-      "sensitive": false
+      "category": "action",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "approval.required",
       "label": "Require Approval",
-      "sensitive": false
+      "category": "control",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "notify.webhook",
       "label": "Notify Webhook",
-      "sensitive": false
+      "category": "action",
+      "sensitive": false,
+      "dryRunOnly": true
     },
     {
       "id": "fortigate.recommend_block",
       "label": "Recommend FortiGate Block",
-      "sensitive": true
+      "category": "action",
+      "sensitive": true,
+      "dryRunOnly": true
+    },
+    {
+      "id": "webhook.dry_run",
+      "label": "Webhook Dry Run",
+      "category": "action",
+      "sensitive": false,
+      "dryRunOnly": true
     }
   ]
 }

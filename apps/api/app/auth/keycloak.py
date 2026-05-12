@@ -197,9 +197,7 @@ class KeycloakClient:
             return ["analyst"]
 
         product_roles = [
-            role
-            for role in roles
-            if isinstance(role, str) and role in FORTIDASHBOARD_REALM_ROLES
+            role for role in roles if isinstance(role, str) and role in FORTIDASHBOARD_REALM_ROLES
         ]
         return product_roles or ["analyst"]
 

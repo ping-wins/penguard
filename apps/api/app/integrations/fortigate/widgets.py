@@ -497,9 +497,7 @@ def _event_summary(events: list[dict[str, Any]]) -> dict[str, int]:
         "total": len(events),
         "blocked": sum(1 for event in events if str(event.get("action", "")).lower() == "blocked"),
         "highSeverity": sum(
-            1
-            for event in events
-            if str(event.get("severity", "")).lower() in {"high", "critical"}
+            1 for event in events if str(event.get("severity", "")).lower() in {"high", "critical"}
         ),
     }
 

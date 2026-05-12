@@ -15,6 +15,8 @@ EndpointEventType = Literal[
     "heartbeat",
     "process.snapshot",
     "connection.snapshot",
+    "auth.failed_login",
+    "auth.privileged_logon",
     "login",
     "file.change",
     "suspicious.process",
@@ -148,7 +150,7 @@ def create_enrollment_token() -> str:
 
 
 def timeline_title(event_type: EndpointEventType) -> str:
-    return event_type.replace(".", " ").title()
+    return event_type.replace(".", " ").replace("_", " ").title()
 
 
 def get_store() -> XdrStore:

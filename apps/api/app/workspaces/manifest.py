@@ -139,7 +139,9 @@ def build_manifest(
                 instanceId=str(widget.get("instanceId") or ""),
                 catalogId=str(widget.get("catalogId") or ""),
                 providerType=provider_type,
-                layout=ManifestWidgetLayout(**widget.get("layout", {"x": 0, "y": 0, "w": 4, "h": 3, "z": 100})),
+                layout=ManifestWidgetLayout(
+                    **widget.get("layout", {"x": 0, "y": 0, "w": 4, "h": 3, "z": 100})
+                ),
                 fieldBindings=[
                     ManifestFieldBinding(**redact_secrets(binding))
                     for binding in (widget.get("fieldBindings") or [])

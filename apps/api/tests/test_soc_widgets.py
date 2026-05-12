@@ -114,8 +114,8 @@ def test_soc_incidents_by_severity_widget_aggregates_incidents():
         }
     )
     app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
-    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
-        lambda: FakePenguinToolIntegrationService("siem_kowalski")
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("siem_kowalski")
     )
 
     response = client.get(
@@ -147,8 +147,8 @@ def test_xdr_endpoint_health_widget_aggregates_endpoint_health():
         }
     )
     app.dependency_overrides[widgets_router.get_xdr_client] = lambda: fake_xdr
-    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
-        lambda: FakePenguinToolIntegrationService("xdr_rico")
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("xdr_rico")
     )
 
     response = client.get(
@@ -174,8 +174,8 @@ def test_soar_active_playbook_runs_widget_filters_completed_runs():
         }
     )
     app.dependency_overrides[widgets_router.get_soar_client] = lambda: fake_soar
-    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
-        lambda: FakePenguinToolIntegrationService("soar_skipper")
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("soar_skipper")
     )
 
     response = client.get(
@@ -195,8 +195,8 @@ def test_soc_widget_logs_empty_payload_for_first_setup(caplog):
     fake_siem = FakeSocClient({"/incidents": {"items": []}})
     caplog.set_level("INFO", logger="uvicorn.error")
     app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
-    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
-        lambda: FakePenguinToolIntegrationService("siem_kowalski")
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("siem_kowalski")
     )
 
     response = client.get(
@@ -217,8 +217,8 @@ def test_soc_widget_requires_matching_penguin_integration():
     client = TestClient(app)
     fake_siem = FakeSocClient({"/incidents": {"items": []}})
     app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
-    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = (
-        lambda: FakePenguinToolIntegrationService("xdr_rico")
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("xdr_rico")
     )
 
     missing_id = client.get("/api/widgets/soc-incidents-by-severity/data")
@@ -242,8 +242,8 @@ def test_ingest_fortigate_events_posts_normalized_events_to_siem():
             }
         }
     )
-    app.dependency_overrides[integrations_router.get_fortigate_widget_service] = (
-        lambda: FakeFortiGateWidgetService()
+    app.dependency_overrides[integrations_router.get_fortigate_widget_service] = lambda: (
+        FakeFortiGateWidgetService()
     )
     app.dependency_overrides[integrations_router.get_siem_client] = lambda: fake_siem
 

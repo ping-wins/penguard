@@ -111,7 +111,9 @@ class SqlAlchemyWorkspaceStore:
                 bindings = updated.get("fieldBindings")
                 if isinstance(bindings, list) and bindings:
                     updated["fieldBindings"] = [
-                        {**binding, "integrationId": integration_id} if isinstance(binding, dict) else binding
+                        {**binding, "integrationId": integration_id}
+                        if isinstance(binding, dict)
+                        else binding
                         for binding in bindings
                     ]
                 widgets[index] = updated
@@ -182,11 +184,15 @@ class SqlAlchemyWorkspaceStore:
 
     def list_workspaces(self, *, owner_user_id: str) -> list[dict[str, Any]]:
         with self.session_factory() as db:
-            rows = db.execute(
-                select(WorkspaceSpecModel)
-                .where(WorkspaceSpecModel.owner_user_id == owner_user_id)
-                .order_by(desc(WorkspaceSpecModel.updated_at))
-            ).scalars().all()
+            rows = (
+                db.execute(
+                    select(WorkspaceSpecModel)
+                    .where(WorkspaceSpecModel.owner_user_id == owner_user_id)
+                    .order_by(desc(WorkspaceSpecModel.updated_at))
+                )
+                .scalars()
+                .all()
+            )
             return [self._workspace_summary(row) for row in rows]
 
     def delete_workspace(self, *, workspace_id: str, owner_user_id: str) -> bool:
@@ -252,12 +258,16 @@ class SqlAlchemyWorkspaceStore:
 
     def list_templates(self, *, limit: int = 100) -> list[dict[str, Any]]:
         with self.session_factory() as db:
-            rows = db.execute(
-                select(WorkspaceTemplateModel)
-                .where(WorkspaceTemplateModel.is_visible == True)  # noqa: E712
-                .order_by(desc(WorkspaceTemplateModel.created_at))
-                .limit(limit)
-            ).scalars().all()
+            rows = (
+                db.execute(
+                    select(WorkspaceTemplateModel)
+                    .where(WorkspaceTemplateModel.is_visible == True)  # noqa: E712
+                    .order_by(desc(WorkspaceTemplateModel.created_at))
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
             return [self._template_payload(row, include_manifest=False) for row in rows]
 
     def get_template(self, template_id: str) -> dict[str, Any] | None:

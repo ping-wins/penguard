@@ -6,8 +6,6 @@ from typing import Annotated, Any, Literal, Protocol
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-logger = logging.getLogger(__name__)
-
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user
@@ -31,6 +29,8 @@ from app.routers.widgets import (
     FortiGateWidgetService,
     get_fortigate_widget_service,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["integrations"])
 FortiGateService = FortiGateIntegrationService | MockFortiGateIntegrationService

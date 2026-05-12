@@ -15,6 +15,29 @@ def test_default_playbooks_are_disabled_and_available():
     assert all(playbook["enabled"] is False for playbook in playbooks)
 
 
+def test_lists_playbook_node_types_for_visual_builder():
+    response = client.get("/node-types")
+
+    assert response.status_code == 200
+    body = response.json()
+    node_ids = {item["id"] for item in body["items"]}
+    assert node_ids >= {
+        "trigger.incident_created",
+        "condition.severity",
+        "case.note",
+        "approval.required",
+        "notify.webhook",
+        "fortigate.recommend_block",
+    }
+    recommend_block = next(
+        item for item in body["items"] if item["id"] == "fortigate.recommend_block"
+    )
+    assert recommend_block["category"] == "action"
+    assert recommend_block["sensitive"] is True
+    assert recommend_block["dryRunOnly"] is True
+    assert recommend_block["configSchema"]["required"] == ["field"]
+
+
 def test_create_playbook_rejects_unknown_node_type():
     response = client.post(
         "/playbooks",

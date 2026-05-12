@@ -340,8 +340,8 @@ def test_fortigate_integration_endpoint_can_use_persistent_service():
         ),
         client_factory=healthy_client_factory,
     )
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     client = TestClient(app)
 
@@ -396,8 +396,8 @@ def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():
         ),
         client_factory=healthy_client_factory,
     )
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "usr_a",
@@ -468,8 +468,8 @@ def test_fortigate_integration_endpoint_deletes_owned_integration():
         ),
         client_factory=healthy_client_factory,
     )
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "usr_owner",
@@ -523,8 +523,8 @@ def test_fortigate_integration_endpoint_returns_404_when_deleting_other_users_in
         ),
         client_factory=healthy_client_factory,
     )
-    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = (
-        lambda: service
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
     )
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "usr_owner",

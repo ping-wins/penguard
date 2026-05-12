@@ -40,7 +40,7 @@ Hosts envolvidos no lab atual:
 | Componente | Host / IP                                       | Porta          |
 |------------|-------------------------------------------------|----------------|
 | AD DC      | `dc01.fortidashboard.local` (`192.168.56.10`)   | 88 (TCP/UDP), 389, 464 |
-| Keycloak   | `fortidashboard.local` (host Docker)            | 8080 (interno) → 9080 (publicado) |
+| Keycloak   | `fortidashboard.local` (host Docker)            | 8080 (interno) → 8080 (publicado) |
 | BFF API    | `fortidashboard.local`                          | 8000           |
 | Web/Vite   | `fortidashboard.local`                          | 5173           |
 
@@ -244,7 +244,10 @@ import já vem assim; se editar via UI, faça:
 
 ### 4.5 Container do Keycloak
 
-`docker-compose.yml` já monta os arquivos necessários:
+`docker-compose.yml` monta um placeholder de keytab por padrão para que o
+stack local suba em Linux/Windows antes do lab AD existir. Para testar SSO de
+verdade, defina `FORTIDASHBOARD_KEYTAB_PATH=./fortidashboard.keytab` no `.env`
+depois de gerar/copiar o keytab real.
 
 ```yaml
 keycloak:
@@ -261,7 +264,7 @@ keycloak:
     - "dc01.fortidashboard.local:192.168.56.10"
   volumes:
     - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
-    - ./fortidashboard.keytab:/opt/keycloak/conf/fortidashboard.keytab:ro
+    - ${FORTIDASHBOARD_KEYTAB_PATH:-./infra/keycloak/empty-keytab.placeholder}:/opt/keycloak/conf/fortidashboard.keytab:ro
     - ./krb5.conf:/etc/krb5.conf:ro
     - ./infra/keycloak/java-security-override.properties:/opt/keycloak/conf/java-security-override.properties:ro
 ```
@@ -319,16 +322,23 @@ Crie/edite `.env` na raiz a partir de `.env.example` e force os hostnames
 para `fortidashboard.local` (case-sensitive nas URLs):
 
 ```env
-FORTIDASHBOARD_KEYCLOAK_BASE_URL=http://fortidashboard.local:9080
-FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL=http://fortidashboard.local:9080
+FORTIDASHBOARD_KEYCLOAK_BASE_URL=http://localhost:8080
+FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL=http://fortidashboard.local:8080
 FORTIDASHBOARD_KEYCLOAK_REALM=fortidashboard
 FORTIDASHBOARD_KEYCLOAK_CLIENT_ID=fortidashboard-bff
 FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET=dev-client-secret
-FORTIDASHBOARD_OIDC_ISSUER=http://fortidashboard.local:9080/realms/fortidashboard
+FORTIDASHBOARD_KEYTAB_PATH=./fortidashboard.keytab
+FORTIDASHBOARD_OIDC_ISSUER=http://fortidashboard.local:8080/realms/fortidashboard
 FORTIDASHBOARD_SSO_REDIRECT_URI=http://fortidashboard.local:8000/api/auth/sso/kerberos/callback
 FORTIDASHBOARD_SSO_POST_LOGIN_URL=http://fortidashboard.local:5173/
 FORTIDASHBOARD_MOCK_MODE=false
 ```
+
+No Docker Compose, `FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL` deve continuar
+apontando para `http://keycloak:8080`. Apenas as URLs usadas pelo navegador
+devem trocar para `fortidashboard.local`, porque o SPN Kerberos depende desse
+hostname.
 
 > `FORTIDASHBOARD_MOCK_MODE=true` força o fluxo SSO a retornar
 > `sso_error=mock_mode` para não quebrar dev offline. Mantenha `false` quando
@@ -408,7 +418,7 @@ Firefox no Linux usa o mesmo `network.negotiate-auth.trusted-uris`.
 2. Aguarda o Keycloak ficar saudável:
 
    ```bash
-   curl -s http://fortidashboard.local:9080/health/ready
+   curl -s http://fortidashboard.local:8080/health/ready
    ```
 
 3. No DC ou em uma workstation com `kinit`:
@@ -424,7 +434,7 @@ Firefox no Linux usa o mesmo `network.negotiate-auth.trusted-uris`.
    `http://fortidashboard.local:5173/login` e clique em **Login with SSO
    (Kerberos)**. O fluxo esperado:
 
-   - Redireciona para `http://fortidashboard.local:9080/realms/fortidashboard/protocol/openid-connect/auth?...`
+   - Redireciona para `http://fortidashboard.local:8080/realms/fortidashboard/protocol/openid-connect/auth?...`
    - Keycloak responde 200 imediatamente (sem formulário) e redireciona
      para `/api/auth/sso/kerberos/callback?code=...&state=...`.
    - BFF cria a sessão e manda você para `http://fortidashboard.local:5173/`.
@@ -474,7 +484,8 @@ docker compose logs -f api | grep sso_kerberos
 - [ ] `fortidashboard.keytab` na raiz do repo, **não** commitado
       (`git status --ignored` confirma).
 - [ ] DNS A + PTR para `fortidashboard.local` apontando para o host Docker.
-- [ ] `.env` aponta para `fortidashboard.local:9080` no Keycloak.
+- [ ] `.env` aponta os valores browser-facing para `fortidashboard.local:8080`
+      e mantém `FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080`.
 - [ ] `docker compose up -d --build` traz Keycloak saudável.
 - [ ] `kvno HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL` retorna kvno > 0.
 - [ ] Login na cockpit via SSO completa sem fallback para formulário.

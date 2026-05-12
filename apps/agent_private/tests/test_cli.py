@@ -7,7 +7,9 @@ from agent_private.cli import (
     build_heartbeat_payload,
     build_identity_payload,
     build_process_snapshot_payload,
+    build_windows_security_event_payloads,
     main,
+    parse_windows_security_events,
 )
 
 
@@ -150,6 +152,160 @@ def test_build_connection_snapshot_payload_normalizes_connection_rows():
             "pid": 1200,
         }
     ]
+
+
+def test_build_connection_snapshot_payload_preserves_collected_connection_dicts():
+    occurred_at = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    connections = [
+        {
+            "fd": 7,
+            "family": "AF_INET",
+            "type": "SOCK_STREAM",
+            "localAddress": {"ip": "192.0.2.50", "port": 54122},
+            "remoteAddress": {"ip": "198.51.100.20", "port": 443},
+            "status": "ESTABLISHED",
+            "pid": 1200,
+        }
+    ]
+
+    payload = build_connection_snapshot_payload(
+        endpoint_id="end_01",
+        hostname="demo-endpoint-01",
+        ip_addresses=["192.0.2.50"],
+        connections=connections,
+        occurred_at=occurred_at,
+    )
+
+    assert payload["eventType"] == "connection.snapshot"
+    assert payload["attributes"]["connections"] == connections
+
+
+def test_parse_windows_security_events_extracts_event_data_from_wevtutil_xml():
+    raw_xml = """
+    <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+      <System>
+        <Provider Name="Microsoft-Windows-Security-Auditing" />
+        <EventID>4625</EventID>
+        <TimeCreated SystemTime="2026-05-12T13:30:00.0000000Z" />
+        <Computer>WIN-SOC-DC01.fortidashboard.local</Computer>
+        <EventRecordID>1001</EventRecordID>
+      </System>
+      <EventData>
+        <Data Name="TargetUserName">felipe</Data>
+        <Data Name="TargetDomainName">FORTIDASHBOARD</Data>
+        <Data Name="IpAddress">192.0.2.77</Data>
+        <Data Name="LogonType">3</Data>
+        <Data Name="Status">0xc000006d</Data>
+      </EventData>
+    </Event>
+    """
+
+    events = parse_windows_security_events(raw_xml)
+
+    assert events == [
+        {
+            "eventId": 4625,
+            "occurredAt": "2026-05-12T13:30:00.000Z",
+            "computer": "WIN-SOC-DC01.fortidashboard.local",
+            "recordId": "1001",
+            "data": {
+                "TargetUserName": "felipe",
+                "TargetDomainName": "FORTIDASHBOARD",
+                "IpAddress": "192.0.2.77",
+                "LogonType": "3",
+                "Status": "0xc000006d",
+            },
+        }
+    ]
+
+
+def test_build_windows_security_event_payloads_aggregates_failed_logons():
+    events = [
+        {
+            "eventId": 4625,
+            "occurredAt": "2026-05-12T13:30:00.000Z",
+            "computer": "WIN-SOC-DC01",
+            "recordId": str(index),
+            "data": {
+                "TargetUserName": "felipe",
+                "TargetDomainName": "FORTIDASHBOARD",
+                "IpAddress": "192.0.2.77",
+            },
+        }
+        for index in range(1, 7)
+    ]
+
+    payloads = build_windows_security_event_payloads(
+        endpoint_id="end_win_dc01",
+        hostname="WIN-SOC-DC01",
+        ip_addresses=["192.0.2.10"],
+        events=events,
+    )
+
+    assert payloads == [
+        {
+            "endpointId": "end_win_dc01",
+            "eventType": "auth.failed_login",
+            "occurredAt": "2026-05-12T13:30:00.000Z",
+            "hostname": "WIN-SOC-DC01",
+            "ipAddresses": ["192.0.2.10"],
+            "currentUser": "FORTIDASHBOARD\\felipe",
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4625,
+                "count": 6,
+                "username": "FORTIDASHBOARD\\felipe",
+                "sourceIp": "192.0.2.77",
+                "recordIds": ["1", "2", "3", "4", "5", "6"],
+            },
+        }
+    ]
+
+
+def test_build_windows_security_event_payloads_marks_privileged_and_critical_events():
+    events = [
+        {
+            "eventId": 4672,
+            "occurredAt": "2026-05-12T13:31:00.000Z",
+            "computer": "WIN-SOC-FILE01",
+            "recordId": "2001",
+            "data": {
+                "SubjectUserName": "administrator",
+                "SubjectDomainName": "FORTIDASHBOARD",
+                "PrivilegeList": "SeBackupPrivilege SeDebugPrivilege",
+            },
+        },
+        {
+            "eventId": 4663,
+            "occurredAt": "2026-05-12T13:32:00.000Z",
+            "computer": "WIN-SOC-FILE01",
+            "recordId": "2002",
+            "data": {
+                "SubjectUserName": "svc-backup",
+                "SubjectDomainName": "FORTIDASHBOARD",
+                "ObjectName": r"C:\Sensitive\payroll.xlsx",
+                "Accesses": "WriteData",
+            },
+        },
+    ]
+
+    payloads = build_windows_security_event_payloads(
+        endpoint_id="end_win_file01",
+        hostname="WIN-SOC-FILE01",
+        ip_addresses=["192.0.2.20"],
+        events=events,
+        allowed_admin_hosts=["WIN-SOC-DC01"],
+        critical_paths=[r"C:\Sensitive"],
+    )
+
+    assert [payload["eventType"] for payload in payloads] == [
+        "auth.privileged_logon",
+        "file.change",
+    ]
+    assert payloads[0]["attributes"]["privileged"] is True
+    assert payloads[0]["attributes"]["unusualHost"] is True
+    assert payloads[1]["attributes"]["criticalPath"] is True
+    assert payloads[1]["attributes"]["objectName"] == r"C:\Sensitive\payroll.xlsx"
 
 
 def test_heartbeat_dry_run_prints_json_without_posting(monkeypatch, capsys):

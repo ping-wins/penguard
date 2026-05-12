@@ -25,11 +25,7 @@ def test_dev_realm_seeds_admin_user_for_audit_poc():
     realm = json.loads(Path("../../infra/keycloak/realm-fortidashboard.json").read_text())
 
     admin_user = next(
-        (
-            user
-            for user in realm["users"]
-            if user.get("username") == "admin@example.com"
-        ),
+        (user for user in realm["users"] if user.get("username") == "admin@example.com"),
         None,
     )
 

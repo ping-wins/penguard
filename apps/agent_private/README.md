@@ -28,6 +28,33 @@ uv run agent-private connection-snapshot --endpoint-id demo-endpoint-01
 uv run agent-private simulate --endpoint-id demo-endpoint-01
 ```
 
+## Windows Security Log Collection
+
+On Windows Server labs, `agent_private` can read recent Security Log records
+through `wevtutil`, normalize them, and optionally post them through the BFF.
+
+```powershell
+$env:AGENT_PRIVATE_API_URL = "http://localhost:8000"
+$env:AGENT_PRIVATE_ENDPOINT_ID = "win-dc01"
+$env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
+
+uv run agent-private windows-security --limit 50
+uv run agent-private windows-security --limit 50 --post
+```
+
+Supported Windows events:
+
+- `4625` failed logons are grouped by user and source IP into
+  `auth.failed_login` events with `attributes.count`.
+- `4672` special-privilege logons become `auth.privileged_logon`. Pass
+  `--allowed-admin-host WIN-SOC-DC01` to mark other hosts as unusual.
+- `4663` object access events become `file.change`. Pass
+  `--critical-path C:\Sensitive` to flag important paths.
+
+Windows audit policy must emit the target events before the command can collect
+them. For file changes, enable object access auditing and configure auditing on
+the directory being tested.
+
 ## CLI Posting Telemetry
 
 Create an enrollment token through the FortiDashboard BFF, then send telemetry to the browser-facing API. The BFF forwards the enrollment token to `xdr_rico`; the agent does not need a browser session.

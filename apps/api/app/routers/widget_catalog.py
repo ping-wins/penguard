@@ -16,8 +16,6 @@ def get_widget_catalog(
         if integration_type == "soc":
             return catalog
         return {
-            "items": [
-                item for item in catalog["items"] if item.get("source") == integration_type
-            ]
+            "items": [item for item in catalog["items"] if item.get("source") == integration_type]
         }
     return {"items": []}
