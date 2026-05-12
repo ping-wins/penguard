@@ -984,8 +984,15 @@ Security hardening:
 - [ ] Disable `allow_weak_crypto` + `java-security-override.properties` and
       the AES128 fallback once the lab is on AES256 only. Document the
       production `krb5.conf` separately.
-- [ ] Force `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and require HTTPS
-      end-to-end (reverse proxy with TLS, HSTS, cookie `__Host-` prefix).
+- [x] Force `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and require HTTPS
+      end-to-end. Sprint 1.3 ships `infra/caddy/Caddyfile` and
+      `docker-compose.prod.yml`: Caddy fronts api/web/keycloak on :443,
+      `tls internal` by default for on-prem labs (swap `CADDY_TLS_MODE=""`
+      to use ACME/Let's Encrypt for internet-facing deploys). The overlay
+      pins Keycloak's `KC_HOSTNAME`/`KC_PROXY_HEADERS` and overrides the
+      BFF SSO URLs to `https://${FORTIDASHBOARD_PUBLIC_HOSTNAME}/...` so
+      OIDC flows survive the proxy hop. `__Host-` cookie prefix and HSTS
+      headers are still open work for Sprint 2 hardening.
 - [ ] Extend the auth rate limiter to cover SSO callback, AI endpoints and
       `POST /api/soc/demo/replay` (currently only `/login` is throttled).
 - [ ] Cap AI token usage per user/incident (`max_tokens`, budget per day) so

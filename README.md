@@ -42,6 +42,37 @@ client `fortidashboard-bff` com o que está no `.env`. Sem ele, BFF e
 Keycloak ficam com secrets diferentes e o callback OAuth falha com
 `invalid_client`.
 
+## Subir em produção (TLS + reverse proxy)
+
+Para deploy real (cliente final), use o overlay `docker-compose.prod.yml`
+junto com o compose base. Ele adiciona um Caddy na frente fazendo TLS,
+flipa o cookie de sessão para `Secure=true` e aponta as URLs do Keycloak
+para o hostname público:
+
+```bash
+# 1. Garanta que o .env já foi gerado pelo bootstrap-secrets
+# 2. Defina o hostname público
+export FORTIDASHBOARD_PUBLIC_HOSTNAME=forti.example.com
+export CADDY_TLS_MODE=        # vazio = ACME / Let's Encrypt
+export CADDY_ADMIN_EMAIL=ops@example.com
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Defaults (CADDY_TLS_MODE=internal) emitem cert self-signed via a CA interna
+do Caddy — bom para lab on-prem sem domínio público. Para internet, deixe
+`CADDY_TLS_MODE` vazio e aponte o DNS A do hostname para o host Docker.
+
+Rotas atrás do Caddy:
+
+- `https://<host>/`         → cockpit Vue
+- `https://<host>/api/*`    → BFF FastAPI
+- `https://<host>/auth/*`   → Keycloak
+
+Antes da primeira release real, leia `docs/maturity-analysis.md` —
+existem itens de observabilidade, rate-limit e onboarding que ainda estão
+em Sprint 2 e 3 do roadmap.
+
 ## Estrutura do Monorepo
 
 - `apps/api`: backend FastAPI com healthcheck, BFF auth, sessões server-side persistidas e modo mock opt-in para contratos.
