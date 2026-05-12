@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -10,6 +10,7 @@ import { useTicketsStore } from '../../stores/useTicketsStore'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
+import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
@@ -22,7 +23,7 @@ const integrationsStore = useIntegrationsStore()
 const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -87,7 +88,7 @@ const drawerWidth = computed(() => {
   if (activeTab.value === 'audit') return '420px'
   if (activeTab.value === 'integrations') return '380px'
   if (activeTab.value === 'workspaces') return '420px'
-  if (activeTab.value === 'tickets') return '480px'
+  if (activeTab.value === 'tickets' || activeTab.value === 'endpoints') return '480px'
   return '320px'
 })
 
@@ -96,7 +97,7 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: t('chat.greeting') }
 ])
 const isThinking = ref(false)
-function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -302,6 +303,15 @@ function handleChatSubmit() {
           :title="t('sidebar.tickets')"
         >
           <TicketIcon :size="20" />
+        </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'endpoints' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('endpoints')"
+          :title="t('sidebar.endpoints')"
+        >
+          <Server :size="20" />
         </div>
 
         <div
@@ -623,6 +633,11 @@ function handleChatSubmit() {
       <!-- Tickets Tab -->
       <div v-if="activeTab === 'tickets'" class="h-full w-[480px] shrink-0">
         <TicketsPanel />
+      </div>
+
+      <!-- Endpoints Tab -->
+      <div v-if="activeTab === 'endpoints'" class="h-full w-[480px] shrink-0">
+        <EndpointsPanel />
       </div>
 
       <!-- Audit Tab -->

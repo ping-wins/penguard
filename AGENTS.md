@@ -918,7 +918,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Implement TUI-first `agent_private` flow plus CLI automation commands.
 - [x] Collect heartbeat, process snapshot and network connection snapshot.
 - [x] Correlate endpoints with incidents by endpoint ID, IP, hostname and username.
-- [ ] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM.
+- [x] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM (`docs/mvp/windows-server-agent-smoke.md`).
 - [x] Add Windows Security Event collection for failed logons and privileged logons.
 - [ ] Add optional directory monitoring with `watchdog`.
 
@@ -955,14 +955,14 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add generic SOC renderers for bar, feed, table and status-list widgets.
 - [ ] Add SOC navigation area for incidents, endpoints and playbooks.
 - [ ] Add incident list/detail panel.
-- [ ] Add endpoint inventory/timeline panel.
+- [x] Add endpoint inventory/timeline panel backed by `/api/weapons/endpoints` and `/api/weapons/endpoints/{id}/timeline`.
 - [ ] Add basic playbook builder and run result UI.
 - [x] Add workspace sharing UX: workspace list, origin badges, author details and community library.
 - [x] Add manifest import/export UX with validation errors that users can understand.
 - [x] Add presentation export UX based on the current workspace manifest.
 - [x] Allow per-widget integration rebind so imported workspaces can be reconnected without re-importing.
 - [ ] Add visible badges for live, seeded demo, simulator and scripted AI data.
-- [ ] Add endpoint detail panel with timeline and related incidents.
+- [ ] Add related incidents to the endpoint detail panel.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP

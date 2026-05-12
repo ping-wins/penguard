@@ -216,7 +216,8 @@ Required work:
 - Windows Server SSO smoke: init redirect -> Keycloak -> callback -> BFF
   session.
 - Agent enrollment smoke: create token -> enroll Windows host -> heartbeat
-  visible in `xdr_rico`.
+  visible in `xdr_rico`. Verified on 2026-05-12; operator steps live in
+  `docs/mvp/windows-server-agent-smoke.md`.
 - Windows failed-login smoke: failed logon -> normalized event -> incident ->
   ticket.
 - Endpoint correlation smoke: endpoint telemetry and incident entities resolve
