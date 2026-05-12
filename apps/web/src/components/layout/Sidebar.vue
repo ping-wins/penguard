@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, ShieldCheck, History } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -35,6 +35,11 @@ const penguinErrors = ref<Record<PenguinToolType, string | null>>({
   siem_kowalski: null,
   xdr_rico: null,
   soar_skipper: null,
+})
+const integrationGroupsOpen = ref({
+  fortinet: true,
+  penguin: true,
+  endpoint: false,
 })
 const penguinTools: Array<{
   type: PenguinToolType
@@ -138,6 +143,10 @@ async function handleRemoveIntegration(integrationId: string) {
 
 function connectedPenguinTool(type: PenguinToolType) {
   return integrationsStore.integrations.find(integration => integration.type === type)
+}
+
+function toggleIntegrationGroup(group: keyof typeof integrationGroupsOpen.value) {
+  integrationGroupsOpen.value[group] = !integrationGroupsOpen.value[group]
 }
 
 async function handleTestPenguinTool(type: PenguinToolType) {
@@ -339,12 +348,21 @@ function handleChatSubmit() {
 
         <div class="flex flex-col gap-4">
           <section data-test="integration-group-fortinet" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
-            <div class="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Fortinet Providers</h3>
-                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                  Real read-only FortiGate access for live firewall telemetry.
-                </p>
+            <button
+              type="button"
+              data-test="integration-toggle-fortinet"
+              class="mb-3 flex w-full items-start justify-between gap-3 text-left"
+              :aria-expanded="integrationGroupsOpen.fortinet ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('fortinet')"
+            >
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.fortinet ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
+                <div class="min-w-0">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Fortinet Providers</h3>
+                  <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                    Real read-only FortiGate access for live firewall telemetry.
+                  </p>
+                </div>
               </div>
               <span
                 class="shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium"
@@ -352,9 +370,9 @@ function handleChatSubmit() {
               >
                 {{ fortigateIntegrations.length > 0 ? 'Connected' : 'Not connected' }}
               </span>
-            </div>
+            </button>
 
-            <div class="mb-3 flex flex-col gap-2">
+            <div v-if="integrationGroupsOpen.fortinet" class="mb-3 flex flex-col gap-2">
               <div v-if="!integrationsStore.isLoading && fortigateIntegrations.length === 0" class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted">
                 No Fortinet provider connected.
               </div>
@@ -386,28 +404,7 @@ function handleChatSubmit() {
               </div>
             </div>
 
-            <div class="mb-3 rounded border border-theme-border bg-theme-panel p-3">
-              <div class="mb-3 flex items-center justify-between gap-3">
-                <h4 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Domain verification</h4>
-                <span class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200">
-                  DNS TXT pending
-                </span>
-              </div>
-              <div class="flex items-start gap-2">
-                <ShieldCheck :size="16" class="mt-0.5 shrink-0 text-theme-primary" />
-                <div class="min-w-0">
-                  <div class="text-sm font-medium text-theme-text">Tenant domain claim</div>
-                  <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                    Static preview for SaaS branding. Activation waits for DNS proof.
-                  </p>
-                  <div class="mt-2 truncate rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-[10px] text-theme-text-muted">
-                    _fortidashboard.your-domain.example
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
+            <div v-if="integrationGroupsOpen.fortinet" class="grid grid-cols-2 gap-2">
               <div class="flex flex-col gap-1">
                 <label class="text-xs text-theme-text">Nome</label>
                 <input v-model="fgForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
@@ -457,23 +454,32 @@ function handleChatSubmit() {
               </div>
             </div>
 
-            <h4 class="sr-only">Adicionar FortiGate</h4>
+            <h4 v-if="integrationGroupsOpen.fortinet" class="sr-only">Adicionar FortiGate</h4>
           </section>
 
           <section data-test="integration-group-penguin" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
-            <div class="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Penguin SOC Lite</h3>
-                <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                  Penguin tools connected through the BFF.
-                </p>
+            <button
+              type="button"
+              data-test="integration-toggle-penguin"
+              class="mb-3 flex w-full items-start justify-between gap-3 text-left"
+              :aria-expanded="integrationGroupsOpen.penguin ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('penguin')"
+            >
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.penguin ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
+                <div class="min-w-0">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Penguin SOC Lite</h3>
+                  <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+                    Penguin tools connected through the BFF.
+                  </p>
+                </div>
               </div>
               <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
                 {{ penguinTools.filter(tool => connectedPenguinTool(tool.type)).length }}/{{ penguinTools.length }} connected
               </span>
-            </div>
+            </button>
 
-            <div class="grid grid-cols-1 gap-2">
+            <div v-if="integrationGroupsOpen.penguin" class="grid grid-cols-1 gap-2">
               <div
                 v-for="tool in penguinTools"
                 :key="tool.type"
@@ -544,17 +550,30 @@ function handleChatSubmit() {
           </section>
 
           <section data-test="integration-group-endpoint" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div>
+            <button
+              type="button"
+              data-test="integration-toggle-endpoint"
+              class="flex w-full items-start justify-between gap-3 text-left"
+              :class="integrationGroupsOpen.endpoint ? 'mb-3' : ''"
+              :aria-expanded="integrationGroupsOpen.endpoint ? 'true' : 'false'"
+              @click="toggleIntegrationGroup('endpoint')"
+            >
+              <div class="flex min-w-0 gap-2">
+                <component :is="integrationGroupsOpen.endpoint ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
                 <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Endpoint Sensor / Future</h3>
+              </div>
+              <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
+                Future onboarding
+              </span>
+            </button>
+
+            <div v-if="integrationGroupsOpen.endpoint" class="flex items-start justify-between gap-3">
+              <div class="min-w-0 pl-6">
                 <div class="mt-2 text-sm font-medium text-theme-text">agent_private</div>
                 <p class="mt-1 text-xs leading-snug text-theme-text-muted">
                   Lab endpoint sensor for future onboarding into xdr_rico. It is not a dashboard integration yet.
                 </p>
               </div>
-              <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
-                Future onboarding
-              </span>
             </div>
           </section>
         </div>
