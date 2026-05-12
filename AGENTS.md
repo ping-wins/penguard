@@ -81,6 +81,110 @@ Vue -> chama /api/auth/me e demais endpoints usando cookie
 
 Observação de segurança: formulário próprio com Keycloak costuma exigir Direct Access Grant/Resource Owner Password Credentials no backend. A documentação atual do Keycloak alerta que esse fluxo não é recomendado para OAuth moderno porque a aplicação passa a lidar com credenciais do usuário. Para este produto, se mantivermos UX própria, essa escolha deve ficar confinada ao BFF FastAPI; se MFA, social login, required actions ou identity brokering virarem requisito, reavaliar Authorization Code Flow com tema customizado do Keycloak.
 
+## SSO Kerberos / SPNEGO (Active Directory)
+
+A partir de 2026-05-10, o realm Keycloak federa identidades de um Active Directory de laboratório via Kerberos/SPNEGO. O usuário entra na rede do domínio e clica em "Login with SSO (Kerberos)" na tela de login do FortiDashboard; o navegador negocia um ticket Kerberos com o Keycloak e a sessão HTTP-only do BFF é criada sem senha digitada.
+
+### Componentes
+
+- Active Directory rodando em Windows Server VM (Host-Only IP `192.168.56.10`), domínio `fortidashboard.local`, realm Kerberos `FORTIDASHBOARD.LOCAL`.
+- Host físico tem DNS local mapeando `fortidashboard.local` -> `192.168.56.10` para que o Keycloak (e o cliente Kerberos) alcance o KDC.
+- Keytab `fortidashboard.keytab` na raiz do projeto (NUNCA versionar conteúdo). Arquivo já listado em `.gitignore`.
+- `krb5.conf` na raiz aponta `default_realm = FORTIDASHBOARD.LOCAL`, KDC e admin server `192.168.56.10`, com `dns_lookup_realm = false` e `dns_lookup_kdc = false`.
+
+### Docker Compose
+
+O serviço `keycloak` em `docker-compose.yml` agora monta:
+
+- `./fortidashboard.keytab:/opt/keycloak/conf/fortidashboard.keytab:ro`
+- `./krb5.conf:/etc/krb5.conf:ro`
+
+E adiciona `extra_hosts` com `fortidashboard.local:192.168.56.10` e `dc01.fortidashboard.local:192.168.56.10` para que o container alcance o DC. As variáveis `KRB5_CONFIG=/etc/krb5.conf`, `KC_HOSTNAME_STRICT=false` e `KC_HTTP_ENABLED=true` foram adicionadas. Keycloak continua exposto em `${FORTIDASHBOARD_KEYCLOAK_PORT:-8080}:8080`.
+
+### Configuração do realm
+
+`infra/keycloak/realm-fortidashboard.json` ganhou:
+
+- `components["org.keycloak.storage.UserStorageProvider"]` com `providerId: kerberos`, `kerberosRealm: FORTIDASHBOARD.LOCAL`, `serverPrincipal: HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL`, `keyTab: /opt/keycloak/conf/fortidashboard.keytab`. (Em Keycloak moderno, providers de federação ficam aninhados em `components`, não em `userStorageProviders` raiz.)
+- Browser flow padrão do Keycloak fica intocado no JSON. SPNEGO é habilitado manualmente via Admin Console (Authentication > Flows > Browser > duplicar e adicionar execução `Kerberos` ALTERNATIVE) depois do realm subir, evitando estado meio-importado quando o realm-export referencia sub-flows incompletos.
+- Cliente `fortidashboard-bff` com `standardFlowEnabled: true` e `redirectUris` incluindo `http://localhost:8000/api/auth/sso/kerberos/callback`.
+
+Lembrete: alterações no realm exigem `docker compose down -v` em ambiente dev se já houver volume importado.
+
+### Fluxo SPNEGO
+
+```txt
+Vue LoginView -> "Login with SSO (Kerberos)" -> GET /api/auth/sso/kerberos/init
+FastAPI -> 302 Location: Keycloak /protocol/openid-connect/auth?... (cookie sso state)
+Browser -> Keycloak responde 401 WWW-Authenticate: Negotiate
+Browser -> envia ticket Kerberos do AD via header Authorization: Negotiate <token>
+Keycloak -> valida ticket com keytab, emite code, 302 -> /api/auth/sso/kerberos/callback?code=...&state=...
+FastAPI -> valida state cookie, chama token endpoint (authorization_code), busca userinfo
+FastAPI -> cria sessão HTTP-only, Set-Cookie fortidashboard_session, 302 -> /
+Vue -> guard chama /api/auth/me, hidrata user e renderiza dashboard
+```
+
+### Endpoints novos
+
+- `GET /api/auth/sso/kerberos/init`: gera state, seta cookie `fortidashboard_sso_state` HttpOnly e redireciona para o `/protocol/openid-connect/auth` do realm. Aceita `?kc_idp_hint=` opcional.
+- `GET /api/auth/sso/kerberos/callback`: confere `state` contra cookie, troca `code` por tokens (`authorization_code`), cria sessão server-side, seta cookie `fortidashboard_session` e redireciona para `FORTIDASHBOARD_SSO_POST_LOGIN_URL` (default `http://localhost:5173/`).
+
+Falhas geram audit event `sso_kerberos` com `outcome` apropriado (`state_mismatch`, `provider_error`, `provider_unavailable`, `success`). Tokens Keycloak ficam server-side em `auth_sessions.token_blob` criptografados, igual aos demais fluxos.
+
+Variáveis novas em `apps/api/app/core/config.py` (defaults atualizados para FQDN — Kerberos SPNEGO precisa que browser e BFF batam no MESMO hostname para que o issuer no JWT seja consistente):
+
+- `FORTIDASHBOARD_KEYCLOAK_BASE_URL` (default `http://fortidashboard.local:9080`) — URL usada pelo BFF para falar com o token endpoint. Container do `api` resolve esse FQDN via `extra_hosts: fortidashboard.local:host-gateway`.
+- `FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL` (default `http://fortidashboard.local:9080`) — URL apresentada ao navegador no fluxo authorize.
+- `FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL` (default `false`) — desliga validação TLS no `httpx.Client` do `KeycloakClient` (lab HTTP).
+- `FORTIDASHBOARD_OIDC_ISSUER` (default `http://fortidashboard.local:9080/realms/fortidashboard`) — issuer esperado quando validação local de JWT for adicionada.
+- `FORTIDASHBOARD_SSO_REDIRECT_URI` (default `http://fortidashboard.local:8000/api/auth/sso/kerberos/callback`).
+- `FORTIDASHBOARD_SSO_POST_LOGIN_URL` (default `http://fortidashboard.local:5173/`).
+- `FORTIDASHBOARD_SSO_STATE_COOKIE_NAME` (default `fortidashboard_sso_state`) — mantida por compatibilidade; o state agora persiste em `request.session` via Starlette `SessionMiddleware`.
+- `FORTIDASHBOARD_SESSION_COOKIE_SAMESITE` (default `lax`), `FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY` (default `true`) — também aceitam aliases sem prefixo (`SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_HTTPONLY`) via `AliasChoices` do Pydantic.
+
+### SessionMiddleware e estado SSO
+
+`apps/api/app/main.py` registra `starlette.middleware.sessions.SessionMiddleware` com `session_cookie="f_session"`, `same_site="lax"`, `https_only=False` e `secret_key=settings.secret_key`. O `state` do fluxo OAuth2 vive em `request.session["sso_state"]` em vez de cookie manual — sobrevive ao redirect cross-port do Keycloak callback porque o cookie `f_session` (Lax) é enviado em GET top-level. Dependência nova: `itsdangerous>=2.2.0` em `apps/api/pyproject.toml`.
+
+### Cliente OIDC tolerante
+
+`KeycloakClient.get_userinfo` aceita usuários federados do AD que não têm o atributo `mail` populado: `email` é derivado, na ordem, de `email` → `preferred_username` (se contém `@`) → `<preferred_username>@fortidashboard.local` → `<sub>@fortidashboard.local`. `display_name` cai para `given_name + family_name` ou `preferred_username` quando `name` não vem. Evita `KeyError: 'email'` que estourava 500 no callback. O fix definitivo continua sendo popular `mail` no ADDS (`Set-ADUser -EmailAddress`) ou trocar o LDAP attribute do mapper `email` para `userPrincipalName` no Admin Console.
+
+### Crypto Kerberos (RC4 vs AES) em Keycloak/JDK21
+
+Keycloak 26 roda em JDK 21, que desabilita RC4-HMAC por padrão. Se o keytab gerado pelo `ktpass` no Windows Server usa RC4, SPNEGO falha com `GSSException: Encryption type RC4 with HMAC is not supported/enabled`. Mitigação aplicada para lab:
+
+- `krb5.conf` ganhou `allow_weak_crypto = true` + `default_tkt_enctypes`/`default_tgs_enctypes`/`permitted_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 rc4-hmac`.
+- `infra/keycloak/java-security-override.properties` (montado em `/opt/keycloak/conf/`) zera `jdk.tls.disabledAlgorithms`, `jdk.certpath.disabledAlgorithms`, `jdk.security.legacyAlgorithms` e define `crypto.policy=unlimited`.
+- Keycloak `JAVA_OPTS_APPEND` passa `-Dsun.security.krb5.allowWeakCrypto=true`, `-Djava.security.krb5.conf=/etc/krb5.conf` e `-Djava.security.properties=/opt/keycloak/conf/java-security-override.properties`.
+
+Caminho proper (recomendado): regerar keytab com AES no DC e marcar a conta de serviço com "This account supports Kerberos AES 256 bit encryption" no ADUC.
+
+```powershell
+ktpass /princ HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL `
+       /mapuser keycloak-svc@FORTIDASHBOARD.LOCAL `
+       /crypto AES256-SHA1 `
+       /ptype KRB5_NT_PRINCIPAL `
+       /pass <senha> `
+       /out fortidashboard.keytab
+```
+
+### Vite host allowlist
+
+`apps/web/vite.config.ts` tem `server.allowedHosts = ['fortidashboard.local', '.fortidashboard.local', 'localhost', '127.0.0.1']` — Vite 5 bloqueia hosts não-conhecidos por default; FQDN do AD precisa estar na lista.
+
+### Frontend
+
+- `apps/web/src/services/authClient.ts`: `ssoKerberosLoginUrl()` retorna `/api/auth/sso/kerberos/init`.
+- `apps/web/src/views/LoginView.vue`: botão "Login with SSO (Kerberos)" usa `KeyRound` (lucide) e faz `window.location.href = ssoKerberosLoginUrl()` para iniciar o fluxo top-level.
+- Após o redirect final para `FORTIDASHBOARD_SSO_POST_LOGIN_URL`, o guard de router chama `GET /api/auth/me` e hidrata `useAuthStore`.
+
+### Comandos relevantes
+
+- `docker compose up -d --build api` — rebuild obrigatório quando código Python muda; `--force-recreate` sozinho NÃO reconstrói a imagem.
+- `docker compose down -v && docker compose up -d keycloak` — após alterar `realm-fortidashboard.json`, porque Keycloak não reimporta realm já presente no volume.
+- `docker compose logs api --tail=200` — stack trace completo aparece graças ao `logger.exception` no `except Exception` do callback (`apps/api/app/routers/auth.py`); 502 com `SSO callback failed: <TypeName>` é a face que o usuário vê.
+
 ## Comandos Esperados
 
 Atualize após o scaffold real existir:

@@ -7,6 +7,10 @@
 .env.*
 !.env.example
 
+# Kerberos / AD secrets — never commit
+*.keytab
+fortidashboard.keytab
+
 # Logs
 logs
 *.log

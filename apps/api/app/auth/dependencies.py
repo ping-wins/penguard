@@ -56,9 +56,11 @@ def get_auth_service() -> AuthService:
         provider = KeycloakIdentityProvider(
             KeycloakClient(
                 base_url=settings.keycloak_base_url,
+                browser_base_url=settings.keycloak_browser_base_url,
                 realm=settings.keycloak_realm,
                 client_id=settings.keycloak_client_id,
                 client_secret=settings.keycloak_client_secret,
+                verify_ssl=settings.keycloak_verify_ssl,
             )
         )
     return AuthService(provider=provider, session_store=get_session_store())

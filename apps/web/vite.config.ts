@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['fortidashboard.local', '.fortidashboard.local', 'localhost', '127.0.0.1'],
     watch: {
       usePolling: true,
     },

@@ -27,6 +27,9 @@ class IdentityProvider(Protocol):
     def login(self, *, email: str, password: str) -> AuthIdentity:
         pass
 
+    def sso_exchange(self, *, code: str, redirect_uri: str) -> AuthIdentity:
+        pass
+
 
 class SessionStore(Protocol):
     def create(
@@ -72,6 +75,18 @@ class MockIdentityProvider:
             expires_at=payload["session"]["expiresAt"],
         )
 
+    def sso_exchange(self, *, code: str, redirect_uri: str) -> AuthIdentity:
+        payload = load_fixture("auth_login_response")
+        return AuthIdentity(
+            user=payload["user"],
+            tokens={
+                "access_token": "mock-access-token",
+                "refresh_token": "mock-refresh-token",
+                "expires_in": 7200,
+            },
+            expires_at=payload["session"]["expiresAt"],
+        )
+
 
 class KeycloakIdentityProvider:
     def __init__(self, keycloak: KeycloakClient) -> None:
@@ -84,6 +99,11 @@ class KeycloakIdentityProvider:
 
     def login(self, *, email: str, password: str) -> AuthIdentity:
         tokens = self.keycloak.login(email=email, password=password)
+        user = self.keycloak.get_userinfo(access_token=tokens.access_token)
+        return AuthIdentity(user=self._public_user(user), tokens=tokens.__dict__)
+
+    def sso_exchange(self, *, code: str, redirect_uri: str) -> AuthIdentity:
+        tokens = self.keycloak.exchange_code(code=code, redirect_uri=redirect_uri)
         user = self.keycloak.get_userinfo(access_token=tokens.access_token)
         return AuthIdentity(user=self._public_user(user), tokens=tokens.__dict__)
 
@@ -107,6 +127,10 @@ class AuthService:
 
     def login(self, *, email: str, password: str) -> AuthSessionResult:
         identity = self.provider.login(email=email, password=password)
+        return self._create_public_session(identity)
+
+    def sso_login(self, *, code: str, redirect_uri: str) -> AuthSessionResult:
+        identity = self.provider.sso_exchange(code=code, redirect_uri=redirect_uri)
         return self._create_public_session(identity)
 
     def get_current_user(self, session_id: str | None) -> dict[str, Any] | None:

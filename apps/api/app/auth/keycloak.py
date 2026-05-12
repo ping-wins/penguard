@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 import httpx
 
@@ -30,13 +30,53 @@ class KeycloakClient:
         realm: str,
         client_id: str,
         client_secret: str,
+        browser_base_url: str | None = None,
+        verify_ssl: bool = True,
         http_client: httpx.Client | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/") + "/"
+        self.browser_base_url = (browser_base_url or base_url).rstrip("/") + "/"
         self.realm = realm
         self.client_id = client_id
         self.client_secret = client_secret
-        self.http_client = http_client or httpx.Client(timeout=10)
+        self.http_client = http_client or httpx.Client(timeout=10, verify=verify_ssl)
+
+    def authorization_url(
+        self,
+        *,
+        redirect_uri: str,
+        state: str,
+        kc_idp_hint: str | None = None,
+    ) -> str:
+        params = {
+            "client_id": self.client_id,
+            "response_type": "code",
+            "scope": "openid profile email",
+            "redirect_uri": redirect_uri,
+            "state": state,
+        }
+        if kc_idp_hint:
+            params["kc_idp_hint"] = kc_idp_hint
+        path = f"realms/{self.realm}/protocol/openid-connect/auth"
+        return urljoin(self.browser_base_url, path) + "?" + urlencode(params)
+
+    def exchange_code(self, *, code: str, redirect_uri: str) -> KeycloakTokenSet:
+        response = self._post_token(
+            {
+                "grant_type": "authorization_code",
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            context="login",
+        )
+        payload = response.json()
+        return KeycloakTokenSet(
+            access_token=payload["access_token"],
+            refresh_token=payload.get("refresh_token"),
+            expires_in=payload["expires_in"],
+        )
 
     def login(self, *, email: str, password: str) -> KeycloakTokenSet:
         response = self._post_token(
@@ -101,14 +141,24 @@ class KeycloakClient:
         )
         self._raise_for_status(response, context="userinfo")
         payload = response.json()
+        sub = payload.get("sub") or payload.get("preferred_username") or "kerberos-user"
+        preferred_username = payload.get("preferred_username") or ""
+        email = (
+            payload.get("email")
+            or (preferred_username if "@" in preferred_username else None)
+            or (f"{preferred_username}@fortidashboard.local" if preferred_username else f"{sub}@fortidashboard.local")
+        )
         display_name = (
             payload.get("name")
-            or payload.get("preferred_username")
-            or payload["email"]
+            or " ".join(
+                part for part in (payload.get("given_name"), payload.get("family_name")) if part
+            )
+            or preferred_username
+            or email
         )
         return KeycloakUser(
-            id=payload["sub"],
-            email=payload["email"],
+            id=sub,
+            email=email,
             display_name=display_name,
             roles=["analyst"],
         )
