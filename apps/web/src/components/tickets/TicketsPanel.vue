@@ -8,10 +8,12 @@ import {
   Clock,
   Filter,
   Layers,
+  Play,
   RefreshCcw,
   Sparkles,
   Shield,
   Ticket as TicketIcon,
+  Workflow,
   Loader2,
   X,
 } from 'lucide-vue-next'
@@ -19,9 +21,13 @@ import { useTicketsStore } from '../../stores/useTicketsStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import {
   analyzeIncident,
+  applyContainmentPlaybook,
+  draftContainmentPlaybook,
   suggestContainment,
+  type ApplyContainmentResponse,
   type ContainmentSuggestion,
   type IncidentAnalysis,
+  type PlaybookDraftResponse,
   type Ticket,
   type TicketStatus,
   type TriageLevel,
@@ -40,6 +46,11 @@ const aiContainment = ref<ContainmentSuggestion | null>(null)
 const isAnalyzing = ref(false)
 const isContaining = ref(false)
 const aiError = ref<string | null>(null)
+const playbookDraft = ref<PlaybookDraftResponse | null>(null)
+const applyResult = ref<ApplyContainmentResponse | null>(null)
+const isDrafting = ref(false)
+const isApplying = ref(false)
+const playbookError = ref<string | null>(null)
 
 const tickets = computed(() => store.tickets)
 
@@ -151,6 +162,42 @@ function resetAiState() {
   aiAnalysis.value = null
   aiContainment.value = null
   aiError.value = null
+  playbookDraft.value = null
+  applyResult.value = null
+  playbookError.value = null
+}
+
+async function runDraftPlaybook(ticket: Ticket) {
+  playbookError.value = null
+  isDrafting.value = true
+  try {
+    playbookDraft.value = await draftContainmentPlaybook(ticket.id)
+  } catch (e: any) {
+    playbookError.value = e?.message ?? 'Failed to draft playbook'
+  } finally {
+    isDrafting.value = false
+  }
+}
+
+async function runApplyPlaybook(ticket: Ticket) {
+  if (!playbookDraft.value) return
+  playbookError.value = null
+  isApplying.value = true
+  try {
+    const result = await applyContainmentPlaybook(ticket.id, playbookDraft.value.playbook.id)
+    applyResult.value = result
+    if (result.ticket) {
+      const idx = store.tickets.findIndex((t) => t.id === ticket.id)
+      if (idx >= 0) store.tickets[idx] = result.ticket
+      selected.value = result.ticket
+    } else {
+      await store.refresh()
+    }
+  } catch (e: any) {
+    playbookError.value = e?.message ?? 'Failed to apply playbook'
+  } finally {
+    isApplying.value = false
+  }
 }
 
 function severityChipClass(severity: 'low' | 'medium' | 'high') {
@@ -482,9 +529,84 @@ onBeforeUnmount(() => store.stopPolling())
                 </div>
               </li>
             </ol>
-            <p class="text-[10px] text-theme-text-muted italic">
-              Steps stay as drafts until Phase 4 wires them into soar_skipper.
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                :disabled="isDrafting"
+                @click="runDraftPlaybook(selected!)"
+                class="text-xs px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 flex items-center gap-1"
+              >
+                <Loader2 v-if="isDrafting" :size="11" class="animate-spin" />
+                <Workflow v-else :size="11" />
+                Draft playbook
+              </button>
+            </div>
+            <p v-if="!playbookDraft" class="text-[10px] text-theme-text-muted italic mt-2">
+              Steps stay as drafts. "Draft playbook" sends the plan to soar_skipper as a disabled playbook + dry-run simulation.
             </p>
+          </div>
+
+          <div v-if="playbookError" class="mt-3 p-2 rounded border border-red-500/40 bg-red-500/10 text-xs text-red-300 flex items-start gap-1">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ playbookError }}
+          </div>
+
+          <div v-if="playbookDraft" class="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/40 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-semibold text-emerald-100 flex items-center gap-1">
+                <Workflow :size="13" />
+                Draft playbook
+              </span>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-200">
+                {{ playbookDraft.playbook.id }}
+              </span>
+            </div>
+            <div class="text-xs text-theme-text-muted">{{ playbookDraft.playbook.name }}</div>
+
+            <div>
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">Simulation</div>
+              <div class="text-xs flex items-center gap-2">
+                <span :class="playbookDraft.simulation.valid ? 'text-emerald-300' : 'text-red-300'">
+                  {{ playbookDraft.simulation.valid ? 'Valid (dry-run)' : 'Invalid' }}
+                </span>
+                <span class="text-theme-text-muted">·</span>
+                <span class="text-theme-text">{{ playbookDraft.simulation.steps?.length || 0 }} steps</span>
+              </div>
+              <ol v-if="playbookDraft.simulation.steps?.length" class="mt-1 list-decimal list-inside text-[11px] text-theme-text space-y-0.5">
+                <li v-for="step in playbookDraft.simulation.steps" :key="step.nodeId">
+                  <span class="font-mono">{{ step.nodeType }}</span>
+                  <span class="text-theme-text-muted ml-1">→ {{ step.status }}</span>
+                  <span v-if="step.sensitive" class="ml-1 text-[10px] text-amber-300">sensitive</span>
+                </li>
+              </ol>
+            </div>
+
+            <div class="flex gap-2 pt-2 border-t border-emerald-500/20">
+              <button
+                type="button"
+                :disabled="isApplying || !!applyResult"
+                @click="runApplyPlaybook(selected!)"
+                class="text-xs px-3 py-1.5 rounded border border-emerald-500/50 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30 disabled:opacity-50 flex items-center gap-1 font-semibold"
+              >
+                <Loader2 v-if="isApplying" :size="12" class="animate-spin" />
+                <Play v-else :size="12" />
+                Apply (dry-run)
+              </button>
+              <p class="text-[10px] text-theme-text-muted self-center">
+                Sensitive steps stop at the approval gate. Nothing is pushed to FortiGate or endpoints.
+              </p>
+            </div>
+          </div>
+
+          <div v-if="applyResult" class="mt-3 p-3 rounded-lg border border-emerald-400/50 bg-emerald-500/15 text-xs space-y-1">
+            <div class="font-semibold text-emerald-100 flex items-center gap-1">
+              <CheckCircle2 :size="13" />
+              {{ applyResult.ticketStatus === 'contained' ? 'Threat contained' : 'Containment paused at approval gate' }}
+            </div>
+            <div class="text-theme-text-muted">
+              Run <span class="font-mono">{{ applyResult.run.id }}</span> · status
+              <span class="font-mono">{{ applyResult.run.status }}</span>
+            </div>
           </div>
 
           <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">

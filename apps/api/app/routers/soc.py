@@ -242,6 +242,32 @@ def _analysis_to_dict(analysis: IncidentAnalysis, *, analysis_id: str) -> dict[s
     }
 
 
+_SOAR_NODE_MAPPING = {
+    "firewall.block_ip": ("fortigate.recommend_block", True),
+    "fortigate.block_ip": ("fortigate.recommend_block", True),
+    "fortigate.recommend_block": ("fortigate.recommend_block", True),
+    "notify.slack": ("notify.webhook", False),
+    "notify.email": ("notify.webhook", False),
+    "notify.teams": ("notify.webhook", False),
+    "notify.webhook": ("notify.webhook", False),
+    "endpoint.collect_telemetry": ("enrich.ip", False),
+    "endpoint.isolate": ("approval.required", True),
+    "enrich.ip": ("enrich.ip", False),
+    "enrich.hostname": ("enrich.ip", False),
+    "case.note": ("case.note", False),
+    "case.escalate": ("case.note", False),
+    "approval.required": ("approval.required", False),
+}
+
+
+def _map_ai_step_to_soar_node(playbook_node_type: str) -> tuple[str, bool]:
+    """Map an AI-emitted node type to a soar_skipper-compatible node and
+    sensitive flag. Unknown types fall back to `case.note` so the draft is
+    always inert.
+    """
+    return _SOAR_NODE_MAPPING.get(playbook_node_type, ("case.note", False))
+
+
 def _containment_to_dict(suggestion: ContainmentSuggestion) -> dict[str, Any]:
     return {
         "incidentId": suggestion.incident_id,
@@ -328,6 +354,205 @@ def analyze_incident(
         },
     )
     return response
+
+
+@router.post("/soc/tickets/{ticket_id}/draft-playbook", status_code=status.HTTP_201_CREATED)
+def draft_containment_playbook(
+    ticket_id: str,
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    """Build a soar_skipper-compatible draft playbook from the AI containment
+    suggestion. The playbook is always disabled and always dry-run; the
+    cockpit must call apply-containment to actually execute it.
+    """
+    incident = siem_client.request("GET", f"/incidents/{ticket_id}")
+    context = _build_incident_context(incident)
+    provider = get_ai_provider()
+    try:
+        suggestion = provider.suggest_containment(context)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.playbook_drafted",
+            outcome="failure",
+            details={
+                "ticketId": ticket_id,
+                "provider": provider.name,
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(status_code=502, detail=f"AI provider failed: {exc}") from exc
+
+    nodes: list[dict[str, Any]] = [{"id": "trigger", "type": "trigger.incident_created"}]
+    edges: list[dict[str, str]] = []
+    previous_id = "trigger"
+    sensitive_present = False
+    for index, step in enumerate(suggestion.steps):
+        node_type, default_sensitive = _map_ai_step_to_soar_node(step.playbook_node_type)
+        node_id = f"step_{index + 1}"
+        node_config: dict[str, Any] = {"title": step.title, "description": step.description}
+        if step.requires_approval or default_sensitive:
+            sensitive_present = True
+            approval_id = f"approval_{index + 1}"
+            nodes.append({"id": approval_id, "type": "approval.required", "config": {"role": "admin"}})
+            edges.append({"from": previous_id, "to": approval_id})
+            previous_id = approval_id
+        nodes.append({"id": node_id, "type": node_type, "config": node_config})
+        edges.append({"from": previous_id, "to": node_id})
+        previous_id = node_id
+
+    playbook_id = f"pb_ai_{token_urlsafe(6)}"
+    playbook_payload = {
+        "id": playbook_id,
+        "name": f"AI containment draft — {context.title[:80]}",
+        "enabled": False,
+        "nodes": nodes,
+        "edges": edges,
+    }
+
+    try:
+        created_playbook = soar_client.request("POST", "/playbooks", json=playbook_payload)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.playbook_drafted",
+            outcome="failure",
+            details={
+                "ticketId": ticket_id,
+                "stage": "create_playbook",
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(status_code=502, detail=f"Failed to create draft playbook: {exc}") from exc
+
+    try:
+        simulation = soar_client.request("POST", f"/playbooks/{playbook_id}/simulate")
+    except Exception as exc:  # noqa: BLE001
+        simulation = {"dryRun": True, "valid": False, "steps": [], "error": str(exc)[:200]}
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.ticket.playbook_drafted",
+        details={
+            "ticketId": ticket_id,
+            "playbookId": playbook_id,
+            "provider": provider.name,
+            "stepCount": len(suggestion.steps),
+            "sensitive": sensitive_present,
+        },
+    )
+    return {
+        "ticketId": ticket_id,
+        "playbook": created_playbook,
+        "simulation": simulation,
+        "suggestion": _containment_to_dict(suggestion),
+    }
+
+
+@router.post("/soc/tickets/{ticket_id}/apply-containment")
+def apply_containment_playbook(
+    ticket_id: str,
+    payload: Annotated[dict[str, Any], Body()],
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    """Trigger a dry-run of the AI-drafted playbook against the ticket's
+    incident. On success transition the ticket to `contained` and append a
+    success timeline note. Destructive operations remain blocked at the
+    soar_skipper layer (the lite service always runs dry-run for the MVP).
+    """
+    playbook_id = payload.get("playbookId")
+    if not isinstance(playbook_id, str) or not playbook_id:
+        raise HTTPException(status_code=422, detail="playbookId is required")
+
+    try:
+        run = soar_client.request(
+            "POST",
+            f"/incidents/{ticket_id}/playbooks/{playbook_id}/run",
+        )
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.contained",
+            outcome="failure",
+            details={
+                "ticketId": ticket_id,
+                "playbookId": playbook_id,
+                "stage": "soar_run",
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(status_code=502, detail=f"Failed to run draft playbook: {exc}") from exc
+
+    run_status = str(run.get("status") or "unknown")
+    waiting_approval = run_status == "waiting_approval"
+    new_ticket_status = "investigating" if waiting_approval else "contained"
+    note = (
+        f"Dry-run for playbook {playbook_id} completed with status `{run_status}`."
+        if not waiting_approval
+        else f"Playbook {playbook_id} dry-run paused at approval gate."
+    )
+
+    try:
+        updated_ticket = siem_client.request(
+            "PATCH",
+            f"/incidents/{ticket_id}/triage",
+            json={"ticketStatus": new_ticket_status, "note": note},
+        )
+    except Exception as exc:  # noqa: BLE001
+        updated_ticket = None
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.contained",
+            outcome="partial",
+            details={
+                "ticketId": ticket_id,
+                "playbookId": playbook_id,
+                "runId": run.get("id"),
+                "warning": f"Ticket patch failed: {exc}"[:200],
+            },
+        )
+
+    audit_action = "soc.ticket.contained" if new_ticket_status == "contained" else "soc.ticket.containment_paused"
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action=audit_action,
+        details={
+            "ticketId": ticket_id,
+            "playbookId": playbook_id,
+            "runId": run.get("id"),
+            "runStatus": run_status,
+            "newTicketStatus": new_ticket_status,
+        },
+    )
+    return {
+        "ticketId": ticket_id,
+        "playbookId": playbook_id,
+        "run": run,
+        "ticket": updated_ticket,
+        "ticketStatus": new_ticket_status,
+    }
 
 
 @router.post("/soc/incidents/{incident_id}/containment-suggestions")

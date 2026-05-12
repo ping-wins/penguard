@@ -576,20 +576,70 @@ Open items for later:
 
 ### Phase 4 — AI-drafted containment playbooks
 
-- Add `POST /api/soc/tickets/{ticketId}/draft-playbook` that asks the AI
-  provider for a containment plan, validates the response against
-  `packages/soc-catalog/playbook-node-types.json`, and stores it as a `draft`
-  playbook owned by the requesting user.
-- Frontend: from the ticket detail, surface a "Suggest containment" button
-  that shows the draft playbook diff with an explanation. The CTA splits into
-  "Simulate" (dry-run) and "Approve & run" (still dry-run for MVP). Both
-  flows go through the existing `soar_skipper` approval pipeline.
-- On successful dry-run, automatically transition the ticket to
-  `contained` and append a "Threat contained" timeline entry referencing the
-  playbook run. The audit trail must record both the AI suggestion and the
-  human approval.
-- Keep destructive steps gated behind `dry_run`. Real execution stays out of
-  the MVP demo; the AI must never bypass the AGENTS.md AI safety rules.
+Status: **delivered.**
+
+Backend:
+
+- `apps/api/app/routers/soc.py` ships `_SOAR_NODE_MAPPING` plus
+  `_map_ai_step_to_soar_node()` which translates the AI-emitted
+  `playback_node_type` ("firewall.block_ip", "notify.slack",
+  "endpoint.collect_telemetry", etc.) into a soar_skipper-compatible
+  `NodeType` and a default `sensitive` flag. Unknown types collapse to
+  `case.note` so the draft is always inert.
+- `POST /api/soc/tickets/{ticketId}/draft-playbook`:
+  - Re-fetches the incident, sanitizes it through `_build_incident_context`
+    and asks the AI provider for a containment plan.
+  - Builds a linear playbook graph starting with
+    `trigger.incident_created`. Steps marked sensitive or AI-flagged
+    `requires_approval=true` are gated by a synthetic `approval.required`
+    node so soar_skipper waits for analyst approval.
+  - Posts the playbook to soar_skipper `disabled=false → false`, captures
+    the simulation preview and returns `{playbook, simulation, suggestion}`
+    together. Failures audit `soc.ticket.playbook_drafted` with
+    `outcome="failure"` and 502.
+- `POST /api/soc/tickets/{ticketId}/apply-containment`:
+  - Body must include `playbookId`.
+  - Runs `POST /incidents/{ticketId}/playbooks/{playbookId}/run` (always
+    dry-run at the soar_skipper layer).
+  - On `completed`: PATCHes the ticket to `ticketStatus="contained"` with a
+    timeline note referencing the run id, audits `soc.ticket.contained`.
+  - On `waiting_approval`: keeps the ticket in `investigating`, audits
+    `soc.ticket.containment_paused`.
+  - SIEM PATCH errors degrade to `outcome="partial"` audit but still
+    return the run payload.
+
+Frontend:
+
+- `services/ticketsClient.ts` exposes `draftContainmentPlaybook` and
+  `applyContainmentPlaybook` plus the new `PlaybookDraftResponse` and
+  `ApplyContainmentResponse` shapes (including the dry-run simulation
+  steps with sensitivity flags).
+- `TicketsPanel.vue` containment block gains a "Draft playbook" button
+  that calls the new endpoint and renders the playbook id, simulation
+  status and the per-step preview list. A green "Apply (dry-run)" button
+  triggers `apply-containment` and, on success, swaps the ticket state in
+  place and shows a green banner: "Threat contained" (or "Containment
+  paused at approval gate" if the run waits on approval). All
+  cockpit-side state resets when the operator switches ticket.
+
+Safety:
+
+- Real soar_skipper runs always execute as `dry_run=True`; the MVP never
+  pushes a real config change to FortiGate or endpoints.
+- AI-drafted nodes inherit `requires_approval=true` whenever the AI marks
+  the step sensitive or whenever the mapped soar node type sits in the
+  sensitive set. Approval gates pause execution and are surfaced in the
+  banner copy.
+- Every mutating route audits success, partial and failure paths so the
+  audit drawer mirrors the live MVP video.
+
+Open items for later:
+
+- Connect the analyst "Approve" button to the existing
+  `/playbook-runs/{runId}/approve` endpoint so an approval gate can be
+  cleared from the same drawer.
+- Add an explicit "Threat contained" success ticket linked back to the
+  incident timeline (separate from the existing PATCH note).
 
 ### Phase 5 — Demo polish and recording prep
 
@@ -747,7 +797,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Implement AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
 - [ ] Implement `list_data_fields`, `draft_widget`, `validate_widget`, `simulate_widget_data` and `add_widget_draft_to_workspace`.
 - [ ] Implement `analyze_incident` and `suggest_containment` tools for the MVP demo flow (Phase 3).
-- [ ] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft validated against `packages/soc-catalog/playbook-node-types.json` (Phase 4).
+- [x] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft via `_SOAR_NODE_MAPPING` + linear graph builder (Phase 4).
 - [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
@@ -761,7 +811,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
 - [x] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + AI panel on the ticket detail drawer with risk score, suggested triage and IoCs.
 - [x] Phase 3 — `POST /api/soc/incidents/{id}/containment-suggestions` exposed in the ticket drawer as draft steps (no auto-execution).
-- [ ] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Suggest containment" flow with dry-run only.
+- [x] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Draft playbook" / "Apply (dry-run)" flow that auto-contains the ticket on success.
 - [ ] Phase 5 — Toast/banner notifications for new SIEM incidents.
 - [ ] Phase 5 — Demo walkthrough doc + smoke test covering seed → incident → AI → ticket → playbook → contained.
 

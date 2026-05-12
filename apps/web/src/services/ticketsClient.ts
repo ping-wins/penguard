@@ -107,6 +107,81 @@ export async function analyzeIncident(incidentId: string): Promise<IncidentAnaly
   return parseOrThrow<IncidentAnalysis>(response, 'Failed to analyze incident')
 }
 
+export type PlaybookSimulationStep = {
+  nodeId: string
+  nodeType: string
+  status: string
+  sensitive: boolean
+}
+
+export type PlaybookSimulation = {
+  dryRun: boolean
+  valid: boolean
+  steps: PlaybookSimulationStep[]
+  error?: string
+}
+
+export type PlaybookDraft = {
+  id: string
+  name: string
+  enabled: boolean
+  nodes: Array<{ id: string; type: string; config?: Record<string, any> }>
+  edges: Array<{ from: string; to: string }>
+}
+
+export type PlaybookDraftResponse = {
+  ticketId: string
+  playbook: PlaybookDraft
+  simulation: PlaybookSimulation
+  suggestion: ContainmentSuggestion
+}
+
+export type ApplyContainmentResponse = {
+  ticketId: string
+  playbookId: string
+  run: {
+    id: string
+    incidentId: string
+    playbookId: string
+    dryRun: boolean
+    status: string
+    steps: Array<{ nodeId: string; nodeType: string; status: string; sensitive: boolean }>
+    createdAt: string
+  }
+  ticket: Ticket | null
+  ticketStatus: 'contained' | 'investigating'
+}
+
+export async function draftContainmentPlaybook(ticketId: string): Promise<PlaybookDraftResponse> {
+  const headers = await csrfHeaders()
+  const response = await fetch(
+    `/api/soc/tickets/${encodeURIComponent(ticketId)}/draft-playbook`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+    },
+  )
+  return parseOrThrow<PlaybookDraftResponse>(response, 'Failed to draft containment playbook')
+}
+
+export async function applyContainmentPlaybook(
+  ticketId: string,
+  playbookId: string,
+): Promise<ApplyContainmentResponse> {
+  const headers = await csrfHeaders()
+  const response = await fetch(
+    `/api/soc/tickets/${encodeURIComponent(ticketId)}/apply-containment`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playbookId }),
+    },
+  )
+  return parseOrThrow<ApplyContainmentResponse>(response, 'Failed to apply containment playbook')
+}
+
 export async function suggestContainment(incidentId: string): Promise<ContainmentSuggestion> {
   const headers = await csrfHeaders()
   const response = await fetch(
