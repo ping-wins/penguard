@@ -401,15 +401,14 @@ def ingest_fortigate_events_into_siem(
         raise HTTPException(status_code=404, detail="Integration not found") from exc
 
     events = widget_payload.get("data", {}).get("events", [])
+    aggregated = _aggregate_fortigate_events(events, integration_id=integration_id)
     created_events = []
-    for event in events:
-        if not isinstance(event, dict):
-            continue
+    for siem_event in aggregated:
         created_events.append(
             siem_client.request(
                 "POST",
                 "/events",
-                json=_fortigate_event_to_siem_event(event, integration_id=integration_id),
+                json=siem_event,
             )
         )
 
@@ -422,15 +421,92 @@ def ingest_fortigate_events_into_siem(
         user_agent=request.headers.get("user-agent"),
         details={
             "integrationId": integration_id,
+            "rawEventCount": len([e for e in events if isinstance(e, dict)]),
+            "aggregatedCount": len(created_events),
             "count": len(created_events),
             "service": "siem_kowalski",
         },
     )
     return {
         "integrationId": integration_id,
+        "rawEventCount": len([e for e in events if isinstance(e, dict)]),
         "createdCount": len(created_events),
         "eventIds": [event.get("id") for event in created_events if event.get("id")],
     }
+
+
+_SEVERITY_RANK = {
+    "informational": 0,
+    "info": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def _aggregate_fortigate_events(
+    events: list[Any],
+    *,
+    integration_id: str,
+) -> list[dict[str, Any]]:
+    """Collapse a FortiGate event burst into one SIEM event per (eventType, sourceIp).
+
+    The Forti widget feed emits one record per matched log line, but the SIEM
+    `denied_traffic_burst` rule reads `attributes.count` from a single event.
+    Aggregating per source IP makes the count meaningful (and matches the
+    semantics of how analysts think about a port scan).
+    """
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for raw_event in events:
+        if not isinstance(raw_event, dict):
+            continue
+        action = str(raw_event.get("action") or "").lower()
+        event_type = "network.deny" if action in {"deny", "blocked", "block"} else "network.event"
+        source_ip = str(raw_event.get("sourceIp") or "unknown")
+        key = (event_type, source_ip)
+        existing = groups.get(key)
+        severity = str(raw_event.get("severity") or "informational").lower()
+        occurred_at = raw_event.get("timestamp") or _now_iso()
+        destination_ip = raw_event.get("destinationIp")
+        message = raw_event.get("message")
+        if existing is None:
+            groups[key] = {
+                "source": "fortigate",
+                "eventType": event_type,
+                "severity": severity,
+                "occurredAt": occurred_at,
+                "entities": {
+                    "sourceIp": source_ip,
+                    "destinationIp": destination_ip,
+                    "integrationId": integration_id,
+                },
+                "attributes": {
+                    "action": raw_event.get("action"),
+                    "type": raw_event.get("type"),
+                    "subtype": raw_event.get("subtype"),
+                    "message": message,
+                    "count": 1,
+                    "uniqueDestinationIps": {destination_ip} if destination_ip else set(),
+                },
+            }
+        else:
+            existing["attributes"]["count"] += 1
+            if destination_ip:
+                existing["attributes"]["uniqueDestinationIps"].add(destination_ip)
+            if _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(existing["severity"], 0):
+                existing["severity"] = severity
+            if occurred_at > existing["occurredAt"]:
+                existing["occurredAt"] = occurred_at
+                if message:
+                    existing["attributes"]["message"] = message
+
+    aggregated: list[dict[str, Any]] = []
+    for event in groups.values():
+        unique = event["attributes"].pop("uniqueDestinationIps", set())
+        event["attributes"]["uniqueDestinationCount"] = len(unique) or 0
+        aggregated.append(event)
+    return aggregated
 
 
 def _fortigate_event_to_siem_event(
@@ -438,26 +514,8 @@ def _fortigate_event_to_siem_event(
     *,
     integration_id: str,
 ) -> dict[str, Any]:
-    action = str(event.get("action") or "").lower()
-    event_type = "network.deny" if action in {"deny", "blocked", "block"} else "network.event"
-    return {
-        "source": "fortigate",
-        "eventType": event_type,
-        "severity": str(event.get("severity") or "informational").lower(),
-        "occurredAt": event.get("timestamp") or _now_iso(),
-        "entities": {
-            "sourceIp": event.get("sourceIp"),
-            "destinationIp": event.get("destinationIp"),
-            "integrationId": integration_id,
-        },
-        "attributes": {
-            "action": event.get("action"),
-            "type": event.get("type"),
-            "subtype": event.get("subtype"),
-            "message": event.get("message"),
-            "count": 1,
-        },
-    }
+    """Single-event mapping retained for tests and ad-hoc callers."""
+    return _aggregate_fortigate_events([event], integration_id=integration_id)[0]
 
 
 def _now_iso() -> str:

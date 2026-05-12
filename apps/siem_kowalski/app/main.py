@@ -10,9 +10,20 @@ from app.store import SiemStore
 
 SERVICE_NAME = "siem_kowalski"
 IncidentStatus = Literal["open", "triaged", "contained", "resolved", "false_positive"]
+TriageLevel = Literal["T1", "T2", "T3"]
+TicketStatus = Literal["new", "investigating", "contained", "closed"]
 RuleOperator = Literal["equals", "gte", "exists", "contains"]
 RuleMatch = Literal["all", "any"]
 logger = logging.getLogger("uvicorn.error")
+
+
+def _triage_from_severity(severity: str) -> TriageLevel:
+    normalized = (severity or "").lower()
+    if normalized in {"critical", "high"}:
+        return "T1"
+    if normalized == "medium":
+        return "T2"
+    return "T3"
 
 app = FastAPI(title="siem_kowalski", version="0.1.0")
 store = SiemStore()
@@ -54,10 +65,24 @@ class Incident(BaseModel):
     created_at: datetime = Field(alias="createdAt")
     timeline: list[TimelineItem] = Field(default_factory=list)
     event_ids: list[str] = Field(default_factory=list, alias="eventIds")
+    triage_level: TriageLevel = Field(default="T3", alias="triageLevel")
+    ticket_status: TicketStatus = Field(default="new", alias="ticketStatus")
+    assignee_user_id: str | None = Field(default=None, alias="assigneeUserId")
+    ai_analysis_id: str | None = Field(default=None, alias="aiAnalysisId")
 
 
 class IncidentStatusPatch(BaseModel):
     status: IncidentStatus
+
+
+class IncidentTriagePatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    triage_level: TriageLevel | None = Field(default=None, alias="triageLevel")
+    ticket_status: TicketStatus | None = Field(default=None, alias="ticketStatus")
+    assignee_user_id: str | None = Field(default=None, alias="assigneeUserId")
+    ai_analysis_id: str | None = Field(default=None, alias="aiAnalysisId")
+    note: str | None = None
 
 
 class RuleCondition(BaseModel):
@@ -149,16 +174,19 @@ def _detect_incident(event: SecurityEvent) -> Incident | None:
     if rule is None:
         return None
 
+    incident_severity = rule.severity or event.severity
     return Incident(
         id=_new_id("inc"),
         ruleId=rule.id,
         title=rule.title,
-        severity=rule.severity or event.severity,
+        severity=incident_severity,
         entities=event.entities,
         summary=rule.summary,
         createdAt=_now(),
         timeline=[_timeline_item(f"Incident created from event {event_id}.")],
         eventIds=[event_id],
+        triageLevel=_triage_from_severity(incident_severity),
+        ticketStatus="new",
     )
 
 
@@ -305,15 +333,23 @@ def list_events(
 def list_incidents(
     status: IncidentStatus | None = None,
     severity: str | None = None,
+    triage_level: TriageLevel | None = Query(default=None, alias="triageLevel"),
+    ticket_status: TicketStatus | None = Query(default=None, alias="ticketStatus"),
 ) -> list[Incident]:
     results = [
         _load_incident(payload)
         for payload in store.list_incidents(status=status, severity=severity)
     ]
+    if triage_level is not None:
+        results = [r for r in results if r.triage_level == triage_level]
+    if ticket_status is not None:
+        results = [r for r in results if r.ticket_status == ticket_status]
     logger.info(
-        "siem_incidents_list status=%s severity=%s returned=%s total=%s",
+        "siem_incidents_list status=%s severity=%s triage=%s ticketStatus=%s returned=%s total=%s",
         status,
         severity,
+        triage_level,
+        ticket_status,
         len(results),
         store.count_incidents(),
     )
@@ -351,3 +387,52 @@ def update_incident_status(incident_id: str, patch: IncidentStatusPatch) -> Inci
         )
         return updated
     raise HTTPException(status_code=404, detail="Incident not found")
+
+
+@app.patch("/incidents/{incident_id}/triage", response_model=Incident)
+def update_incident_triage(incident_id: str, patch: IncidentTriagePatch) -> Incident:
+    payload = store.get_incident(incident_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = _load_incident(payload)
+
+    updates: dict[str, Any] = {}
+    timeline_notes: list[str] = []
+    if patch.triage_level is not None and patch.triage_level != incident.triage_level:
+        updates["triage_level"] = patch.triage_level
+        timeline_notes.append(
+            f"Triage changed from {incident.triage_level} to {patch.triage_level}."
+        )
+    if patch.ticket_status is not None and patch.ticket_status != incident.ticket_status:
+        updates["ticket_status"] = patch.ticket_status
+        timeline_notes.append(
+            f"Ticket status changed from {incident.ticket_status} to {patch.ticket_status}."
+        )
+    if patch.assignee_user_id is not None and patch.assignee_user_id != incident.assignee_user_id:
+        updates["assignee_user_id"] = patch.assignee_user_id
+        timeline_notes.append(f"Assigned to user {patch.assignee_user_id}.")
+    if patch.ai_analysis_id is not None and patch.ai_analysis_id != incident.ai_analysis_id:
+        updates["ai_analysis_id"] = patch.ai_analysis_id
+        timeline_notes.append(f"AI analysis linked: {patch.ai_analysis_id}.")
+    if patch.note:
+        timeline_notes.append(patch.note)
+
+    if not updates and not timeline_notes:
+        return incident
+
+    new_timeline = list(incident.timeline)
+    for note in timeline_notes:
+        new_timeline.append(_timeline_item(note))
+    if new_timeline is not incident.timeline:
+        updates["timeline"] = new_timeline
+
+    updated = incident.model_copy(update=updates)
+    store.update_incident(_dump(updated), severity=updated.severity, status=updated.status)
+    logger.info(
+        "siem_incident_triage_updated incident_id=%s triage=%s ticket_status=%s assignee=%s",
+        incident_id,
+        updated.triage_level,
+        updated.ticket_status,
+        updated.assignee_user_id,
+    )
+    return updated

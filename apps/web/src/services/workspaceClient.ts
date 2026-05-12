@@ -149,6 +149,20 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await parseOrThrow(response, 'Failed to delete workspace')
 }
 
+export async function replayDemoIncident(): Promise<{
+  demoRunId: string
+  eventCount: number
+  eventIds: string[]
+}> {
+  const headers = await csrfHeaders()
+  const response = await fetch('/api/soc/demo/replay', {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+  })
+  return parseOrThrow(response, 'Failed to replay demo incident')
+}
+
 export async function rebindWidgetIntegration(
   workspaceId: string,
   instanceId: string,

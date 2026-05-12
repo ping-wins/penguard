@@ -1,23 +1,30 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useAuditStore } from '../../stores/useAuditStore'
+import { useTicketsStore } from '../../stores/useTicketsStore'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
+import TicketsPanel from '../tickets/TicketsPanel.vue'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
+
+const { t } = useI18n()
+const emit = defineEmits<{ 'open-settings': [] }>()
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
 const auditStore = useAuditStore()
+const ticketsStore = useTicketsStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -82,6 +89,7 @@ const drawerWidth = computed(() => {
   if (activeTab.value === 'audit') return '420px'
   if (activeTab.value === 'integrations') return '380px'
   if (activeTab.value === 'workspaces') return '420px'
+  if (activeTab.value === 'tickets') return '480px'
   return '320px'
 })
 
@@ -90,10 +98,13 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
 ])
 const isThinking = ref(false)
-function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
+  }
+  if (activeTab.value === 'tickets' && (isClosingCurrentTab || tab !== 'tickets')) {
+    ticketsStore.stopPolling()
   }
 
   if (activeTab.value !== tab && tab === 'integrations') {
@@ -105,6 +116,9 @@ function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'worksp
   if (activeTab.value !== tab && tab === 'workspaces') {
     store.refreshWorkspaceList()
   }
+  if (activeTab.value !== tab && tab === 'tickets') {
+    ticketsStore.startPolling(8000)
+  }
   activeTab.value = isClosingCurrentTab ? 'none' : tab
 }
 
@@ -114,6 +128,7 @@ function refreshAuditTrail() {
 
 onBeforeUnmount(() => {
   auditStore.stopPolling()
+  ticketsStore.stopPolling()
 })
 
 async function handleTestFortigate() {
@@ -250,25 +265,25 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors"
           :class="activeTab === 'none' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="activeTab = 'none'"
-          title="Dashboard"
+          :title="t('sidebar.dashboard')"
         >
           <LayoutDashboard :size="20" />
         </div>
 
-        <div 
+        <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'chat' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('chat')"
-          title="SOC Assistant"
+          :title="t('sidebar.assistant')"
         >
           <MessageSquare :size="20" />
         </div>
 
-        <div 
+        <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'integrations' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('integrations')"
-          title="Integrações SOC"
+          :title="t('sidebar.integrations')"
         >
           <Plug :size="20" />
         </div>
@@ -277,30 +292,39 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'workspaces' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('workspaces')"
-          title="Workspaces & Templates"
+          :title="t('sidebar.workspaces')"
         >
           <FolderTree :size="20" />
         </div>
 
         <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'tickets' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('tickets')"
+          :title="t('sidebar.tickets')"
+        >
+          <TicketIcon :size="20" />
+        </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'audit' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('audit')"
-          title="Audit Trail"
+          :title="t('sidebar.audit')"
         >
           <History :size="20" />
         </div>
       </nav>
       
       <div class="mt-auto flex flex-col gap-2">
-        <div 
+        <div
           class="p-3 rounded-lg hover:bg-theme-border cursor-pointer transition-colors relative text-theme-text-muted hover:text-theme-text"
-          @click="themeStore.openBuilder()"
-          title="Design System Builder"
+          @click="$emit('open-settings')"
+          :title="t('sidebar.settings')"
         >
           <Settings :size="20" />
         </div>
-        <div @click="handleLogout" class="p-3 rounded-lg hover:bg-red-500/20 text-theme-text-muted hover:text-red-400 cursor-pointer transition-colors" title="Sair">
+        <div @click="handleLogout" class="p-3 rounded-lg hover:bg-red-500/20 text-theme-text-muted hover:text-red-400 cursor-pointer transition-colors" :title="t('auth.logout')">
           <LogOut :size="20" />
         </div>
       </div>
@@ -596,6 +620,11 @@ function handleChatSubmit() {
       <!-- Workspaces Tab -->
       <div v-if="activeTab === 'workspaces'" class="h-full w-[420px] shrink-0">
         <WorkspacePanel />
+      </div>
+
+      <!-- Tickets Tab -->
+      <div v-if="activeTab === 'tickets'" class="h-full w-[480px] shrink-0">
+        <TicketsPanel />
       </div>
 
       <!-- Audit Tab -->

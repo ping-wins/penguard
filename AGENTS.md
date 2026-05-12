@@ -373,6 +373,348 @@ AI-created widgets must be drafts with `fieldBindings[]`, allowed provider field
 references, layout suggestions and validation before insertion into
 workspace manifests.
 
+## Known Lab Setup Issues
+
+These bit us during the FortiGate live-fire test on 2026-05-12 and should be
+fixed (or documented as deliberate constraints) before relying on real scans
+for the MVP video. Until then, prefer synthetic events over depending on the
+end-to-end nmap pipeline for demo footage.
+
+- **Single-tenant scans are silent against bridged hosts.** Bridge-mode VMs on
+  the same `/24` as the FortiGate management interface stay on the L2 segment,
+  so the firewall never routes the packets and Forward Traffic logs stay
+  empty. Scans only show up when traffic crosses interfaces (e.g. LAN → WAN
+  via `port2 → port1`).
+- **VMware NAT puts the FortiGate WAN behind the host.** With `port1` on
+  vmnet8 (DHCP, `192.168.23.0/24`) and `port2` bridged on the real LAN, the
+  FortiGate itself can reach the internet, but VMs on the LAN need the
+  FortiGate as their default gateway and a working `port2 → port1` policy.
+- **A policy with `set logtraffic all` is mandatory.** Even when packets cross
+  interfaces, an accept policy without that flag leaves the dashboard widgets
+  empty.
+- **The current FortiGate→SIEM ingest is manual.** Operators must call
+  `POST /api/soc/fortigate/{integrationId}/ingest-events`. Auto-ingest is part
+  of the MVP demo backlog below.
+- **`denied_traffic_burst` detection requires `attributes.count >= 20` on a
+  single event.** `_fortigate_event_to_siem_event` writes one event per deny
+  with `count=1`, so the rule will not fire from raw FortiGate ingestion until
+  we aggregate denies per source before forwarding. Use synthetic events with
+  inflated counts (or run the seed script) when the demo flow needs an
+  incident.
+- **VMware bridge ARP can show the host's MAC for a bridged guest.** When the
+  scan from Debian reports the Samsung OUI for `192.168.0.100`, that is a
+  bridge quirk — `ssh admin@192.168.0.100` and the FortiGate banner are the
+  authoritative check.
+- **The lab FortiGate VM warned "File System Check Recommended" after an
+  unsafe reboot.** Run `execute disk list` / `execute disk scan <ref>` before
+  long demos to avoid mid-recording reboots.
+
+## MVP Demo Video Roadmap
+
+Goal: record a single end-to-end video that shows:
+
+1. A workstation triggers an incident (real scan or seeded synthetic event).
+2. FortiDashboard pops an alert with an AI-generated incident analysis.
+3. The analyst converts the alert into an incident ticket with a triage level
+   (T1/T2/T3).
+4. From the ticket, the AI suggests containment actions. The analyst approves
+   and the AI drafts a `soar_skipper` playbook that contains the incident.
+5. The playbook runs (dry-run for the MVP), reports success, and the ticket
+   transitions to "Contained" with an audit trail.
+
+The work below is grouped in phases. Each phase ends with something
+demo-ready, so the video can be recorded after Phase 4 even if Phase 5 polish
+slips. Treat the phases as sequential dependencies; do not start a later
+phase before the previous one is mergeable.
+
+### Phase 1 — Reliable incident generation
+
+Status: **in progress — backend done, frontend wiring next.**
+
+Delivered in this branch (`lucas/mvp-demo-roadmap`):
+
+- `apps/api/app/routers/integrations.py` now ships
+  `_aggregate_fortigate_events()` which groups raw FortiGate widget records
+  by `(eventType, sourceIp)` and emits one SIEM event per group with the
+  accumulated `attributes.count` plus a `uniqueDestinationCount` summary,
+  highest observed `severity` and the most recent `occurredAt`. The old
+  `_fortigate_event_to_siem_event` helper is preserved as a one-record
+  passthrough on top of the aggregator for callers/tests that operated on a
+  single line.
+- `POST /api/soc/fortigate/{integrationId}/ingest-events` now responds with
+  `rawEventCount` and `createdCount` (aggregated) and records both in the
+  `soc.fortigate_events.ingested` audit detail (`count` retained as an alias
+  of `aggregatedCount` for backwards-compat with the existing test suite).
+- `POST /api/soc/demo/replay` injects a canned 3-event burst directly into
+  `siem_kowalski`: an inbound port scan (`network.deny`, count 42), repeated
+  SSH login failures (`auth.failed_login`, count 9) and an
+  `endpoint.suspicious_connection` from the demo endpoint back to the
+  attacker IP. Every payload carries `source="demo.replay"` and a fresh
+  `demoRunId` so dashboards can filter the seed out of real telemetry. The
+  call audit-logs `soc.demo.replay` with the run id and event count, and
+  fails closed (502 + failure audit) if the SIEM rejects any of the events.
+
+Delivered cockpit-side:
+
+- `services/workspaceClient.ts:replayDemoIncident()` wraps the new endpoint
+  and reuses the workspace CSRF helpers.
+- `components/workspace/WorkspacePanel.vue` shows a yellow "MVP demo" panel
+  with a `Zap` "Replay" button. After a successful replay it surfaces the
+  last `demoRunId` and event count so the operator can re-run the recording
+  confident the seed actually fired.
+
+Still pending (next phase or stretch):
+
+- Gate the replay button by role (lab/admin only) once Phase 3 introduces a
+  richer settings story; for the MVP video it stays open to any
+  authenticated analyst.
+- Reuse the aggregator in `apps/siem_kowalski` if/when a deduplication step
+  is needed on the SIEM side.
+- The real-nmap path stays as a stretch goal once the lab-setup issues above
+  are resolved; until then, `POST /api/soc/demo/replay` is the documented
+  demo trigger.
+
+### Phase 2 — Incident tickets and triage console
+
+Status: **delivered.**
+
+Backend:
+
+- `apps/siem_kowalski/app/main.py` extends `Incident` with `triageLevel`
+  (T1/T2/T3), `ticketStatus` (new/investigating/contained/closed),
+  `assigneeUserId` and `aiAnalysisId`. `_triage_from_severity()` maps
+  `critical|high → T1`, `medium → T2`, otherwise → `T3` at incident
+  creation; `ticketStatus` defaults to `new`.
+- `GET /incidents` now accepts `triageLevel` and `ticketStatus` filters and
+  applies them in-memory after the SQL filter on legacy `status`/`severity`.
+- New `PATCH /incidents/{id}/triage` updates any subset of triage fields,
+  appends timeline notes for each change (and an optional analyst note), and
+  is idempotent when nothing changes.
+- Gateway `apps/api/app/routers/soc.py` adds:
+  - `GET /api/soc/tickets?triage=T1&status=new&severity=high` — proxies the
+    SIEM list and normalizes the response to `{items: [...]}`.
+  - `GET /api/soc/tickets/{ticketId}` — proxies the SIEM detail.
+  - `PATCH /api/soc/tickets/{ticketId}` — whitelists `triageLevel`,
+    `ticketStatus`, `assigneeUserId`, `aiAnalysisId` and `note`; audits via
+    `soc.ticket.updated`, `soc.ticket.status_changed` or `soc.ticket.assigned`
+    depending on the patch payload.
+
+Frontend:
+
+- New `services/ticketsClient.ts` + `stores/useTicketsStore.ts` that wrap the
+  gateway endpoints, manage an 8-second poll and expose `patchTicket()`.
+- New `components/tickets/TicketsPanel.vue` rendered inside the sidebar as
+  the **SOC Tickets** tab (`Ticket` lucide icon, 480px drawer). The panel
+  shows three lanes for T1/T2/T3, filter dropdowns for ticket status and
+  severity, and a detail drawer with triage/status buttons that call the
+  PATCH endpoint plus a timeline view.
+- `Sidebar.vue` registers the new tab next to Workspaces, starts/stops the
+  poll on open/close and exposes the lucide `Ticket` icon in the icon rail.
+
+Open items for later phases:
+
+- Wire `aiAnalysisId` to the Phase 3 AI flow so the detail drawer can deep
+  link into the analysis.
+- Surface ticket origin (incident `eventIds`) inline with a "View source
+  events" link.
+
+### Phase 3 — AI assistant integration
+
+Status: **delivered (incident analysis + containment). Chat replacement still
+pending.**
+
+Backend:
+
+- New `apps/api/app/ai/` package with an `AIProvider` Protocol and three
+  built-in adapters:
+  - `ScriptedAIProvider` — deterministic, network-free; extracts IPs from the
+    incident as IoCs and emits a canned 3-step plan. Used in tests and as the
+    fallback whenever the configured remote provider misbehaves.
+  - `AnthropicAIProvider` — talks to `POST /v1/messages` on the configured
+    `ai_base_url` (default `https://api.anthropic.com`) and parses Claude
+    text content.
+  - `OpenAICompatibleAIProvider` — works against the OpenAI chat completions
+    surface (also covers Groq, vLLM, Ollama's OpenAI shim, etc.) with
+    `response_format=json_object`.
+  - `_extract_json` is forgiving: it pulls the largest JSON blob out of the
+    raw model output so a chatty model still produces structured data.
+- `Settings` (apps/api/app/core/config.py) gains `ai_provider`, `ai_api_key`,
+  `ai_model` and `ai_base_url`. Defaults to the scripted adapter so the lab
+  works without API keys.
+- Two gateway endpoints in `apps/api/app/routers/soc.py`:
+  - `POST /api/soc/incidents/{incidentId}/analyze` — fetches the incident,
+    builds a sanitized `IncidentContext`, asks the provider, audits
+    `soc.incident.analyzed` (success / partial / failure), assigns a fresh
+    `aiAnalysisId` and writes it back on the incident via the new triage
+    PATCH endpoint. Best-effort persistence: if the SIEM PATCH fails, the
+    analyst still receives the analysis with a partial audit entry.
+  - `POST /api/soc/incidents/{incidentId}/containment-suggestions` — same
+    flow for `suggest_containment`; failures audit and 502.
+
+Frontend:
+
+- `services/ticketsClient.ts` exposes `analyzeIncident` and
+  `suggestContainment` plus typed `IncidentAnalysis` /
+  `ContainmentSuggestion` shapes.
+- `components/tickets/TicketsPanel.vue` ticket detail drawer ships an
+  "AI assistant" block with two buttons:
+  - **Analyze** renders headline, summary, risk score, suggested triage +
+    ticket status (with an "Apply" CTA wired to `patchTicket`), IoCs, next
+    steps and references.
+  - **Suggest containment** renders a numbered draft plan, each step badged
+    by severity and a `requires approval` flag. Steps explicitly stay as
+    drafts until Phase 4 wires them into soar_skipper.
+- AI state resets whenever the selected ticket changes.
+
+Open items for later:
+
+- Replace the mock chat box in `Sidebar.vue` with a session-aware chat that
+  reuses the same provider abstraction.
+- Persist analyses as their own table so the audit + drawer can deep-link
+  to a stable URL.
+- Add a global toast when a new high-risk analysis is produced.
+
+### Phase 4 — AI-drafted containment playbooks
+
+Status: **delivered.**
+
+Backend:
+
+- `apps/api/app/routers/soc.py` ships `_SOAR_NODE_MAPPING` plus
+  `_map_ai_step_to_soar_node()` which translates the AI-emitted
+  `playback_node_type` ("firewall.block_ip", "notify.slack",
+  "endpoint.collect_telemetry", etc.) into a soar_skipper-compatible
+  `NodeType` and a default `sensitive` flag. Unknown types collapse to
+  `case.note` so the draft is always inert.
+- `POST /api/soc/tickets/{ticketId}/draft-playbook`:
+  - Re-fetches the incident, sanitizes it through `_build_incident_context`
+    and asks the AI provider for a containment plan.
+  - Builds a linear playbook graph starting with
+    `trigger.incident_created`. Steps marked sensitive or AI-flagged
+    `requires_approval=true` are gated by a synthetic `approval.required`
+    node so soar_skipper waits for analyst approval.
+  - Posts the playbook to soar_skipper `disabled=false → false`, captures
+    the simulation preview and returns `{playbook, simulation, suggestion}`
+    together. Failures audit `soc.ticket.playbook_drafted` with
+    `outcome="failure"` and 502.
+- `POST /api/soc/tickets/{ticketId}/apply-containment`:
+  - Body must include `playbookId`.
+  - Runs `POST /incidents/{ticketId}/playbooks/{playbookId}/run` (always
+    dry-run at the soar_skipper layer).
+  - On `completed`: PATCHes the ticket to `ticketStatus="contained"` with a
+    timeline note referencing the run id, audits `soc.ticket.contained`.
+  - On `waiting_approval`: keeps the ticket in `investigating`, audits
+    `soc.ticket.containment_paused`.
+  - SIEM PATCH errors degrade to `outcome="partial"` audit but still
+    return the run payload.
+
+Frontend:
+
+- `services/ticketsClient.ts` exposes `draftContainmentPlaybook` and
+  `applyContainmentPlaybook` plus the new `PlaybookDraftResponse` and
+  `ApplyContainmentResponse` shapes (including the dry-run simulation
+  steps with sensitivity flags).
+- `TicketsPanel.vue` containment block gains a "Draft playbook" button
+  that calls the new endpoint and renders the playbook id, simulation
+  status and the per-step preview list. A green "Apply (dry-run)" button
+  triggers `apply-containment` and, on success, swaps the ticket state in
+  place and shows a green banner: "Threat contained" (or "Containment
+  paused at approval gate" if the run waits on approval). All
+  cockpit-side state resets when the operator switches ticket.
+
+Safety:
+
+- Real soar_skipper runs always execute as `dry_run=True`; the MVP never
+  pushes a real config change to FortiGate or endpoints.
+- AI-drafted nodes inherit `requires_approval=true` whenever the AI marks
+  the step sensitive or whenever the mapped soar node type sits in the
+  sensitive set. Approval gates pause execution and are surfaced in the
+  banner copy.
+- Every mutating route audits success, partial and failure paths so the
+  audit drawer mirrors the live MVP video.
+
+Open items for later:
+
+- Connect the analyst "Approve" button to the existing
+  `/playbook-runs/{runId}/approve` endpoint so an approval gate can be
+  cleared from the same drawer.
+- Add an explicit "Threat contained" success ticket linked back to the
+  incident timeline (separate from the existing PATCH note).
+
+### Phase 5 — Demo polish and recording prep
+
+Status: **delivered (pre-recording prep). Actual video capture is the only
+remaining manual step.**
+
+Delivered:
+
+- `apps/web/src/stores/useIncidentToastsStore.ts` polls `listTickets()` every
+  5 seconds; the first poll bootstraps the known-id set so the cockpit does
+  not spam the operator with a backlog. New incidents trigger a toast
+  capped at 5 visible items with a 12 second TTL.
+- `apps/web/src/components/notifications/IncidentToastContainer.vue` renders
+  the toast queue in the bottom-right of the dashboard, color-coded by
+  severity (`critical`/`high`/`medium`/`low`) with a triage badge, manual
+  dismiss and a slide-in transition. Mounted from `views/DashboardView.vue`
+  so it appears on every authenticated dashboard route.
+- `docs/mvp/walkthrough.md` ships the click-by-click recording script
+  (replay → toast → ticket → analyze → apply triage → suggest containment
+  → draft playbook → apply dry-run → contained banner → audit trail proof
+  → workspace export). The doc also lists what stays off-camera and how to
+  fall back to the synthetic replay if a take goes sideways.
+- `apps/api/tests/test_mvp_demo_chain.py` is the end-to-end smoke test. It
+  swaps the SIEM and SOAR gateway clients for in-memory fakes, keeps the
+  AI provider on the deterministic scripted adapter, and asserts the full
+  chain: replay creates events and incidents → tickets list includes the
+  new ticket with a triage level → analyze persists `aiAnalysisId` on the
+  incident → containment suggestion returns at least one step → draft
+  playbook creates a SOAR playbook + simulation → apply transitions the
+  ticket into `contained` (or `investigating` if the AI parked a sensitive
+  step at an approval gate) → audit trail contains every link in the
+  chain.
+
+Open items (the only ones blocking the actual video drop):
+
+- Record the video against a fresh `docker compose down -v && docker
+  compose up -d --build` snapshot. Capture two takes: scripted AI for the
+  baseline recording, Anthropic API for the "AI in the loop" beauty shot.
+- Drop the captured `.mp4` into `docs/mvp/recordings/` and link it from
+  the README under "MVP demo".
+
+Done when the recording is filed alongside this doc. Until then, the
+synthetic-event path is the recommended demo source.
+
+## Settings And Localization
+
+The cockpit settings live behind the gear icon in the sidebar footer. Clicking
+it opens `components/settings/SettingsModal.vue` with three tabs:
+
+- **Profile** — read-only view of the current Keycloak BFF session (email,
+  display name, roles, authentication state) plus a sign-out shortcut and a
+  hint linking to the Keycloak account console for password changes.
+- **Appearance** — entry point to the existing `ThemeBuilderModal.vue` so the
+  theme/layout builder is a sub-section of settings instead of the gear icon's
+  only behavior.
+- **Language** — Portuguese (Brazil) / English (US) picker that persists to
+  `localStorage` under the key `fortidashboard:locale`.
+
+The translation layer is `vue-i18n` (`apps/web/src/i18n/`) with message
+catalogs in `messages/pt-BR.ts` and `messages/en-US.ts`. Components use
+`useI18n().t('namespace.key')`. The default locale follows the browser; if it
+starts with `en` the cockpit boots in English, otherwise it falls back to
+pt-BR. `setLocale()` also keeps `<html lang>` in sync for accessibility.
+
+Translated surfaces in this release:
+
+- `views/LoginView.vue` and the SSO failure popup.
+- `components/layout/Sidebar.vue` icon-bar tooltips (Dashboard, Assistant,
+  Integrations, Workspaces, Tickets, Audit, Settings, Sign out).
+- `components/settings/SettingsModal.vue` (every label).
+
+Components still pending translation (incremental work tracked in the
+backlog): `WorkspacePanel.vue`, `TicketsPanel.vue`, `PresentationView.vue`,
+`RegisterView.vue`, and the audit drawer copy.
+
 ## Commands
 
 Repository:
@@ -510,8 +852,32 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Add `draft` status for AI-generated playbooks and widgets.
 - [ ] Implement AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
 - [ ] Implement `list_data_fields`, `draft_widget`, `validate_widget`, `simulate_widget_data` and `add_widget_draft_to_workspace`.
+- [ ] Implement `analyze_incident` and `suggest_containment` tools for the MVP demo flow (Phase 3).
+- [x] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft via `_SOAR_NODE_MAPPING` + linear graph builder (Phase 4).
+- [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
+
+### Settings & i18n
+
+- [x] Add a sidebar `SettingsModal` with Profile / Appearance / Language tabs.
+- [x] Add `vue-i18n` with pt-BR + en-US catalogs and a persistent locale picker.
+- [x] Translate LoginView, SSO popup, sidebar tooltips and SettingsModal.
+- [ ] Translate WorkspacePanel, TicketsPanel, PresentationView, RegisterView and the audit drawer copy.
+- [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
+
+### MVP Demo (cross-cutting)
+
+- [x] Phase 1 — Deterministic synthetic incident seed + `/api/soc/demo/replay` endpoint with cockpit "Replay" button in the Workspaces panel.
+- [x] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion (`_aggregate_fortigate_events`).
+- [x] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
+- [x] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
+- [x] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
+- [x] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + AI panel on the ticket detail drawer with risk score, suggested triage and IoCs.
+- [x] Phase 3 — `POST /api/soc/incidents/{id}/containment-suggestions` exposed in the ticket drawer as draft steps (no auto-execution).
+- [x] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Draft playbook" / "Apply (dry-run)" flow that auto-contains the ticket on success.
+- [x] Phase 5 — Toast/banner notifications for new SIEM incidents (`useIncidentToastsStore` + `IncidentToastContainer.vue`).
+- [x] Phase 5 — Demo walkthrough doc (`docs/mvp/walkthrough.md`) + smoke test covering seed → incident → AI → ticket → playbook → contained (`apps/api/tests/test_mvp_demo_chain.py`).
 
 ### Quality
 
