@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
-import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff } from 'lucide-vue-next'
+import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff, Plug, ChevronDown, Check } from 'lucide-vue-next'
 import { fetchWidgetData } from '../../services/widgetDataClient'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
 import { visualTemplatesById } from '../../constants/visualTemplates'
@@ -21,9 +22,13 @@ const emit = defineEmits<{
 }>()
 
 const store = useDashboardStore()
+const integrationsStore = useIntegrationsStore()
 
 const isDragging = ref(false)
 const zoom = computed(() => store.zoom)
+const isRebindOpen = ref(false)
+const isRebinding = ref(false)
+const rebindError = ref('')
 
 const isLoading = ref(true)
 const isRefreshing = ref(false)
@@ -345,6 +350,56 @@ function stopResize() {
   window.removeEventListener('pointermove', onResize)
   window.removeEventListener('pointerup', stopResize)
 }
+
+const widgetProviderType = computed(() => {
+  const source = catalogItem.value?.source ?? (catalogItem.value as any)?.integrationType
+  if (source) return source
+  const id = props.catalogId
+  if (id.startsWith('fortigate-')) return 'fortigate'
+  if (id.startsWith('siem-')) return 'siem_kowalski'
+  if (id.startsWith('soar-')) return 'soar_skipper'
+  if (id.startsWith('xdr-')) return 'xdr_rico'
+  return null
+})
+
+const compatibleIntegrations = computed(() => {
+  const type = widgetProviderType.value
+  if (!type) return integrationsStore.integrations
+  return integrationsStore.integrations.filter((i: any) => i.type === type)
+})
+
+const currentIntegration = computed(() =>
+  integrationsStore.integrations.find((i: any) => i.id === props.integrationId) ?? null,
+)
+
+const currentIntegrationLabel = computed(() => {
+  if (currentIntegration.value) return currentIntegration.value.name || currentIntegration.value.id
+  if (!props.integrationId) return 'No integration'
+  return props.integrationId
+})
+
+function toggleRebindMenu() {
+  rebindError.value = ''
+  isRebindOpen.value = !isRebindOpen.value
+}
+
+async function selectIntegration(integrationId: string) {
+  if (integrationId === props.integrationId) {
+    isRebindOpen.value = false
+    return
+  }
+  rebindError.value = ''
+  isRebinding.value = true
+  try {
+    await store.rebindWidget(props.instanceId, integrationId)
+    isRebindOpen.value = false
+    loadWidgetData({ showLoading: true })
+  } catch (err: any) {
+    rebindError.value = err?.message ?? 'Failed to rebind'
+  } finally {
+    isRebinding.value = false
+  }
+}
 </script>
 
 <template>
@@ -367,18 +422,73 @@ function stopResize() {
     @drop="handleFieldDrop"
   >
     <!-- Header -->
-    <div 
+    <div
       data-test="widget-drag-handle"
-      class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 cursor-move select-none rounded-t-md"
+      class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 cursor-move select-none rounded-t-md relative"
       @pointerdown="startDrag"
     >
-      <div class="flex items-center gap-2 text-theme-text-muted">
+      <div class="flex items-center gap-2 text-theme-text-muted min-w-0">
         <GripHorizontal :size="16" />
-        <span class="text-xs font-semibold text-theme-text uppercase tracking-wider">{{ widgetTitle }}</span>
+        <span class="text-xs font-semibold text-theme-text uppercase tracking-wider truncate">{{ widgetTitle }}</span>
       </div>
-      <button @click.stop="handleRemove" class="text-theme-text-muted hover:text-theme-primary transition-colors" title="Remove Widget">
-        <X :size="16" />
-      </button>
+      <div class="flex items-center gap-1 shrink-0">
+        <div class="relative">
+          <button
+            type="button"
+            @click.stop="toggleRebindMenu"
+            @pointerdown.stop
+            :class="[
+              'flex items-center gap-1 px-2 py-1 rounded text-[10px] uppercase tracking-wider transition-colors',
+              !props.integrationId
+                ? 'border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                : 'text-theme-text-muted hover:bg-theme-border hover:text-theme-text border border-transparent',
+            ]"
+            :title="`Integration: ${currentIntegrationLabel}`"
+          >
+            <Plug :size="12" />
+            <span class="max-w-[140px] truncate normal-case">{{ currentIntegrationLabel }}</span>
+            <ChevronDown :size="11" />
+          </button>
+          <div
+            v-if="isRebindOpen"
+            class="absolute right-0 top-full mt-1 w-64 bg-theme-panel border border-theme-border rounded-md shadow-2xl z-50"
+            @pointerdown.stop
+            @click.stop
+          >
+            <div class="px-3 py-2 border-b border-theme-border text-[10px] uppercase tracking-wider text-theme-text-muted">
+              Rebind widget integration
+            </div>
+            <ul v-if="compatibleIntegrations.length" class="max-h-56 overflow-auto">
+              <li
+                v-for="integration in compatibleIntegrations"
+                :key="integration.id"
+              >
+                <button
+                  type="button"
+                  :disabled="isRebinding"
+                  @click="selectIntegration(integration.id)"
+                  class="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm text-theme-text hover:bg-theme-border/60 disabled:opacity-50"
+                >
+                  <div class="min-w-0">
+                    <div class="truncate font-medium">{{ integration.name || integration.id }}</div>
+                    <div class="text-xs text-theme-text-muted">{{ integration.type }}</div>
+                  </div>
+                  <Check v-if="integration.id === props.integrationId" :size="14" class="text-theme-primary shrink-0" />
+                </button>
+              </li>
+            </ul>
+            <div v-else class="px-3 py-3 text-xs text-theme-text-muted">
+              No matching integration connected. Open the Integrations panel to add one.
+            </div>
+            <div v-if="rebindError" class="px-3 py-2 border-t border-red-500/30 bg-red-500/10 text-xs text-red-300">
+              {{ rebindError }}
+            </div>
+          </div>
+        </div>
+        <button @click.stop="handleRemove" class="text-theme-text-muted hover:text-theme-primary transition-colors" title="Remove Widget">
+          <X :size="16" />
+        </button>
+      </div>
     </div>
 
     <!-- Content slot -->
@@ -403,6 +513,15 @@ function stopResize() {
         <component :is="statusIcon" :size="24" />
         <span class="text-xs font-semibold">{{ fetchErrorKind === 'invalid_connection' ? 'Connection invalid' : 'Widget unavailable' }}</span>
         <span class="text-xs text-red-200/90">{{ fetchError }}</span>
+        <button
+          v-if="compatibleIntegrations.length"
+          type="button"
+          @click.stop="toggleRebindMenu"
+          class="mt-2 inline-flex items-center gap-1 px-3 py-1 rounded border border-amber-400/40 bg-amber-400/15 text-amber-200 text-xs font-semibold hover:bg-amber-400/25"
+        >
+          <Plug :size="12" />
+          Choose integration
+        </button>
       </div>
       <div v-else-if="isEmpty" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-theme-text-muted bg-theme-panel/45 backdrop-blur-[1px] z-20 p-4 text-center">
         <AlertCircle :size="22" class="text-theme-primary" />

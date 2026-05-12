@@ -341,6 +341,12 @@ Current implementation status:
   `/presentation/{workspaceId}` with keyboard nav and severity-aware title
   slide. Slides reference widget instance IDs and carry narration plus
   highlighted field IDs.
+- Widgets expose a per-instance rebind action
+  (`PATCH /api/workspaces/{workspaceId}/widgets/{instanceId}/integration`)
+  so the cockpit can switch a widget's `integrationId` (and its field
+  bindings' `integrationId`) to one of the recipient's existing
+  integrations without re-importing the workspace. The rebind picker is
+  available from the widget header and the "Connection invalid" overlay.
 
 ## AI Assistant Roadmap
 
@@ -495,6 +501,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Add workspace sharing UX: workspace list, origin badges, author details and community library.
 - [x] Add manifest import/export UX with validation errors that users can understand.
 - [x] Add presentation export UX based on the current workspace manifest.
+- [x] Allow per-widget integration rebind so imported workspaces can be reconnected without re-importing.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP

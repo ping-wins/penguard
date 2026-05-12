@@ -84,6 +84,52 @@ class SqlAlchemyWorkspaceStore:
                 "updatedAt": self._format_datetime(model.updated_at),
             }
 
+    def rebind_widget_integration(
+        self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        instance_id: str,
+        integration_id: str,
+    ) -> dict[str, Any] | None:
+        with self.session_factory() as db:
+            model = db.execute(
+                select(WorkspaceSpecModel).where(
+                    WorkspaceSpecModel.workspace_id == workspace_id,
+                    WorkspaceSpecModel.owner_user_id == owner_user_id,
+                )
+            ).scalar_one_or_none()
+            if model is None:
+                return None
+            widgets = list(model.widgets or [])
+            matched = False
+            for index, widget in enumerate(widgets):
+                if not isinstance(widget, dict) or widget.get("instanceId") != instance_id:
+                    continue
+                updated = dict(widget)
+                updated["integrationId"] = integration_id
+                bindings = updated.get("fieldBindings")
+                if isinstance(bindings, list) and bindings:
+                    updated["fieldBindings"] = [
+                        {**binding, "integrationId": integration_id} if isinstance(binding, dict) else binding
+                        for binding in bindings
+                    ]
+                widgets[index] = updated
+                matched = True
+                break
+            if not matched:
+                return None
+            model.widgets = widgets
+            model.updated_at = self.clock().astimezone(UTC)
+            model.version += 1
+            origin = model.origin
+            if isinstance(origin, dict) and origin.get("missingProviderTypes"):
+                origin = {**origin, "missingProviderTypes": []}
+                model.origin = origin
+            db.commit()
+            db.refresh(model)
+            return self._workspace_payload(model)
+
     def set_presentation(
         self,
         *,

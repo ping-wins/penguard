@@ -149,6 +149,24 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await parseOrThrow(response, 'Failed to delete workspace')
 }
 
+export async function rebindWidgetIntegration(
+  workspaceId: string,
+  instanceId: string,
+  integrationId: string,
+): Promise<WorkspacePayload> {
+  const headers = await csrfHeaders()
+  const response = await fetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/widgets/${encodeURIComponent(instanceId)}/integration`,
+    {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ integrationId }),
+    },
+  )
+  return parseOrThrow(response, 'Failed to rebind widget integration')
+}
+
 export async function exportWorkspace(workspaceId: string): Promise<WorkspaceManifest> {
   const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/export`, {
     credentials: 'include',
