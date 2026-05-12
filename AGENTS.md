@@ -264,6 +264,58 @@ Required UX direction:
 - Audit drawer stays real-time/polling and must include Penguin tool actions.
 - Future SOC consoles should cover incidents, endpoints and playbooks without turning the app into a toy automation demo.
 
+## Workspace Manifests And Sharing
+
+Each user should eventually have a contextual workspace manifest. Treat it as a
+versioned workspace configuration document that can be persisted, shared,
+imported, exported and rendered by the cockpit.
+
+Manifest intent:
+
+- Store the user's workspace layout, widgets, custom visuals, field bindings,
+  visual settings, filters and presentation metadata.
+- Keep runtime provider data outside the manifest. The manifest references
+  providers, fields and widgets; it must not embed live telemetry or secrets.
+- Support sharing a workspace with another user or team without leaking API
+  keys, Keycloak tokens, endpoint enrollment tokens or FortiGate credentials.
+- Support export/import flows for backup, handoff, marketplace-like templates
+  and future presentation generation.
+- Support presentation export as a view of the manifest, not as a separate
+  dashboard model.
+
+Manifest design rules:
+
+- Use a typed schema with `schemaVersion`, `ownerUserId`, `workspaceId`,
+  `name`, `widgets[]`, `layout`, `fieldBindings[]`, `filters`, `dataSources[]`
+  and `metadata`.
+- Bind widgets to stable provider field IDs and provider types. Avoid binding a
+  shared manifest directly to another user's private `integrationId`; resolve
+  those bindings when a recipient opens or imports the workspace.
+- Store permissions separately from the manifest content: owner, editors,
+  viewers and public/export states should be auditable access-control records.
+- Add import validation before persistence: schema version, widget catalog IDs,
+  visual template IDs, provider compatibility, size limits and unknown fields.
+- Redact or reject secrets on import/export. A workspace manifest is never a
+  secret transport mechanism.
+- Audit create, update, share, unshare, import, export and presentation-export
+  actions.
+
+Expected API direction:
+
+```txt
+GET  /api/workspaces/{workspaceId}/manifest
+PUT  /api/workspaces/{workspaceId}/manifest
+POST /api/workspaces/{workspaceId}/share
+GET  /api/workspaces/{workspaceId}/shares
+DELETE /api/workspaces/{workspaceId}/shares/{shareId}
+POST /api/workspaces/import
+GET  /api/workspaces/{workspaceId}/export
+POST /api/workspaces/{workspaceId}/presentation-export
+```
+
+The current `workspace_specs` persistence should evolve into this manifest
+model instead of creating a parallel workspace format.
+
 ## AI Assistant Roadmap
 
 The internal AI assistant is a cockpit assistant, not an autonomous operator.
@@ -287,7 +339,7 @@ Forbidden operations:
 
 AI-created widgets must be drafts with `fieldBindings[]`, allowed provider field
 references, layout suggestions and validation before insertion into
-`workspace_specs`.
+workspace manifests.
 
 ## Commands
 
@@ -392,6 +444,10 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Extend audit log actions for first Penguin mutating routes.
 - [x] Require matching `integrationId` before serving Penguin widget data.
 - [x] Add provider data fields for Penguin tools.
+- [ ] Define and persist versioned workspace manifests as the canonical workspace format.
+- [ ] Add manifest share/import/export endpoints with schema validation and secret rejection.
+- [ ] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
+- [ ] Add provider-binding resolution so shared manifests do not expose another user's private `integrationId`.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
@@ -409,6 +465,9 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Add incident list/detail panel.
 - [ ] Add endpoint inventory/timeline panel.
 - [ ] Add basic playbook builder and run result UI.
+- [ ] Add workspace sharing UX: owner/editor/viewer states, share dialog and received workspace list.
+- [ ] Add manifest import/export UX with validation errors that users can understand.
+- [ ] Add presentation export UX based on the current workspace manifest.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP
