@@ -123,6 +123,35 @@ def test_siem_incident_list_gateway_forwards_filters():
     }
 
 
+def test_siem_rule_list_gateway_forwards_to_kowalski():
+    client = TestClient(app)
+    fake_siem = FakeSocClient(
+        {
+            "items": [
+                {
+                    "id": "fortigate_resource_pressure",
+                    "title": "FortiGate resource pressure",
+                    "conditions": [],
+                }
+            ]
+        }
+    )
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.get("/api/soc/rules")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "fortigate_resource_pressure"
+    assert fake_siem.calls[0] == {
+        "method": "GET",
+        "path": "/rules",
+        "json": None,
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+
+
 def test_incident_endpoint_context_gateway_correlates_siem_incident_with_xdr():
     client = TestClient(app)
     incident = {

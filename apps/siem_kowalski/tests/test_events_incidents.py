@@ -75,6 +75,87 @@ def test_detection_thresholds_create_expected_incidents():
     assert not any(below_threshold["id"] in incident["eventIds"] for incident in incidents)
 
 
+def test_lists_detection_rules_with_safe_condition_metadata():
+    response = client.get("/rules")
+
+    assert response.status_code == 200
+    rules = response.json()
+    rule_ids = {rule["id"] for rule in rules}
+    assert rule_ids >= {
+        "network_scan",
+        "denied_traffic_burst",
+        "repeated_failed_login",
+        "suspicious_endpoint_connection",
+        "fortigate_resource_pressure",
+    }
+    resource_rule = next(rule for rule in rules if rule["id"] == "fortigate_resource_pressure")
+    assert resource_rule["match"] == "any"
+    assert {condition["operator"] for condition in resource_rule["conditions"]} == {"gte"}
+    assert {condition["path"] for condition in resource_rule["conditions"]} == {
+        "attributes.cpuPercent",
+        "attributes.memoryPercent",
+    }
+
+
+def test_high_cpu_or_memory_telemetry_creates_resource_pressure_incident():
+    cpu_event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:00:00.000Z",
+            "entities": {"integrationId": "int_fgt_01", "hostname": "fortigate-lab"},
+            "attributes": {"cpuPercent": 91, "memoryPercent": 42},
+        },
+    ).json()
+    memory_event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:01:00.000Z",
+            "entities": {"integrationId": "int_fgt_01", "hostname": "fortigate-lab"},
+            "attributes": {"cpuPercent": 15, "memoryPercent": 94},
+        },
+    ).json()
+
+    incidents = client.get("/incidents", params={"severity": "high"}).json()
+
+    resource_incidents = [
+        incident for incident in incidents if incident["title"] == "FortiGate resource pressure"
+    ]
+    assert {event_id for incident in resource_incidents for event_id in incident["eventIds"]} >= {
+        cpu_event["id"],
+        memory_event["id"],
+    }
+    assert {incident["ruleId"] for incident in resource_incidents} == {
+        "fortigate_resource_pressure"
+    }
+
+
+def test_gte_conditions_reject_non_numeric_values_without_evaluating_strings():
+    event = client.post(
+        "/events",
+        json={
+            "source": "fortigate",
+            "eventType": "fortigate.system_status",
+            "severity": "medium",
+            "occurredAt": "2026-05-08T12:00:00.000Z",
+            "entities": {"integrationId": "int_fgt_01"},
+            "attributes": {
+                "cpuPercent": "__import__('os').system('id')",
+                "memoryPercent": "not-a-number",
+            },
+        },
+    ).json()
+
+    incidents = client.get("/incidents").json()
+
+    assert not any(event["id"] in incident["eventIds"] for incident in incidents)
+
+
 def test_lists_events_newest_first_with_limit_and_event_type_filter():
     old_event = client.post("/events", json=_event_payload("custom.old")).json()
     new_event = client.post("/events", json=_event_payload("custom.new")).json()

@@ -127,6 +127,14 @@ def list_incidents(
     )
 
 
+@router.get("/soc/rules")
+def list_detection_rules(
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", "/rules")
+
+
 @router.get("/soc/incidents/{incident_id}")
 def get_incident(
     incident_id: str,

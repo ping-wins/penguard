@@ -174,7 +174,7 @@ Current capabilities:
 
 - Ingest normalized events from FortiGate, endpoint telemetry, manual/demo events and future providers.
 - Store first-cut in-memory events and incidents.
-- Apply initial hardcoded detections: port scan, denied-traffic burst, repeated failed login and suspicious endpoint connection.
+- Apply safe declarative detections for port scan, denied-traffic burst, repeated failed login, suspicious endpoint connection and FortiGate resource pressure.
 - Generate incidents with severity, status, timeline and related entities.
 - Expose incident widgets: severity counts, recent incidents and top entities.
 
@@ -183,6 +183,7 @@ Gateway API:
 ```txt
 POST  /api/soc/events
 GET   /api/soc/events
+GET   /api/soc/rules
 GET   /api/soc/incidents
 GET   /api/soc/incidents/{incidentId}
 PATCH /api/soc/incidents/{incidentId}
@@ -408,8 +409,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Ingest normalized FortiGate events through the gateway.
 - [x] Expose incident widgets.
 - [ ] Add persisted raw event payload storage.
-- [ ] Implement a safe detection rule model/expression evaluator.
-- [ ] Add high CPU/memory risk rule from FortiGate/system telemetry.
+- [x] Implement a safe detection rule model/expression evaluator.
+- [x] Add high CPU/memory risk rule from FortiGate/system telemetry.
 
 ### soar_skipper
 
