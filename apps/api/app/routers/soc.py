@@ -205,6 +205,83 @@ def replay_demo_incident(
     }
 
 
+@router.get("/soc/tickets")
+def list_tickets(
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    triage: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    severity: Annotated[str | None, Query()] = None,
+) -> dict:
+    """Tickets are the analyst view of SIEM incidents enriched with triage
+    metadata. The siem_kowalski service stores triage fields inside the
+    incident payload, so the gateway lists incidents and filters/forwards
+    server-side.
+    """
+    params: dict[str, Any] = {}
+    if triage is not None:
+        params["triageLevel"] = triage
+    if status is not None:
+        params["ticketStatus"] = status
+    if severity is not None:
+        params["severity"] = severity
+    response = client.request("GET", "/incidents", params=params)
+    items = response if isinstance(response, list) else response.get("items", [])
+    return {"items": items}
+
+
+@router.get("/soc/tickets/{ticket_id}")
+def get_ticket(
+    ticket_id: str,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", f"/incidents/{ticket_id}")
+
+
+@router.patch("/soc/tickets/{ticket_id}")
+def update_ticket(
+    ticket_id: str,
+    payload: Annotated[dict[str, Any], Body()],
+    request: Request,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    allowed_keys = {
+        "triageLevel",
+        "ticketStatus",
+        "assigneeUserId",
+        "aiAnalysisId",
+        "note",
+    }
+    body = {k: v for k, v in payload.items() if k in allowed_keys}
+    if not body:
+        raise HTTPException(
+            status_code=422,
+            detail="Body must include at least one of triageLevel, ticketStatus, assigneeUserId, aiAnalysisId, note",
+        )
+    response = client.request("PATCH", f"/incidents/{ticket_id}/triage", json=body)
+    action = "soc.ticket.updated"
+    if "ticketStatus" in body:
+        action = "soc.ticket.status_changed"
+    if "assigneeUserId" in body:
+        action = "soc.ticket.assigned"
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action=action,
+        details={
+            "ticketId": ticket_id,
+            "changes": list(body.keys()),
+            "service": "siem_kowalski",
+        },
+    )
+    return response
+
+
 @router.post("/soc/events")
 def create_security_event(
     request: Request,

@@ -476,24 +476,47 @@ Still pending (next phase or stretch):
 
 ### Phase 2 — Incident tickets and triage console
 
-- Extend the SIEM incident model (`apps/siem_kowalski/app/store.py` + gateway
-  in `apps/api/app/routers/soc.py`) with `triageLevel` ("T1" | "T2" | "T3"),
-  `ticketStatus` ("new" | "investigating" | "contained" | "closed"),
-  `assigneeUserId` and `aiAnalysisId` foreign key. Default `triageLevel`
-  derived from `severity` (critical/high → T1, medium → T2, low/info → T3,
-  configurable per realm).
-- Expose ticket CRUD through the gateway:
-  - `GET /api/soc/tickets?triage=T1&status=new`
-  - `GET /api/soc/tickets/{ticketId}` (includes incident + AI analysis +
-    playbook run summary)
-  - `PATCH /api/soc/tickets/{ticketId}` (status transitions, triage change,
-    assignment)
-- Add a frontend SOC navigation entry "Tickets" with three lanes (T1/T2/T3),
-  filters (status, severity, source provider) and a detail drawer that mirrors
-  the manifest pattern. Reuse the existing audit drawer styling.
-- Wire every ticket mutation through the audit trail
-  (`soc.ticket.created`, `soc.ticket.updated`, `soc.ticket.assigned`,
-  `soc.ticket.closed`).
+Status: **delivered.**
+
+Backend:
+
+- `apps/siem_kowalski/app/main.py` extends `Incident` with `triageLevel`
+  (T1/T2/T3), `ticketStatus` (new/investigating/contained/closed),
+  `assigneeUserId` and `aiAnalysisId`. `_triage_from_severity()` maps
+  `critical|high → T1`, `medium → T2`, otherwise → `T3` at incident
+  creation; `ticketStatus` defaults to `new`.
+- `GET /incidents` now accepts `triageLevel` and `ticketStatus` filters and
+  applies them in-memory after the SQL filter on legacy `status`/`severity`.
+- New `PATCH /incidents/{id}/triage` updates any subset of triage fields,
+  appends timeline notes for each change (and an optional analyst note), and
+  is idempotent when nothing changes.
+- Gateway `apps/api/app/routers/soc.py` adds:
+  - `GET /api/soc/tickets?triage=T1&status=new&severity=high` — proxies the
+    SIEM list and normalizes the response to `{items: [...]}`.
+  - `GET /api/soc/tickets/{ticketId}` — proxies the SIEM detail.
+  - `PATCH /api/soc/tickets/{ticketId}` — whitelists `triageLevel`,
+    `ticketStatus`, `assigneeUserId`, `aiAnalysisId` and `note`; audits via
+    `soc.ticket.updated`, `soc.ticket.status_changed` or `soc.ticket.assigned`
+    depending on the patch payload.
+
+Frontend:
+
+- New `services/ticketsClient.ts` + `stores/useTicketsStore.ts` that wrap the
+  gateway endpoints, manage an 8-second poll and expose `patchTicket()`.
+- New `components/tickets/TicketsPanel.vue` rendered inside the sidebar as
+  the **SOC Tickets** tab (`Ticket` lucide icon, 480px drawer). The panel
+  shows three lanes for T1/T2/T3, filter dropdowns for ticket status and
+  severity, and a detail drawer with triage/status buttons that call the
+  PATCH endpoint plus a timeline view.
+- `Sidebar.vue` registers the new tab next to Workspaces, starts/stops the
+  poll on open/close and exposes the lucide `Ticket` icon in the icon rail.
+
+Open items for later phases:
+
+- Wire `aiAnalysisId` to the Phase 3 AI flow so the detail drawer can deep
+  link into the analysis.
+- Surface ticket origin (incident `eventIds`) inline with a "View source
+  events" link.
 
 ### Phase 3 — AI assistant integration
 
@@ -696,8 +719,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 
 - [x] Phase 1 — Deterministic synthetic incident seed + `/api/soc/demo/replay` endpoint with cockpit "Replay" button in the Workspaces panel.
 - [x] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion (`_aggregate_fortigate_events`).
-- [ ] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
-- [ ] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
+- [x] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
+- [x] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
 - [ ] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
 - [ ] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + popup component on the dashboard.
 - [ ] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Suggest containment" flow with dry-run only.
