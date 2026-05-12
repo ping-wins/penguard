@@ -643,21 +643,46 @@ Open items for later:
 
 ### Phase 5 — Demo polish and recording prep
 
-- Add toast/banner notifications for new SIEM incidents using a Pinia store
-  fed by a 5s poll of `GET /api/soc/incidents?since=`.
-- Add a "Walkthrough" demo recipe in `docs/` that lists the exact clicks for
-  the video and the synthetic event commands. Keep it next to the
-  troubleshooting playbook above.
-- Add a smoke test (`apps/web/tests` + `apps/api/tests`) covering the demo
-  chain: seed event → incident → AI analysis → ticket → draft playbook →
-  dry-run → contained. The test should run in CI without an AI provider via
-  the scripted adapter from Phase 3.
-- Record the video against a known-good docker compose snapshot. Capture
-  before/after screenshots in `docs/mvp/` and link them from the README once
-  the recording is locked.
+Status: **delivered (pre-recording prep). Actual video capture is the only
+remaining manual step.**
 
-Done when Phase 4 demo video is captured and Phase 5 smoke test is green in
-CI. Until then, the synthetic-event path is the recommended demo source.
+Delivered:
+
+- `apps/web/src/stores/useIncidentToastsStore.ts` polls `listTickets()` every
+  5 seconds; the first poll bootstraps the known-id set so the cockpit does
+  not spam the operator with a backlog. New incidents trigger a toast
+  capped at 5 visible items with a 12 second TTL.
+- `apps/web/src/components/notifications/IncidentToastContainer.vue` renders
+  the toast queue in the bottom-right of the dashboard, color-coded by
+  severity (`critical`/`high`/`medium`/`low`) with a triage badge, manual
+  dismiss and a slide-in transition. Mounted from `views/DashboardView.vue`
+  so it appears on every authenticated dashboard route.
+- `docs/mvp/walkthrough.md` ships the click-by-click recording script
+  (replay → toast → ticket → analyze → apply triage → suggest containment
+  → draft playbook → apply dry-run → contained banner → audit trail proof
+  → workspace export). The doc also lists what stays off-camera and how to
+  fall back to the synthetic replay if a take goes sideways.
+- `apps/api/tests/test_mvp_demo_chain.py` is the end-to-end smoke test. It
+  swaps the SIEM and SOAR gateway clients for in-memory fakes, keeps the
+  AI provider on the deterministic scripted adapter, and asserts the full
+  chain: replay creates events and incidents → tickets list includes the
+  new ticket with a triage level → analyze persists `aiAnalysisId` on the
+  incident → containment suggestion returns at least one step → draft
+  playbook creates a SOAR playbook + simulation → apply transitions the
+  ticket into `contained` (or `investigating` if the AI parked a sensitive
+  step at an approval gate) → audit trail contains every link in the
+  chain.
+
+Open items (the only ones blocking the actual video drop):
+
+- Record the video against a fresh `docker compose down -v && docker
+  compose up -d --build` snapshot. Capture two takes: scripted AI for the
+  baseline recording, Anthropic API for the "AI in the loop" beauty shot.
+- Drop the captured `.mp4` into `docs/mvp/recordings/` and link it from
+  the README under "MVP demo".
+
+Done when the recording is filed alongside this doc. Until then, the
+synthetic-event path is the recommended demo source.
 
 ## Commands
 
@@ -812,8 +837,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + AI panel on the ticket detail drawer with risk score, suggested triage and IoCs.
 - [x] Phase 3 — `POST /api/soc/incidents/{id}/containment-suggestions` exposed in the ticket drawer as draft steps (no auto-execution).
 - [x] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Draft playbook" / "Apply (dry-run)" flow that auto-contains the ticket on success.
-- [ ] Phase 5 — Toast/banner notifications for new SIEM incidents.
-- [ ] Phase 5 — Demo walkthrough doc + smoke test covering seed → incident → AI → ticket → playbook → contained.
+- [x] Phase 5 — Toast/banner notifications for new SIEM incidents (`useIncidentToastsStore` + `IncidentToastContainer.vue`).
+- [x] Phase 5 — Demo walkthrough doc (`docs/mvp/walkthrough.md`) + smoke test covering seed → incident → AI → ticket → playbook → contained (`apps/api/tests/test_mvp_demo_chain.py`).
 
 ### Quality
 
