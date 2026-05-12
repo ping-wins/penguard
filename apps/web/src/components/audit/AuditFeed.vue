@@ -9,8 +9,11 @@ import {
   RefreshCw,
   ShieldAlert,
 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import type { AuditEvent } from '../../services/auditClient'
 import { formatAuditEvent } from './auditFormat'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   events: AuditEvent[]
@@ -19,11 +22,14 @@ const props = withDefaults(defineProps<{
   isLoading?: boolean
   error?: string | null
 }>(), {
-  title: 'Audit trail',
-  subtitle: 'Sensitive SOC activity',
+  title: '',
+  subtitle: '',
   isLoading: false,
   error: null,
 })
+
+const resolvedTitle = computed(() => props.title || t('audit.title'))
+const resolvedSubtitle = computed(() => props.subtitle || t('audit.subtitle'))
 
 const emit = defineEmits<{
   refresh: []
@@ -47,14 +53,14 @@ function toneClasses(tone: string) {
           <ShieldAlert :size="18" />
         </div>
         <div class="min-w-0">
-          <h2 class="truncate text-sm font-semibold">{{ title }}</h2>
-          <p class="truncate text-xs text-theme-text-muted">{{ subtitle }}</p>
+          <h2 class="truncate text-sm font-semibold">{{ resolvedTitle }}</h2>
+          <p class="truncate text-xs text-theme-text-muted">{{ resolvedSubtitle }}</p>
         </div>
       </div>
       <button
         type="button"
         class="flex size-8 items-center justify-center rounded-md border border-theme-border text-theme-text-muted transition hover:border-theme-primary hover:text-theme-text"
-        aria-label="Refresh audit trail"
+        :aria-label="t('audit.refresh')"
         @click="emit('refresh')"
       >
         <RefreshCw :size="16" />
@@ -63,19 +69,19 @@ function toneClasses(tone: string) {
 
     <div v-if="isLoading" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center text-theme-text-muted">
       <Clock :size="22" class="animate-pulse text-theme-primary" />
-      <p class="text-sm font-medium text-theme-text">Loading audit trail</p>
+      <p class="text-sm font-medium text-theme-text">{{ t('audit.loading') }}</p>
     </div>
 
     <div v-else-if="error" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
       <AlertCircle :size="24" class="text-red-300" />
-      <p class="text-sm font-semibold text-theme-text">Unable to load audit trail</p>
+      <p class="text-sm font-semibold text-theme-text">{{ t('audit.errorTitle') }}</p>
       <p class="max-w-[28rem] text-xs text-theme-text-muted">{{ error }}</p>
     </div>
 
     <div v-else-if="formattedEvents.length === 0" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
       <ListChecks :size="24" class="text-theme-primary" />
-      <p class="text-sm font-semibold text-theme-text">No sensitive activity recorded</p>
-      <p class="max-w-[28rem] text-xs text-theme-text-muted">Events appear here after authentication, integration, workspace, or administrative actions.</p>
+      <p class="text-sm font-semibold text-theme-text">{{ t('audit.emptyTitle') }}</p>
+      <p class="max-w-[28rem] text-xs text-theme-text-muted">{{ t('audit.emptyHint') }}</p>
     </div>
 
     <ol v-else class="min-h-0 flex-1 overflow-y-auto px-4 py-3">

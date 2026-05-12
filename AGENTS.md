@@ -723,10 +723,32 @@ Translated surfaces:
   gate" banner). References returned by the AI now render as clickable
   anchors (`target="_blank"` + `rel="noopener noreferrer"`) so MITRE
   ATT&CK, Fortinet docs and CVE links open in a new tab.
-- `components/workspace/WorkspacePanel.vue` flash messages now go through
-  `t()` (export, import, replay errors and success texts). Full template
-  translation of the dialog bodies stays as incremental work in the
-  backlog.
+- `components/workspace/WorkspacePanel.vue` fully translated: flash
+  messages, header/subtitle, MVP demo replay block, origin pill +
+  "Detalhes da origem" dialog, workspace list (badges, widget count,
+  briefing pill, delete tooltip, loading state), and every modal body
+  (export, import preview, publish form fields/placeholders, community
+  library filter + cards + install/remove buttons, presentation editor
+  including severity options, slide title/narration placeholders and
+  "Iniciar apresentação" / "Salvar"). Action labels (`actions` computed)
+  and `originBadge()` pull from `t()` so they live-switch with locale.
+- `components/audit/AuditFeed.vue` + `components/audit/auditFormat.ts`
+  fully translated: header title/subtitle (with per-scope variants —
+  admin vs `mine` audit trail — wired from `Sidebar.vue`), loading,
+  error and empty states, refresh aria-label, action labels for every
+  audit event (`login`, `register`, `logout`, FortiGate
+  created/deleted/health-checked, workspace updated, audit viewed) and
+  fallback strings (unknown actor / IP unavailable / user agent
+  unavailable / time unavailable). `formatAuditEvent()` reads from the
+  global `i18n` instance so the formatter stays a pure function.
+  `createdAtLabel()` now uses `getLocale()` for `Intl.DateTimeFormat`
+  so dates render in the active locale.
+- `components/layout/Sidebar.vue` chat box (assistant tab) fully
+  translated: header, initial greeting, "Analisando..." indicator,
+  input placeholder, integration-required warning, "Adicionei o painel
+  X" success and the "no match" fallback. Audit drawer title/subtitle
+  props swap between `audit.adminTitle` / `audit.mineTitle` based on
+  the `isAdmin` flag.
 
 The AI provider locale switch:
 
@@ -745,9 +767,9 @@ The AI provider locale switch:
   before invoking the provider.
 
 Components still pending translation (incremental work tracked in the
-backlog): the WorkspacePanel dialog bodies (export preview, publish form,
-community library entries, presentation editor labels), the audit drawer
-copy, and the chat box in the sidebar.
+backlog): the integrations tab in `Sidebar.vue` (Fortinet/Penguin/
+endpoint sections, connection state badges, form labels, test/connect
+buttons and error strings).
 
 ## Commands
 
@@ -900,7 +922,10 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Translate RegisterView, PresentationView and TicketsPanel (header, lanes, filters, detail drawer, AI assistant block).
 - [x] Render AI analysis references as clickable hyperlinks (`target="_blank"`).
 - [x] Pass the cockpit locale to AI calls (`X-FortiDashboard-Locale` header) so scripted/Anthropic/OpenAI providers reply in the user's language.
-- [ ] Translate the WorkspacePanel dialog bodies (export preview, publish form, community library entries, presentation editor labels) and the audit drawer copy.
+- [x] Translate the WorkspacePanel dialog bodies (export preview, publish form, community library entries, presentation editor labels).
+- [x] Translate the audit drawer (AuditFeed header, scope-aware admin/mine titles, action labels in `auditFormat.ts`, fallback strings, locale-aware date formatting).
+- [x] Translate the Sidebar chat box (assistant tab) including bot replies and input placeholder.
+- [ ] Translate the Sidebar integrations tab (Fortinet/Penguin/endpoint sections, connection-state badges, form labels, test/connect buttons and error strings).
 - [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
 
 ### MVP Demo (cross-cutting)

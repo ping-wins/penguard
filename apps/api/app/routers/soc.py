@@ -84,12 +84,12 @@ def get_xdr_client() -> SocServiceClient:
 
 DEMO_SOURCE_TAG = "demo.replay"
 
+DEMO_ATTACK_TYPES = ("port_scan", "brute_force", "c2_beacon")
 
-def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, Any]]:
-    """Synthetic burst designed to trip `denied_traffic_burst` and seed an
-    obvious incident timeline for the MVP video. Counts are inflated past
-    every detection threshold so the demo always produces an incident.
-    """
+
+def _demo_attack_event(
+    attack_type: str, *, now: datetime, demo_run_id: str
+) -> dict[str, Any]:
     base = now.astimezone(UTC)
 
     def stamp(offset_seconds: int) -> str:
@@ -99,8 +99,8 @@ def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, An
             .replace("+00:00", "Z")
         )
 
-    return [
-        {
+    if attack_type == "port_scan":
+        return {
             "source": DEMO_SOURCE_TAG,
             "eventType": "network.deny",
             "severity": "high",
@@ -117,9 +117,11 @@ def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, An
                 "count": 42,
                 "uniqueDestinationCount": 1,
                 "demoRunId": demo_run_id,
+                "attackType": attack_type,
             },
-        },
-        {
+        }
+    if attack_type == "brute_force":
+        return {
             "source": DEMO_SOURCE_TAG,
             "eventType": "auth.failed_login",
             "severity": "medium",
@@ -133,9 +135,11 @@ def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, An
                 "count": 9,
                 "message": "Repeated SSH login failures for svc-backup",
                 "demoRunId": demo_run_id,
+                "attackType": attack_type,
             },
-        },
-        {
+        }
+    if attack_type == "c2_beacon":
+        return {
             "source": DEMO_SOURCE_TAG,
             "eventType": "endpoint.suspicious_connection",
             "severity": "high",
@@ -149,9 +153,35 @@ def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, An
             "attributes": {
                 "message": "Endpoint demo-endpoint-01 dialed back to attacker IP",
                 "demoRunId": demo_run_id,
+                "attackType": attack_type,
             },
-        },
-    ]
+        }
+    raise HTTPException(
+        status_code=400, detail=f"Unknown demo attack type: {attack_type}"
+    )
+
+
+def _demo_replay_events(
+    *, now: datetime, demo_run_id: str, attack_types: list[str] | None = None
+) -> list[dict[str, Any]]:
+    """Synthetic burst designed to trip `denied_traffic_burst` and seed an
+    obvious incident timeline for the MVP video. Counts are inflated past
+    every detection threshold so the demo always produces an incident.
+
+    When `attack_types` is empty or None, every attack in `DEMO_ATTACK_TYPES`
+    is injected (legacy "replay all" behavior). Otherwise only the requested
+    subset is injected, in the canonical chain order so the timeline still
+    reads correctly.
+    """
+    requested = list(attack_types) if attack_types else list(DEMO_ATTACK_TYPES)
+    unknown = [t for t in requested if t not in DEMO_ATTACK_TYPES]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown demo attack type(s): {', '.join(sorted(set(unknown)))}",
+        )
+    ordered = [t for t in DEMO_ATTACK_TYPES if t in set(requested)]
+    return [_demo_attack_event(t, now=now, demo_run_id=demo_run_id) for t in ordered]
 
 
 @router.post("/soc/demo/replay")
@@ -161,15 +191,26 @@ def replay_demo_incident(
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    payload: Annotated[dict[str, Any] | None, Body(default=None)] = None,
 ) -> dict:
-    """Re-inject the canned MVP demo incident so the analyst can re-record the
-    video without depending on real-world FortiGate denies. Each event is
-    tagged with `source="demo.replay"` and a fresh `demoRunId` so they are
-    easy to filter out of production dashboards.
+    """Re-inject canned MVP demo events so the analyst can re-record the video
+    without depending on real-world FortiGate denies. Each event is tagged
+    with `source="demo.replay"`, an `attackType` attribute and a fresh
+    `demoRunId` so they are easy to filter out of production dashboards.
+
+    Optional JSON body: `{"attackTypes": ["port_scan", "brute_force", "c2_beacon"]}`.
+    Omit or pass an empty list to inject the full canonical chain.
     """
+    raw_types = (payload or {}).get("attackTypes") if isinstance(payload, dict) else None
+    if raw_types is not None and not isinstance(raw_types, list):
+        raise HTTPException(status_code=400, detail="attackTypes must be a list of strings")
+    attack_types = [str(t) for t in raw_types] if raw_types else None
+
     now = datetime.now(UTC)
     demo_run_id = f"demo_{now.strftime('%Y%m%d_%H%M%S')}"
-    events = _demo_replay_events(now=now, demo_run_id=demo_run_id)
+    events = _demo_replay_events(
+        now=now, demo_run_id=demo_run_id, attack_types=attack_types
+    )
     created: list[dict[str, Any]] = []
     for event in events:
         try:
@@ -186,6 +227,7 @@ def replay_demo_incident(
                     "demoRunId": demo_run_id,
                     "error": str(exc),
                     "stage": event["eventType"],
+                    "attackTypes": [e["attributes"]["attackType"] for e in events],
                 },
                 outcome="failure",
             )
@@ -194,6 +236,7 @@ def replay_demo_incident(
                 detail=f"Demo replay failed at {event['eventType']}: {exc}",
             ) from exc
 
+    injected_types = [e["attributes"]["attackType"] for e in events]
     _audit(
         audit_store,
         request=request,
@@ -203,11 +246,13 @@ def replay_demo_incident(
             "demoRunId": demo_run_id,
             "eventCount": len(created),
             "service": "siem_kowalski",
+            "attackTypes": injected_types,
         },
     )
     return {
         "demoRunId": demo_run_id,
         "eventCount": len(created),
+        "attackTypes": injected_types,
         "eventIds": [event.get("id") for event in created if isinstance(event, dict) and event.get("id")],
     }
 

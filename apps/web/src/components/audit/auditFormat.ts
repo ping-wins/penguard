@@ -1,4 +1,5 @@
 import type { AuditEvent } from '../../services/auditClient'
+import { i18n, getLocale } from '../../i18n'
 
 export type FormattedAuditEvent = {
   id: string
@@ -15,14 +16,18 @@ export type FormattedAuditEvent = {
 const REDACTED = '[REDACTED]'
 const SECRET_KEY_MARKERS = ['apikey', 'secret', 'token', 'password']
 
-const ACTION_LABELS: Record<string, string> = {
-  register: 'Registration',
-  logout: 'Logout',
-  'integration.fortigate.created': 'FortiGate integration created',
-  'integration.fortigate.deleted': 'FortiGate integration removed',
-  'integration.fortigate.health_checked': 'FortiGate health check',
-  'workspace.updated': 'Workspace updated',
-  'audit.events.viewed': 'Audit trail viewed',
+const ACTION_KEYS: Record<string, string> = {
+  register: 'audit.actions.register',
+  logout: 'audit.actions.logout',
+  'integration.fortigate.created': 'audit.actions.fortigateCreated',
+  'integration.fortigate.deleted': 'audit.actions.fortigateDeleted',
+  'integration.fortigate.health_checked': 'audit.actions.fortigateHealthCheck',
+  'workspace.updated': 'audit.actions.workspaceUpdated',
+  'audit.events.viewed': 'audit.actions.auditViewed',
+}
+
+function tr(key: string): string {
+  return i18n.global.t(key)
 }
 
 function isSecretKey(key: string) {
@@ -63,9 +68,10 @@ function collectDetailRows(
 
 function actionTitle(event: AuditEvent) {
   if (event.action === 'login') {
-    return event.outcome === 'success' ? 'Login succeeded' : 'Login failed'
+    return event.outcome === 'success' ? tr('audit.actions.loginSuccess') : tr('audit.actions.loginFailed')
   }
-  return ACTION_LABELS[event.action] ?? event.action
+  const key = ACTION_KEYS[event.action]
+  return key ? tr(key) : event.action
 }
 
 function outcomeTone(outcome: string): FormattedAuditEvent['outcomeTone'] {
@@ -80,10 +86,10 @@ function outcomeLabel(outcome: string) {
 }
 
 function createdAtLabel(createdAt: string | null) {
-  if (!createdAt) return 'Time unavailable'
+  if (!createdAt) return tr('audit.fallbacks.timeUnavailable')
   const date = new Date(createdAt)
   if (Number.isNaN(date.getTime())) return createdAt
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(getLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
@@ -93,12 +99,12 @@ export function formatAuditEvent(event: AuditEvent): FormattedAuditEvent {
   return {
     id: event.id,
     title: actionTitle(event),
-    actorLabel: event.actor?.email || event.actor?.id || 'Unknown actor',
+    actorLabel: event.actor?.email || event.actor?.id || tr('audit.fallbacks.unknownActor'),
     outcomeLabel: outcomeLabel(event.outcome),
     outcomeTone: outcomeTone(event.outcome),
     createdAtLabel: createdAtLabel(event.createdAt),
-    ipAddressLabel: event.ipAddress || 'IP unavailable',
-    userAgentLabel: event.userAgent || 'User agent unavailable',
+    ipAddressLabel: event.ipAddress || tr('audit.fallbacks.ipUnavailable'),
+    userAgentLabel: event.userAgent || tr('audit.fallbacks.userAgentUnavailable'),
     detailRows: collectDetailRows(event.details),
   }
 }
