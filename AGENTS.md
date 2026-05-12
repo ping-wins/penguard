@@ -223,7 +223,7 @@ Current capabilities:
 
 - Create enrollment tokens.
 - Ingest endpoint events.
-- Track endpoint inventory, heartbeat, hostname, OS, IPs, current user and health.
+- Persist endpoint enrollment token hashes, inventory, heartbeat, hostname, OS, IPs, current user, health and timelines in service-owned SQL tables.
 - Correlate endpoints with SIEM incidents by endpoint ID, IP, hostname and username.
 - Expose endpoint timelines, incident endpoint context and health widgets.
 - Provide simulator data for demos without installing the agent.
@@ -428,6 +428,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Implement endpoint enrollment token flow.
 - [x] Implement endpoint inventory, heartbeat and timeline.
 - [x] Implement endpoint event ingestion.
+- [x] Persist endpoint inventory, timeline and enrollment token hashes.
 - [x] Add endpoint health widgets.
 - [x] Add simulator source.
 - [x] Hash endpoint tokens and never return them after creation.

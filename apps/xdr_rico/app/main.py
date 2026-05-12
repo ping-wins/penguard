@@ -7,6 +7,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.store import XdrStore
+
 SERVICE_NAME = "xdr_rico"
 logger = logging.getLogger("uvicorn.error")
 EndpointEventType = Literal[
@@ -125,18 +127,6 @@ class EndpointContextResponse(ApiModel):
     total: int
 
 
-class XdrStore:
-    def __init__(self) -> None:
-        self.enrollments: dict[str, EnrollmentRecord] = {}
-        self.endpoints: dict[str, Endpoint] = {}
-        self.timeline: dict[str, list[EndpointTimelineItem]] = {}
-
-    def reset(self) -> None:
-        self.enrollments.clear()
-        self.endpoints.clear()
-        self.timeline.clear()
-
-
 app = FastAPI(title="xdr_rico", version="0.1.0")
 app.state.xdr_store = XdrStore()
 
@@ -166,21 +156,19 @@ def get_store() -> XdrStore:
 
 
 def get_endpoint_or_404(endpoint_id: str) -> Endpoint:
-    endpoint = get_store().endpoints.get(endpoint_id)
-    if endpoint is None:
+    payload = get_store().get_endpoint(endpoint_id)
+    if payload is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Endpoint {endpoint_id} was not found.",
         )
-    return endpoint
+    return _load_endpoint(payload)
 
 
 def require_valid_enrollment_token(authorization: str | None) -> None:
     token = bearer_token(authorization)
     hashed_token = token_hash(token)
-    if not any(
-        enrollment.token_hash == hashed_token for enrollment in get_store().enrollments.values()
-    ):
+    if not get_store().has_enrollment_token_hash(hashed_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid endpoint enrollment token required.",
@@ -204,7 +192,10 @@ def bearer_token(authorization: str | None) -> str:
 
 def ingest_endpoint_event(event: EndpointEventCreate) -> EndpointEventResponse:
     store = get_store()
-    endpoint = store.endpoints.get(event.endpoint_id) or Endpoint(id=event.endpoint_id)
+    endpoint_payload = store.get_endpoint(event.endpoint_id)
+    endpoint = _load_endpoint(endpoint_payload) if endpoint_payload is not None else Endpoint(
+        id=event.endpoint_id
+    )
     endpoint.hostname = event.hostname or endpoint.hostname
     if event.ip_addresses is not None:
         endpoint.ip_addresses = event.ip_addresses
@@ -212,7 +203,13 @@ def ingest_endpoint_event(event: EndpointEventCreate) -> EndpointEventResponse:
     endpoint.last_seen_at = event.occurred_at
     endpoint.health = event.health or endpoint.health
     endpoint.attributes = {**endpoint.attributes, **event.attributes}
-    store.endpoints[endpoint.id] = endpoint
+    store.upsert_endpoint(
+        _dump(endpoint),
+        hostname=endpoint.hostname,
+        current_user=endpoint.current_user,
+        health=endpoint.health,
+        last_seen_at=endpoint.last_seen_at,
+    )
 
     timeline_item = EndpointTimelineItem(
         id=f"tl_{uuid4().hex}",
@@ -226,24 +223,30 @@ def ingest_endpoint_event(event: EndpointEventCreate) -> EndpointEventResponse:
         health=event.health,
         attributes=event.attributes,
     )
-    store.timeline.setdefault(endpoint.id, []).append(timeline_item)
+    store.add_timeline_item(
+        _dump(timeline_item),
+        endpoint_id=endpoint.id,
+        event_type=event.event_type,
+        occurred_at=event.occurred_at,
+    )
     logger.info(
         "xdr_endpoint_event_ingested endpoint_id=%s event_type=%s health=%s "
         "total_endpoints=%s endpoint_timeline_items=%s",
         endpoint.id,
         event.event_type,
         endpoint.health,
-        len(store.endpoints),
-        len(store.timeline.get(endpoint.id, [])),
+        store.count_endpoints(),
+        store.count_timeline_items(endpoint.id),
     )
     return EndpointEventResponse(endpoint=endpoint, timelineItem=timeline_item)
 
 
 def correlate_endpoint_context(payload: CorrelationRequest) -> EndpointContextResponse:
     store = get_store()
+    endpoints = [_load_endpoint(endpoint_payload) for endpoint_payload in store.list_endpoints()]
     matches = [
         item
-        for endpoint in store.endpoints.values()
+        for endpoint in endpoints
         if (item := _endpoint_context_item(endpoint, payload)) is not None
     ]
     matches.sort(
@@ -258,7 +261,7 @@ def correlate_endpoint_context(payload: CorrelationRequest) -> EndpointContextRe
         "xdr_endpoint_context_correlated entity_fields=%s matched=%s total_endpoints=%s",
         ",".join(sorted(payload.entities.keys())),
         len(limited_matches),
-        len(store.endpoints),
+        store.count_endpoints(),
     )
     return EndpointContextResponse(
         incidentEntities=payload.entities,
@@ -315,11 +318,10 @@ def _endpoint_context_item(
     if not matched_fields:
         return None
 
-    timeline = sorted(
-        get_store().timeline.get(endpoint.id, []),
-        key=lambda item: item.occurred_at,
-        reverse=True,
-    )[: payload.timeline_limit]
+    timeline = [
+        _load_timeline_item(item)
+        for item in get_store().list_timeline(endpoint.id, limit=payload.timeline_limit)
+    ]
     return EndpointContextItem(
         endpoint=endpoint,
         score=score,
@@ -362,6 +364,18 @@ def _principal_name(value: str) -> str:
     return value
 
 
+def _dump(model: ApiModel) -> dict[str, object]:
+    return model.model_dump(by_alias=True, mode="json")
+
+
+def _load_endpoint(payload: dict[str, object]) -> Endpoint:
+    return Endpoint(**payload)
+
+
+def _load_timeline_item(payload: dict[str, object]) -> EndpointTimelineItem:
+    return EndpointTimelineItem(**payload)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
@@ -376,12 +390,17 @@ def create_enrollment(payload: EnrollmentCreate) -> EnrollmentResponse:
     created_at = now_utc()
     enrollment_id = f"enr_{uuid4().hex}"
     token = create_enrollment_token()
-    get_store().enrollments[enrollment_id] = EnrollmentRecord(
+    enrollment = EnrollmentRecord(
         id=enrollment_id,
         displayName=payload.display_name,
         hostnameHint=payload.hostname_hint,
         createdAt=created_at,
         tokenHash=token_hash(token),
+    )
+    get_store().add_enrollment(
+        _dump(enrollment),
+        token_hash=enrollment.token_hash,
+        created_at=enrollment.created_at,
     )
     logger.info(
         "xdr_enrollment_created enrollment_id=%s display_name=%s hostname_hint=%s",
@@ -400,7 +419,7 @@ def create_enrollment(payload: EnrollmentCreate) -> EnrollmentResponse:
 
 @app.get("/endpoints", response_model=EndpointListResponse)
 def list_endpoints() -> EndpointListResponse:
-    items = list(get_store().endpoints.values())
+    items = [_load_endpoint(payload) for payload in get_store().list_endpoints()]
     logger.info("xdr_endpoints_list returned=%s", len(items))
     return EndpointListResponse(items=items)
 
@@ -413,11 +432,7 @@ def get_endpoint(endpoint_id: str) -> Endpoint:
 @app.get("/endpoints/{endpoint_id}/timeline", response_model=EndpointTimelineResponse)
 def get_endpoint_timeline(endpoint_id: str) -> EndpointTimelineResponse:
     get_endpoint_or_404(endpoint_id)
-    items = sorted(
-        get_store().timeline.get(endpoint_id, []),
-        key=lambda item: item.occurred_at,
-        reverse=True,
-    )
+    items = [_load_timeline_item(payload) for payload in get_store().list_timeline(endpoint_id)]
     logger.info("xdr_endpoint_timeline endpoint_id=%s returned=%s", endpoint_id, len(items))
     return EndpointTimelineResponse(endpointId=endpoint_id, items=items)
 
@@ -443,8 +458,7 @@ def create_authorized_endpoint_event(
 def create_simulator_events() -> SimulatorResponse:
     store = get_store()
     endpoint_id = "demo-endpoint-01"
-    store.endpoints.pop(endpoint_id, None)
-    store.timeline.pop(endpoint_id, None)
+    store.delete_endpoint(endpoint_id)
 
     demo_events = [
         EndpointEventCreate(
