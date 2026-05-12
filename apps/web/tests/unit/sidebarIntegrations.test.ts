@@ -2,11 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Sidebar from '../../src/components/layout/Sidebar.vue'
+import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }))
+
+let pinia: ReturnType<typeof createPinia>
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -17,13 +20,15 @@ function jsonResponse(body: unknown) {
 
 describe('Sidebar integrations panel', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     vi.stubGlobal('localStorage', {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
       removeItem: vi.fn(),
       clear: vi.fn(),
     })
+    setLocale('pt-BR')
   })
 
   afterEach(() => {
@@ -45,7 +50,7 @@ describe('Sidebar integrations panel', () => {
       ],
     })))
 
-    const wrapper = mount(Sidebar)
+    const wrapper = mountSidebar()
 
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
@@ -81,9 +86,9 @@ describe('Sidebar integrations panel', () => {
     }))
     vi.stubGlobal('fetch', fetcher)
 
-    const wrapper = mount(Sidebar)
+    const wrapper = mountSidebar()
 
-    await wrapper.get('[title="Audit Trail"]').trigger('click')
+    await wrapper.get('[title="Trilha de auditoria"]').trigger('click')
     await flushPromises()
 
     expect(fetcher).toHaveBeenCalledWith('/api/admin/audit/events?limit=50', {
@@ -112,7 +117,7 @@ describe('Sidebar integrations panel', () => {
       ],
     })))
 
-    const wrapper = mount(Sidebar)
+    const wrapper = mountSidebar()
 
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
@@ -133,7 +138,7 @@ describe('Sidebar integrations panel', () => {
       items: [],
     })))
 
-    const wrapper = mount(Sidebar)
+    const wrapper = mountSidebar()
 
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
@@ -160,7 +165,7 @@ describe('Sidebar integrations panel', () => {
       items: [],
     })))
 
-    const wrapper = mount(Sidebar)
+    const wrapper = mountSidebar()
 
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
@@ -179,3 +184,11 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Adicionar FortiGate')
   })
 })
+
+function mountSidebar() {
+  return mount(Sidebar, {
+    global: {
+      plugins: [pinia, i18n],
+    },
+  })
+}

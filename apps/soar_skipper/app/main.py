@@ -7,6 +7,8 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.store import SoarStore
+
 SERVICE_NAME = "soar_skipper"
 logger = logging.getLogger("uvicorn.error")
 
@@ -24,6 +26,7 @@ NodeType = Literal[
 ]
 RunStatus = Literal["completed", "waiting_approval"]
 StepStatus = Literal["completed", "waiting_approval"]
+NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
 
 SENSITIVE_NODE_TYPES = {"fortigate.recommend_block"}
 APPROVAL_NODE_TYPES = {"approval.required"}
@@ -40,6 +43,21 @@ class PlaybookEdge(BaseModel):
 
     from_node: str = Field(alias="from", min_length=1)
     to_node: str = Field(alias="to", min_length=1)
+
+
+class NodeTypeDefinition(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: NodeType
+    label: str
+    category: NodeCategory
+    sensitive: bool = False
+    dry_run_only: bool = Field(default=True, alias="dryRunOnly")
+    config_schema: dict[str, Any] = Field(default_factory=dict, alias="configSchema")
+
+
+class NodeTypesResponse(BaseModel):
+    items: list[NodeTypeDefinition]
 
 
 class Playbook(BaseModel):
@@ -104,6 +122,126 @@ class PlaybookRun(BaseModel):
     status: RunStatus
     steps: list[PlaybookStepRun]
     created_at: datetime = Field(alias="createdAt")
+
+
+def _dump(model: BaseModel) -> dict[str, Any]:
+    return model.model_dump(by_alias=True, mode="json")
+
+
+def _load_playbook(payload: dict[str, Any]) -> Playbook:
+    return Playbook(**payload)
+
+
+def _load_playbook_run(payload: dict[str, Any]) -> PlaybookRun:
+    return PlaybookRun(**payload)
+
+
+def _node_type_definitions() -> list[NodeTypeDefinition]:
+    return [
+        NodeTypeDefinition(
+            id="trigger.incident_created",
+            label="Incident Created",
+            category="trigger",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        ),
+        NodeTypeDefinition(
+            id="condition.severity",
+            label="Severity Condition",
+            category="condition",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {
+                    "severity": {
+                        "type": "array",
+                        "items": {"enum": ["low", "medium", "high", "critical"]},
+                    }
+                },
+                "required": ["severity"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="enrich.ip",
+            label="Enrich IP",
+            category="enrichment",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {"field": {"type": "string"}},
+                "required": ["field"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="case.note",
+            label="Create Case Note",
+            category="action",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {"template": {"type": "string"}},
+                "required": ["template"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="approval.required",
+            label="Require Approval",
+            category="control",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {"role": {"type": "string"}},
+                "required": ["role"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="notify.webhook",
+            label="Notify Webhook",
+            category="action",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {
+                    "mode": {"enum": ["dry_run"]},
+                    "channel": {"type": "string"},
+                },
+                "required": ["mode"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="fortigate.recommend_block",
+            label="Recommend FortiGate Block",
+            category="action",
+            sensitive=True,
+            dryRunOnly=True,
+            configSchema={
+                "type": "object",
+                "properties": {
+                    "mode": {"enum": ["dry_run"]},
+                    "field": {"type": "string"},
+                },
+                "required": ["field"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="webhook.dry_run",
+            label="Webhook Dry Run",
+            category="action",
+            sensitive=False,
+            configSchema={
+                "type": "object",
+                "properties": {
+                    "urlLabel": {"type": "string"},
+                    "payloadTemplate": {"type": "string"},
+                },
+                "required": [],
+            },
+        ),
+    ]
 
 
 def _default_playbooks() -> dict[str, Playbook]:
@@ -178,6 +316,33 @@ def _default_playbooks() -> dict[str, Playbook]:
 
 playbooks: dict[str, Playbook] = _default_playbooks()
 playbook_runs: dict[str, PlaybookRun] = {}
+app.state.soar_store = SoarStore()
+
+
+def reset_state() -> None:
+    get_store().reset()
+    playbooks.clear()
+    playbooks.update(_default_playbooks())
+    playbook_runs.clear()
+    _seed_default_playbooks()
+
+
+def get_store() -> SoarStore:
+    return app.state.soar_store
+
+
+def _seed_default_playbooks() -> None:
+    store = get_store()
+    for playbook in _default_playbooks().values():
+        if store.get_playbook(playbook.id) is None:
+            store.upsert_playbook(
+                _dump(playbook),
+                name=playbook.name,
+                enabled=playbook.enabled,
+            )
+
+
+_seed_default_playbooks()
 
 
 @app.get("/health")
@@ -185,21 +350,29 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
 
 
+@app.get("/node-types", response_model=NodeTypesResponse)
+def list_node_types() -> NodeTypesResponse:
+    items = _node_type_definitions()
+    logger.info("soar_node_types_list returned=%s", len(items))
+    return NodeTypesResponse(items=items)
+
+
 @app.get("/playbooks", response_model=list[Playbook])
 def list_playbooks() -> list[Playbook]:
-    results = list(playbooks.values())
+    results = [_load_playbook(payload) for payload in get_store().list_playbooks()]
     logger.info("soar_playbooks_list returned=%s", len(results))
     return results
 
 
 @app.post("/playbooks", response_model=Playbook, status_code=status.HTTP_201_CREATED)
 def create_playbook(playbook: Playbook) -> Playbook:
-    if playbook.id in playbooks:
+    if get_store().get_playbook(playbook.id) is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"playbook {playbook.id} already exists",
         )
     playbooks[playbook.id] = playbook
+    get_store().upsert_playbook(_dump(playbook), name=playbook.name, enabled=playbook.enabled)
     logger.info(
         "soar_playbook_created playbook_id=%s enabled=%s nodes=%s",
         playbook.id,
@@ -223,6 +396,7 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
         )
     _get_playbook_or_404(playbook_id)
     playbooks[playbook_id] = playbook
+    get_store().upsert_playbook(_dump(playbook), name=playbook.name, enabled=playbook.enabled)
     logger.info(
         "soar_playbook_updated playbook_id=%s enabled=%s nodes=%s",
         playbook_id,
@@ -275,6 +449,13 @@ def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
         created_at=now,
     )
     playbook_runs[run.id] = run
+    get_store().add_playbook_run(
+        _dump(run),
+        incident_id=run.incident_id,
+        playbook_id=run.playbook_id,
+        status=run.status,
+        created_at=run.created_at,
+    )
     logger.info(
         "soar_playbook_run_created run_id=%s incident_id=%s playbook_id=%s status=%s "
         "dry_run=%s steps=%s",
@@ -290,17 +471,18 @@ def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
 
 @app.get("/playbook-runs/{run_id}", response_model=PlaybookRun)
 def get_playbook_run(run_id: str) -> PlaybookRun:
-    run = playbook_runs.get(run_id)
-    if run is None:
+    payload = get_store().get_playbook_run(run_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook run not found")
-    return run
+    return _load_playbook_run(payload)
 
 
 @app.post("/playbook-runs/{run_id}/approve", response_model=PlaybookRun)
 def approve_playbook_run(run_id: str) -> PlaybookRun:
-    run = playbook_runs.get(run_id)
-    if run is None:
+    payload = get_store().get_playbook_run(run_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook run not found")
+    run = _load_playbook_run(payload)
     approved = run.model_copy(
         update={
             "status": "completed",
@@ -313,40 +495,37 @@ def approve_playbook_run(run_id: str) -> PlaybookRun:
         }
     )
     playbook_runs[run_id] = approved
+    get_store().update_playbook_run(_dump(approved), status=approved.status)
     logger.info("soar_playbook_run_approved run_id=%s", run_id)
     return approved
 
 
 @app.get("/playbook-runs", response_model=list[PlaybookRun])
 def list_playbook_runs(status: RunStatus | None = None) -> list[PlaybookRun]:
-    runs = sorted(
-        playbook_runs.values(),
-        key=lambda run: run.created_at,
-        reverse=True,
-    )
+    runs = [_load_playbook_run(payload) for payload in get_store().list_playbook_runs()]
     if status is not None:
         filtered_runs = [run for run in runs if run.status == status]
         logger.info(
             "soar_playbook_runs_list status=%s returned=%s total=%s",
             status,
             len(filtered_runs),
-            len(playbook_runs),
+            get_store().count_playbook_runs(),
         )
         return filtered_runs
     logger.info(
         "soar_playbook_runs_list status=%s returned=%s total=%s",
         status,
         len(runs),
-        len(playbook_runs),
+        get_store().count_playbook_runs(),
     )
     return runs
 
 
 def _get_playbook_or_404(playbook_id: str) -> Playbook:
-    playbook = playbooks.get(playbook_id)
-    if playbook is None:
+    payload = get_store().get_playbook(playbook_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook not found")
-    return playbook
+    return _load_playbook(payload)
 
 
 def _build_step_previews(playbook: Playbook) -> list[StepPreview]:

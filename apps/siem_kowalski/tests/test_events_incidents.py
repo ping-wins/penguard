@@ -105,6 +105,89 @@ def test_lists_detection_rules_with_safe_condition_metadata():
     }
 
 
+def test_windows_ad_detection_rules_create_identity_and_file_incidents():
+    failed_login = client.post(
+        "/events",
+        json={
+            "source": "xdr_rico.agent_private",
+            "eventType": "auth.failed_login",
+            "severity": "medium",
+            "occurredAt": "2026-05-12T13:30:00.000Z",
+            "entities": {
+                "endpointId": "end_win_dc01",
+                "hostname": "WIN-SOC-DC01",
+                "username": "FORTIDASHBOARD\\felipe",
+                "sourceIp": "192.0.2.77",
+            },
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4625,
+                "count": 6,
+            },
+        },
+    ).json()
+    privileged = client.post(
+        "/events",
+        json={
+            "source": "xdr_rico.agent_private",
+            "eventType": "auth.privileged_logon",
+            "severity": "high",
+            "occurredAt": "2026-05-12T13:31:00.000Z",
+            "entities": {
+                "endpointId": "end_win_file01",
+                "hostname": "WIN-SOC-FILE01",
+                "username": "FORTIDASHBOARD\\administrator",
+            },
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4672,
+                "privileged": True,
+                "unusualHost": True,
+            },
+        },
+    ).json()
+    file_change = client.post(
+        "/events",
+        json={
+            "source": "xdr_rico.agent_private",
+            "eventType": "file.change",
+            "severity": "high",
+            "occurredAt": "2026-05-12T13:32:00.000Z",
+            "entities": {
+                "endpointId": "end_win_file01",
+                "hostname": "WIN-SOC-FILE01",
+                "username": "FORTIDASHBOARD\\svc-backup",
+                "filePath": r"C:\Sensitive\payroll.xlsx",
+            },
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4663,
+                "criticalPath": True,
+            },
+        },
+    ).json()
+
+    incidents = client.get("/incidents").json()
+
+    assert any(
+        incident["ruleId"] == "repeated_failed_login"
+        and failed_login["id"] in incident["eventIds"]
+        for incident in incidents
+    )
+    assert any(
+        incident["ruleId"] == "privileged_logon_unusual_host"
+        and privileged["id"] in incident["eventIds"]
+        and incident["triageLevel"] == "T1"
+        for incident in incidents
+    )
+    assert any(
+        incident["ruleId"] == "critical_server_file_change"
+        and file_change["id"] in incident["eventIds"]
+        and incident["triageLevel"] == "T1"
+        for incident in incidents
+    )
+
+
 def test_high_cpu_or_memory_telemetry_creates_resource_pressure_incident():
     cpu_event = client.post(
         "/events",

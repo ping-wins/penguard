@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -18,7 +17,6 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useTicketsStore } from '../../stores/useTicketsStore'
-import { useThemeStore } from '../../stores/useThemeStore'
 import {
   analyzeIncident,
   applyContainmentPlaybook,
@@ -34,7 +32,6 @@ import {
 } from '../../services/ticketsClient'
 
 const store = useTicketsStore()
-const themeStore = useThemeStore()
 
 const severityFilter = ref<string | null>(null)
 const statusFilter = ref<TicketStatus | null>(null)

@@ -6,10 +6,12 @@ Current implementation status:
 
 - `apps/api` exposes auth, FortiGate integration, workspace, widgets and audit APIs.
 - `apps/api` now exposes first-cut SOC gateway routes for SIEM events/incidents, SOAR playbooks/runs and XDR endpoints/timeline.
-- `siem_kowalski`, `soar_skipper` and `xdr_rico` expose health checks plus in-memory MVP endpoints in Docker Compose.
-- `agent_private` is a CLI scaffold, not a deployed service.
+- `siem_kowalski` exposes health checks plus persisted event and incident endpoints in Docker Compose.
+- `xdr_rico` exposes health checks plus persisted endpoint inventory, enrollment token hashes and timeline endpoints in Docker Compose.
+- `soar_skipper` exposes health checks plus persisted playbook, run and node catalog endpoints in Docker Compose.
+- `agent_private` is a TUI/CLI endpoint sensor package, not a deployed service.
 - SOC event, incident, endpoint, playbook and playbook-run examples live in `packages/contracts/fixtures`.
-- Runtime SOC routes are intentionally first-cut and in-memory behind the BFF; persistence and service auth hardening are still future work.
+- Runtime SOC routes are intentionally first-cut behind the BFF; `siem_kowalski`, `xdr_rico` and `soar_skipper` now persist core records, while service auth hardening is still future work.
 
 ## Runtime Topology
 
@@ -74,6 +76,7 @@ redis://redis:6379/0
 
 - Host identity collection.
 - Lightweight telemetry collection.
+- Windows Security Log collection for lab events `4625`, `4672` and `4663`.
 - Retry/backoff when offline.
 - Simulator mode for demos.
 
@@ -130,6 +133,7 @@ Example event payload:
 External contract through `apps/api`:
 
 ```txt
+GET  /api/soc/playbook-node-types
 GET  /api/soc/playbooks
 POST /api/soc/playbooks
 POST /api/soc/playbooks/{playbookId}/simulate
@@ -137,7 +141,14 @@ POST /api/soc/incidents/{incidentId}/playbooks/{playbookId}/run
 GET  /api/soc/playbook-runs/{runId}
 ```
 
-All playbooks start disabled or draft until validated and activated by an authorized human. Destructive FortiGate changes are out of scope for the MVP; recommend/block nodes produce dry-run recommendations only.
+`soar_skipper` persists playbooks and run history in SQL through
+`SOAR_SKIPPER_DATABASE_URL`. The browser-facing node catalog comes from
+`/api/soc/playbook-node-types`; each node advertises category, sensitivity,
+dry-run-only status and config schema metadata for the future n8n-like builder.
+
+All playbooks start disabled or draft until validated and activated by an
+authorized human. Destructive FortiGate changes are out of scope for the MVP;
+recommend/block nodes produce dry-run recommendations only.
 
 ### Endpoint Telemetry
 
@@ -152,6 +163,20 @@ POST /api/weapons/enrollments
 ```
 
 In the current cut, endpoint enrollment tokens authenticate telemetry submission and are stored hashed inside `xdr_rico`. They are returned only at creation time. Production hardening should make them one-time bootstrap tokens or short-lived credentials with rotation.
+
+Windows/AD endpoint events follow this extra hop:
+
+```txt
+agent_private windows-security -> POST /api/weapons/endpoint-events
+apps/api -> xdr_rico endpoint timeline
+apps/api -> siem_kowalski security event
+siem_kowalski -> incident rules for auth/file events
+```
+
+The gateway currently forwards `auth.failed_login`, `auth.privileged_logon`
+and `file.change` endpoint events to the SIEM only after XDR ingestion
+succeeds. The SIEM event keeps `xdrTimelineItemId` in attributes so tickets can
+be correlated back to endpoint context.
 
 ## Review Checklist
 

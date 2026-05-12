@@ -229,6 +229,38 @@ def test_soar_playbook_run_gateway_forwards_and_audits():
     assert audit["items"][0]["details"]["runId"] == "pbr_01"
 
 
+def test_soar_node_types_gateway_forwards_builder_catalog():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "items": [
+                {
+                    "id": "case.note",
+                    "label": "Case Note",
+                    "category": "action",
+                    "sensitive": False,
+                    "dryRunOnly": True,
+                    "configSchema": {"type": "object"},
+                }
+            ]
+        }
+    )
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+
+    response = client.get("/api/soc/playbook-node-types")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["id"] == "case.note"
+    assert fake_soar.calls[0] == {
+        "method": "GET",
+        "path": "/node-types",
+        "json": None,
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+
+
 def test_soar_playbook_run_approval_requires_admin():
     client = TestClient(app)
     fake_soar = FakeSocClient({"id": "pbr_01", "status": "completed"})
@@ -337,6 +369,76 @@ def test_xdr_endpoint_event_gateway_forwards_enrollment_authorization():
         action="xdr.endpoint_event.created"
     )
     assert audit["items"][0]["details"]["actorType"] == "agent_private"
+
+
+def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "end_win_dc01"},
+            "timelineItem": {"id": "tl_01", "eventType": "auth.failed_login"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_01", "eventType": "auth.failed_login"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "end_win_dc01",
+            "eventType": "auth.failed_login",
+            "occurredAt": "2026-05-12T13:30:00.000Z",
+            "hostname": "WIN-SOC-DC01",
+            "ipAddresses": ["192.0.2.10"],
+            "currentUser": "FORTIDASHBOARD\\felipe",
+            "attributes": {
+                "source": "agent_private.windows_security",
+                "windowsEventId": 4625,
+                "count": 6,
+                "sourceIp": "192.0.2.77",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["siemForwarding"] == {
+        "status": "created",
+        "eventCount": 1,
+        "eventIds": ["evt_01"],
+    }
+    assert fake_siem.calls == [
+        {
+            "method": "POST",
+            "path": "/events",
+            "json": {
+                "source": "xdr_rico.agent_private",
+                "eventType": "auth.failed_login",
+                "severity": "medium",
+                "occurredAt": "2026-05-12T13:30:00.000Z",
+                "entities": {
+                    "endpointId": "end_win_dc01",
+                    "hostname": "WIN-SOC-DC01",
+                    "username": "FORTIDASHBOARD\\felipe",
+                    "sourceIp": "192.0.2.77",
+                },
+                "attributes": {
+                    "source": "agent_private.windows_security",
+                    "windowsEventId": 4625,
+                    "count": 6,
+                    "sourceIp": "192.0.2.77",
+                    "xdrTimelineItemId": "tl_01",
+                },
+            },
+            "params": None,
+            "headers": None,
+            "pass_through_statuses": None,
+        }
+    ]
 
 
 def test_xdr_endpoint_event_gateway_requires_enrollment_authorization():

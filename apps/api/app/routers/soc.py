@@ -208,7 +208,11 @@ def replay_demo_incident(
     return {
         "demoRunId": demo_run_id,
         "eventCount": len(created),
-        "eventIds": [event.get("id") for event in created if isinstance(event, dict) and event.get("id")],
+        "eventIds": [
+            event.get("id")
+            for event in created
+            if isinstance(event, dict) and event.get("id")
+        ],
     }
 
 
@@ -401,7 +405,9 @@ def draft_containment_playbook(
         if step.requires_approval or default_sensitive:
             sensitive_present = True
             approval_id = f"approval_{index + 1}"
-            nodes.append({"id": approval_id, "type": "approval.required", "config": {"role": "admin"}})
+            nodes.append(
+                {"id": approval_id, "type": "approval.required", "config": {"role": "admin"}}
+            )
             edges.append({"from": previous_id, "to": approval_id})
             previous_id = approval_id
         nodes.append({"id": node_id, "type": node_type, "config": node_config})
@@ -432,7 +438,10 @@ def draft_containment_playbook(
                 "error": str(exc)[:200],
             },
         )
-        raise HTTPException(status_code=502, detail=f"Failed to create draft playbook: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to create draft playbook: {exc}",
+        ) from exc
 
     try:
         simulation = soar_client.request("POST", f"/playbooks/{playbook_id}/simulate")
@@ -532,7 +541,11 @@ def apply_containment_playbook(
             },
         )
 
-    audit_action = "soc.ticket.contained" if new_ticket_status == "contained" else "soc.ticket.containment_paused"
+    audit_action = (
+        "soc.ticket.contained"
+        if new_ticket_status == "contained"
+        else "soc.ticket.containment_paused"
+    )
     _audit(
         audit_store,
         request=request,
@@ -653,7 +666,10 @@ def update_ticket(
     if not body:
         raise HTTPException(
             status_code=422,
-            detail="Body must include at least one of triageLevel, ticketStatus, assigneeUserId, aiAnalysisId, note",
+            detail=(
+                "Body must include at least one of triageLevel, ticketStatus, "
+                "assigneeUserId, aiAnalysisId, note"
+            ),
         )
     response = client.request("PATCH", f"/incidents/{ticket_id}/triage", json=body)
     action = "soc.ticket.updated"
@@ -801,6 +817,14 @@ def list_playbooks(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return client.request("GET", "/playbooks")
+
+
+@router.get("/soc/playbook-node-types")
+def list_playbook_node_types(
+    client: Annotated[SocClient, Depends(get_soar_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", "/node-types")
 
 
 @router.post("/soc/playbooks")
@@ -970,6 +994,7 @@ def create_endpoint_event(
     request: Request,
     payload: Annotated[dict[str, Any], Body()],
     client: Annotated[SocClient, Depends(get_xdr_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> dict:
@@ -985,9 +1010,14 @@ def create_endpoint_event(
         headers={"Authorization": authorization},
         pass_through_statuses={401, 403},
     )
+    siem_forwarding = _forward_endpoint_event_to_siem(
+        payload,
+        response=response,
+        siem_client=siem_client,
+    )
     audit_store.record(
         action="xdr.endpoint_event.created",
-        outcome="success",
+        outcome="partial" if siem_forwarding.get("status") == "failed" else "success",
         client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         details={
@@ -995,9 +1025,89 @@ def create_endpoint_event(
             "eventType": payload.get("eventType"),
             "service": "xdr_rico",
             "actorType": "agent_private",
+            "siemForwarding": siem_forwarding,
         },
     )
+    if siem_forwarding["status"] != "skipped":
+        response["siemForwarding"] = siem_forwarding
     return response
+
+
+def _forward_endpoint_event_to_siem(
+    payload: dict[str, Any],
+    *,
+    response: dict[str, Any],
+    siem_client: SocClient,
+) -> dict[str, Any]:
+    events = _endpoint_event_to_siem_events(payload, response=response)
+    if not events:
+        return {"status": "skipped", "eventCount": 0, "eventIds": []}
+    created: list[dict[str, Any]] = []
+    try:
+        for event in events:
+            created.append(siem_client.request("POST", "/events", json=event))
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "failed",
+            "eventCount": len(events),
+            "eventIds": [event.get("id") for event in created if isinstance(event, dict)],
+            "error": str(exc)[:200],
+        }
+    return {
+        "status": "created",
+        "eventCount": len(created),
+        "eventIds": [event.get("id") for event in created if isinstance(event, dict)],
+    }
+
+
+def _endpoint_event_to_siem_events(
+    payload: dict[str, Any],
+    *,
+    response: dict[str, Any],
+) -> list[dict[str, Any]]:
+    event_type = payload.get("eventType")
+    if event_type not in {"auth.failed_login", "auth.privileged_logon", "file.change"}:
+        return []
+    attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
+    hostname = payload.get("hostname")
+    current_user = payload.get("currentUser") or attributes.get("username")
+    source_ip = attributes.get("sourceIp") or attributes.get("IpAddress")
+    timeline_item = response.get("timelineItem") if isinstance(response, dict) else {}
+    severity = _endpoint_siem_severity(str(event_type), attributes)
+    entities: dict[str, Any] = {
+        "endpointId": payload.get("endpointId"),
+        "hostname": hostname,
+    }
+    if current_user:
+        entities["username"] = current_user
+    if source_ip:
+        entities["sourceIp"] = source_ip
+    if event_type == "file.change" and attributes.get("objectName"):
+        entities["filePath"] = attributes["objectName"]
+    siem_attributes = dict(attributes)
+    if isinstance(timeline_item, dict) and timeline_item.get("id"):
+        siem_attributes["xdrTimelineItemId"] = timeline_item["id"]
+    return [
+        {
+            "source": "xdr_rico.agent_private",
+            "eventType": event_type,
+            "severity": severity,
+            "occurredAt": payload.get("occurredAt"),
+            "entities": {key: value for key, value in entities.items() if value},
+            "attributes": siem_attributes,
+        }
+    ]
+
+
+def _endpoint_siem_severity(event_type: str, attributes: dict[str, Any]) -> str:
+    if event_type == "auth.failed_login":
+        count = attributes.get("count")
+        return "high" if isinstance(count, int | float) and count >= 10 else "medium"
+    if event_type == "auth.privileged_logon":
+        return "high" if attributes.get("unusualHost") is True else "medium"
+    if event_type == "file.change":
+        return "high" if attributes.get("criticalPath") is True else "low"
+    return "informational"
 
 
 @router.post("/weapons/enrollments")

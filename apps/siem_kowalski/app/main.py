@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query
@@ -124,6 +124,25 @@ DETECTION_RULES: list[DetectionRule] = [
         summary="Failed authentication attempts exceeded the configured threshold.",
         eventTypes=["auth.failed_login"],
         conditions=[RuleCondition(path="attributes.count", operator="gte", value=5)],
+    ),
+    DetectionRule(
+        id="privileged_logon_unusual_host",
+        title="Privileged logon on unusual host",
+        severity="high",
+        summary="A privileged account logged on to a host outside the expected baseline.",
+        eventTypes=["auth.privileged_logon"],
+        conditions=[
+            RuleCondition(path="attributes.privileged", operator="equals", value=True),
+            RuleCondition(path="attributes.unusualHost", operator="equals", value=True),
+        ],
+    ),
+    DetectionRule(
+        id="critical_server_file_change",
+        title="Critical server file change",
+        severity="high",
+        summary="Endpoint telemetry reported a file change under a critical watched path.",
+        eventTypes=["file.change"],
+        conditions=[RuleCondition(path="attributes.criticalPath", operator="equals", value=True)],
     ),
     DetectionRule(
         id="suspicious_endpoint_connection",
@@ -333,8 +352,8 @@ def list_events(
 def list_incidents(
     status: IncidentStatus | None = None,
     severity: str | None = None,
-    triage_level: TriageLevel | None = Query(default=None, alias="triageLevel"),
-    ticket_status: TicketStatus | None = Query(default=None, alias="ticketStatus"),
+    triage_level: Annotated[TriageLevel | None, Query(alias="triageLevel")] = None,
+    ticket_status: Annotated[TicketStatus | None, Query(alias="ticketStatus")] = None,
 ) -> list[Incident]:
     results = [
         _load_incident(payload)

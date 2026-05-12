@@ -4,7 +4,6 @@ import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSqua
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
-import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useAuditStore } from '../../stores/useAuditStore'
 import { useTicketsStore } from '../../stores/useTicketsStore'
@@ -19,7 +18,6 @@ const emit = defineEmits<{ 'open-settings': [] }>()
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
-const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
 const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()

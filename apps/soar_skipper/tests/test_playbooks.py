@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app import main
 from app.main import app
 
 client = TestClient(app)
@@ -13,6 +14,29 @@ def test_default_playbooks_are_disabled_and_available():
     playbook_ids = {playbook["id"] for playbook in playbooks}
     assert {"pb_port_scan_triage", "pb_suspicious_endpoint_triage"} <= playbook_ids
     assert all(playbook["enabled"] is False for playbook in playbooks)
+
+
+def test_lists_playbook_node_types_for_visual_builder():
+    response = client.get("/node-types")
+
+    assert response.status_code == 200
+    body = response.json()
+    node_ids = {item["id"] for item in body["items"]}
+    assert node_ids >= {
+        "trigger.incident_created",
+        "condition.severity",
+        "case.note",
+        "approval.required",
+        "notify.webhook",
+        "fortigate.recommend_block",
+    }
+    recommend_block = next(
+        item for item in body["items"] if item["id"] == "fortigate.recommend_block"
+    )
+    assert recommend_block["category"] == "action"
+    assert recommend_block["sensitive"] is True
+    assert recommend_block["dryRunOnly"] is True
+    assert recommend_block["configSchema"]["required"] == ["field"]
 
 
 def test_create_playbook_rejects_unknown_node_type():
@@ -142,3 +166,39 @@ def test_approve_playbook_run_completes_waiting_steps():
     body = approve_response.json()
     assert body["status"] == "completed"
     assert {step["status"] for step in body["steps"]} == {"completed"}
+
+
+def test_created_playbook_survives_legacy_memory_clear():
+    response = client.post(
+        "/playbooks",
+        json={
+            "id": "pb_persisted_note",
+            "name": "Persisted note",
+            "enabled": False,
+            "nodes": [
+                {"id": "trigger", "type": "trigger.incident_created", "config": {}},
+                {"id": "note", "type": "case.note", "config": {"template": "Persist me"}},
+            ],
+            "edges": [{"from": "trigger", "to": "note"}],
+        },
+    )
+    assert response.status_code == 201
+
+    main.playbooks.clear()
+    detail = client.get("/playbooks/pb_persisted_note")
+
+    assert detail.status_code == 200
+    assert detail.json()["name"] == "Persisted note"
+
+
+def test_playbook_run_survives_legacy_memory_clear():
+    response = client.post("/incidents/inc_persisted/playbooks/pb_port_scan_triage/run")
+    assert response.status_code == 201
+    run_id = response.json()["id"]
+
+    main.playbook_runs.clear()
+    detail = client.get(f"/playbook-runs/{run_id}")
+
+    assert detail.status_code == 200
+    assert detail.json()["id"] == run_id
+    assert detail.json()["incidentId"] == "inc_persisted"
