@@ -1,0 +1,831 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  Download,
+  Upload,
+  Share2,
+  Library,
+  Presentation,
+  X,
+  Trash2,
+  Plus,
+  FileJson,
+  AlertCircle,
+  CheckCircle2,
+  Layers,
+  Globe,
+  User,
+  Clock,
+  Tag as TagIcon,
+  RefreshCcw,
+} from 'lucide-vue-next'
+import { useAuthStore } from '../../stores/useAuthStore'
+import { useDashboardStore } from '../../stores/useDashboardStore'
+import { useThemeStore } from '../../stores/useThemeStore'
+import {
+  deleteCommunityTemplate,
+  downloadManifest,
+  exportWorkspace,
+  importWorkspace,
+  installCommunityTemplate,
+  listCommunityTemplates,
+  publishWorkspaceTemplate,
+  readManifestFile,
+  updatePresentation,
+  type CommunityTemplate,
+  type PresentationMetadata,
+  type PresentationSlide,
+  type WorkspaceManifest,
+  type WorkspaceOrigin,
+  type WorkspaceSummary,
+} from '../../services/workspaceClient'
+
+const router = useRouter()
+const authStore = useAuthStore()
+const dashboardStore = useDashboardStore()
+const themeStore = useThemeStore()
+
+type DialogKind = null | 'export' | 'import' | 'publish' | 'community' | 'presentation' | 'origin'
+const openDialog = ref<DialogKind>(null)
+const dialogPayload = ref<any>(null)
+const errorMsg = ref('')
+const successMsg = ref('')
+const isBusy = ref(false)
+
+const lastExportedManifest = ref<WorkspaceManifest | null>(null)
+const importFile = ref<File | null>(null)
+const importPreview = ref<WorkspaceManifest | null>(null)
+const publishForm = ref({
+  slug: '',
+  title: '',
+  description: '',
+  tagsText: '',
+  incidentId: '',
+})
+const community = ref<CommunityTemplate[]>([])
+const communityFilter = ref('')
+const presentationDraft = ref<PresentationMetadata>({
+  title: '',
+  incidentSummary: '',
+  presenterName: '',
+  audience: 'Executivo',
+  severity: 'high',
+  slides: [],
+})
+
+const workspaces = computed(() => dashboardStore.workspaces)
+const activeWorkspaceId = computed(() => dashboardStore.activeWorkspaceId)
+const widgets = computed(() => dashboardStore.activeWidgets)
+const currentOrigin = computed(() => dashboardStore.activeWorkspaceOrigin)
+
+function resetMessages() {
+  errorMsg.value = ''
+  successMsg.value = ''
+}
+
+function openDialogKind(kind: DialogKind, payload: any = null) {
+  resetMessages()
+  dialogPayload.value = payload
+  if (kind === 'community') loadCommunity()
+  if (kind === 'presentation') hydratePresentationDraft()
+  openDialog.value = kind
+}
+
+function closeDialog() {
+  openDialog.value = null
+  dialogPayload.value = null
+  importFile.value = null
+  importPreview.value = null
+}
+
+// ----- Export -----
+async function handleExport() {
+  resetMessages()
+  isBusy.value = true
+  try {
+    const manifest = await exportWorkspace(activeWorkspaceId.value)
+    lastExportedManifest.value = manifest
+    downloadManifest(manifest)
+    successMsg.value = `Manifest exportado (${manifest.widgets.length} widgets).`
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao exportar workspace'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+// ----- Import -----
+async function handleImportFileChange(event: Event) {
+  resetMessages()
+  importPreview.value = null
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  importFile.value = file
+  try {
+    importPreview.value = await readManifestFile(file)
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Arquivo inválido'
+  }
+}
+
+async function handleImportConfirm() {
+  if (!importPreview.value) return
+  resetMessages()
+  isBusy.value = true
+  try {
+    const result = await importWorkspace(importPreview.value)
+    successMsg.value = `Importado como ${result.id}. Trocando para o workspace…`
+    await dashboardStore.switchWorkspace(result.id)
+    closeDialog()
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao importar manifest'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+// ----- Publish -----
+async function handlePublish() {
+  resetMessages()
+  if (!publishForm.value.slug || !publishForm.value.title) {
+    errorMsg.value = 'Slug e título obrigatórios'
+    return
+  }
+  isBusy.value = true
+  try {
+    const tags = publishForm.value.tagsText
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+    await publishWorkspaceTemplate({
+      workspaceId: activeWorkspaceId.value,
+      slug: publishForm.value.slug,
+      title: publishForm.value.title,
+      description: publishForm.value.description || undefined,
+      tags,
+      incidentId: publishForm.value.incidentId || undefined,
+    })
+    successMsg.value = `Template "${publishForm.value.title}" publicado.`
+    publishForm.value = { slug: '', title: '', description: '', tagsText: '', incidentId: '' }
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao publicar template'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+// ----- Community -----
+async function loadCommunity() {
+  isBusy.value = true
+  try {
+    community.value = await listCommunityTemplates()
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao carregar biblioteca'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+async function installTemplate(template: CommunityTemplate) {
+  resetMessages()
+  isBusy.value = true
+  try {
+    const result = await installCommunityTemplate(template.id)
+    successMsg.value = `"${template.title}" instalado. Trocando…`
+    await dashboardStore.switchWorkspace(result.workspace.id)
+    closeDialog()
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao instalar template'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+async function removeTemplate(template: CommunityTemplate) {
+  resetMessages()
+  if (!confirm(`Remover template "${template.title}"?`)) return
+  isBusy.value = true
+  try {
+    await deleteCommunityTemplate(template.id)
+    community.value = community.value.filter((t) => t.id !== template.id)
+    successMsg.value = 'Template removido.'
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao remover template'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+const filteredCommunity = computed(() => {
+  const q = communityFilter.value.toLowerCase().trim()
+  if (!q) return community.value
+  return community.value.filter(
+    (t) =>
+      t.title.toLowerCase().includes(q) ||
+      t.slug.includes(q) ||
+      (t.tags || []).some((tag) => tag.toLowerCase().includes(q)),
+  )
+})
+
+// ----- Presentation -----
+function hydratePresentationDraft() {
+  const widgetList = widgets.value
+  presentationDraft.value = {
+    title: dashboardStore.workspaceName + ' — Incident Briefing',
+    incidentSummary: '',
+    presenterName: authStore.user?.displayName ?? '',
+    audience: 'Executivo',
+    severity: 'high',
+    slides: widgetList.map((w: any) => ({
+      widgetInstanceId: w.instanceId,
+      title: w.catalogId,
+      narration: '',
+      highlightFieldIds: [],
+    })),
+  }
+}
+
+function addSlide(widgetInstanceId: string) {
+  if (presentationDraft.value.slides.some((s) => s.widgetInstanceId === widgetInstanceId)) return
+  const widget = widgets.value.find((w: any) => w.instanceId === widgetInstanceId)
+  presentationDraft.value.slides.push({
+    widgetInstanceId,
+    title: widget?.catalogId ?? 'Slide',
+    narration: '',
+    highlightFieldIds: [],
+  })
+}
+
+function removeSlide(slide: PresentationSlide) {
+  presentationDraft.value.slides = presentationDraft.value.slides.filter(
+    (s) => s.widgetInstanceId !== slide.widgetInstanceId,
+  )
+}
+
+function moveSlide(index: number, direction: -1 | 1) {
+  const slides = presentationDraft.value.slides
+  const target = index + direction
+  if (target < 0 || target >= slides.length) return
+  const [slide] = slides.splice(index, 1)
+  slides.splice(target, 0, slide)
+}
+
+async function savePresentation() {
+  resetMessages()
+  isBusy.value = true
+  try {
+    await updatePresentation(activeWorkspaceId.value, presentationDraft.value)
+    successMsg.value = 'Apresentação salva.'
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao salvar apresentação'
+  } finally {
+    isBusy.value = false
+  }
+}
+
+async function startPresentation() {
+  await savePresentation()
+  if (errorMsg.value) return
+  router.push({ name: 'presentation', params: { workspaceId: activeWorkspaceId.value } })
+}
+
+// ----- Workspaces list -----
+async function handleSwitch(workspaceId: string) {
+  resetMessages()
+  await dashboardStore.switchWorkspace(workspaceId)
+}
+
+async function handleDelete(ws: WorkspaceSummary) {
+  resetMessages()
+  if (ws.id === 'ws_default') {
+    errorMsg.value = 'Workspace padrão não pode ser excluído.'
+    return
+  }
+  if (!confirm(`Excluir workspace "${ws.name}"?`)) return
+  try {
+    await dashboardStore.deleteWorkspaceById(ws.id)
+    successMsg.value = 'Workspace excluído.'
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao excluir'
+  }
+}
+
+function originBadge(origin: WorkspaceOrigin | null | undefined) {
+  if (!origin || origin.type === 'local') {
+    return { label: 'Local', color: 'border-theme-border bg-theme-bg/40 text-theme-text-muted' }
+  }
+  if (origin.type === 'template') {
+    return {
+      label: 'Da comunidade',
+      color: 'border-purple-500/40 bg-purple-500/15 text-purple-300',
+    }
+  }
+  return { label: 'Importado', color: 'border-sky-500/40 bg-sky-500/15 text-sky-300' }
+}
+
+function originAuthor(origin: WorkspaceOrigin | null | undefined): string | null {
+  if (!origin) return null
+  if (origin.type === 'template') return origin.publishedByEmail || null
+  if (origin.type === 'imported') return origin.exportedByEmail || null
+  return null
+}
+
+watch(
+  () => openDialog.value,
+  (kind) => {
+    if (kind !== 'community') return
+    loadCommunity()
+  },
+)
+
+onMounted(() => {
+  dashboardStore.refreshWorkspaceList()
+  listCommunityTemplates()
+    .then((items) => {
+      community.value = items
+    })
+    .catch(() => undefined)
+})
+
+const actions = computed(() => [
+  { kind: 'export', label: 'Exportar', icon: Download, hint: 'Baixar manifest JSON' },
+  { kind: 'import', label: 'Importar', icon: Upload, hint: 'Carregar manifest JSON' },
+  { kind: 'presentation', label: 'Apresentação', icon: Presentation, hint: 'Configurar slides para briefing' },
+  { kind: 'publish', label: 'Publicar', icon: Share2, hint: 'Compartilhar com comunidade' },
+  { kind: 'community', label: 'Biblioteca', icon: Library, hint: `${community.value.length} templates` },
+])
+</script>
+
+<template>
+  <div class="flex h-full flex-col">
+    <!-- Header -->
+    <div class="px-4 pt-4 pb-3 border-b border-theme-border">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="font-bold text-lg text-theme-text flex items-center gap-2">
+            <Layers :size="18" />
+            Workspaces
+          </h2>
+          <p class="text-xs text-theme-text-muted mt-1">
+            Crie, importe e publique briefings de incidente.
+          </p>
+        </div>
+        <button
+          type="button"
+          @click="dashboardStore.refreshWorkspaceList()"
+          class="text-theme-text-muted hover:text-theme-text"
+          title="Atualizar lista"
+        >
+          <RefreshCcw :size="16" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="px-4 py-3 border-b border-theme-border grid grid-cols-2 gap-2">
+      <button
+        v-for="action in actions"
+        :key="action.kind"
+        type="button"
+        :title="action.hint"
+        @click="openDialogKind(action.kind as DialogKind)"
+        class="flex items-center gap-2 px-3 py-2 rounded-lg border border-theme-border bg-theme-bg/40 text-theme-text text-sm hover:brightness-125 hover:bg-theme-bg/70 transition"
+      >
+        <component :is="action.icon" :size="14" class="text-theme-text-muted" />
+        <span class="truncate">{{ action.label }}</span>
+      </button>
+    </div>
+
+    <!-- Current origin pill -->
+    <div
+      v-if="currentOrigin && currentOrigin.type !== 'local'"
+      class="px-4 py-3 border-b border-theme-border bg-theme-bg/30"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <span
+          class="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border"
+          :class="originBadge(currentOrigin).color"
+        >
+          <Globe v-if="currentOrigin.type === 'template'" :size="11" />
+          <Upload v-else :size="11" />
+          {{ originBadge(currentOrigin).label }}
+        </span>
+        <button type="button" @click="openDialogKind('origin', currentOrigin)" class="text-xs text-theme-text-muted hover:text-theme-text underline">
+          Detalhes
+        </button>
+      </div>
+      <p v-if="currentOrigin.templateTitle || currentOrigin.description" class="text-sm text-theme-text leading-snug">
+        {{ currentOrigin.templateTitle || currentOrigin.description }}
+      </p>
+      <p v-if="originAuthor(currentOrigin)" class="mt-1 text-xs text-theme-text-muted">
+        por {{ originAuthor(currentOrigin) }}
+      </p>
+      <div
+        v-if="currentOrigin.missingProviderTypes && currentOrigin.missingProviderTypes.length"
+        class="mt-3 p-2 rounded border border-amber-500/40 bg-amber-500/10 text-xs text-amber-300 flex items-start gap-2"
+      >
+        <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+        <div>
+          <div class="font-semibold mb-0.5">Providers ausentes</div>
+          <div>Conecte {{ currentOrigin.missingProviderTypes.join(', ') }} na aba Integrações para os widgets carregarem dados.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- List -->
+    <div class="flex-1 overflow-y-auto px-4 py-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted mb-2">
+        Seus workspaces ({{ workspaces.length }})
+      </h3>
+      <ul v-if="workspaces.length" class="space-y-2">
+        <li
+          v-for="ws in workspaces"
+          :key="ws.id"
+          class="rounded-lg border p-3 transition-colors"
+          :class="ws.id === activeWorkspaceId ? 'border-theme-primary bg-theme-primary/5' : 'border-theme-border bg-theme-bg/40 hover:bg-theme-bg/70'"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1 cursor-pointer" @click="handleSwitch(ws.id)">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-semibold text-theme-text truncate">{{ ws.name }}</span>
+                <span
+                  v-if="ws.id === activeWorkspaceId"
+                  class="text-[10px] uppercase px-1.5 py-0.5 rounded border border-theme-primary/40 bg-theme-primary/10 text-theme-primary font-semibold"
+                >
+                  Ativo
+                </span>
+              </div>
+              <div class="flex items-center gap-2 text-xs text-theme-text-muted flex-wrap">
+                <span
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px]"
+                  :class="originBadge(ws.origin).color"
+                >
+                  {{ originBadge(ws.origin).label }}
+                </span>
+                <span>{{ ws.widgetCount }} widgets</span>
+                <span v-if="ws.hasPresentation" class="inline-flex items-center gap-1 text-amber-300">
+                  <Presentation :size="11" />
+                  Briefing
+                </span>
+              </div>
+              <div v-if="originAuthor(ws.origin)" class="text-xs text-theme-text-muted mt-1 truncate">
+                por {{ originAuthor(ws.origin) }}
+              </div>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <button
+                v-if="ws.id !== 'ws_default'"
+                type="button"
+                @click="handleDelete(ws)"
+                class="text-theme-text-muted hover:text-red-400 p-1 rounded hover:bg-red-500/10"
+                title="Excluir workspace"
+              >
+                <Trash2 :size="14" />
+              </button>
+            </div>
+          </div>
+        </li>
+      </ul>
+      <p v-else class="text-sm text-theme-text-muted italic">Carregando...</p>
+    </div>
+
+    <!-- ===== Modal ===== -->
+    <div
+      v-if="openDialog"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="w-full max-w-3xl max-h-[85vh] overflow-auto bg-theme-panel border border-theme-border rounded-2xl shadow-2xl p-6 relative">
+        <button
+          type="button"
+          @click="closeDialog"
+          class="absolute top-3 right-3 text-theme-text-muted hover:text-theme-text"
+          aria-label="Fechar"
+        >
+          <X :size="18" />
+        </button>
+
+        <div v-if="errorMsg" class="mb-3 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-sm flex items-start gap-2">
+          <AlertCircle :size="16" class="mt-0.5 shrink-0" />
+          <span>{{ errorMsg }}</span>
+        </div>
+        <div v-if="successMsg" class="mb-3 p-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-sm flex items-start gap-2">
+          <CheckCircle2 :size="16" class="mt-0.5 shrink-0" />
+          <span>{{ successMsg }}</span>
+        </div>
+
+        <!-- ORIGIN DETAILS -->
+        <div v-if="openDialog === 'origin' && dialogPayload">
+          <h2 class="text-xl font-semibold mb-4 text-theme-text">Detalhes da origem</h2>
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center gap-2 text-theme-text-muted">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs" :class="originBadge(dialogPayload).color">
+                <Globe v-if="dialogPayload.type === 'template'" :size="12" />
+                <Upload v-else :size="12" />
+                {{ originBadge(dialogPayload).label }}
+              </span>
+            </div>
+            <dl class="grid grid-cols-3 gap-x-3 gap-y-3 text-sm">
+              <template v-if="dialogPayload.templateTitle">
+                <dt class="col-span-1 text-theme-text-muted">Título</dt>
+                <dd class="col-span-2 text-theme-text">{{ dialogPayload.templateTitle }}</dd>
+              </template>
+              <template v-if="dialogPayload.templateSlug">
+                <dt class="col-span-1 text-theme-text-muted">Slug</dt>
+                <dd class="col-span-2 font-mono text-theme-text">@{{ dialogPayload.templateSlug }}</dd>
+              </template>
+              <template v-if="dialogPayload.publishedByEmail">
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> Autor</dt>
+                <dd class="col-span-2 text-theme-text">{{ dialogPayload.publishedByEmail }}</dd>
+              </template>
+              <template v-if="dialogPayload.exportedByEmail">
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><User :size="13" /> Exportado por</dt>
+                <dd class="col-span-2 text-theme-text">{{ dialogPayload.exportedByEmail }}</dd>
+              </template>
+              <template v-if="dialogPayload.description || dialogPayload.templateDescription">
+                <dt class="col-span-1 text-theme-text-muted">Descrição</dt>
+                <dd class="col-span-2 text-theme-text whitespace-pre-line">{{ dialogPayload.description || dialogPayload.templateDescription }}</dd>
+              </template>
+              <template v-if="dialogPayload.tags && dialogPayload.tags.length">
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><TagIcon :size="13" /> Tags</dt>
+                <dd class="col-span-2 flex flex-wrap gap-1">
+                  <span v-for="t in dialogPayload.tags" :key="t" class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted">#{{ t }}</span>
+                </dd>
+              </template>
+              <template v-if="dialogPayload.incidentId">
+                <dt class="col-span-1 text-theme-text-muted">Incident ID</dt>
+                <dd class="col-span-2 font-mono text-theme-text">{{ dialogPayload.incidentId }}</dd>
+              </template>
+              <template v-if="dialogPayload.sourceWorkspaceId">
+                <dt class="col-span-1 text-theme-text-muted">Workspace de origem</dt>
+                <dd class="col-span-2 font-mono text-theme-text">{{ dialogPayload.sourceWorkspaceId }}</dd>
+              </template>
+              <template v-if="dialogPayload.installedAt || dialogPayload.importedAt || dialogPayload.exportedAt">
+                <dt class="col-span-1 text-theme-text-muted flex items-center gap-1"><Clock :size="13" /> Data</dt>
+                <dd class="col-span-2 text-theme-text">{{ dialogPayload.installedAt || dialogPayload.importedAt || dialogPayload.exportedAt }}</dd>
+              </template>
+              <template v-if="dialogPayload.installCount !== undefined">
+                <dt class="col-span-1 text-theme-text-muted">Instalações</dt>
+                <dd class="col-span-2 text-theme-text">{{ dialogPayload.installCount }}</dd>
+              </template>
+            </dl>
+          </div>
+        </div>
+
+        <!-- EXPORT -->
+        <div v-if="openDialog === 'export'">
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">Exportar workspace</h2>
+          <p class="text-sm text-theme-text-muted mb-4">
+            Gera manifest JSON com layout, widgets e bindings. Sem credenciais.
+          </p>
+          <button
+            type="button"
+            :disabled="isBusy"
+            @click="handleExport"
+            class="px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
+            :style="{ backgroundColor: themeStore.primary }"
+          >
+            <span v-if="isBusy">Gerando...</span>
+            <span v-else>Baixar manifest.json</span>
+          </button>
+          <pre v-if="lastExportedManifest" class="mt-4 text-xs bg-theme-bg/60 p-3 rounded-lg max-h-72 overflow-auto border border-theme-border">{{ JSON.stringify(lastExportedManifest, null, 2) }}</pre>
+        </div>
+
+        <!-- IMPORT -->
+        <div v-if="openDialog === 'import'">
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">Importar workspace</h2>
+          <p class="text-sm text-theme-text-muted mb-4">
+            Carregue manifest JSON. Após importar, o workspace fica disponível na lista lateral.
+          </p>
+          <label class="flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-theme-border cursor-pointer hover:brightness-110 text-theme-text">
+            <FileJson :size="16" />
+            <span>{{ importFile?.name || 'Selecionar arquivo .json' }}</span>
+            <input type="file" accept="application/json" @change="handleImportFileChange" class="hidden" />
+          </label>
+          <div v-if="importPreview" class="mt-4 text-sm text-theme-text space-y-1">
+            <div><b>Nome:</b> {{ importPreview.name }}</div>
+            <div><b>Widgets:</b> {{ importPreview.widgets?.length ?? 0 }}</div>
+            <div><b>Providers:</b> {{ importPreview.providerTypes?.join(', ') || '—' }}</div>
+            <div v-if="importPreview.metadata?.exportedByEmail"><b>Exportado por:</b> {{ importPreview.metadata.exportedByEmail }}</div>
+            <div v-if="importPreview.presentation"><b>Apresentação:</b> {{ importPreview.presentation.title }}</div>
+            <button
+              type="button"
+              :disabled="isBusy"
+              @click="handleImportConfirm"
+              class="mt-4 px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
+              :style="{ backgroundColor: themeStore.primary }"
+            >
+              Importar como novo workspace
+            </button>
+          </div>
+        </div>
+
+        <!-- PUBLISH -->
+        <div v-if="openDialog === 'publish'">
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">Publicar na comunidade</h2>
+          <p class="text-sm text-theme-text-muted mb-4">
+            Disponibiliza este workspace para outros analistas instalarem.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Slug *</span>
+              <input v-model="publishForm.slug" placeholder="incident-port-scan-q2" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Título *</span>
+              <input v-model="publishForm.title" placeholder="Port Scan Briefing" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-2">
+              <span class="block mb-1 text-theme-text-muted">Descrição</span>
+              <textarea v-model="publishForm.description" rows="3" class="w-full bg-theme-bg border border-theme-border rounded p-2"></textarea>
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Tags (vírgula)</span>
+              <input v-model="publishForm.tagsText" placeholder="incident, fortigate, exec" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Incident ID</span>
+              <input v-model="publishForm.incidentId" placeholder="inc_..." class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+          </div>
+          <button
+            type="button"
+            :disabled="isBusy"
+            @click="handlePublish"
+            class="mt-4 px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50"
+            :style="{ backgroundColor: themeStore.primary }"
+          >
+            Publicar template
+          </button>
+        </div>
+
+        <!-- COMMUNITY -->
+        <div v-if="openDialog === 'community'">
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">Biblioteca da comunidade</h2>
+          <input
+            v-model="communityFilter"
+            placeholder="Filtrar por título, slug ou tag..."
+            class="w-full bg-theme-bg border border-theme-border rounded p-2 mb-3"
+          />
+          <p v-if="!filteredCommunity.length" class="text-sm text-theme-text-muted">Nenhum template encontrado.</p>
+          <ul class="space-y-3">
+            <li
+              v-for="template in filteredCommunity"
+              :key="template.id"
+              class="border border-theme-border rounded-lg p-3 bg-theme-bg/30"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-semibold text-theme-text">{{ template.title }}</span>
+                    <span class="text-xs text-theme-text-muted">@{{ template.slug }}</span>
+                  </div>
+                  <p class="text-sm text-theme-text-muted">{{ template.description || 'Sem descrição.' }}</p>
+                  <div class="flex items-center gap-2 mt-2 flex-wrap">
+                    <span
+                      v-for="tag in template.tags"
+                      :key="tag"
+                      class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted"
+                    >
+                      #{{ tag }}
+                    </span>
+                  </div>
+                  <div class="text-xs text-theme-text-muted mt-2">
+                    por {{ template.publishedByEmail || 'anônimo' }} · {{ template.installCount }} instalações
+                  </div>
+                </div>
+                <div class="flex flex-col gap-2 shrink-0">
+                  <button
+                    type="button"
+                    :disabled="isBusy"
+                    @click="installTemplate(template)"
+                    class="px-3 py-1.5 rounded-lg text-white text-sm hover:brightness-110 disabled:opacity-50"
+                    :style="{ backgroundColor: themeStore.primary }"
+                  >
+                    Instalar
+                  </button>
+                  <button
+                    v-if="authStore.user?.id === template.publishedByUserId"
+                    type="button"
+                    :disabled="isBusy"
+                    @click="removeTemplate(template)"
+                    class="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 text-sm hover:bg-red-500/10 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <Trash2 :size="14" />
+                    Remover
+                  </button>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- PRESENTATION EDITOR -->
+        <div v-if="openDialog === 'presentation'">
+          <h2 class="text-xl font-semibold mb-2 text-theme-text">Modo apresentação</h2>
+          <p class="text-sm text-theme-text-muted mb-4">
+            Estruture briefing para executivo: título, contexto e ordem dos slides.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Título *</span>
+              <input v-model="presentationDraft.title" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Apresentador</span>
+              <input v-model="presentationDraft.presenterName" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Audiência</span>
+              <input v-model="presentationDraft.audience" class="w-full bg-theme-bg border border-theme-border rounded p-2" />
+            </label>
+            <label class="text-sm text-theme-text col-span-1">
+              <span class="block mb-1 text-theme-text-muted">Severidade</span>
+              <select v-model="presentationDraft.severity" class="w-full bg-theme-bg border border-theme-border rounded p-2">
+                <option value="critical">Crítica</option>
+                <option value="high">Alta</option>
+                <option value="medium">Média</option>
+                <option value="low">Baixa</option>
+                <option value="informational">Informativa</option>
+              </select>
+            </label>
+            <label class="text-sm text-theme-text col-span-2">
+              <span class="block mb-1 text-theme-text-muted">Resumo do incidente</span>
+              <textarea v-model="presentationDraft.incidentSummary" rows="3" class="w-full bg-theme-bg border border-theme-border rounded p-2"></textarea>
+            </label>
+          </div>
+
+          <h3 class="text-md font-semibold mt-5 mb-2 text-theme-text">Slides</h3>
+          <ul class="space-y-2 mb-3">
+            <li
+              v-for="(slide, idx) in presentationDraft.slides"
+              :key="slide.widgetInstanceId"
+              class="flex items-start gap-2 p-2 border border-theme-border rounded bg-theme-bg/30"
+            >
+              <span class="text-theme-text-muted text-sm pt-2 w-6 text-right">{{ idx + 1 }}.</span>
+              <div class="flex-1 grid grid-cols-1 gap-2">
+                <input
+                  v-model="slide.title"
+                  placeholder="Título do slide"
+                  class="w-full bg-theme-bg border border-theme-border rounded p-2 text-sm"
+                />
+                <textarea
+                  v-model="slide.narration"
+                  rows="2"
+                  placeholder="Narração / pontos-chave"
+                  class="w-full bg-theme-bg border border-theme-border rounded p-2 text-sm"
+                ></textarea>
+                <div class="text-xs text-theme-text-muted">Widget: {{ slide.widgetInstanceId }}</div>
+              </div>
+              <div class="flex flex-col gap-1">
+                <button type="button" @click="moveSlide(idx, -1)" class="text-theme-text-muted hover:text-theme-text text-sm">↑</button>
+                <button type="button" @click="moveSlide(idx, 1)" class="text-theme-text-muted hover:text-theme-text text-sm">↓</button>
+                <button type="button" @click="removeSlide(slide)" class="text-red-400 hover:text-red-300"><Trash2 :size="14" /></button>
+              </div>
+            </li>
+          </ul>
+
+          <div v-if="widgets.length > presentationDraft.slides.length" class="mb-3">
+            <p class="text-xs text-theme-text-muted mb-1">Adicionar widgets ao deck:</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="w in widgets.filter((widget: any) => !presentationDraft.slides.some((s: any) => s.widgetInstanceId === widget.instanceId))"
+                :key="w.instanceId"
+                type="button"
+                @click="addSlide(w.instanceId)"
+                class="text-xs px-2 py-1 rounded border border-theme-border text-theme-text hover:brightness-110 flex items-center gap-1"
+              >
+                <Plus :size="12" />
+                {{ w.catalogId }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex gap-2 mt-4">
+            <button
+              type="button"
+              :disabled="isBusy"
+              @click="savePresentation"
+              class="px-4 py-2 rounded-lg border border-theme-border text-theme-text hover:brightness-110 disabled:opacity-50"
+            >
+              Salvar
+            </button>
+            <button
+              type="button"
+              :disabled="isBusy || !presentationDraft.slides.length"
+              @click="startPresentation"
+              class="px-4 py-2 rounded-lg text-white font-medium hover:brightness-110 disabled:opacity-50 flex items-center gap-2"
+              :style="{ backgroundColor: themeStore.primary }"
+            >
+              <Presentation :size="16" />
+              Iniciar apresentação
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

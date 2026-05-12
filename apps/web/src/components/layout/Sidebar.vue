@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree } from 'lucide-vue-next'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useAuditStore } from '../../stores/useAuditStore'
 import AuditFeed from '../audit/AuditFeed.vue'
+import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
@@ -16,7 +17,7 @@ const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
 const auditStore = useAuditStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -80,6 +81,7 @@ const drawerWidth = computed(() => {
   if (activeTab.value === 'none') return '0px'
   if (activeTab.value === 'audit') return '420px'
   if (activeTab.value === 'integrations') return '380px'
+  if (activeTab.value === 'workspaces') return '420px'
   return '320px'
 })
 
@@ -88,7 +90,7 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?' }
 ])
 const isThinking = ref(false)
-function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -99,6 +101,9 @@ function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit') {
   }
   if (activeTab.value !== tab && tab === 'audit') {
     auditStore.startPolling({ scope: auditScope.value, limit: 50, intervalMs: 5000 })
+  }
+  if (activeTab.value !== tab && tab === 'workspaces') {
+    store.refreshWorkspaceList()
   }
   activeTab.value = isClosingCurrentTab ? 'none' : tab
 }
@@ -266,6 +271,15 @@ function handleChatSubmit() {
           title="Integrações SOC"
         >
           <Plug :size="20" />
+        </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'workspaces' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('workspaces')"
+          title="Workspaces & Templates"
+        >
+          <FolderTree :size="20" />
         </div>
 
         <div
@@ -577,6 +591,11 @@ function handleChatSubmit() {
             </div>
           </section>
         </div>
+      </div>
+
+      <!-- Workspaces Tab -->
+      <div v-if="activeTab === 'workspaces'" class="h-full w-[420px] shrink-0">
+        <WorkspacePanel />
       </div>
 
       <!-- Audit Tab -->

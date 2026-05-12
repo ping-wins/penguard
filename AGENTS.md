@@ -306,18 +306,41 @@ Manifest design rules:
 Expected API direction:
 
 ```txt
-GET  /api/workspaces/{workspaceId}/manifest
-PUT  /api/workspaces/{workspaceId}/manifest
-POST /api/workspaces/{workspaceId}/share
-GET  /api/workspaces/{workspaceId}/shares
-DELETE /api/workspaces/{workspaceId}/shares/{shareId}
-POST /api/workspaces/import
-GET  /api/workspaces/{workspaceId}/export
-POST /api/workspaces/{workspaceId}/presentation-export
+GET    /api/workspaces                                   # list current user workspaces
+GET    /api/workspaces/{workspaceId}                     # full workspace incl. origin + presentation
+PUT    /api/workspaces/{workspaceId}                     # update layout/widgets
+DELETE /api/workspaces/{workspaceId}                     # remove (ws_default protected)
+PUT    /api/workspaces/{workspaceId}/presentation       # save presentation metadata
+GET    /api/workspaces/{workspaceId}/export             # download manifest JSON
+POST   /api/workspaces/import                           # create workspace from manifest
+POST   /api/workspaces/{workspaceId}/publish            # publish as community template
+GET    /api/workspaces/community                        # list community templates
+POST   /api/workspaces/community/{templateId}/install   # clone template into user account
+DELETE /api/workspaces/community/{templateId}           # remove template (owner only)
 ```
 
-The current `workspace_specs` persistence should evolve into this manifest
-model instead of creating a parallel workspace format.
+Current implementation status:
+
+- Manifest schema lives in `apps/api/app/workspaces/manifest.py` with
+  `schemaVersion=1`, `redact_secrets()`, `MANIFEST_MAX_BYTES=256KB` and
+  `MANIFEST_MAX_WIDGETS=200`.
+- `workspace_specs` table gained `presentation` (JSON) and `origin` (JSON)
+  columns through migrations `20260511_0008` and `20260511_0009`.
+- `workspace_templates` table backs the community library and tracks publisher,
+  install count and visibility.
+- Import and template install resolve widget `providerType` against the
+  recipient's own FortiGate and Penguin integrations. Widgets without a
+  matching integration leave `integrationId` empty and the workspace `origin`
+  carries `missingProviderTypes` so the cockpit can prompt the user to connect
+  the missing providers.
+- Workspace ownership and provenance are surfaced in the sidebar Workspaces
+  panel (active workspace badge, origin author, missing providers banner,
+  workspace switcher, delete control, presentation editor and community
+  library browser).
+- Presentation mode renders a fullscreen briefing at
+  `/presentation/{workspaceId}` with keyboard nav and severity-aware title
+  slide. Slides reference widget instance IDs and carry narration plus
+  highlighted field IDs.
 
 ## AI Assistant Roadmap
 
@@ -448,10 +471,10 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Extend audit log actions for first Penguin mutating routes.
 - [x] Require matching `integrationId` before serving Penguin widget data.
 - [x] Add provider data fields for Penguin tools.
-- [ ] Define and persist versioned workspace manifests as the canonical workspace format.
-- [ ] Add manifest share/import/export endpoints with schema validation and secret rejection.
-- [ ] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
-- [ ] Add provider-binding resolution so shared manifests do not expose another user's private `integrationId`.
+- [x] Define and persist versioned workspace manifests as the canonical workspace format.
+- [x] Add manifest share/import/export endpoints with schema validation and secret rejection.
+- [x] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
+- [x] Add provider-binding resolution so shared manifests do not expose another user's private `integrationId`.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
@@ -469,9 +492,9 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Add incident list/detail panel.
 - [ ] Add endpoint inventory/timeline panel.
 - [ ] Add basic playbook builder and run result UI.
-- [ ] Add workspace sharing UX: owner/editor/viewer states, share dialog and received workspace list.
-- [ ] Add manifest import/export UX with validation errors that users can understand.
-- [ ] Add presentation export UX based on the current workspace manifest.
+- [x] Add workspace sharing UX: workspace list, origin badges, author details and community library.
+- [x] Add manifest import/export UX with validation errors that users can understand.
+- [x] Add presentation export UX based on the current workspace manifest.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP

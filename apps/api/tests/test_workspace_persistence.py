@@ -62,6 +62,8 @@ def test_workspace_store_persists_specs_and_scopes_them_by_owner():
                 "layout": {"x": 0, "y": 0, "w": 3, "h": 2, "z": 10},
             }
         ],
+        "presentation": None,
+        "origin": None,
         "version": 1,
         "updatedAt": "2026-04-27T20:15:00.000Z",
     }

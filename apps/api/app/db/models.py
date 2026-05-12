@@ -126,11 +126,40 @@ class WorkspaceSpecModel(Base):
     owner_user_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     widgets: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    presentation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    origin: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
+class WorkspaceTemplateModel(Base):
+    __tablename__ = "workspace_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    manifest: Mapped[dict] = mapped_column(JSON, nullable=False)
+    published_by_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    published_by_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    install_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
