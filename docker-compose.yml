@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      FORTIDASHBOARD_DATABASE_URL: postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard
-      FORTIDASHBOARD_SECRET_KEY: change-me-in-local-env
+      FORTIDASHBOARD_DATABASE_URL: ${FORTIDASHBOARD_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
+      FORTIDASHBOARD_SECRET_KEY: ${FORTIDASHBOARD_SECRET_KEY:-change-me-in-local-env}
       FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY: ${FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY:-}
       FORTIDASHBOARD_MOCK_MODE: ${FORTIDASHBOARD_MOCK_MODE:-false}
       FORTIDASHBOARD_SESSION_COOKIE_NAME: fortidashboard_session
@@ -22,7 +22,7 @@ services:
       FORTIDASHBOARD_KEYCLOAK_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BASE_URL:-http://fortidashboard.local:9080}
       FORTIDASHBOARD_KEYCLOAK_REALM: fortidashboard
       FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: fortidashboard-bff
-      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: dev-client-secret
+      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
       FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: ${FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL:-false}
       FORTIDASHBOARD_OIDC_ISSUER: ${FORTIDASHBOARD_OIDC_ISSUER:-http://fortidashboard.local:9080/realms/fortidashboard}
       FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL:-http://fortidashboard.local:9080}
@@ -139,9 +139,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: fortidashboard
-      POSTGRES_USER: fortidashboard
-      POSTGRES_PASSWORD: fortidashboard
+      POSTGRES_DB: ${POSTGRES_DB:-fortidashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-fortidashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fortidashboard}
     ports:
       - "${FORTIDASHBOARD_POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -156,12 +156,13 @@ services:
     image: quay.io/keycloak/keycloak:26.4
     command: start-dev --import-realm --http-port=8080
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
       KRB5_CONFIG: /etc/krb5.conf
       JAVA_OPTS_APPEND: >-
         -Dsun.security.krb5.allowWeakCrypto=true

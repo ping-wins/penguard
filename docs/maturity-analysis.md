@@ -114,15 +114,17 @@ Workspaces são por usuário (FK `user_id`). Mas as lite services
 incidentes e endpoints de um cliente apareceriam para outro se a instância
 fosse compartilhada.
 
-Decisão necessária agora:
+**Decisão tomada em 2026-05-12: single-tenant per deploy.** README e
+onboarding devem deixar isso explícito. PRs que tentem introduzir
+fan-out cross-tenant devem reabrir essa decisão antes de qualquer código.
 
-- **Opção A — single-tenant per deploy:** mais simples. Cada cliente roda
+Histórico das opções avaliadas (mantido como contexto):
+
+- **Opção A — single-tenant per deploy (escolhida):** cada cliente roda
   sua stack via docker compose. Documenta como tal. Não exige código novo.
 - **Opção B — multi-tenant real:** adiciona `tenant_id` em todas as
   tabelas SOC, RLS no Postgres ou filtro em todas as queries. Sprint
   inteira de trabalho.
-
-Recomendação para MVP: **Opção A**, com texto explícito no README.
 
 ### 2.2 Ingestão FortiGate manual
 

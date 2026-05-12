@@ -2,6 +2,46 @@
 
 FortiDashboard é um dashboard modular para NG-SOC, focado em centralizar visibilidade de rede e inteligência de ameaças. O primeiro alvo de integração é FortiGate via REST API, com backend FastAPI e frontend Vue 3 + Vite.
 
+> **Modelo de deploy:** single-tenant por instância. Cada cliente roda sua
+> própria stack (Postgres, Redis, Keycloak, BFF, lite services). Não é um
+> SaaS multi-tenant — não há coluna `tenant_id` nas tabelas SOC. Veja
+> `docs/maturity-analysis.md` para o contexto da decisão.
+
+## Primeiro setup (uma vez por deploy)
+
+Antes de subir o stack, gere segredos fortes para a instalação:
+
+```bash
+# Linux / macOS / WSL
+./scripts/bootstrap-secrets.sh
+
+# Windows PowerShell
+./scripts/bootstrap-secrets.ps1
+```
+
+O script grava um `.env` na raiz (já no `.gitignore`) com valores aleatórios
+para `FORTIDASHBOARD_SECRET_KEY`, `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY`,
+`FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET`, `KC_BOOTSTRAP_ADMIN_PASSWORD` e
+`POSTGRES_PASSWORD`. Para rotacionar mais tarde, rode com `--force` (bash)
+ou `-Force` (PowerShell).
+
+A BFF **recusa subir** quando algum desses segredos ainda bate com o default
+de dev (`apps/api/app/core/config.py:DANGEROUS_DEFAULT_SECRETS`). Em
+desenvolvimento, defina `FORTIDASHBOARD_MOCK_MODE=true` para bypass.
+
+Depois do primeiro `docker compose up`, sincronize o client secret do
+Keycloak com o valor que está no `.env` (o realm import vem com o literal
+`dev-client-secret` para deploys novos):
+
+```bash
+./scripts/sync-keycloak-client-secret.sh
+```
+
+O script usa a admin REST API do Keycloak para sobrescrever o secret do
+client `fortidashboard-bff` com o que está no `.env`. Sem ele, BFF e
+Keycloak ficam com secrets diferentes e o callback OAuth falha com
+`invalid_client`.
+
 ## Estrutura do Monorepo
 
 - `apps/api`: backend FastAPI com healthcheck, BFF auth, sessões server-side persistidas e modo mock opt-in para contratos.
