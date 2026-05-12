@@ -69,6 +69,57 @@ export async function getTicket(ticketId: string): Promise<Ticket> {
   return parseOrThrow<Ticket>(response, 'Failed to load ticket')
 }
 
+export type IncidentAnalysis = {
+  id: string
+  incidentId: string
+  headline: string
+  summary: string
+  riskScore: number
+  suggestedTriage: TriageLevel
+  suggestedTicketStatus: TicketStatus
+  indicatorsOfCompromise: string[]
+  nextSteps: string[]
+  references: string[]
+}
+
+export type ContainmentStep = {
+  title: string
+  description: string
+  playbookNodeType: string
+  severity: 'low' | 'medium' | 'high'
+  requiresApproval: boolean
+}
+
+export type ContainmentSuggestion = {
+  incidentId: string
+  summary: string
+  steps: ContainmentStep[]
+  playbookDraftId: string | null
+}
+
+export async function analyzeIncident(incidentId: string): Promise<IncidentAnalysis> {
+  const headers = await csrfHeaders()
+  const response = await fetch(`/api/soc/incidents/${encodeURIComponent(incidentId)}/analyze`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+  })
+  return parseOrThrow<IncidentAnalysis>(response, 'Failed to analyze incident')
+}
+
+export async function suggestContainment(incidentId: string): Promise<ContainmentSuggestion> {
+  const headers = await csrfHeaders()
+  const response = await fetch(
+    `/api/soc/incidents/${encodeURIComponent(incidentId)}/containment-suggestions`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+    },
+  )
+  return parseOrThrow<ContainmentSuggestion>(response, 'Failed to fetch containment suggestions')
+}
+
 export async function updateTicket(
   ticketId: string,
   patch: {

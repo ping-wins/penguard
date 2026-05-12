@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     soar_skipper_url: str = "http://localhost:8012"
     xdr_rico_url: str = "http://localhost:8013"
     internal_service_timeout_seconds: float = 3.0
+    ai_provider: str = "scripted"
+    ai_api_key: str = ""
+    ai_model: str = ""
+    ai_base_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

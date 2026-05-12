@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertCircle,
   AlertTriangle,
@@ -9,13 +9,23 @@ import {
   Filter,
   Layers,
   RefreshCcw,
+  Sparkles,
+  Shield,
   Ticket as TicketIcon,
   Loader2,
   X,
 } from 'lucide-vue-next'
 import { useTicketsStore } from '../../stores/useTicketsStore'
 import { useThemeStore } from '../../stores/useThemeStore'
-import type { Ticket, TicketStatus, TriageLevel } from '../../services/ticketsClient'
+import {
+  analyzeIncident,
+  suggestContainment,
+  type ContainmentSuggestion,
+  type IncidentAnalysis,
+  type Ticket,
+  type TicketStatus,
+  type TriageLevel,
+} from '../../services/ticketsClient'
 
 const store = useTicketsStore()
 const themeStore = useThemeStore()
@@ -25,6 +35,11 @@ const statusFilter = ref<TicketStatus | null>(null)
 const selected = ref<Ticket | null>(null)
 const isSavingPatch = ref(false)
 const patchError = ref<string | null>(null)
+const aiAnalysis = ref<IncidentAnalysis | null>(null)
+const aiContainment = ref<ContainmentSuggestion | null>(null)
+const isAnalyzing = ref(false)
+const isContaining = ref(false)
+const aiError = ref<string | null>(null)
 
 const tickets = computed(() => store.tickets)
 
@@ -100,6 +115,50 @@ async function applyPatch(
   }
 }
 
+async function runAnalysis(ticket: Ticket) {
+  isAnalyzing.value = true
+  aiError.value = null
+  try {
+    aiAnalysis.value = await analyzeIncident(ticket.id)
+  } catch (e: any) {
+    aiError.value = e?.message ?? 'Failed to analyze incident'
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+async function runContainment(ticket: Ticket) {
+  isContaining.value = true
+  aiError.value = null
+  try {
+    aiContainment.value = await suggestContainment(ticket.id)
+  } catch (e: any) {
+    aiError.value = e?.message ?? 'Failed to fetch containment suggestions'
+  } finally {
+    isContaining.value = false
+  }
+}
+
+async function applySuggestedAnalysis(ticket: Ticket) {
+  if (!aiAnalysis.value) return
+  await applyPatch(ticket, {
+    triageLevel: aiAnalysis.value.suggestedTriage,
+    ticketStatus: aiAnalysis.value.suggestedTicketStatus,
+  })
+}
+
+function resetAiState() {
+  aiAnalysis.value = null
+  aiContainment.value = null
+  aiError.value = null
+}
+
+function severityChipClass(severity: 'low' | 'medium' | 'high') {
+  if (severity === 'high') return 'border-red-500/40 bg-red-500/10 text-red-300'
+  if (severity === 'medium') return 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+  return 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+}
+
 function formatTime(value: string | null | undefined) {
   if (!value) return ''
   try {
@@ -108,6 +167,13 @@ function formatTime(value: string | null | undefined) {
     return value
   }
 }
+
+watch(
+  () => selected.value?.id,
+  () => {
+    resetAiState()
+  },
+)
 
 onMounted(() => store.startPolling(8000))
 onBeforeUnmount(() => store.stopPolling())
@@ -303,6 +369,127 @@ onBeforeUnmount(() => store.stopPolling())
             <Loader2 :size="12" class="animate-spin" />
             Salvando...
           </div>
+        </div>
+
+        <!-- AI Assistant -->
+        <div class="px-4 py-3 border-b border-theme-border bg-fuchsia-500/5">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs uppercase tracking-wider text-fuchsia-300 flex items-center gap-1">
+              <Sparkles :size="13" />
+              AI assistant
+            </h4>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                :disabled="isAnalyzing"
+                @click="runAnalysis(selected!)"
+                class="text-xs px-2 py-1 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20 disabled:opacity-50 flex items-center gap-1"
+              >
+                <Loader2 v-if="isAnalyzing" :size="11" class="animate-spin" />
+                <Sparkles v-else :size="11" />
+                Analyze
+              </button>
+              <button
+                type="button"
+                :disabled="isContaining"
+                @click="runContainment(selected!)"
+                class="text-xs px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
+              >
+                <Loader2 v-if="isContaining" :size="11" class="animate-spin" />
+                <Shield v-else :size="11" />
+                Suggest containment
+              </button>
+            </div>
+          </div>
+
+          <div v-if="aiError" class="text-xs text-red-300 flex items-start gap-1 mb-2">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ aiError }}
+          </div>
+
+          <div v-if="aiAnalysis" class="mt-2 p-3 rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold text-fuchsia-100">{{ aiAnalysis.headline }}</span>
+              <span class="text-xs font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
+                risk {{ aiAnalysis.riskScore }}/100
+              </span>
+            </div>
+            <p class="text-xs text-theme-text whitespace-pre-line leading-relaxed">{{ aiAnalysis.summary }}</p>
+            <div class="text-xs">
+              <span class="text-theme-text-muted">Suggested:</span>
+              <span class="ml-1 text-fuchsia-200 font-semibold">{{ aiAnalysis.suggestedTriage }} · {{ aiAnalysis.suggestedTicketStatus }}</span>
+              <button
+                type="button"
+                :disabled="isSavingPatch"
+                @click="applySuggestedAnalysis(selected!)"
+                class="ml-2 px-2 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/15 text-[10px] disabled:opacity-50"
+              >
+                Apply
+              </button>
+            </div>
+            <div v-if="aiAnalysis.indicatorsOfCompromise?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">IoCs</div>
+              <div class="flex flex-wrap gap-1 mt-1">
+                <span
+                  v-for="ioc in aiAnalysis.indicatorsOfCompromise"
+                  :key="ioc"
+                  class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-theme-border bg-theme-bg/60 text-theme-text"
+                >
+                  {{ ioc }}
+                </span>
+              </div>
+            </div>
+            <div v-if="aiAnalysis.nextSteps?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">Next steps</div>
+              <ol class="list-decimal list-inside text-xs text-theme-text space-y-0.5 mt-1">
+                <li v-for="(step, i) in aiAnalysis.nextSteps" :key="i">{{ step }}</li>
+              </ol>
+            </div>
+            <div v-if="aiAnalysis.references?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">References</div>
+              <ul class="text-[10px] text-fuchsia-200 underline break-all">
+                <li v-for="ref in aiAnalysis.references" :key="ref">{{ ref }}</li>
+              </ul>
+            </div>
+          </div>
+
+          <div v-if="aiContainment" class="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/30 space-y-2">
+            <div class="text-sm font-semibold text-emerald-100 flex items-center gap-1">
+              <Shield :size="13" />
+              Containment plan
+            </div>
+            <p class="text-xs text-theme-text leading-relaxed">{{ aiContainment.summary }}</p>
+            <ol class="space-y-2">
+              <li
+                v-for="(step, i) in aiContainment.steps"
+                :key="i"
+                class="text-xs border border-theme-border/70 bg-theme-bg/40 rounded p-2"
+              >
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="font-semibold text-theme-text">{{ i + 1 }}. {{ step.title }}</span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wider"
+                    :class="severityChipClass(step.severity)"
+                  >
+                    {{ step.severity }}
+                  </span>
+                </div>
+                <p class="text-theme-text-muted leading-relaxed">{{ step.description }}</p>
+                <div class="mt-1 flex items-center gap-2 text-[10px] text-theme-text-muted">
+                  <span class="font-mono">{{ step.playbookNodeType }}</span>
+                  <span v-if="step.requiresApproval" class="text-amber-300">requires approval</span>
+                  <span v-else class="text-emerald-300">auto-safe</span>
+                </div>
+              </li>
+            </ol>
+            <p class="text-[10px] text-theme-text-muted italic">
+              Steps stay as drafts until Phase 4 wires them into soar_skipper.
+            </p>
+          </div>
+
+          <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">
+            Run "Analyze" to get an AI summary or "Suggest containment" to draft a plan. Nothing is executed automatically.
+          </p>
         </div>
 
         <!-- Entities -->

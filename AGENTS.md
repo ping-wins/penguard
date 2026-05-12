@@ -520,22 +520,59 @@ Open items for later phases:
 
 ### Phase 3 — AI assistant integration
 
-- Add a typed provider abstraction at `apps/api/app/ai/` with adapters for the
-  Anthropic API (default), an OpenAI-compatible endpoint and an offline
-  "scripted" provider used in tests and demos without network access. The
-  provider lives behind `Settings.ai_provider` and `Settings.ai_api_key`.
-- Implement the cockpit assistant tools listed in the AI backlog
-  (`list_data_fields`, `draft_widget`, `validate_widget`,
-  `simulate_widget_data`, `add_widget_draft_to_workspace`) plus
-  `analyze_incident` and `suggest_containment` for the new flow. All tools
-  return drafts; nothing persists until a human confirms.
-- Surface AI output through `POST /api/soc/incidents/{incidentId}/analyze` and
-  `POST /api/soc/incidents/{incidentId}/containment-suggestions`. Persist the
-  analysis on the incident so the ticket and the popup share the same record.
-- Frontend: replace the mock chat in `Sidebar.vue` with a real chat that calls
-  these endpoints, render the analysis as a toast/popup when an incident is
-  raised, and offer a "Open as ticket" CTA that transitions Phase 2 ticket
-  creation.
+Status: **delivered (incident analysis + containment). Chat replacement still
+pending.**
+
+Backend:
+
+- New `apps/api/app/ai/` package with an `AIProvider` Protocol and three
+  built-in adapters:
+  - `ScriptedAIProvider` — deterministic, network-free; extracts IPs from the
+    incident as IoCs and emits a canned 3-step plan. Used in tests and as the
+    fallback whenever the configured remote provider misbehaves.
+  - `AnthropicAIProvider` — talks to `POST /v1/messages` on the configured
+    `ai_base_url` (default `https://api.anthropic.com`) and parses Claude
+    text content.
+  - `OpenAICompatibleAIProvider` — works against the OpenAI chat completions
+    surface (also covers Groq, vLLM, Ollama's OpenAI shim, etc.) with
+    `response_format=json_object`.
+  - `_extract_json` is forgiving: it pulls the largest JSON blob out of the
+    raw model output so a chatty model still produces structured data.
+- `Settings` (apps/api/app/core/config.py) gains `ai_provider`, `ai_api_key`,
+  `ai_model` and `ai_base_url`. Defaults to the scripted adapter so the lab
+  works without API keys.
+- Two gateway endpoints in `apps/api/app/routers/soc.py`:
+  - `POST /api/soc/incidents/{incidentId}/analyze` — fetches the incident,
+    builds a sanitized `IncidentContext`, asks the provider, audits
+    `soc.incident.analyzed` (success / partial / failure), assigns a fresh
+    `aiAnalysisId` and writes it back on the incident via the new triage
+    PATCH endpoint. Best-effort persistence: if the SIEM PATCH fails, the
+    analyst still receives the analysis with a partial audit entry.
+  - `POST /api/soc/incidents/{incidentId}/containment-suggestions` — same
+    flow for `suggest_containment`; failures audit and 502.
+
+Frontend:
+
+- `services/ticketsClient.ts` exposes `analyzeIncident` and
+  `suggestContainment` plus typed `IncidentAnalysis` /
+  `ContainmentSuggestion` shapes.
+- `components/tickets/TicketsPanel.vue` ticket detail drawer ships an
+  "AI assistant" block with two buttons:
+  - **Analyze** renders headline, summary, risk score, suggested triage +
+    ticket status (with an "Apply" CTA wired to `patchTicket`), IoCs, next
+    steps and references.
+  - **Suggest containment** renders a numbered draft plan, each step badged
+    by severity and a `requires approval` flag. Steps explicitly stay as
+    drafts until Phase 4 wires them into soar_skipper.
+- AI state resets whenever the selected ticket changes.
+
+Open items for later:
+
+- Replace the mock chat box in `Sidebar.vue` with a session-aware chat that
+  reuses the same provider abstraction.
+- Persist analyses as their own table so the audit + drawer can deep-link
+  to a stable URL.
+- Add a global toast when a new high-risk analysis is produced.
 
 ### Phase 4 — AI-drafted containment playbooks
 
@@ -721,8 +758,9 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion (`_aggregate_fortigate_events`).
 - [x] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
 - [x] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
-- [ ] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
-- [ ] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + popup component on the dashboard.
+- [x] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
+- [x] Phase 3 — `POST /api/soc/incidents/{id}/analyze` + AI panel on the ticket detail drawer with risk score, suggested triage and IoCs.
+- [x] Phase 3 — `POST /api/soc/incidents/{id}/containment-suggestions` exposed in the ticket drawer as draft steps (no auto-execution).
 - [ ] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Suggest containment" flow with dry-run only.
 - [ ] Phase 5 — Toast/banner notifications for new SIEM incidents.
 - [ ] Phase 5 — Demo walkthrough doc + smoke test covering seed → incident → AI → ticket → playbook → contained.

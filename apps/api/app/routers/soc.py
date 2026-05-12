@@ -1,9 +1,16 @@
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
+from secrets import token_urlsafe
 from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
 
+from app.ai import (
+    ContainmentSuggestion,
+    IncidentAnalysis,
+    IncidentContext,
+    get_ai_provider,
+)
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import (
     get_auth_audit_store,
@@ -203,6 +210,167 @@ def replay_demo_incident(
         "eventCount": len(created),
         "eventIds": [event.get("id") for event in created if isinstance(event, dict) and event.get("id")],
     }
+
+
+def _build_incident_context(incident: dict[str, Any]) -> IncidentContext:
+    return IncidentContext(
+        incident_id=str(incident.get("id") or ""),
+        title=str(incident.get("title") or "Untitled incident"),
+        severity=str(incident.get("severity") or "informational"),
+        triage_level=str(incident.get("triageLevel") or "T3"),
+        ticket_status=str(incident.get("ticketStatus") or "new"),
+        summary=str(incident.get("summary") or ""),
+        entities=incident.get("entities") or {},
+        timeline=[item for item in (incident.get("timeline") or []) if isinstance(item, dict)],
+        rule_id=incident.get("ruleId"),
+        event_ids=list(incident.get("eventIds") or []),
+    )
+
+
+def _analysis_to_dict(analysis: IncidentAnalysis, *, analysis_id: str) -> dict[str, Any]:
+    return {
+        "id": analysis_id,
+        "incidentId": analysis.incident_id,
+        "headline": analysis.headline,
+        "summary": analysis.summary,
+        "riskScore": analysis.risk_score,
+        "suggestedTriage": analysis.suggested_triage,
+        "suggestedTicketStatus": analysis.suggested_ticket_status,
+        "indicatorsOfCompromise": analysis.indicators_of_compromise,
+        "nextSteps": analysis.next_steps,
+        "references": analysis.references,
+    }
+
+
+def _containment_to_dict(suggestion: ContainmentSuggestion) -> dict[str, Any]:
+    return {
+        "incidentId": suggestion.incident_id,
+        "summary": suggestion.summary,
+        "steps": [
+            {
+                "title": step.title,
+                "description": step.description,
+                "playbookNodeType": step.playbook_node_type,
+                "severity": step.severity,
+                "requiresApproval": step.requires_approval,
+            }
+            for step in suggestion.steps
+        ],
+        "playbookDraftId": suggestion.playbook_draft_id,
+    }
+
+
+@router.post("/soc/incidents/{incident_id}/analyze")
+def analyze_incident(
+    incident_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    incident = client.request("GET", f"/incidents/{incident_id}")
+    context = _build_incident_context(incident)
+    provider = get_ai_provider()
+    try:
+        analysis = provider.analyze_incident(context)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.incident.analyzed",
+            outcome="failure",
+            details={
+                "incidentId": incident_id,
+                "provider": provider.name,
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(status_code=502, detail=f"AI provider failed: {exc}") from exc
+
+    analysis_id = f"aian_{token_urlsafe(9)}"
+    response = _analysis_to_dict(analysis, analysis_id=analysis_id)
+    # Persist the analysis_id back on the ticket so the cockpit can deep link.
+    try:
+        client.request(
+            "PATCH",
+            f"/incidents/{incident_id}/triage",
+            json={"aiAnalysisId": analysis_id, "note": f"AI analysis attached ({analysis_id})."},
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Persistence is best-effort; the analyst still sees the analysis.
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.incident.analyzed",
+            outcome="partial",
+            details={
+                "incidentId": incident_id,
+                "analysisId": analysis_id,
+                "provider": provider.name,
+                "warning": f"Failed to persist analysisId: {exc}"[:200],
+            },
+        )
+        return response
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.incident.analyzed",
+        details={
+            "incidentId": incident_id,
+            "analysisId": analysis_id,
+            "provider": provider.name,
+            "riskScore": analysis.risk_score,
+            "suggestedTriage": analysis.suggested_triage,
+        },
+    )
+    return response
+
+
+@router.post("/soc/incidents/{incident_id}/containment-suggestions")
+def suggest_incident_containment(
+    incident_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    incident = client.request("GET", f"/incidents/{incident_id}")
+    context = _build_incident_context(incident)
+    provider = get_ai_provider()
+    try:
+        suggestion = provider.suggest_containment(context)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.incident.containment_suggested",
+            outcome="failure",
+            details={
+                "incidentId": incident_id,
+                "provider": provider.name,
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(status_code=502, detail=f"AI provider failed: {exc}") from exc
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.incident.containment_suggested",
+        details={
+            "incidentId": incident_id,
+            "provider": provider.name,
+            "stepCount": len(suggestion.steps),
+        },
+    )
+    return _containment_to_dict(suggestion)
 
 
 @router.get("/soc/tickets")
