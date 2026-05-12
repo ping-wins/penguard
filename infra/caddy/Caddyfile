@@ -1,0 +1,33 @@
+# FortiDashboard reverse proxy — terminates TLS in front of api/web/keycloak.
+#
+# By default Caddy uses `tls internal` so the lab/on-prem deploy gets a self-
+# signed cert minted by Caddy's internal CA. For an internet-facing deploy,
+# set CADDY_TLS_MODE to an empty string (so Caddy uses ACME / Let's Encrypt)
+# and CADDY_ADMIN_EMAIL to a real address.
+#
+# Routes:
+#   /api/*, /docs, /openapi.json, /health  -> BFF (FastAPI)
+#   /auth/*, /realms/*, /resources/*       -> Keycloak
+#   everything else                        -> Vue cockpit
+
+{
+    email {$CADDY_ADMIN_EMAIL:admin@example.com}
+}
+
+{$FORTIDASHBOARD_PUBLIC_HOSTNAME:fortidashboard.local} {
+    encode zstd gzip
+
+    tls {$CADDY_TLS_MODE:internal}
+
+    @api {
+        path /api/* /docs /openapi.json /health /health/*
+    }
+    reverse_proxy @api api:8000
+
+    @auth {
+        path /auth/* /realms/* /resources/* /admin/*
+    }
+    reverse_proxy @auth keycloak:8080
+
+    reverse_proxy web:5173
+}

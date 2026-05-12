@@ -1,0 +1,76 @@
+# Production overlay. Apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What this overlay does:
+#   - Adds a Caddy reverse proxy that terminates TLS on :443.
+#   - Flips `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` so the BFF cookie is
+#     refused over plain HTTP.
+#   - Points the BFF Keycloak URLs and the SSO redirect at the public
+#     hostname so OIDC flows survive the proxy hop.
+#   - Tells Keycloak it is behind a reverse proxy via `KC_PROXY_HEADERS`
+#     and pins its hostname for the OIDC discovery document.
+#
+# What this overlay does **not** do:
+#   - Disable the dev port publishes on `api`, `web` and `keycloak`. Compose
+#     v2 appends `ports` lists across overrides; firewall those ports at the
+#     host level (or run on a private network) for real internet exposure.
+#   - Replace the dev realm seed (`infra/keycloak/realm-fortidashboard.json`)
+#     that ships with seeded analyst/admin users. Run
+#     `scripts/sync-keycloak-client-secret.sh` after first boot and disable
+#     `--import-realm` once the production users are created through the
+#     admin console.
+#
+# Required env vars (put them in .env or export before running compose):
+#   FORTIDASHBOARD_PUBLIC_HOSTNAME   public DNS name (e.g. forti.example.com)
+#   CADDY_TLS_MODE                   `internal` (default, self-signed CA) or
+#                                    leave empty to let Caddy use ACME/Let's
+#                                    Encrypt against a real public DNS name.
+#   CADDY_ADMIN_EMAIL                ACME contact email when CADDY_TLS_MODE
+#                                    is empty.
+#   FORTIDASHBOARD_SESSION_COOKIE_SAMESITE  (optional; defaults to lax)
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      FORTIDASHBOARD_PUBLIC_HOSTNAME: ${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}
+      CADDY_TLS_MODE: ${CADDY_TLS_MODE:-internal}
+      CADDY_ADMIN_EMAIL: ${CADDY_ADMIN_EMAIL:-admin@example.com}
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+  api:
+    environment:
+      FORTIDASHBOARD_SESSION_COOKIE_SECURE: "true"
+      FORTIDASHBOARD_SESSION_COOKIE_SAMESITE: ${FORTIDASHBOARD_SESSION_COOKIE_SAMESITE:-lax}
+      FORTIDASHBOARD_KEYCLOAK_BASE_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth
+      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth
+      FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: "true"
+      FORTIDASHBOARD_OIDC_ISSUER: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth/realms/fortidashboard
+      FORTIDASHBOARD_SSO_REDIRECT_URI: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/api/auth/sso/kerberos/callback
+      FORTIDASHBOARD_SSO_POST_LOGIN_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/
+
+  keycloak:
+    environment:
+      KC_HOSTNAME: ${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_RELATIVE_PATH: /auth
+
+volumes:
+  caddy_data:
+  caddy_config:

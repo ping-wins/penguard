@@ -969,16 +969,30 @@ deliverable, not a nice-to-have. Order roughly by blast radius.
 
 Security hardening:
 
-- [ ] Rotate every default secret out of tracked files: Keycloak realm
-      `secret` (`dev-client-secret`), `FORTIDASHBOARD_SECRET_KEY`,
-      `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY`, `KC_BOOTSTRAP_ADMIN_PASSWORD`
-      and the seeded analyst/admin passwords. Provide a first-boot script
-      that fails closed when any of them still equal the default.
+- [x] Rotate every default secret out of tracked files. Shipped in Sprint 1:
+      `scripts/bootstrap-secrets.{sh,ps1}` generate strong random values
+      for `FORTIDASHBOARD_SECRET_KEY`, `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY`,
+      `FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET`, `KC_BOOTSTRAP_ADMIN_PASSWORD`
+      and `POSTGRES_PASSWORD`. `apps/api/app/core/config.py:_reject_dangerous_defaults`
+      refuses to boot when any critical secret still equals a dev default
+      (unless `FORTIDASHBOARD_MOCK_MODE=true`). `scripts/sync-keycloak-client-secret.sh`
+      aligns Keycloak with `.env` after first `docker compose up`. Tests in
+      `apps/api/tests/test_config_secret_validation.py`. The seeded
+      analyst/admin credentials in the dev realm import are intentionally
+      kept for local demos — disable the realm import on prod and create
+      users through the admin console.
 - [ ] Disable `allow_weak_crypto` + `java-security-override.properties` and
       the AES128 fallback once the lab is on AES256 only. Document the
       production `krb5.conf` separately.
-- [ ] Force `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and require HTTPS
-      end-to-end (reverse proxy with TLS, HSTS, cookie `__Host-` prefix).
+- [x] Force `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and require HTTPS
+      end-to-end. Sprint 1.3 ships `infra/caddy/Caddyfile` and
+      `docker-compose.prod.yml`: Caddy fronts api/web/keycloak on :443,
+      `tls internal` by default for on-prem labs (swap `CADDY_TLS_MODE=""`
+      to use ACME/Let's Encrypt for internet-facing deploys). The overlay
+      pins Keycloak's `KC_HOSTNAME`/`KC_PROXY_HEADERS` and overrides the
+      BFF SSO URLs to `https://${FORTIDASHBOARD_PUBLIC_HOSTNAME}/...` so
+      OIDC flows survive the proxy hop. `__Host-` cookie prefix and HSTS
+      headers are still open work for Sprint 2 hardening.
 - [ ] Extend the auth rate limiter to cover SSO callback, AI endpoints and
       `POST /api/soc/demo/replay` (currently only `/login` is throttled).
 - [ ] Cap AI token usage per user/incident (`max_tokens`, budget per day) so
@@ -989,13 +1003,25 @@ Security hardening:
 
 Persistence + multi-tenancy:
 
-- [ ] Replace the in-memory store in `apps/soar_skipper/app/main.py`
-      (`playbooks: dict[str, Playbook]`, `playbook_runs: dict[str, PlaybookRun]`)
-      with SQL-backed storage matching the `siem_kowalski` / `xdr_rico`
-      pattern. Restarting SOAR currently wipes every playbook + run.
-- [ ] Tenant-scope incidents, tickets, endpoints and playbook runs by the
-      authenticated user/org. Today the lite services are single-tenant and
-      the gateway only RBACs the surface, not the row.
+- [x] Replace the in-memory store in `apps/soar_skipper/app/main.py` with
+      SQL-backed storage matching the `siem_kowalski` / `xdr_rico` pattern.
+      Shipped in Sprint 1.2: `apps/soar_skipper/app/store.py` defines
+      `soar_skipper_playbooks` and `soar_skipper_playbook_runs` tables and
+      the `SoarStore` class. `apps/soar_skipper/app/main.py` boots the
+      default disabled playbooks idempotently via `_seed_default_playbooks()`
+      and the route handlers now read/write through the store.
+      `SOAR_SKIPPER_DATABASE_URL` follows the same env-var convention as the
+      SIEM/XDR services (sqlite in-memory by default, Postgres in compose).
+      `apps/soar_skipper/tests/test_persistence.py` proves playbooks and
+      runs survive a "restart" by pointing two `SoarStore` instances at the
+      same on-disk SQLite file.
+- [x] **Architecture decision (2026-05-12):** FortiDashboard ships as
+      **single-tenant per deploy**. Each customer runs its own stack
+      (Postgres, Redis, Keycloak, lite services). Row-level `tenant_id`
+      columns are intentionally **not** going to be added; PRs that try
+      to introduce cross-tenant fan-out must re-open this decision
+      first. README and onboarding must call this out so customers do
+      not expect SaaS multi-tenancy.
 - [ ] Add a row-level retention policy (incidents, audit, demo replays)
       with configurable TTL — required for LGPD/GDPR conversations.
 - [ ] Add Alembic migrations for every new SOC column added during the MVP

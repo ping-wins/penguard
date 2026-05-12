@@ -3,6 +3,21 @@ from functools import lru_cache
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Values that must never reach a non-mock deployment. The bootstrap script
+# (`scripts/bootstrap-secrets.{sh,ps1}`) replaces these with random per-deploy
+# values. Add any new dev-default to this set when introducing a new secret.
+DANGEROUS_DEFAULT_SECRETS: frozenset[str] = frozenset(
+    {
+        "dev-only-change-me",
+        "change-me-in-local-env",
+        "dev-client-secret",
+    }
+)
+
+
+class DangerousDefaultSecretError(RuntimeError):
+    """Raised at startup when a critical secret still equals its dev default."""
+
 
 class Settings(BaseSettings):
     app_name: str = "FortiDashboard API"
@@ -63,6 +78,35 @@ class Settings(BaseSettings):
     )
 
 
+def _reject_dangerous_defaults(settings: Settings) -> None:
+    """Fail-closed boot guard. `mock_mode=true` bypasses the check so local
+    dev/test loops keep working. Production deployments must run with the
+    real `.env` produced by `scripts/bootstrap-secrets.{sh,ps1}`.
+    """
+    if settings.mock_mode:
+        return
+
+    offenders: list[str] = []
+    if settings.secret_key in DANGEROUS_DEFAULT_SECRETS:
+        offenders.append("FORTIDASHBOARD_SECRET_KEY")
+    if not settings.token_encryption_key or settings.token_encryption_key in DANGEROUS_DEFAULT_SECRETS:
+        offenders.append("FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY")
+    if settings.keycloak_client_secret in DANGEROUS_DEFAULT_SECRETS:
+        offenders.append("FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET")
+
+    if offenders:
+        joined = ", ".join(offenders)
+        raise DangerousDefaultSecretError(
+            f"Refusing to start: the following secrets still use the dev "
+            f"default: {joined}. Run `scripts/bootstrap-secrets.sh` (or "
+            f"`scripts/bootstrap-secrets.ps1` on Windows) to generate a "
+            f"per-deploy .env, or set FORTIDASHBOARD_MOCK_MODE=true for "
+            f"local development."
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    _reject_dangerous_defaults(settings)
+    return settings
