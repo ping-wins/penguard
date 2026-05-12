@@ -137,6 +137,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
     await refreshWorkspaceList()
   }
 
+  async function renameActiveWorkspace(newName: string) {
+    const trimmed = newName.trim()
+    if (!trimmed || trimmed === workspaceName.value) return
+    const previous = workspaceName.value
+    workspaceName.value = trimmed
+    try {
+      await saveWorkspace()
+      await refreshWorkspaceList()
+    } catch (e) {
+      workspaceName.value = previous
+      throw e
+    }
+  }
+
   async function rebindWidget(instanceId: string, integrationId: string) {
     const result = await apiRebindWidget(activeWorkspaceId.value, instanceId, integrationId)
     const widget = activeWidgets.value.find((w) => w.instanceId === instanceId)
@@ -289,6 +303,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     refreshWorkspaceList,
     switchWorkspace,
     deleteWorkspaceById,
+    renameActiveWorkspace,
     rebindWidget,
     updateWidgetPosition,
     updateWidgetSize,
