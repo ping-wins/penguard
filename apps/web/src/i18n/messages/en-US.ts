@@ -23,7 +23,7 @@ export default {
       title: 'FortiDashboard',
       subtitle: 'Next-Gen SOC Analytics',
       emailLabel: 'Corporate Email',
-      emailPlaceholder: 'analyst@soc.local',
+      emailPlaceholder: "analyst{'@'}soc.local",
       passwordLabel: 'Password',
       passwordPlaceholder: '••••••••',
       submit: 'Sign in to Workspace',
