@@ -684,6 +684,37 @@ Open items (the only ones blocking the actual video drop):
 Done when the recording is filed alongside this doc. Until then, the
 synthetic-event path is the recommended demo source.
 
+## Settings And Localization
+
+The cockpit settings live behind the gear icon in the sidebar footer. Clicking
+it opens `components/settings/SettingsModal.vue` with three tabs:
+
+- **Profile** — read-only view of the current Keycloak BFF session (email,
+  display name, roles, authentication state) plus a sign-out shortcut and a
+  hint linking to the Keycloak account console for password changes.
+- **Appearance** — entry point to the existing `ThemeBuilderModal.vue` so the
+  theme/layout builder is a sub-section of settings instead of the gear icon's
+  only behavior.
+- **Language** — Portuguese (Brazil) / English (US) picker that persists to
+  `localStorage` under the key `fortidashboard:locale`.
+
+The translation layer is `vue-i18n` (`apps/web/src/i18n/`) with message
+catalogs in `messages/pt-BR.ts` and `messages/en-US.ts`. Components use
+`useI18n().t('namespace.key')`. The default locale follows the browser; if it
+starts with `en` the cockpit boots in English, otherwise it falls back to
+pt-BR. `setLocale()` also keeps `<html lang>` in sync for accessibility.
+
+Translated surfaces in this release:
+
+- `views/LoginView.vue` and the SSO failure popup.
+- `components/layout/Sidebar.vue` icon-bar tooltips (Dashboard, Assistant,
+  Integrations, Workspaces, Tickets, Audit, Settings, Sign out).
+- `components/settings/SettingsModal.vue` (every label).
+
+Components still pending translation (incremental work tracked in the
+backlog): `WorkspacePanel.vue`, `TicketsPanel.vue`, `PresentationView.vue`,
+`RegisterView.vue`, and the audit drawer copy.
+
 ## Commands
 
 Repository:
@@ -826,6 +857,14 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
+
+### Settings & i18n
+
+- [x] Add a sidebar `SettingsModal` with Profile / Appearance / Language tabs.
+- [x] Add `vue-i18n` with pt-BR + en-US catalogs and a persistent locale picker.
+- [x] Translate LoginView, SSO popup, sidebar tooltips and SettingsModal.
+- [ ] Translate WorkspacePanel, TicketsPanel, PresentationView, RegisterView and the audit drawer copy.
+- [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
 
 ### MVP Demo (cross-cutting)
 

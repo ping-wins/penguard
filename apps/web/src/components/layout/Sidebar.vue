@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
@@ -12,6 +13,9 @@ import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
+
+const { t } = useI18n()
+const emit = defineEmits<{ 'open-settings': [] }>()
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
@@ -261,25 +265,25 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors"
           :class="activeTab === 'none' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="activeTab = 'none'"
-          title="Dashboard"
+          :title="t('sidebar.dashboard')"
         >
           <LayoutDashboard :size="20" />
         </div>
 
-        <div 
+        <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'chat' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('chat')"
-          title="SOC Assistant"
+          :title="t('sidebar.assistant')"
         >
           <MessageSquare :size="20" />
         </div>
 
-        <div 
+        <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'integrations' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('integrations')"
-          title="Integrações SOC"
+          :title="t('sidebar.integrations')"
         >
           <Plug :size="20" />
         </div>
@@ -288,7 +292,7 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'workspaces' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('workspaces')"
-          title="Workspaces & Templates"
+          :title="t('sidebar.workspaces')"
         >
           <FolderTree :size="20" />
         </div>
@@ -297,7 +301,7 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'tickets' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('tickets')"
-          title="SOC Tickets"
+          :title="t('sidebar.tickets')"
         >
           <TicketIcon :size="20" />
         </div>
@@ -306,21 +310,21 @@ function handleChatSubmit() {
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'audit' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('audit')"
-          title="Audit Trail"
+          :title="t('sidebar.audit')"
         >
           <History :size="20" />
         </div>
       </nav>
       
       <div class="mt-auto flex flex-col gap-2">
-        <div 
+        <div
           class="p-3 rounded-lg hover:bg-theme-border cursor-pointer transition-colors relative text-theme-text-muted hover:text-theme-text"
-          @click="themeStore.openBuilder()"
-          title="Design System Builder"
+          @click="$emit('open-settings')"
+          :title="t('sidebar.settings')"
         >
           <Settings :size="20" />
         </div>
-        <div @click="handleLogout" class="p-3 rounded-lg hover:bg-red-500/20 text-theme-text-muted hover:text-red-400 cursor-pointer transition-colors" title="Sair">
+        <div @click="handleLogout" class="p-3 rounded-lg hover:bg-red-500/20 text-theme-text-muted hover:text-red-400 cursor-pointer transition-colors" :title="t('auth.logout')">
           <LogOut :size="20" />
         </div>
       </div>
