@@ -223,7 +223,8 @@ Current capabilities:
 - Create enrollment tokens.
 - Ingest endpoint events.
 - Track endpoint inventory, heartbeat, hostname, OS, IPs, current user and health.
-- Expose endpoint timelines and health widgets.
+- Correlate endpoints with SIEM incidents by endpoint ID, IP, hostname and username.
+- Expose endpoint timelines, incident endpoint context and health widgets.
 - Provide simulator data for demos without installing the agent.
 
 Gateway API:
@@ -232,6 +233,7 @@ Gateway API:
 GET  /api/weapons/endpoints
 GET  /api/weapons/endpoints/{endpointId}
 GET  /api/weapons/endpoints/{endpointId}/timeline
+GET  /api/soc/incidents/{incidentId}/endpoint-context
 POST /api/weapons/enrollments
 POST /api/weapons/endpoint-events
 ```
@@ -430,7 +432,7 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 - [x] Hash endpoint tokens and never return them after creation.
 - [x] Implement TUI-first `agent_private` flow plus CLI automation commands.
 - [x] Collect heartbeat, process snapshot and network connection snapshot.
-- [ ] Correlate endpoints with incidents by IP, hostname and username.
+- [x] Correlate endpoints with incidents by endpoint ID, IP, hostname and username.
 - [ ] Add optional directory monitoring with `watchdog`.
 
 ### apps/api Gateway

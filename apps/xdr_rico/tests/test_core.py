@@ -146,3 +146,95 @@ def test_simulator_creates_deterministic_demo_endpoint_and_events():
         "process.snapshot",
         "heartbeat",
     ]
+
+
+def test_endpoint_context_correlation_matches_ip_hostname_and_username():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    for occurred_at, event_type in [
+        ("2026-05-08T12:00:00Z", "heartbeat"),
+        ("2026-05-08T12:01:00Z", "process.snapshot"),
+    ]:
+        response = test_client.post(
+            "/endpoint-events",
+            headers=headers,
+            json={
+                "endpointId": "end_01",
+                "eventType": event_type,
+                "occurredAt": occurred_at,
+                "hostname": "demo-endpoint-01",
+                "ipAddresses": ["192.0.2.50"],
+                "currentUser": "SOC-DEMO\\analyst",
+                "health": "warning",
+                "attributes": {"source": "test"},
+            },
+        )
+        assert response.status_code == 201
+
+    response = test_client.post(
+        "/correlations/endpoint-context",
+        json={
+            "entities": {
+                "sourceIp": "192.0.2.50",
+                "hostname": "demo-endpoint-01",
+                "username": "analyst",
+            },
+            "limit": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    match = body["items"][0]
+    assert match["endpoint"]["id"] == "end_01"
+    assert match["score"] > 0
+    assert {field["field"] for field in match["matchedFields"]} == {
+        "sourceIp",
+        "hostname",
+        "username",
+    }
+    assert [item["eventType"] for item in match["timeline"]] == [
+        "process.snapshot",
+        "heartbeat",
+    ]
+
+
+def test_endpoint_context_correlation_returns_empty_for_unmatched_entities():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+            "hostname": "demo-endpoint-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": "SOC-DEMO\\analyst",
+        },
+    )
+    assert response.status_code == 201
+
+    response = test_client.post(
+        "/correlations/endpoint-context",
+        json={
+            "entities": {
+                "sourceIp": "203.0.113.10",
+                "hostname": "other-endpoint",
+                "username": "other-user",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "incidentEntities": {
+            "sourceIp": "203.0.113.10",
+            "hostname": "other-endpoint",
+            "username": "other-user",
+        },
+        "items": [],
+        "total": 0,
+    }

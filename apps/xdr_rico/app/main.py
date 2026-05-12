@@ -100,6 +100,31 @@ class SimulatorResponse(ApiModel):
     timeline: list[EndpointTimelineItem]
 
 
+class CorrelationRequest(ApiModel):
+    entities: dict[str, object] = Field(default_factory=dict)
+    limit: int = Field(default=5, ge=1, le=50)
+    timeline_limit: int = Field(default=5, alias="timelineLimit", ge=0, le=50)
+
+
+class MatchedField(ApiModel):
+    field: str
+    value: str
+    matched_endpoint_field: str = Field(alias="matchedEndpointField")
+
+
+class EndpointContextItem(ApiModel):
+    endpoint: Endpoint
+    score: int
+    matched_fields: list[MatchedField] = Field(alias="matchedFields")
+    timeline: list[EndpointTimelineItem] = Field(default_factory=list)
+
+
+class EndpointContextResponse(ApiModel):
+    incident_entities: dict[str, object] = Field(alias="incidentEntities")
+    items: list[EndpointContextItem]
+    total: int
+
+
 class XdrStore:
     def __init__(self) -> None:
         self.enrollments: dict[str, EnrollmentRecord] = {}
@@ -212,6 +237,129 @@ def ingest_endpoint_event(event: EndpointEventCreate) -> EndpointEventResponse:
         len(store.timeline.get(endpoint.id, [])),
     )
     return EndpointEventResponse(endpoint=endpoint, timelineItem=timeline_item)
+
+
+def correlate_endpoint_context(payload: CorrelationRequest) -> EndpointContextResponse:
+    store = get_store()
+    matches = [
+        item
+        for endpoint in store.endpoints.values()
+        if (item := _endpoint_context_item(endpoint, payload)) is not None
+    ]
+    matches.sort(
+        key=lambda item: (
+            item.score,
+            item.endpoint.last_seen_at or datetime.min.replace(tzinfo=UTC),
+        ),
+        reverse=True,
+    )
+    limited_matches = matches[: payload.limit]
+    logger.info(
+        "xdr_endpoint_context_correlated entity_fields=%s matched=%s total_endpoints=%s",
+        ",".join(sorted(payload.entities.keys())),
+        len(limited_matches),
+        len(store.endpoints),
+    )
+    return EndpointContextResponse(
+        incidentEntities=payload.entities,
+        items=limited_matches,
+        total=len(limited_matches),
+    )
+
+
+def _endpoint_context_item(
+    endpoint: Endpoint,
+    payload: CorrelationRequest,
+) -> EndpointContextItem | None:
+    matched_fields: list[MatchedField] = []
+    score = 0
+
+    for field, value in _entity_strings(payload.entities):
+        normalized_field = field.lower()
+        if (
+            normalized_field in {"endpointid", "endpoint_id", "endpoint.id"}
+            and value == endpoint.id
+        ):
+            matched_fields.append(
+                MatchedField(field=field, value=value, matchedEndpointField="id")
+            )
+            score += 100
+            continue
+
+        if "ip" in normalized_field and value in endpoint.ip_addresses:
+            matched_fields.append(
+                MatchedField(field=field, value=value, matchedEndpointField="ipAddresses")
+            )
+            score += 50
+            continue
+
+        if normalized_field in {"hostname", "host", "endpointhostname"} and _same_text(
+            value,
+            endpoint.hostname,
+        ):
+            matched_fields.append(
+                MatchedField(field=field, value=value, matchedEndpointField="hostname")
+            )
+            score += 30
+            continue
+
+        if normalized_field in {"username", "user", "currentuser", "current_user"} and _same_user(
+            value,
+            endpoint.current_user,
+        ):
+            matched_fields.append(
+                MatchedField(field=field, value=value, matchedEndpointField="currentUser")
+            )
+            score += 20
+
+    if not matched_fields:
+        return None
+
+    timeline = sorted(
+        get_store().timeline.get(endpoint.id, []),
+        key=lambda item: item.occurred_at,
+        reverse=True,
+    )[: payload.timeline_limit]
+    return EndpointContextItem(
+        endpoint=endpoint,
+        score=score,
+        matchedFields=matched_fields,
+        timeline=timeline,
+    )
+
+
+def _entity_strings(entities: dict[str, object]) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    for field, raw_value in entities.items():
+        if isinstance(raw_value, str) and raw_value:
+            values.append((field, raw_value))
+        elif isinstance(raw_value, list):
+            values.extend((field, value) for value in raw_value if isinstance(value, str) and value)
+    return values
+
+
+def _same_text(left: str, right: str | None) -> bool:
+    return bool(right) and left.casefold() == right.casefold()
+
+
+def _same_user(left: str, right: str | None) -> bool:
+    if not right:
+        return False
+    left_folded = left.casefold()
+    right_folded = right.casefold()
+    if left_folded == right_folded:
+        return True
+    return _principal_name(left_folded) == _principal_name(right_folded)
+
+
+def _principal_name(value: str) -> str:
+    if "\\" in value:
+        value = value.rsplit("\\", 1)[-1]
+    if "/" in value:
+        value = value.rsplit("/", 1)[-1]
+    if "@" in value:
+        value = value.split("@", 1)[0]
+    return value
 
 
 @app.get("/health")
@@ -359,3 +507,8 @@ def create_simulator_events() -> SimulatorResponse:
         createdEvents=len(timeline_items),
         timeline=sorted(timeline_items, key=lambda item: item.occurred_at, reverse=True),
     )
+
+
+@app.post("/correlations/endpoint-context", response_model=EndpointContextResponse)
+def create_endpoint_context_correlation(payload: CorrelationRequest) -> EndpointContextResponse:
+    return correlate_endpoint_context(payload)
