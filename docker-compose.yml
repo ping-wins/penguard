@@ -97,8 +97,11 @@ services:
       dockerfile: apps/soar_skipper/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
+      SOAR_SKIPPER_DATABASE_URL: ${SOAR_SKIPPER_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
     depends_on:
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\nPY"]

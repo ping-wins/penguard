@@ -7,10 +7,14 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.store import SoarStore
+
 SERVICE_NAME = "soar_skipper"
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="soar_skipper", version="0.1.0")
+
+store = SoarStore()
 
 NodeType = Literal[
     "trigger.incident_created",
@@ -106,8 +110,8 @@ class PlaybookRun(BaseModel):
     created_at: datetime = Field(alias="createdAt")
 
 
-def _default_playbooks() -> dict[str, Playbook]:
-    defaults = [
+def _default_playbooks() -> list[Playbook]:
+    return [
         Playbook(
             id="pb_port_scan_triage",
             name="Port Scan Triage",
@@ -173,11 +177,35 @@ def _default_playbooks() -> dict[str, Playbook]:
             ],
         ),
     ]
-    return {playbook.id: playbook for playbook in defaults}
 
 
-playbooks: dict[str, Playbook] = _default_playbooks()
-playbook_runs: dict[str, PlaybookRun] = {}
+def _seed_default_playbooks() -> None:
+    """Insert the default disabled playbooks the first time the service comes
+    up against an empty store. Subsequent restarts are idempotent — the
+    operator's custom playbooks stay intact.
+    """
+    for playbook in _default_playbooks():
+        if store.get_playbook(playbook.id) is None:
+            store.save_playbook(playbook.id, _playbook_to_payload(playbook))
+
+
+def _playbook_to_payload(playbook: Playbook) -> dict[str, Any]:
+    return playbook.model_dump(mode="json", by_alias=True)
+
+
+def _payload_to_playbook(payload: dict[str, Any]) -> Playbook:
+    return Playbook.model_validate(payload)
+
+
+def _run_to_payload(run: PlaybookRun) -> dict[str, Any]:
+    return run.model_dump(mode="json", by_alias=True)
+
+
+def _payload_to_run(payload: dict[str, Any]) -> PlaybookRun:
+    return PlaybookRun.model_validate(payload)
+
+
+_seed_default_playbooks()
 
 
 @app.get("/health")
@@ -187,19 +215,19 @@ def health() -> dict[str, str]:
 
 @app.get("/playbooks", response_model=list[Playbook])
 def list_playbooks() -> list[Playbook]:
-    results = list(playbooks.values())
+    results = [_payload_to_playbook(payload) for payload in store.list_playbooks()]
     logger.info("soar_playbooks_list returned=%s", len(results))
     return results
 
 
 @app.post("/playbooks", response_model=Playbook, status_code=status.HTTP_201_CREATED)
 def create_playbook(playbook: Playbook) -> Playbook:
-    if playbook.id in playbooks:
+    if store.get_playbook(playbook.id) is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"playbook {playbook.id} already exists",
         )
-    playbooks[playbook.id] = playbook
+    store.save_playbook(playbook.id, _playbook_to_payload(playbook))
     logger.info(
         "soar_playbook_created playbook_id=%s enabled=%s nodes=%s",
         playbook.id,
@@ -222,7 +250,7 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
             detail="playbook id must match path",
         )
     _get_playbook_or_404(playbook_id)
-    playbooks[playbook_id] = playbook
+    store.update_playbook(playbook_id, _playbook_to_payload(playbook))
     logger.info(
         "soar_playbook_updated playbook_id=%s enabled=%s nodes=%s",
         playbook_id,
@@ -274,7 +302,13 @@ def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
         steps=steps,
         created_at=now,
     )
-    playbook_runs[run.id] = run
+    store.save_run(
+        _run_to_payload(run),
+        incident_id=run.incident_id,
+        playbook_id=run.playbook_id,
+        status=run.status,
+        created_at=run.created_at,
+    )
     logger.info(
         "soar_playbook_run_created run_id=%s incident_id=%s playbook_id=%s status=%s "
         "dry_run=%s steps=%s",
@@ -290,17 +324,18 @@ def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
 
 @app.get("/playbook-runs/{run_id}", response_model=PlaybookRun)
 def get_playbook_run(run_id: str) -> PlaybookRun:
-    run = playbook_runs.get(run_id)
-    if run is None:
+    payload = store.get_run(run_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook run not found")
-    return run
+    return _payload_to_run(payload)
 
 
 @app.post("/playbook-runs/{run_id}/approve", response_model=PlaybookRun)
 def approve_playbook_run(run_id: str) -> PlaybookRun:
-    run = playbook_runs.get(run_id)
-    if run is None:
+    payload = store.get_run(run_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook run not found")
+    run = _payload_to_run(payload)
     approved = run.model_copy(
         update={
             "status": "completed",
@@ -312,41 +347,28 @@ def approve_playbook_run(run_id: str) -> PlaybookRun:
             ],
         }
     )
-    playbook_runs[run_id] = approved
+    store.update_run(_run_to_payload(approved), status=approved.status)
     logger.info("soar_playbook_run_approved run_id=%s", run_id)
     return approved
 
 
 @app.get("/playbook-runs", response_model=list[PlaybookRun])
 def list_playbook_runs(status: RunStatus | None = None) -> list[PlaybookRun]:
-    runs = sorted(
-        playbook_runs.values(),
-        key=lambda run: run.created_at,
-        reverse=True,
-    )
-    if status is not None:
-        filtered_runs = [run for run in runs if run.status == status]
-        logger.info(
-            "soar_playbook_runs_list status=%s returned=%s total=%s",
-            status,
-            len(filtered_runs),
-            len(playbook_runs),
-        )
-        return filtered_runs
+    payloads = store.list_runs(status=status)
+    runs = [_payload_to_run(payload) for payload in payloads]
     logger.info(
-        "soar_playbook_runs_list status=%s returned=%s total=%s",
+        "soar_playbook_runs_list status=%s returned=%s",
         status,
         len(runs),
-        len(playbook_runs),
     )
     return runs
 
 
 def _get_playbook_or_404(playbook_id: str) -> Playbook:
-    playbook = playbooks.get(playbook_id)
-    if playbook is None:
+    payload = store.get_playbook(playbook_id)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook not found")
-    return playbook
+    return _payload_to_playbook(payload)
 
 
 def _build_step_previews(playbook: Playbook) -> list[StepPreview]:

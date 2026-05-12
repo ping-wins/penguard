@@ -996,10 +996,18 @@ Security hardening:
 
 Persistence + multi-tenancy:
 
-- [ ] Replace the in-memory store in `apps/soar_skipper/app/main.py`
-      (`playbooks: dict[str, Playbook]`, `playbook_runs: dict[str, PlaybookRun]`)
-      with SQL-backed storage matching the `siem_kowalski` / `xdr_rico`
-      pattern. Restarting SOAR currently wipes every playbook + run.
+- [x] Replace the in-memory store in `apps/soar_skipper/app/main.py` with
+      SQL-backed storage matching the `siem_kowalski` / `xdr_rico` pattern.
+      Shipped in Sprint 1.2: `apps/soar_skipper/app/store.py` defines
+      `soar_skipper_playbooks` and `soar_skipper_playbook_runs` tables and
+      the `SoarStore` class. `apps/soar_skipper/app/main.py` boots the
+      default disabled playbooks idempotently via `_seed_default_playbooks()`
+      and the route handlers now read/write through the store.
+      `SOAR_SKIPPER_DATABASE_URL` follows the same env-var convention as the
+      SIEM/XDR services (sqlite in-memory by default, Postgres in compose).
+      `apps/soar_skipper/tests/test_persistence.py` proves playbooks and
+      runs survive a "restart" by pointing two `SoarStore` instances at the
+      same on-disk SQLite file.
 - [x] **Architecture decision (2026-05-12):** FortiDashboard ships as
       **single-tenant per deploy**. Each customer runs its own stack
       (Postgres, Redis, Keycloak, lite services). Row-level `tenant_id`
