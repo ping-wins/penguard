@@ -83,6 +83,7 @@ export default {
     endpointsLabel: 'endpoints',
     empty: 'No endpoint telemetry yet. Run agent_private heartbeat or snapshots from the lab host.',
     selectHint: 'Select an endpoint to inspect its timeline.',
+    observedViaApi: 'Observed via API',
     lastSeen: 'Last seen',
     user: 'User',
     connections: 'Connections',

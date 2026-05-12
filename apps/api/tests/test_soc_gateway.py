@@ -365,6 +365,34 @@ def test_xdr_endpoint_event_gateway_forwards_enrollment_authorization():
     assert audit["items"][0]["details"]["actorType"] == "agent_private"
 
 
+def test_xdr_endpoint_event_gateway_adds_observed_source_ip_to_payload():
+    client = TestClient(app, client=("192.168.56.10", 55088))
+    fake_xdr = FakeSocClient({"endpoint": {"id": "win-server-01"}, "timelineItem": {"id": "tl_01"}})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "win-server-01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-12T22:32:18.675000Z",
+            "hostname": "WIN-T2D53C8JOKL",
+            "ipAddresses": ["10.0.2.15", "192.168.56.10"],
+            "attributes": {"service": "agent_private"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_xdr.calls[0]["json"]["attributes"] == {
+        "service": "agent_private",
+        "observedSourceIp": "192.168.56.10",
+    }
+
+
 def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
     client = TestClient(app)
     fake_xdr = FakeSocClient(
@@ -425,6 +453,7 @@ def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
                     "windowsEventId": 4625,
                     "count": 6,
                     "sourceIp": "192.0.2.77",
+                    "observedSourceIp": "testclient",
                     "xdrTimelineItemId": "tl_01",
                 },
             },

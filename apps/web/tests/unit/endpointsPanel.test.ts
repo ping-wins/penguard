@@ -14,11 +14,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 const endpoint = {
   id: 'win-server-01',
   hostname: 'WIN-T2D53C8JOKL',
-  ipAddresses: ['192.168.56.10'],
+  ipAddresses: ['10.0.2.15', '192.168.56.10'],
   currentUser: 'FORTIDASHBOARD\\Administrator',
   lastSeenAt: '2026-05-12T22:32:18.675000Z',
   health: 'unknown',
-  attributes: { os: 'Windows' },
+  attributes: { os: 'Windows', observedSourceIp: '192.168.56.10' },
 }
 
 describe('EndpointsPanel', () => {
@@ -90,6 +90,7 @@ describe('EndpointsPanel', () => {
     expect(wrapper.text()).toContain('Endpoints')
     expect(wrapper.text()).toContain('WIN-T2D53C8JOKL')
     expect(wrapper.text()).toContain('192.168.56.10')
+    expect(wrapper.text()).toContain('Observed via API')
     expect(wrapper.text()).toContain('Connection Snapshot')
     expect(wrapper.text()).toContain('1 connection')
     expect(wrapper.text()).toContain('1 process')

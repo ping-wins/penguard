@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { Activity, Clock, Cpu, Network, RefreshCw, Server, Shield, User } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useEndpointsStore } from '../../stores/useEndpointsStore'
-import type { EndpointTimelineItem } from '../../services/endpointsClient'
+import type { Endpoint, EndpointTimelineItem } from '../../services/endpointsClient'
 
 const { t } = useI18n()
 const store = useEndpointsStore()
@@ -11,7 +11,22 @@ const store = useEndpointsStore()
 onMounted(() => store.startPolling(10000))
 onBeforeUnmount(() => store.stopPolling())
 
-const selectedIps = computed(() => store.selectedEndpoint?.ipAddresses ?? [])
+const selectedObservedSourceIp = computed(() => observedSourceIp(store.selectedEndpoint))
+const selectedReportedIps = computed(() => reportedIps(store.selectedEndpoint))
+
+function observedSourceIp(endpoint: Endpoint | null | undefined) {
+  const value = endpoint?.attributes?.observedSourceIp
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function reportedIps(endpoint: Endpoint | null | undefined) {
+  const observed = observedSourceIp(endpoint)
+  return endpoint?.ipAddresses.filter((ip) => ip !== observed) ?? []
+}
+
+function primaryIp(endpoint: Endpoint) {
+  return observedSourceIp(endpoint) || endpoint.ipAddresses[0] || endpoint.id
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '--'
@@ -118,7 +133,13 @@ function timelineSummary(item: EndpointTimelineItem) {
                 </span>
               </div>
               <div class="mt-1 truncate font-mono text-xs text-theme-text-muted">
-                {{ endpoint.ipAddresses[0] || endpoint.id }}
+                {{ primaryIp(endpoint) }}
+              </div>
+              <div
+                v-if="observedSourceIp(endpoint)"
+                class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-theme-primary"
+              >
+                {{ t('endpoints.observedViaApi') }}
               </div>
             </button>
           </template>
@@ -178,7 +199,13 @@ function timelineSummary(item: EndpointTimelineItem) {
 
             <div class="mt-3 flex flex-wrap gap-1">
               <span
-                v-for="ip in selectedIps.slice(0, 6)"
+                v-if="selectedObservedSourceIp"
+                class="rounded border border-theme-primary/40 bg-theme-primary/10 px-2 py-0.5 font-mono text-[10px] text-theme-primary"
+              >
+                {{ t('endpoints.observedViaApi') }} {{ selectedObservedSourceIp }}
+              </span>
+              <span
+                v-for="ip in selectedReportedIps.slice(0, 6)"
                 :key="ip"
                 class="rounded border border-theme-border bg-theme-panel px-2 py-0.5 font-mono text-[10px] text-theme-text-muted"
               >

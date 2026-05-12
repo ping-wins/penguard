@@ -1057,6 +1057,7 @@ def create_endpoint_event(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Endpoint enrollment token required",
         )
+    payload = _endpoint_payload_with_observed_source_ip(payload, request)
     response = client.request(
         "POST",
         "/endpoint-events",
@@ -1085,6 +1086,20 @@ def create_endpoint_event(
     if siem_forwarding["status"] != "skipped":
         response["siemForwarding"] = siem_forwarding
     return response
+
+
+def _endpoint_payload_with_observed_source_ip(
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, Any]:
+    attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
+    return {
+        **payload,
+        "attributes": {
+            **attributes,
+            "observedSourceIp": _client_ip(request),
+        },
+    }
 
 
 def _forward_endpoint_event_to_siem(

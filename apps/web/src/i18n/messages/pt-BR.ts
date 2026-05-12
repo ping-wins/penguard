@@ -83,6 +83,7 @@ export default {
     endpointsLabel: 'endpoints',
     empty: 'Ainda não há telemetria de endpoint. Rode heartbeat ou snapshots do agent_private no host de laboratório.',
     selectHint: 'Selecione um endpoint para inspecionar a timeline.',
+    observedViaApi: 'Observado via API',
     lastSeen: 'Último sinal',
     user: 'Usuário',
     connections: 'Conexões',

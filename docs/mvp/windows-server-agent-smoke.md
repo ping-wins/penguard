@@ -49,8 +49,11 @@ Windows checkout is older than commit `ba0630a`.
 ## Cockpit Check
 
 Open the **Endpoints** drawer in the sidebar. The Windows host should appear
-with hostname, IPs, last-seen time, process count, connection count and a
-timeline containing heartbeat, process, connection and Windows Security events.
+with hostname, last-seen time, process count, connection count and a timeline
+containing heartbeat, process, connection and Windows Security events. The
+primary IP is the BFF-observed source address labeled **Observed via API**;
+agent-reported interface IPs are shown separately and may include NAT adapter
+addresses such as `10.0.2.15`.
 
 Current verified lab result on 2026-05-12:
 
