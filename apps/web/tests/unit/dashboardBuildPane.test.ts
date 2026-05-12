@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardCanvas from '../../src/components/canvas/DashboardCanvas.vue'
+import { i18n } from '../../src/i18n'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { useIntegrationsStore } from '../../src/stores/useIntegrationsStore'
 
@@ -137,7 +138,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -244,7 +245,7 @@ describe('DashboardCanvas build pane', () => {
 
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -300,7 +301,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -333,7 +334,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -388,7 +389,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -456,7 +457,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: {
@@ -528,7 +529,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -606,7 +607,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
@@ -678,7 +679,7 @@ describe('DashboardCanvas build pane', () => {
     setActivePinia(pinia)
     const wrapper = mount(DashboardCanvas, {
       global: {
-        plugins: [pinia],
+        plugins: [pinia, i18n],
         directives: { motion: {} },
         stubs: {
           DraggableWidget: { template: '<div />' },
