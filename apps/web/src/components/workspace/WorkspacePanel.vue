@@ -19,6 +19,7 @@ import {
   Clock,
   Tag as TagIcon,
   RefreshCcw,
+  Zap,
 } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/useAuthStore'
 import { useDashboardStore } from '../../stores/useDashboardStore'
@@ -32,6 +33,7 @@ import {
   listCommunityTemplates,
   publishWorkspaceTemplate,
   readManifestFile,
+  replayDemoIncident,
   updatePresentation,
   type CommunityTemplate,
   type PresentationMetadata,
@@ -229,6 +231,23 @@ const filteredCommunity = computed(() => {
   )
 })
 
+// ----- MVP Demo -----
+const lastDemoRun = ref<{ demoRunId: string; eventCount: number } | null>(null)
+
+async function handleReplayDemo() {
+  resetMessages()
+  isBusy.value = true
+  try {
+    const result = await replayDemoIncident()
+    lastDemoRun.value = { demoRunId: result.demoRunId, eventCount: result.eventCount }
+    successMsg.value = `Incidente demo injetado (${result.eventCount} eventos, run ${result.demoRunId}).`
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? 'Erro ao replay do demo'
+  } finally {
+    isBusy.value = false
+  }
+}
+
 // ----- Presentation -----
 function hydratePresentationDraft() {
   const widgetList = widgets.value
@@ -396,6 +415,33 @@ const actions = computed(() => [
         <component :is="action.icon" :size="14" class="text-theme-text-muted" />
         <span class="truncate">{{ action.label }}</span>
       </button>
+    </div>
+
+    <!-- MVP demo replay -->
+    <div class="px-4 py-3 border-b border-theme-border bg-amber-500/5">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-xs font-semibold uppercase tracking-wider text-amber-300 flex items-center gap-1">
+            <Zap :size="13" />
+            MVP demo
+          </div>
+          <p class="mt-1 text-xs text-theme-text-muted leading-snug">
+            Injeta um incidente sintético (port scan + brute force + endpoint suspeito) no SIEM Kowalski para validar o pipeline sem depender do nmap.
+          </p>
+          <p v-if="lastDemoRun" class="mt-1 text-[11px] text-theme-text-muted">
+            Último: <span class="font-mono">{{ lastDemoRun.demoRunId }}</span> · {{ lastDemoRun.eventCount }} eventos
+          </p>
+        </div>
+        <button
+          type="button"
+          :disabled="isBusy"
+          @click="handleReplayDemo"
+          class="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-amber-400/50 bg-amber-400/15 text-amber-200 text-xs font-semibold hover:bg-amber-400/30 disabled:opacity-50"
+        >
+          <Zap :size="13" />
+          Replay
+        </button>
+      </div>
     </div>
 
     <!-- Current origin pill -->

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Annotated, Any, Protocol
 
@@ -72,6 +73,136 @@ def get_xdr_client() -> SocServiceClient:
         service_name="xdr_rico",
         timeout_seconds=settings.internal_service_timeout_seconds,
     )
+
+
+DEMO_SOURCE_TAG = "demo.replay"
+
+
+def _demo_replay_events(*, now: datetime, demo_run_id: str) -> list[dict[str, Any]]:
+    """Synthetic burst designed to trip `denied_traffic_burst` and seed an
+    obvious incident timeline for the MVP video. Counts are inflated past
+    every detection threshold so the demo always produces an incident.
+    """
+    base = now.astimezone(UTC)
+
+    def stamp(offset_seconds: int) -> str:
+        return (
+            (base - timedelta(seconds=offset_seconds))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+
+    return [
+        {
+            "source": DEMO_SOURCE_TAG,
+            "eventType": "network.deny",
+            "severity": "high",
+            "occurredAt": stamp(180),
+            "entities": {
+                "sourceIp": "203.0.113.77",
+                "destinationIp": "192.168.0.50",
+                "integrationId": "demo-fortigate",
+            },
+            "attributes": {
+                "action": "deny",
+                "subtype": "port_scan",
+                "message": "Inbound port scan from 203.0.113.77",
+                "count": 42,
+                "uniqueDestinationCount": 1,
+                "demoRunId": demo_run_id,
+            },
+        },
+        {
+            "source": DEMO_SOURCE_TAG,
+            "eventType": "auth.failed_login",
+            "severity": "medium",
+            "occurredAt": stamp(120),
+            "entities": {
+                "sourceIp": "203.0.113.77",
+                "username": "svc-backup",
+                "integrationId": "demo-fortigate",
+            },
+            "attributes": {
+                "count": 9,
+                "message": "Repeated SSH login failures for svc-backup",
+                "demoRunId": demo_run_id,
+            },
+        },
+        {
+            "source": DEMO_SOURCE_TAG,
+            "eventType": "endpoint.suspicious_connection",
+            "severity": "high",
+            "occurredAt": stamp(60),
+            "entities": {
+                "endpointId": "demo-endpoint-01",
+                "hostname": "demo-endpoint-01",
+                "sourceIp": "192.168.0.50",
+                "destinationIp": "203.0.113.77",
+            },
+            "attributes": {
+                "message": "Endpoint demo-endpoint-01 dialed back to attacker IP",
+                "demoRunId": demo_run_id,
+            },
+        },
+    ]
+
+
+@router.post("/soc/demo/replay")
+def replay_demo_incident(
+    request: Request,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    """Re-inject the canned MVP demo incident so the analyst can re-record the
+    video without depending on real-world FortiGate denies. Each event is
+    tagged with `source="demo.replay"` and a fresh `demoRunId` so they are
+    easy to filter out of production dashboards.
+    """
+    now = datetime.now(UTC)
+    demo_run_id = f"demo_{now.strftime('%Y%m%d_%H%M%S')}"
+    events = _demo_replay_events(now=now, demo_run_id=demo_run_id)
+    created: list[dict[str, Any]] = []
+    for event in events:
+        try:
+            created.append(client.request("POST", "/events", json=event))
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            _audit(
+                audit_store,
+                request=request,
+                current_user=current_user,
+                action="soc.demo.replay",
+                details={
+                    "demoRunId": demo_run_id,
+                    "error": str(exc),
+                    "stage": event["eventType"],
+                },
+                outcome="failure",
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Demo replay failed at {event['eventType']}: {exc}",
+            ) from exc
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.demo.replay",
+        details={
+            "demoRunId": demo_run_id,
+            "eventCount": len(created),
+            "service": "siem_kowalski",
+        },
+    )
+    return {
+        "demoRunId": demo_run_id,
+        "eventCount": len(created),
+        "eventIds": [event.get("id") for event in created if isinstance(event, dict) and event.get("id")],
+    }
 
 
 @router.post("/soc/events")
@@ -446,10 +577,11 @@ def _audit(
     current_user: dict,
     action: str,
     details: dict,
+    outcome: str = "success",
 ) -> None:
     audit_store.record(
         action=action,
-        outcome="success",
+        outcome=outcome,
         email=current_user.get("email"),
         user_id=str(current_user["id"]),
         client_ip=_client_ip(request),

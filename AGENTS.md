@@ -429,19 +429,50 @@ phase before the previous one is mergeable.
 
 ### Phase 1 — Reliable incident generation
 
-- Decide a deterministic demo trigger. The recommended default is a "demo
-  source" seed (`scripts/seed_soc_demo.py` extension) that posts a burst of
-  `network.deny` events with `attributes.count` already above the
-  `denied_traffic_burst` threshold. The real-nmap path stays as a stretch
-  goal once the topology issues above are resolved.
-- Add `apps/api/app/routers/integrations.py:_fortigate_event_to_siem_event`
-  aggregation so a burst of denies from the same source IP collapses into a
-  single SIEM event with the real `count`. Until that lands, document the
-  synthetic seed as the demo path.
-- Add a "Replay demo incident" admin-only endpoint (`POST /api/soc/demo/replay`)
-  that resets and re-injects the seed so the video can be re-shot quickly.
-- Audit the seed action (`soc.demo.replay`) so we can prove the trigger came
-  from the demo path and not from production traffic.
+Status: **in progress — backend done, frontend wiring next.**
+
+Delivered in this branch (`lucas/mvp-demo-roadmap`):
+
+- `apps/api/app/routers/integrations.py` now ships
+  `_aggregate_fortigate_events()` which groups raw FortiGate widget records
+  by `(eventType, sourceIp)` and emits one SIEM event per group with the
+  accumulated `attributes.count` plus a `uniqueDestinationCount` summary,
+  highest observed `severity` and the most recent `occurredAt`. The old
+  `_fortigate_event_to_siem_event` helper is preserved as a one-record
+  passthrough on top of the aggregator for callers/tests that operated on a
+  single line.
+- `POST /api/soc/fortigate/{integrationId}/ingest-events` now responds with
+  `rawEventCount` and `createdCount` (aggregated) and records both in the
+  `soc.fortigate_events.ingested` audit detail (`count` retained as an alias
+  of `aggregatedCount` for backwards-compat with the existing test suite).
+- `POST /api/soc/demo/replay` injects a canned 3-event burst directly into
+  `siem_kowalski`: an inbound port scan (`network.deny`, count 42), repeated
+  SSH login failures (`auth.failed_login`, count 9) and an
+  `endpoint.suspicious_connection` from the demo endpoint back to the
+  attacker IP. Every payload carries `source="demo.replay"` and a fresh
+  `demoRunId` so dashboards can filter the seed out of real telemetry. The
+  call audit-logs `soc.demo.replay` with the run id and event count, and
+  fails closed (502 + failure audit) if the SIEM rejects any of the events.
+
+Delivered cockpit-side:
+
+- `services/workspaceClient.ts:replayDemoIncident()` wraps the new endpoint
+  and reuses the workspace CSRF helpers.
+- `components/workspace/WorkspacePanel.vue` shows a yellow "MVP demo" panel
+  with a `Zap` "Replay" button. After a successful replay it surfaces the
+  last `demoRunId` and event count so the operator can re-run the recording
+  confident the seed actually fired.
+
+Still pending (next phase or stretch):
+
+- Gate the replay button by role (lab/admin only) once Phase 3 introduces a
+  richer settings story; for the MVP video it stays open to any
+  authenticated analyst.
+- Reuse the aggregator in `apps/siem_kowalski` if/when a deduplication step
+  is needed on the SIEM side.
+- The real-nmap path stays as a stretch goal once the lab-setup issues above
+  are resolved; until then, `POST /api/soc/demo/replay` is the documented
+  demo trigger.
 
 ### Phase 2 — Incident tickets and triage console
 
@@ -663,8 +694,8 @@ Docker Compose must stay portable across Linux and Windows. Do not mount host
 
 ### MVP Demo (cross-cutting)
 
-- [ ] Phase 1 — Deterministic synthetic incident seed + `/api/soc/demo/replay` endpoint.
-- [ ] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion.
+- [x] Phase 1 — Deterministic synthetic incident seed + `/api/soc/demo/replay` endpoint with cockpit "Replay" button in the Workspaces panel.
+- [x] Phase 1 — Aggregate FortiGate denies per source IP before SIEM forwarding so `denied_traffic_burst` fires from real ingestion (`_aggregate_fortigate_events`).
 - [ ] Phase 2 — Add `triageLevel`, `ticketStatus`, `assigneeUserId` and `aiAnalysisId` to the SIEM incident model + ticket CRUD gateway.
 - [ ] Phase 2 — Add a SOC Tickets navigation panel with T1/T2/T3 lanes, filters and detail drawer.
 - [ ] Phase 3 — AI provider abstraction (`apps/api/app/ai/`) with Anthropic, OpenAI-compatible and scripted adapters.
