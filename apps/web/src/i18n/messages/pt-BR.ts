@@ -79,6 +79,12 @@ export default {
     title: 'Workspaces',
     subtitle: 'Crie, importe e publique briefings de incidente.',
     refreshTooltip: 'Atualizar lista',
+    rename: {
+      tooltip: 'Renomear workspace',
+      hint: 'Enter salva, Esc cancela',
+      saving: 'Salvando...',
+      error: 'Falha ao renomear workspace',
+    },
     actions: {
       export: 'Exportar',
       import: 'Importar',

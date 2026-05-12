@@ -79,6 +79,12 @@ export default {
     title: 'Workspaces',
     subtitle: 'Create, import and publish incident briefings.',
     refreshTooltip: 'Refresh list',
+    rename: {
+      tooltip: 'Rename workspace',
+      hint: 'Enter to save, Esc to cancel',
+      saving: 'Saving...',
+      error: 'Failed to rename workspace',
+    },
     actions: {
       export: 'Export',
       import: 'Import',

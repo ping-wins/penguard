@@ -8,6 +8,12 @@ import { useThemeStore } from '../../stores/useThemeStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useAuditStore } from '../../stores/useAuditStore'
 import { useTicketsStore } from '../../stores/useTicketsStore'
+import {
+  useCockpitLayoutStore,
+  SIDEBAR_DRAWER_MAX_WIDTH,
+  SIDEBAR_DRAWER_MIN_WIDTH,
+} from '../../stores/useCockpitLayoutStore'
+import { useDraggableEdge } from '../../composables/useDraggableEdge'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
@@ -23,6 +29,7 @@ const themeStore = useThemeStore()
 const integrationsStore = useIntegrationsStore()
 const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
+const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
 const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets'>('none')
 
@@ -84,13 +91,17 @@ const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
 const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
 const auditTitle = computed(() => isAdmin.value ? t('audit.adminTitle') : t('audit.mineTitle'))
 const auditSubtitle = computed(() => isAdmin.value ? t('audit.adminSubtitle') : t('audit.mineSubtitle'))
+const drawerPx = computed(() => layoutStore.sidebarDrawerWidth)
 const drawerWidth = computed(() => {
   if (activeTab.value === 'none') return '0px'
-  if (activeTab.value === 'audit') return '420px'
-  if (activeTab.value === 'integrations') return '380px'
-  if (activeTab.value === 'workspaces') return '420px'
-  if (activeTab.value === 'tickets') return '480px'
-  return '320px'
+  return `${drawerPx.value}px`
+})
+const drawerResizer = useDraggableEdge({
+  edge: 'right',
+  getCurrent: () => layoutStore.sidebarDrawerWidth,
+  setValue: (next) => layoutStore.setSidebarDrawerWidth(next),
+  min: SIDEBAR_DRAWER_MIN_WIDTH,
+  max: SIDEBAR_DRAWER_MAX_WIDTH,
 })
 
 const chatInput = ref('')
@@ -331,12 +342,13 @@ function handleChatSubmit() {
     </aside>
 
     <!-- Drawer Panel -->
-    <div 
-      class="h-full bg-theme-panel border-r border-theme-border flex flex-col transition-all duration-300 overflow-hidden z-10"
+    <div
+      class="h-full bg-theme-panel border-r border-theme-border flex flex-col overflow-hidden z-10"
+      :class="{ 'transition-all duration-300': !drawerResizer.isDragging.value }"
       :style="{ width: drawerWidth, opacity: activeTab !== 'none' ? 1 : 0 }"
     >
       <!-- Chat Tab -->
-      <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full w-[320px] shrink-0">
+      <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <h2 class="font-bold text-lg mb-4 text-theme-text">{{ t('chat.header') }}</h2>
 
         <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-2 mb-4">
@@ -372,7 +384,7 @@ function handleChatSubmit() {
       </div>
 
       <!-- Integrations Tab -->
-      <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full w-[380px] shrink-0 overflow-y-auto">
+      <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full shrink-0 overflow-y-auto" :style="{ width: `${drawerPx}px` }">
         <div class="mb-4">
           <h2 class="font-bold text-lg text-theme-text">Integrações SOC</h2>
           <p class="mt-1 text-xs text-theme-text-muted">
@@ -618,17 +630,17 @@ function handleChatSubmit() {
       </div>
 
       <!-- Workspaces Tab -->
-      <div v-if="activeTab === 'workspaces'" class="h-full w-[420px] shrink-0">
+      <div v-if="activeTab === 'workspaces'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <WorkspacePanel />
       </div>
 
       <!-- Tickets Tab -->
-      <div v-if="activeTab === 'tickets'" class="h-full w-[480px] shrink-0">
+      <div v-if="activeTab === 'tickets'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <TicketsPanel />
       </div>
 
       <!-- Audit Tab -->
-      <div v-if="activeTab === 'audit'" class="h-full w-[420px] shrink-0 p-4">
+      <div v-if="activeTab === 'audit'" class="h-full shrink-0 p-4" :style="{ width: `${drawerPx}px` }">
         <AuditFeed
           :events="auditStore.events"
           :is-loading="auditStore.isLoading"
@@ -639,5 +651,14 @@ function handleChatSubmit() {
         />
       </div>
     </div>
+
+    <!-- Drawer resize handle (drag the right edge to grow the drawer) -->
+    <div
+      v-if="activeTab !== 'none'"
+      data-test="sidebar-drawer-resizer"
+      class="z-20 w-1 cursor-col-resize self-stretch bg-transparent hover:bg-theme-primary/40 transition-colors"
+      :class="{ 'bg-theme-primary/60': drawerResizer.isDragging.value }"
+      @pointerdown="drawerResizer.onPointerDown"
+    />
   </div>
 </template>

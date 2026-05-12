@@ -1,10 +1,36 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useProviderDataStore } from '../../stores/useProviderDataStore'
+import {
+  useCockpitLayoutStore,
+  BUILD_PANE_MAX_WIDTH,
+  BUILD_PANE_MIN_WIDTH,
+} from '../../stores/useCockpitLayoutStore'
+import { useDraggableEdge } from '../../composables/useDraggableEdge'
 import { storeToRefs } from 'pinia'
-import { PanelRightClose, PanelRightOpen, Filter, BarChart2, Database, Folder, FolderOpen, Table, Activity, Network, RefreshCcw, AlertTriangle, Layers3 } from 'lucide-vue-next'
+import {
+  PanelRightClose,
+  PanelRightOpen,
+  Filter,
+  BarChart2,
+  Database,
+  Folder,
+  FolderOpen,
+  Table,
+  Activity,
+  Network,
+  RefreshCcw,
+  AlertTriangle,
+  Layers3,
+  Pencil,
+  Check,
+  X,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-vue-next'
 import DraggableWidget from './DraggableWidget.vue'
 import WidgetHealth from '../widgets/WidgetHealth.vue'
 import WidgetThreats from '../widgets/WidgetThreats.vue'
@@ -25,7 +51,65 @@ import { PROVIDER_FIELD_DRAG_MIME, serializeFieldBinding } from '../../utils/fie
 const dashboardStore = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
 const providerDataStore = useProviderDataStore()
+const layoutStore = useCockpitLayoutStore()
+const { t } = useI18n()
 const { activeWidgets, workspaceName, catalogItems } = storeToRefs(dashboardStore)
+const { buildPaneWidth, minimapCollapsed } = storeToRefs(layoutStore)
+
+// --- workspace rename (inline editable header) ---
+const renameDraft = ref('')
+const isRenaming = ref(false)
+const renameError = ref('')
+const renameInput = ref<HTMLInputElement | null>(null)
+
+async function startRename() {
+  renameError.value = ''
+  renameDraft.value = workspaceName.value
+  isRenaming.value = true
+  await nextTick()
+  renameInput.value?.focus()
+  renameInput.value?.select()
+}
+
+async function commitRename() {
+  const next = renameDraft.value.trim()
+  if (!next || next === workspaceName.value) {
+    isRenaming.value = false
+    return
+  }
+  try {
+    await dashboardStore.renameActiveWorkspace(next)
+    isRenaming.value = false
+  } catch (error: any) {
+    renameError.value = error?.message ?? t('workspaces.rename.error')
+  }
+}
+
+function cancelRename() {
+  isRenaming.value = false
+  renameError.value = ''
+}
+
+// Browser tab title mirrors the workspace name so a renamed/imported workspace
+// is identifiable from the tab strip.
+watch(
+  workspaceName,
+  (name) => {
+    if (typeof document !== 'undefined') {
+      document.title = name ? `${name} · FortiDashboard` : 'FortiDashboard'
+    }
+  },
+  { immediate: true },
+)
+
+// --- resizable build pane ---
+const buildPaneResizer = useDraggableEdge({
+  edge: 'left',
+  getCurrent: () => buildPaneWidth.value,
+  setValue: (next) => layoutStore.setBuildPaneWidth(next),
+  min: BUILD_PANE_MIN_WIDTH,
+  max: BUILD_PANE_MAX_WIDTH,
+})
 const {
   groups: dataFieldGroups,
   isLoading: isDataFieldsLoading,
@@ -536,11 +620,61 @@ onBeforeUnmount(() => {
   <div class="flex-1 h-full overflow-hidden relative bg-theme-bg flex flex-col z-0">
     <!-- Header/Toolbar -->
     <header class="h-16 border-b border-theme-border flex items-center px-6 bg-theme-panel/50 backdrop-blur-sm z-40 relative shrink-0 justify-between">
-      <h1 class="text-xl font-medium tracking-tight">{{ workspaceName }}</h1>
-      
-      <button 
+      <div class="flex items-center gap-2 min-w-0">
+        <template v-if="isRenaming">
+          <input
+            ref="renameInput"
+            v-model="renameDraft"
+            data-test="workspace-rename-input"
+            class="text-xl font-medium tracking-tight bg-theme-bg border border-theme-border rounded px-2 py-0.5 outline-none focus:border-theme-primary"
+            :placeholder="t('workspaces.rename.hint')"
+            @keydown.enter.prevent="commitRename"
+            @keydown.esc.prevent="cancelRename"
+            @blur="commitRename"
+          />
+          <button
+            type="button"
+            class="text-theme-text-muted hover:text-emerald-400 p-1"
+            :title="t('common.save')"
+            @mousedown.prevent="commitRename"
+          >
+            <Check :size="16" />
+          </button>
+          <button
+            type="button"
+            class="text-theme-text-muted hover:text-red-400 p-1"
+            :title="t('common.cancel')"
+            @mousedown.prevent="cancelRename"
+          >
+            <X :size="16" />
+          </button>
+        </template>
+        <template v-else>
+          <h1
+            data-test="workspace-title"
+            class="text-xl font-medium tracking-tight truncate"
+          >
+            {{ workspaceName }}
+          </h1>
+          <button
+            type="button"
+            data-test="workspace-rename-button"
+            class="text-theme-text-muted hover:text-theme-text p-1 rounded hover:bg-theme-border/40"
+            :title="t('workspaces.rename.tooltip')"
+            @click="startRename"
+          >
+            <Pencil :size="14" />
+          </button>
+        </template>
+        <span
+          v-if="renameError"
+          class="text-xs text-red-400 ml-2"
+        >{{ renameError }}</span>
+      </div>
+
+      <button
         v-if="integrationsStore.hasWorkspaceIntegrations"
-        @click="isBuildPaneOpen = !isBuildPaneOpen" 
+        @click="isBuildPaneOpen = !isBuildPaneOpen"
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
         :class="isBuildPaneOpen ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
       >
@@ -612,12 +746,21 @@ onBeforeUnmount(() => {
         data-test="workspace-minimap"
         class="absolute bottom-4 left-4 z-40 rounded-md border border-theme-border bg-theme-panel/90 p-2 shadow-2xl backdrop-blur-sm"
       >
-        <div class="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-theme-text-muted">
-          <span>Workspace</span>
+        <div class="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-theme-text-muted">
+          <button
+            type="button"
+            data-test="minimap-toggle"
+            class="flex items-center gap-1 hover:text-theme-text"
+            @click="layoutStore.toggleMinimap"
+          >
+            <component :is="minimapCollapsed ? ChevronRight : ChevronDown" :size="12" />
+            <span>Workspace</span>
+          </button>
           <span>{{ Math.round(dashboardStore.zoom * 100) }}%</span>
         </div>
         <div
-          class="relative overflow-hidden rounded border border-theme-border bg-theme-bg/80"
+          v-if="!minimapCollapsed"
+          class="relative overflow-hidden rounded border border-theme-border bg-theme-bg/80 mt-1"
           :style="{ width: `${MINIMAP_WIDTH_PX}px`, height: `${MINIMAP_HEIGHT_PX}px` }"
         >
           <div class="absolute left-1/2 top-0 h-full w-px bg-theme-border/45" />
@@ -637,14 +780,27 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- Build Pane resizer handle (only when open, drags the left edge) -->
+      <div
+        v-if="integrationsStore.hasWorkspaceIntegrations && isBuildPaneOpen"
+        data-test="build-pane-resizer"
+        class="z-40 w-1 cursor-col-resize self-stretch bg-transparent hover:bg-theme-primary/40 transition-colors"
+        :class="{ 'bg-theme-primary/60': buildPaneResizer.isDragging.value }"
+        @pointerdown="buildPaneResizer.onPointerDown"
+      />
+
       <!-- Build Pane (Power BI style) -->
-      <aside 
+      <aside
         v-if="integrationsStore.hasWorkspaceIntegrations"
-        class="h-full bg-theme-panel border-l border-theme-border transition-all duration-300 flex flex-col z-30 shrink-0"
-        :style="{ width: isBuildPaneOpen ? '300px' : '0px', opacity: isBuildPaneOpen ? 1 : 0 }"
+        class="h-full bg-theme-panel border-l border-theme-border flex flex-col z-30 shrink-0"
+        :class="{ 'transition-all duration-300': !buildPaneResizer.isDragging.value }"
+        :style="{ width: isBuildPaneOpen ? `${buildPaneWidth}px` : '0px', opacity: isBuildPaneOpen ? 1 : 0 }"
       >
         <!-- Tabs Header -->
-        <div class="flex border-b border-theme-border w-[300px] shrink-0">
+        <div
+          class="flex border-b border-theme-border shrink-0"
+          :style="{ width: `${buildPaneWidth}px` }"
+        >
           <button 
             @click="activeBuildTab = 'filters'"
             class="flex-1 py-3 text-xs font-medium uppercase tracking-wider flex justify-center items-center gap-1 border-b-2 transition-colors"
@@ -669,7 +825,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto w-[300px] shrink-0">
+        <div class="flex-1 overflow-y-auto shrink-0" :style="{ width: `${buildPaneWidth}px` }">
           <!-- Filters Tab -->
           <div v-if="activeBuildTab === 'filters'" class="p-4 flex flex-col gap-6">
             <div class="flex flex-col gap-2">
