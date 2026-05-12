@@ -156,6 +156,12 @@ def _socket_constant_name(
 def _address_payload(address: Any) -> dict[str, Any] | None:
     if not address:
         return None
+    if isinstance(address, dict):
+        ip = address.get("ip")
+        port = address.get("port")
+        if ip is None and port is None:
+            return None
+        return {"ip": ip, "port": port}
     if hasattr(address, "ip") and hasattr(address, "port"):
         return {"ip": address.ip, "port": address.port}
     if isinstance(address, tuple) and len(address) >= 2:
@@ -163,15 +169,23 @@ def _address_payload(address: Any) -> dict[str, Any] | None:
     return {"ip": str(address), "port": None}
 
 
+def _connection_value(row: Any, key: str, default: Any = None) -> Any:
+    if isinstance(row, dict):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
 def normalize_connection(row: Any) -> dict[str, Any]:
+    local_address = _connection_value(row, "localAddress", _connection_value(row, "laddr"))
+    remote_address = _connection_value(row, "remoteAddress", _connection_value(row, "raddr"))
     return {
-        "fd": getattr(row, "fd", None),
-        "family": _socket_constant_name(socket.AddressFamily, getattr(row, "family", "")),
-        "type": _socket_constant_name(socket.SocketKind, getattr(row, "type", "")),
-        "localAddress": _address_payload(getattr(row, "laddr", None)),
-        "remoteAddress": _address_payload(getattr(row, "raddr", None)),
-        "status": getattr(row, "status", None),
-        "pid": getattr(row, "pid", None),
+        "fd": _connection_value(row, "fd"),
+        "family": _socket_constant_name(socket.AddressFamily, _connection_value(row, "family", "")),
+        "type": _socket_constant_name(socket.SocketKind, _connection_value(row, "type", "")),
+        "localAddress": _address_payload(local_address),
+        "remoteAddress": _address_payload(remote_address),
+        "status": _connection_value(row, "status"),
+        "pid": _connection_value(row, "pid"),
     }
 
 

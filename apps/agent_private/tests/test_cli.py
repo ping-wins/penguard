@@ -154,6 +154,32 @@ def test_build_connection_snapshot_payload_normalizes_connection_rows():
     ]
 
 
+def test_build_connection_snapshot_payload_preserves_collected_connection_dicts():
+    occurred_at = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    connections = [
+        {
+            "fd": 7,
+            "family": "AF_INET",
+            "type": "SOCK_STREAM",
+            "localAddress": {"ip": "192.0.2.50", "port": 54122},
+            "remoteAddress": {"ip": "198.51.100.20", "port": 443},
+            "status": "ESTABLISHED",
+            "pid": 1200,
+        }
+    ]
+
+    payload = build_connection_snapshot_payload(
+        endpoint_id="end_01",
+        hostname="demo-endpoint-01",
+        ip_addresses=["192.0.2.50"],
+        connections=connections,
+        occurred_at=occurred_at,
+    )
+
+    assert payload["eventType"] == "connection.snapshot"
+    assert payload["attributes"]["connections"] == connections
+
+
 def test_parse_windows_security_events_extracts_event_data_from_wevtutil_xml():
     raw_xml = """
     <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
