@@ -16,7 +16,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.ai import get_ai_provider
+from app.ai.cockpit_agent import get_cockpit_agent_runtime
+from app.ai.tools import (
+    DraftWidgetRequest,
+    WidgetDraftResponse,
+    WidgetDraftValidationError,
+    draft_widget,
+    list_tool_specs,
+)
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user
 from app.core.config import get_settings
@@ -41,6 +48,7 @@ class ChatResponse(BaseModel):
     reply: str
     provider: str
     model: str
+    runtime: str = "legacy"
 
 
 class AIStatusResponse(BaseModel):
@@ -49,6 +57,7 @@ class AIStatusResponse(BaseModel):
     provider: str
     model: str
     ready: bool
+    runtime: str = "pydantic_ai"
 
 
 def _client_ip(request: Request) -> str | None:
@@ -69,6 +78,61 @@ def _locale_from_request(
     return "pt-BR"
 
 
+@router.get("/ai/tools")
+def ai_tools(
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict[str, list[dict[str, Any]]]:
+    return {"items": [spec.model_dump(by_alias=True) for spec in list_tool_specs()]}
+
+
+@router.post("/ai/tools/draft-widget", response_model=WidgetDraftResponse)
+def draft_widget_tool(
+    request: Request,
+    payload: Annotated[DraftWidgetRequest, Body(...)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> WidgetDraftResponse:
+    try:
+        response = draft_widget(payload)
+    except WidgetDraftValidationError as exc:
+        audit_store.record(
+            action="ai.widget_draft.created",
+            outcome="failure",
+            email=current_user.get("email"),
+            user_id=current_user.get("id"),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "toolName": "draft_widget",
+                "provider": payload.provider,
+                "visualType": payload.visual_type,
+                "fieldCount": len(payload.field_ids),
+                "errors": exc.errors,
+            },
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"errors": exc.errors},
+        ) from exc
+
+    audit_store.record(
+        action="ai.widget_draft.created",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=current_user.get("id"),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "toolName": "draft_widget",
+            "provider": payload.provider,
+            "visualType": payload.visual_type,
+            "fieldCount": len(payload.field_ids),
+        },
+    )
+    return response
+
+
 @router.get("/ai/status", response_model=AIStatusResponse)
 def ai_status(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
@@ -85,7 +149,12 @@ def ai_status(
     elif provider_name in {"openai", "openai_compat", "openai-compatible"}:
         model = model or "gpt-4o-mini"
     ready = provider_name == "scripted" or bool(settings.ai_api_key)
-    return AIStatusResponse(provider=provider_name, model=model, ready=ready)
+    return AIStatusResponse(
+        provider=provider_name,
+        model=model,
+        ready=ready,
+        runtime="pydantic_ai",
+    )
 
 
 @router.post("/ai/chat", response_model=ChatResponse)
@@ -100,7 +169,7 @@ def ai_chat(
     ] = None,
     accept_language: Annotated[str | None, Header(alias="Accept-Language")] = None,
 ) -> ChatResponse:
-    provider = get_ai_provider()
+    agent_runtime = get_cockpit_agent_runtime()
     locale = _locale_from_request(locale_header, accept_language)
     messages: list[dict[str, str]] = [
         {"role": turn.role, "content": turn.content} for turn in payload.messages
@@ -112,7 +181,7 @@ def ai_chat(
     prompt_len = len(last_user.content) if last_user else 0
 
     try:
-        reply = provider.chat(messages, locale=locale)
+        result = agent_runtime.chat(messages, locale=locale)
     except Exception as exc:  # noqa: BLE001
         audit_store.record(
             action="ai.chat",
@@ -122,7 +191,8 @@ def ai_chat(
             client_ip=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
             details={
-                "provider": getattr(provider, "name", "unknown"),
+                "provider": "unknown",
+                "runtime": agent_runtime.runtime,
                 "promptLength": prompt_len,
                 "error": str(exc)[:300],
             },
@@ -140,16 +210,19 @@ def ai_chat(
         client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         details={
-            "provider": getattr(provider, "name", "unknown"),
+            "provider": result.provider,
+            "runtime": result.runtime,
             "promptLength": prompt_len,
-            "replyLength": len(reply),
+            "replyLength": len(result.reply),
             "locale": locale,
+            "toolCount": result.tool_count,
+            "usedTools": result.used_tools,
         },
     )
 
-    settings = get_settings()
     return ChatResponse(
-        reply=reply,
-        provider=getattr(provider, "name", "scripted"),
-        model=settings.ai_model or "",
+        reply=result.reply,
+        provider=result.provider,
+        model=result.model,
+        runtime=result.runtime,
     )

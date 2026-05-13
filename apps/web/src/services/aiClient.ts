@@ -12,12 +12,14 @@ export type ChatReply = {
   reply: string
   provider: string
   model: string
+  runtime: string
 }
 
 export type AIStatus = {
   provider: string
   model: string
   ready: boolean
+  runtime: string
 }
 
 async function csrfHeaders(): Promise<Record<string, string>> {

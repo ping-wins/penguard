@@ -394,6 +394,20 @@ Current implementation status:
 ## AI Assistant Roadmap
 
 The internal AI assistant is a cockpit assistant, not an autonomous operator.
+Use three layers:
+
+- **Pydantic AI cockpit agent:** short-running, typed assistant for dashboard
+  chat, widget drafting, dashboard explanation and ticket summaries.
+- **LangGraph triage workflow:** durable ticket/incident workflow for
+  multi-step triage, endpoint correlation, containment planning, retryable AI
+  failures and human approval pauses.
+- **MCP server, later:** customer-facing tool surface for external agents. MCP
+  only exposes stable, audited and permission-aware tools after the internal
+  tool registry has settled.
+
+Shared internal tool contracts live in `apps/api/app/ai/tools/` and must be
+reused by the cockpit agent, triage graph and future MCP server. Do not let
+model runtimes call service internals directly.
 
 Allowed direction:
 
@@ -415,6 +429,27 @@ Forbidden operations:
 AI-created widgets must be drafts with `fieldBindings[]`, allowed provider field
 references, layout suggestions and validation before insertion into
 workspace manifests.
+
+Current AI tool foundation:
+
+```txt
+GET  /api/ai/tools
+POST /api/ai/tools/draft-widget
+```
+
+`draft-widget` returns a draft only. The cockpit must still ask the user to
+confirm before inserting the visual into a workspace manifest.
+
+Current cockpit agent foundation:
+
+- `/api/ai/chat` now routes through `apps/api/app/ai/cockpit_agent.py`.
+- The runtime uses Pydantic AI `Agent` + `FunctionModel` for deterministic
+  local/scripted behavior while registering the same internal tools that future
+  model-backed agents will use.
+- The chat response includes `runtime="pydantic_ai"` and audit entries record
+  provider, runtime, prompt length, reply length, tool count and used tools.
+- Natural-language prompts that mention known field IDs such as `system.cpu`
+  can produce a `draft_widget` response without persisting anything.
 
 ## Known Lab Setup Issues
 
@@ -1018,13 +1053,22 @@ mergeable.
 
 ### AI And MCP
 
-- [ ] Define AI-safe operations and forbidden operations as API/tool contracts.
-- [ ] Add `draft` status for AI-generated playbooks and widgets.
-- [ ] Implement AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
-- [ ] Implement `list_data_fields`, `draft_widget`, `validate_widget`, `simulate_widget_data` and `add_widget_draft_to_workspace`.
-- [ ] Implement `analyze_incident` and `suggest_containment` tools for the MVP demo flow (Phase 3).
+- [x] Define AI-safe operations and forbidden operations as API/tool contracts.
+- [x] Add `draft` status for AI-generated playbooks and widgets.
+- [x] Implement initial AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
+- [x] Implement the first widget-draft foundation: provider field validation,
+      `draft_widget`, validation output and clearly labeled simulated preview
+      data through `POST /api/ai/tools/draft-widget`.
+- [ ] Add standalone `validate_widget`, `simulate_widget_data` and
+      `add_widget_draft_to_workspace` endpoints/actions when the frontend
+      confirmation UX is ready.
+- [x] Implement `analyze_incident` and `suggest_containment` routes for the MVP demo flow (Phase 3).
+- [ ] Expose `analyze_incident` and `suggest_containment` through the formal AI tool registry for LangGraph/MCP reuse.
 - [x] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft via `_SOAR_NODE_MAPPING` + linear graph builder (Phase 4).
-- [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
+- [x] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
+- [x] Wrap the tool registry with a Pydantic AI cockpit agent using
+      `apps/api/app/ai/cockpit_agent.py`.
+- [ ] Implement the LangGraph ticket triage workflow on top of the same tool registry.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
 
