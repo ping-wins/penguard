@@ -80,6 +80,49 @@ Antes da primeira release real, leia `docs/maturity-analysis.md` —
 existem itens de observabilidade, rate-limit e onboarding que ainda estão
 em Sprint 2 e 3 do roadmap.
 
+## IA real (Gemini / Anthropic / OpenAI-compat)
+
+A cockpit suporta provider de IA real para o chat do sidebar e os botões
+"Analisar" / "Sugerir contenção" no ticket drawer. Default é `scripted`
+(offline, determinístico). Pra ligar Gemini ou Claude, edita `.env`:
+
+```env
+# Gemini (free tier no AI Studio, key: https://aistudio.google.com/apikey)
+FORTIDASHBOARD_AI_PROVIDER=openai_compat
+FORTIDASHBOARD_AI_API_KEY=AIza...
+FORTIDASHBOARD_AI_MODEL=gemini-2.5-flash
+FORTIDASHBOARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+```
+
+```env
+# Anthropic Claude (key: https://console.anthropic.com)
+FORTIDASHBOARD_AI_PROVIDER=anthropic
+FORTIDASHBOARD_AI_API_KEY=sk-ant-...
+FORTIDASHBOARD_AI_MODEL=claude-haiku-4-5-20251001
+```
+
+Depois:
+
+```powershell
+docker compose up -d --build api
+# valida que o container leu as vars novas:
+curl http://localhost:8000/api/ai/status
+```
+
+`/api/ai/status` retorna `{"provider":"openai","model":"gemini-2.5-flash","ready":true}`.
+Na cockpit, abre o sidebar "Assistente IA" — o pill no topo do chat
+mostra `<provider> · <model>` em verde quando o backend está ligado.
+
+⚠️ Pegadinhas observadas:
+
+- **Gemini exige o sufixo `/v1beta/openai`** no `FORTIDASHBOARD_AI_BASE_URL`.
+  Sem ele o endpoint vira 404 e o Google retorna 400 "API key not valid"
+  como red herring.
+- **Claude Pro (claude.ai) ≠ API**. Assinatura UI não dá acesso à API.
+  Precisa criar key paga em `console.anthropic.com`.
+- **Gemini Pro (gemini.google.com) ≠ API**. Mesmo modelo: free tier do
+  AI Studio (60 req/min) é separado da assinatura UI.
+
 ## Estrutura do Monorepo
 
 - `apps/api`: backend FastAPI com healthcheck, BFF auth, sessões server-side persistidas e modo mock opt-in para contratos.

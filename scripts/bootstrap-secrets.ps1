@@ -102,6 +102,27 @@ FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
 SIEM_KOWALSKI_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
 SOAR_SKIPPER_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
 XDR_RICO_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
+
+# --- AI provider ---
+# Default "scripted" works offline. Swap to a real model with one of the
+# recipes below. Compose must list these vars in the api environment block
+# (already done) for them to reach the container.
+FORTIDASHBOARD_AI_PROVIDER=scripted
+FORTIDASHBOARD_AI_API_KEY=
+FORTIDASHBOARD_AI_MODEL=
+FORTIDASHBOARD_AI_BASE_URL=
+#
+# Gemini via OpenAI-compat (key: https://aistudio.google.com/apikey):
+# FORTIDASHBOARD_AI_PROVIDER=openai_compat
+# FORTIDASHBOARD_AI_API_KEY=AIza...
+# FORTIDASHBOARD_AI_MODEL=gemini-2.5-flash
+# FORTIDASHBOARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+#
+# Anthropic (key: https://console.anthropic.com):
+# FORTIDASHBOARD_AI_PROVIDER=anthropic
+# FORTIDASHBOARD_AI_API_KEY=sk-ant-...
+# FORTIDASHBOARD_AI_MODEL=claude-haiku-4-5-20251001
+# FORTIDASHBOARD_AI_BASE_URL=https://api.anthropic.com
 "@
 
 # Write without BOM, LF endings, and tighten ACLs to current user only.
