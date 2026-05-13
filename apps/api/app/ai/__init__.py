@@ -9,6 +9,7 @@ to know which backend is configured.
 
 from app.ai.provider import (
     AIProvider,
+    ChatMessage,
     ContainmentStep,
     ContainmentSuggestion,
     IncidentAnalysis,
@@ -18,6 +19,7 @@ from app.ai.provider import (
 
 __all__ = [
     "AIProvider",
+    "ChatMessage",
     "ContainmentStep",
     "ContainmentSuggestion",
     "IncidentAnalysis",

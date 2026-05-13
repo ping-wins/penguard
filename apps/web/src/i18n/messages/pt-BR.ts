@@ -368,12 +368,14 @@ export default {
   },
   chat: {
     header: 'Assistente IA',
-    greeting: 'Olá! Sou sua analista de SOC virtual. Que painel deseja adicionar?',
+    greeting: 'Olá! Sou sua analista de SOC virtual. Pergunte qualquer coisa ou peça um painel ("Adicione System Status").',
     thinking: 'Analisando...',
-    inputPlaceholder: 'Ex: Adicione ameaças...',
+    inputPlaceholder: 'Pergunte ao assistente ou peça um painel...',
     integrationRequired: 'Você precisa conectar uma integração primeiro antes de adicionar widgets!',
     widgetAdded: 'Adicionei o painel "{title}" para você!',
-    widgetNotFound: 'Não encontrei um painel exato para sua solicitação. Tente pedir por "System Status", "Top Threats" ou "Network".',
+    widgetNotFound: 'Não encontrei um painel exato. Tente pedir por "System Status", "Top Threats" ou "Network".',
+    error: 'Falha ao falar com o assistente IA. Verifique o provider em /api/ai/status.',
+    providerTooltip: 'Provider: {provider} · Modelo: {model}',
   },
   audit: {
     title: 'Trilha de auditoria',

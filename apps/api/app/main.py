@@ -3,6 +3,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import get_settings
 from app.routers import (
+    ai,
     audit,
     auth,
     health,
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(soc.router, prefix="/api")

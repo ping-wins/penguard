@@ -368,12 +368,14 @@ export default {
   },
   chat: {
     header: 'AI assistant',
-    greeting: 'Hi! I am your virtual SOC analyst. Which panel do you want to add?',
+    greeting: 'Hi! I am your virtual SOC analyst. Ask anything or request a panel ("Add System Status").',
     thinking: 'Analyzing...',
-    inputPlaceholder: 'e.g. Add threats...',
+    inputPlaceholder: 'Ask the assistant or request a panel...',
     integrationRequired: 'You need to connect an integration first before adding widgets!',
     widgetAdded: 'Added the "{title}" panel for you!',
     widgetNotFound: 'I could not find a matching panel. Try asking for "System Status", "Top Threats" or "Network".',
+    error: 'Failed to reach the AI assistant. Check the provider via /api/ai/status.',
+    providerTooltip: 'Provider: {provider} · Model: {model}',
   },
   audit: {
     title: 'Audit trail',

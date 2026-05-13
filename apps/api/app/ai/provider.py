@@ -73,6 +73,9 @@ class ContainmentSuggestion:
     raw_output: str = ""
 
 
+ChatMessage = dict[str, str]  # {"role": "user"|"assistant"|"system", "content": str}
+
+
 class AIProvider(Protocol):
     name: str
 
@@ -90,9 +93,40 @@ class AIProvider(Protocol):
         locale: str = "pt-BR",
     ) -> ContainmentSuggestion: ...
 
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+    ) -> str: ...
+
 
 def _is_english(locale: str | None) -> bool:
     return (locale or "").lower().startswith("en")
+
+
+def _chat_system_prompt(locale: str | None) -> str:
+    if _is_english(locale):
+        return (
+            "You are an embedded SOC assistant inside the FortiDashboard "
+            "cockpit. Answer concisely (1-3 short paragraphs) and stay on "
+            "topic for incident response, FortiGate operations, detection "
+            "engineering and SOC workflows. If the analyst asks about a "
+            "dashboard widget, mention it by name. Never make up incident "
+            "IDs, credentials, IPs or audit-trail entries — say you don't "
+            "have that information instead. Do not produce shell commands "
+            "that change firewall state; only describe them at a high level."
+        )
+    return (
+        "Você é um assistente SOC embarcado na cockpit do FortiDashboard. "
+        "Responda de forma concisa (1-3 parágrafos curtos), mantendo o foco "
+        "em resposta a incidentes, operações de FortiGate, engenharia de "
+        "detecção e workflows de SOC. Se o analista perguntar sobre um "
+        "widget, cite-o pelo nome. Nunca invente IDs de incidente, "
+        "credenciais, IPs ou entradas de audit trail — diga que você não "
+        "tem essa informação. Não produza comandos shell que mudem o "
+        "estado do firewall; apenas descreva-os em alto nível."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +304,31 @@ class ScriptedAIProvider:
         ips = sorted(set(self._IOC_PATTERN.findall(haystack)))
         return ips[:10]
 
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+    ) -> str:
+        user_message = ""
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                user_message = message.get("content", "")
+                break
+        if _is_english(locale):
+            return (
+                "Scripted assistant: I cannot reach a live model in this "
+                "environment. Configure FORTIDASHBOARD_AI_PROVIDER + "
+                "FORTIDASHBOARD_AI_API_KEY to enable a real backend. "
+                f"You asked: \"{user_message[:200]}\"."
+            )
+        return (
+            "Assistente scripted: não consigo alcançar um modelo real neste "
+            "ambiente. Configure FORTIDASHBOARD_AI_PROVIDER + "
+            "FORTIDASHBOARD_AI_API_KEY para habilitar um backend de verdade. "
+            f"Sua pergunta: \"{user_message[:200]}\"."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Anthropic adapter
@@ -318,6 +377,46 @@ class AnthropicAIProvider:
         return _parse_containment(raw, context=context, locale=locale)
 
     def _completion(self, prompt: str) -> str:
+        return self._messages_call(
+            messages=[{"role": "user", "content": prompt}],
+            system=None,
+        )
+
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+    ) -> str:
+        system_prompt = _chat_system_prompt(locale)
+        normalized: list[ChatMessage] = []
+        for message in messages:
+            role = message.get("role", "user")
+            if role == "system":
+                continue
+            normalized.append(
+                {
+                    "role": "assistant" if role == "assistant" else "user",
+                    "content": message.get("content", ""),
+                }
+            )
+        if not normalized:
+            return ""
+        return self._messages_call(messages=normalized, system=system_prompt)
+
+    def _messages_call(
+        self,
+        *,
+        messages: list[ChatMessage],
+        system: str | None,
+    ) -> str:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "messages": messages,
+        }
+        if system:
+            body["system"] = system
         response = self.http_client.post(
             f"{self.base_url}/v1/messages",
             headers={
@@ -325,11 +424,7 @@ class AnthropicAIProvider:
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
-            json={
-                "model": self.model,
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=body,
         )
         if response.status_code >= 400:
             raise _RemoteAIError(
@@ -382,19 +477,50 @@ class OpenAICompatibleAIProvider:
         return _parse_containment(self._completion(prompt), context=context, locale=locale)
 
     def _completion(self, prompt: str) -> str:
+        return self._chat_call(
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+    ) -> str:
+        full_messages: list[ChatMessage] = [
+            {"role": "system", "content": _chat_system_prompt(locale)}
+        ]
+        for message in messages:
+            role = message.get("role", "user")
+            if role not in {"user", "assistant", "system"}:
+                role = "user"
+            full_messages.append({"role": role, "content": message.get("content", "")})
+        return self._chat_call(messages=full_messages, temperature=0.7)
+
+    def _chat_call(
+        self,
+        *,
+        messages: list[ChatMessage],
+        response_format: dict[str, Any] | None = None,
+        temperature: float = 0.2,
+    ) -> str:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 1024,
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            body["response_format"] = response_format
         response = self.http_client.post(
             f"{self.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 1024,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
+            json=body,
         )
         if response.status_code >= 400:
             raise _RemoteAIError(

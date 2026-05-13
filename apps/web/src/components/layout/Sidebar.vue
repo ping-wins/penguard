@@ -13,6 +13,7 @@ import {
   SIDEBAR_DRAWER_MIN_WIDTH,
 } from '../../stores/useCockpitLayoutStore'
 import { useDraggableEdge } from '../../composables/useDraggableEdge'
+import { aiChat, aiStatus, type AIStatus } from '../../services/aiClient'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
@@ -107,6 +108,15 @@ const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
   { role: 'assistant', text: t('chat.greeting') }
 ])
 const isThinking = ref(false)
+const providerStatus = ref<AIStatus | null>(null)
+
+async function refreshProviderStatus() {
+  try {
+    providerStatus.value = await aiStatus()
+  } catch {
+    providerStatus.value = null
+  }
+}
 function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
@@ -118,6 +128,9 @@ function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'worksp
 
   if (activeTab.value !== tab && tab === 'integrations') {
     integrationsStore.fetchIntegrations()
+  }
+  if (activeTab.value !== tab && tab === 'chat') {
+    refreshProviderStatus()
   }
   if (activeTab.value !== tab && tab === 'audit') {
     auditStore.startPolling({ scope: auditScope.value, limit: 50, intervalMs: 5000 })
@@ -223,41 +236,52 @@ async function handleLogout() {
   router.push({ name: 'login' })
 }
 
-function handleChatSubmit() {
+// Catalog quick-add: if the user phrase is a literal match for a widget
+// preset, short-circuit before calling the real model so the demo flow stays
+// fast and free. Anything else goes to the configured AI provider.
+function tryCatalogShortcut(text: string): boolean {
+  const lowerText = text.toLowerCase()
+  for (const item of store.catalogItems) {
+    if (lowerText.includes(item.title.toLowerCase()) || lowerText.includes(item.id.split('-').pop() || '')) {
+      const integration = integrationForCatalogItem(item)
+      if (integration) {
+        handleAddWidget(item.id, integration.id)
+        chatMessages.value.push({ role: 'assistant', text: t('chat.widgetAdded', { title: item.title }) })
+        return true
+      }
+    }
+  }
+  return false
+}
+
+async function handleChatSubmit() {
   if (!chatInput.value.trim()) return
-  
+
   const text = chatInput.value
   chatMessages.value.push({ role: 'user', text })
   chatInput.value = ''
+
+  if (integrationsStore.hasWorkspaceIntegrations && tryCatalogShortcut(text)) {
+    return
+  }
+
   isThinking.value = true
-  
-  setTimeout(() => {
+  try {
+    const history = chatMessages.value.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }))
+    const result = await aiChat(history)
+    const reply = result.reply.trim() || t('chat.widgetNotFound')
+    chatMessages.value.push({ role: 'assistant', text: reply })
+  } catch (error: any) {
+    chatMessages.value.push({
+      role: 'assistant',
+      text: error?.message ?? t('chat.error'),
+    })
+  } finally {
     isThinking.value = false
-
-    if (!integrationsStore.hasWorkspaceIntegrations) {
-      chatMessages.value.push({ role: 'assistant', text: t('chat.integrationRequired') })
-      return
-    }
-
-    // NLP MOCK logic
-    const lowerText = text.toLowerCase()
-    let found = false
-    for (const item of store.catalogItems) {
-      if (lowerText.includes(item.title.toLowerCase()) || lowerText.includes(item.id.split('-').pop() || '')) {
-        const integration = integrationForCatalogItem(item)
-        if (integration) {
-          handleAddWidget(item.id, integration.id)
-          chatMessages.value.push({ role: 'assistant', text: t('chat.widgetAdded', { title: item.title }) })
-          found = true
-        }
-        break
-      }
-    }
-
-    if (!found) {
-      chatMessages.value.push({ role: 'assistant', text: t('chat.widgetNotFound') })
-    }
-  }, 1000)
+  }
 }
 </script>
 
@@ -347,7 +371,19 @@ function handleChatSubmit() {
     >
       <!-- Chat Tab -->
       <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full shrink-0" :style="{ width: `${drawerPx}px` }">
-        <h2 class="font-bold text-lg mb-4 text-theme-text">{{ t('chat.header') }}</h2>
+        <div class="mb-4 flex items-center justify-between gap-2">
+          <h2 class="font-bold text-lg text-theme-text">{{ t('chat.header') }}</h2>
+          <span
+            v-if="providerStatus"
+            class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border"
+            :class="providerStatus.ready
+              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+              : 'border-amber-500/40 bg-amber-500/15 text-amber-300'"
+            :title="t('chat.providerTooltip', { provider: providerStatus.provider, model: providerStatus.model || '—' })"
+          >
+            {{ providerStatus.provider }}{{ providerStatus.model ? ` · ${providerStatus.model}` : '' }}
+          </span>
+        </div>
 
         <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-2 mb-4">
           <div
