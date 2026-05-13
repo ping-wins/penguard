@@ -35,12 +35,28 @@ class IncidentContext:
 
 
 @dataclass(frozen=True)
+class MitreTechnique:
+    """One MITRE ATT&CK reference extracted from the AI analysis.
+
+    `id` follows the ATT&CK convention (e.g. "T1110.001"). `name` is the
+    human-readable technique label. `url` always points at the canonical
+    attack.mitre.org page so the cockpit can render a clickable anchor
+    without having to derive the URL itself.
+    """
+
+    id: str
+    name: str
+    url: str
+
+
+@dataclass(frozen=True)
 class IncidentAnalysis:
     """Structured AI output describing an incident.
 
     The cockpit treats this as a draft — nothing persists or executes until a
     human approves it. `risk_score` is 0-100, where 100 == immediate response
-    required.
+    required. The CVSS fields back the risk score with a documented vector
+    so an analyst can audit *why* the model picked that severity.
     """
 
     incident_id: str
@@ -52,6 +68,11 @@ class IncidentAnalysis:
     indicators_of_compromise: list[str]
     next_steps: list[str]
     references: list[str]
+    cvss_score: float | None = None
+    cvss_severity: str = ""  # "None"|"Low"|"Medium"|"High"|"Critical"
+    cvss_vector: str = ""  # full v3.1 vector string, e.g. CVSS:3.1/AV:N/AC:L/...
+    cvss_justification: str = ""
+    mitre_techniques: list[MitreTechnique] = field(default_factory=list)
     raw_output: str = ""
 
 
@@ -192,6 +213,18 @@ class ScriptedAIProvider:
                 f"Sugestão de triagem: {suggested_triage}. "
                 f"{context.summary or 'Sem resumo registrado ainda.'}"
             )
+        cvss_score, cvss_severity, cvss_vector, cvss_justification = (
+            self._scripted_cvss(context, severity_normalized, english=english)
+        )
+        mitre = self._scripted_mitre(context)
+        references = [
+            "https://attack.mitre.org/tactics/TA0043/",
+            "https://attack.mitre.org/tactics/TA0001/",
+            "https://docs.fortinet.com/document/fortigate/latest",
+            "https://nvd.nist.gov/vuln/search/",
+            "https://www.cisa.gov/news-events/cybersecurity-advisories",
+        ]
+        references.extend(t.url for t in mitre if t.url not in references)
         return IncidentAnalysis(
             incident_id=context.incident_id,
             headline=headline,
@@ -201,10 +234,12 @@ class ScriptedAIProvider:
             suggested_ticket_status="investigating",
             indicators_of_compromise=iocs,
             next_steps=next_steps,
-            references=[
-                "https://docs.fortinet.com/document/fortigate/latest",
-                "https://attack.mitre.org/tactics/TA0043/",
-            ],
+            references=references[:6],
+            cvss_score=cvss_score,
+            cvss_severity=cvss_severity,
+            cvss_vector=cvss_vector,
+            cvss_justification=cvss_justification,
+            mitre_techniques=mitre,
             raw_output="scripted",
         )
 
@@ -292,6 +327,105 @@ class ScriptedAIProvider:
             steps=steps,
             raw_output="scripted",
         )
+
+    def _scripted_cvss(
+        self,
+        context: IncidentContext,
+        severity_normalized: str,
+        *,
+        english: bool,
+    ) -> tuple[float, str, str, str]:
+        # Deterministic CVSS v3.1 base mapped from incident severity. Real
+        # provider re-computes; scripted just keeps the cockpit demo coherent.
+        mapping = {
+            "critical": (
+                9.5,
+                "Critical",
+                "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            ),
+            "high": (
+                8.1,
+                "High",
+                "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            ),
+            "medium": (
+                5.5,
+                "Medium",
+                "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:L",
+            ),
+            "low": (
+                3.1,
+                "Low",
+                "CVSS:3.1/AV:N/AC:H/PR:L/UI:R/S:U/C:L/I:N/A:N",
+            ),
+        }
+        score, label, vector = mapping.get(severity_normalized, mapping["medium"])
+        rule = context.rule_id or "rule"
+        if english:
+            justification = (
+                f"AV:N (Network) — the event originated remotely; AC:L (Low) — no "
+                f"specialised conditions seen; PR & UI reflect the {severity_normalized} "
+                f"profile of {rule}. CIA values pivot from CIA-high for critical "
+                f"denies to CIA-low for low-confidence noise so the score lines up "
+                f"with the rule's published severity."
+            )
+        else:
+            justification = (
+                f"AV:N (Network) — evento originado remotamente; AC:L (Low) — sem "
+                f"condições especiais observadas; PR e UI refletem o perfil "
+                f"{severity_normalized} da regra {rule}. Os valores CIA variam de "
+                f"CIA-high para denies críticos a CIA-low para ruído de baixa "
+                f"confiança, mantendo o score coerente com a severidade publicada."
+            )
+        return score, label, vector, justification
+
+    def _scripted_mitre(self, context: IncidentContext) -> list[MitreTechnique]:
+        # Pick techniques based on the rule id / event type. Keeps the demo
+        # references real (MITRE pages actually exist) without calling out.
+        event_blob = " ".join(
+            filter(
+                None,
+                [
+                    (context.rule_id or "").lower(),
+                    (context.title or "").lower(),
+                    (context.summary or "").lower(),
+                ],
+            )
+        )
+        techniques: list[MitreTechnique] = []
+        if any(token in event_blob for token in ("port_scan", "scan", "denied_traffic")):
+            techniques.append(
+                MitreTechnique(
+                    id="T1046",
+                    name="Network Service Discovery",
+                    url="https://attack.mitre.org/techniques/T1046/",
+                )
+            )
+        if any(token in event_blob for token in ("brute", "failed_login", "auth")):
+            techniques.append(
+                MitreTechnique(
+                    id="T1110.001",
+                    name="Brute Force: Password Guessing",
+                    url="https://attack.mitre.org/techniques/T1110/001/",
+                )
+            )
+        if any(token in event_blob for token in ("c2", "beacon", "suspicious_connection")):
+            techniques.append(
+                MitreTechnique(
+                    id="T1071.001",
+                    name="Application Layer Protocol: Web Protocols",
+                    url="https://attack.mitre.org/techniques/T1071/001/",
+                )
+            )
+        if not techniques:
+            techniques.append(
+                MitreTechnique(
+                    id="T1078",
+                    name="Valid Accounts",
+                    url="https://attack.mitre.org/techniques/T1078/",
+                )
+            )
+        return techniques[:3]
 
     def _extract_iocs(self, context: IncidentContext) -> list[str]:
         haystack = (
@@ -506,10 +640,13 @@ class OpenAICompatibleAIProvider:
         response_format: dict[str, Any] | None = None,
         temperature: float = 0.2,
     ) -> str:
+        # max_tokens=4096 covers Gemini 2.5 reasoning models (which spend a
+        # chunk of the output budget on hidden thinking before the visible
+        # JSON) and still fits well under every documented free-tier ceiling.
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 1024,
+            "max_tokens": 4096,
             "temperature": temperature,
         }
         if response_format is not None:
@@ -544,13 +681,37 @@ description, respond with a strict JSON object containing the following
 fields and nothing else:
 - headline: short single-sentence summary
 - summary: 2-3 sentences explaining what happened and why it matters
-- risk_score: integer 0-100 (higher = more urgent)
+- risk_score: integer 0-100 (higher = more urgent). MUST align with cvss_score
+  (multiply by 10 and round).
+- cvss_score: number 0.0-10.0 using the CVSS v3.1 base metric (no environmental
+  or temporal adjustments).
+- cvss_severity: one of None, Low, Medium, High, Critical — following the
+  official CVSS v3.1 thresholds (0.0=None, 0.1-3.9=Low, 4.0-6.9=Medium,
+  7.0-8.9=High, 9.0-10.0=Critical).
+- cvss_vector: full CVSS v3.1 base vector string starting with
+  "CVSS:3.1/" (e.g. "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H").
+- cvss_justification: 2-4 sentences explaining each metric in the vector
+  (Attack Vector, Attack Complexity, Privileges Required, User Interaction,
+  Scope, Confidentiality, Integrity, Availability) and why each value
+  was chosen for THIS incident.
 - suggested_triage: one of T1, T2, T3
 - suggested_ticket_status: one of new, investigating, contained, closed
 - indicators_of_compromise: array of strings (IPs, hostnames, usernames)
 - next_steps: array of 3-5 concrete next actions for the analyst
-- references: array of helpful URLs (MITRE ATT&CK technique pages,
-  Fortinet docs, CVE entries, vendor advisories)
+- mitre_techniques: array of 1-4 objects, each with `id` (ATT&CK technique
+  id like "T1110.001"), `name` (technique name as published by MITRE,
+  e.g. "Brute Force: Password Guessing") and `url` (the canonical
+  https://attack.mitre.org/techniques/<id>/ link, with sub-techniques
+  written as Txxxx/yyy in the URL path). Only include techniques that
+  are actually relevant to the incident.
+- references: array of 3-6 authoritative URLs that an analyst can open
+  to learn more. Include at minimum one MITRE ATT&CK tactic page
+  (https://attack.mitre.org/tactics/TAxxxx/), one MITRE ATT&CK technique
+  page, and one of: NIST CVE listing (https://nvd.nist.gov/vuln/detail/CVE-...),
+  CISA advisory (https://www.cisa.gov/news-events/cybersecurity-advisories/...),
+  Fortinet PSIRT (https://www.fortiguard.com/psirt/...) or Fortinet docs
+  (https://docs.fortinet.com/...). Never invent URLs — only use slugs you
+  are confident exist.
 Write every string field in ENGLISH.
 Do not include any keys other than the ones listed above.
 """
@@ -561,13 +722,38 @@ descrição de incidente, responda com um objeto JSON estrito contendo os
 seguintes campos e mais nada:
 - headline: resumo curto de uma frase
 - summary: 2-3 frases explicando o que aconteceu e por que importa
-- risk_score: inteiro de 0 a 100 (quanto maior, mais urgente)
+- risk_score: inteiro de 0 a 100 (quanto maior, mais urgente). DEVE ser
+  coerente com cvss_score (multiplique por 10 e arredonde).
+- cvss_score: número de 0.0 a 10.0 usando a métrica base CVSS v3.1 (sem
+  ajustes ambientais ou temporais).
+- cvss_severity: um de None, Low, Medium, High, Critical — seguindo os
+  limites oficiais do CVSS v3.1 (0.0=None, 0.1-3.9=Low, 4.0-6.9=Medium,
+  7.0-8.9=High, 9.0-10.0=Critical).
+- cvss_vector: string completa do vetor base CVSS v3.1, começando com
+  "CVSS:3.1/" (ex.: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H").
+- cvss_justification: 2-4 frases explicando cada métrica do vetor
+  (Attack Vector, Attack Complexity, Privileges Required, User
+  Interaction, Scope, Confidentiality, Integrity, Availability) e por
+  que cada valor foi escolhido para ESTE incidente específico.
 - suggested_triage: um de T1, T2, T3
 - suggested_ticket_status: um de new, investigating, contained, closed
 - indicators_of_compromise: array de strings (IPs, hostnames, usuários)
 - next_steps: array com 3-5 ações concretas para o analista
-- references: array de URLs úteis (páginas de técnicas MITRE ATT&CK,
-  documentação Fortinet, CVEs, advisories de fornecedor)
+- mitre_techniques: array com 1-4 objetos; cada objeto tem `id` (id de
+  técnica ATT&CK como "T1110.001"), `name` (nome publicado pela MITRE,
+  ex.: "Brute Force: Password Guessing") e `url` (link canônico
+  https://attack.mitre.org/techniques/<id>/, com sub-técnicas escritas
+  como Txxxx/yyy no path da URL). Inclua apenas técnicas que sejam
+  realmente relevantes ao incidente.
+- references: array com 3-6 URLs autoritativas que o analista pode
+  abrir para aprofundar. Inclua no mínimo uma página de tática MITRE
+  ATT&CK (https://attack.mitre.org/tactics/TAxxxx/), uma página de
+  técnica MITRE ATT&CK, e uma de: listagem CVE do NIST
+  (https://nvd.nist.gov/vuln/detail/CVE-...), advisory CISA
+  (https://www.cisa.gov/news-events/cybersecurity-advisories/...),
+  Fortinet PSIRT (https://www.fortiguard.com/psirt/...) ou docs
+  Fortinet (https://docs.fortinet.com/...). Nunca invente URLs — use
+  apenas slugs que você tem certeza que existem.
 Escreva todos os campos de texto em PORTUGUÊS DO BRASIL.
 Não inclua chaves diferentes das listadas acima.
 """
@@ -638,6 +824,12 @@ def _parse_analysis(
     if not isinstance(data, dict):
         logger.warning("AI analyze response was not a JSON object; falling back to scripted")
         return ScriptedAIProvider().analyze_incident(context, locale=locale)
+    cvss_score = _clamp_float(data.get("cvss_score"), low=0.0, high=10.0)
+    cvss_vector = str(data.get("cvss_vector") or "").strip()[:200]
+    if cvss_vector and not cvss_vector.upper().startswith("CVSS:3"):
+        # Reject malformed vectors silently rather than ship them to the
+        # cockpit pretending they were CVSS v3.1.
+        cvss_vector = ""
     return IncidentAnalysis(
         incident_id=context.incident_id,
         headline=str(data.get("headline") or context.title)[:200],
@@ -652,8 +844,69 @@ def _parse_analysis(
         indicators_of_compromise=_string_list(data.get("indicators_of_compromise")),
         next_steps=_string_list(data.get("next_steps"))[:8],
         references=_string_list(data.get("references"))[:8],
+        cvss_score=cvss_score,
+        cvss_severity=_choice(
+            data.get("cvss_severity"),
+            {"None", "Low", "Medium", "High", "Critical"},
+            default=_cvss_severity_for(cvss_score) if cvss_score is not None else "",
+        ),
+        cvss_vector=cvss_vector,
+        cvss_justification=str(data.get("cvss_justification") or "")[:1500],
+        mitre_techniques=_parse_mitre_techniques(data.get("mitre_techniques")),
         raw_output=raw,
     )
+
+
+def _cvss_severity_for(score: float) -> str:
+    if score <= 0.0:
+        return "None"
+    if score < 4.0:
+        return "Low"
+    if score < 7.0:
+        return "Medium"
+    if score < 9.0:
+        return "High"
+    return "Critical"
+
+
+_MITRE_TECHNIQUE_PATTERN = re.compile(r"^T\d{4}(?:\.\d{3})?$")
+
+
+def _parse_mitre_techniques(raw: Any) -> list[MitreTechnique]:
+    if not isinstance(raw, list):
+        return []
+    out: list[MitreTechnique] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        technique_id = str(entry.get("id") or "").strip().upper()
+        if not _MITRE_TECHNIQUE_PATTERN.match(technique_id):
+            continue
+        if technique_id in seen:
+            continue
+        seen.add(technique_id)
+        url = str(entry.get("url") or "").strip()
+        if not url.startswith("https://attack.mitre.org/"):
+            slug = technique_id.replace(".", "/")
+            url = f"https://attack.mitre.org/techniques/{slug}/"
+        name = str(entry.get("name") or technique_id)[:160]
+        out.append(MitreTechnique(id=technique_id, name=name, url=url[:300]))
+        if len(out) >= 6:
+            break
+    return out
+
+
+def _clamp_float(value: Any, *, low: float, high: float) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if result < low:
+        return low
+    if result > high:
+        return high
+    return round(result, 1)
 
 
 def _parse_containment(
@@ -687,10 +940,24 @@ def _parse_containment(
     )
 
 
+_FENCED_JSON_PATTERN = re.compile(
+    r"```(?:json)?\s*(\{.*?\})\s*```",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+
+
 def _extract_json(raw: str) -> Any:
     raw = (raw or "").strip()
     if not raw:
         return None
+    # Gemini and some OpenAI-compat shims wrap JSON in ```json ... ``` fences
+    # despite the response_format hint. Peel them off before parsing.
+    fenced = _FENCED_JSON_PATTERN.search(raw)
+    if fenced:
+        try:
+            return json.loads(fenced.group(1))
+        except json.JSONDecodeError:
+            pass
     try:
         return json.loads(raw)
     except json.JSONDecodeError:

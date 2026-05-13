@@ -35,6 +35,27 @@ import {
 const { t } = useI18n()
 const store = useTicketsStore()
 
+function cvssBadgeClass(severity: string | undefined): string {
+  switch (severity) {
+    case 'Critical':
+      return 'bg-red-600/30 text-red-200 border border-red-500/50'
+    case 'High':
+      return 'bg-orange-600/30 text-orange-200 border border-orange-500/50'
+    case 'Medium':
+      return 'bg-amber-600/30 text-amber-100 border border-amber-500/50'
+    case 'Low':
+      return 'bg-emerald-600/25 text-emerald-200 border border-emerald-500/50'
+    default:
+      return 'bg-theme-bg/60 text-theme-text-muted border border-theme-border'
+  }
+}
+
+function cvssCalcUrl(vector: string): string {
+  // FIRST hosts the official CVSS 3.1 calculator that accepts the vector as
+  // a URL fragment, so clicking the vector chip opens the full breakdown.
+  return `https://www.first.org/cvss/calculator/3.1#${encodeURIComponent(vector)}`
+}
+
 const severityFilter = ref<string | null>(null)
 const statusFilter = ref<TicketStatus | null>(null)
 const selected = ref<Ticket | null>(null)
@@ -472,6 +493,52 @@ onBeforeUnmount(() => store.stopPolling())
               >
                 {{ t('common.apply') }}
               </button>
+            </div>
+            <!-- CVSS v3.1 base score + vector + justification -->
+            <div
+              v-if="aiAnalysis.cvss && (aiAnalysis.cvss.score !== null || aiAnalysis.cvss.vector)"
+              class="rounded border border-fuchsia-500/30 bg-fuchsia-950/40 p-2 space-y-1"
+            >
+              <div class="flex flex-wrap items-center gap-2 text-[11px]">
+                <span class="uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.cvssLabel') }}</span>
+                <span
+                  v-if="aiAnalysis.cvss.score !== null"
+                  class="font-mono font-semibold px-1.5 py-0.5 rounded"
+                  :class="cvssBadgeClass(aiAnalysis.cvss.severity)"
+                >
+                  {{ aiAnalysis.cvss.score.toFixed(1) }} · {{ aiAnalysis.cvss.severity || '—' }}
+                </span>
+                <a
+                  v-if="aiAnalysis.cvss.vector"
+                  :href="cvssCalcUrl(aiAnalysis.cvss.vector)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-mono text-[10px] text-fuchsia-300 hover:text-fuchsia-200 underline underline-offset-2 break-all"
+                >
+                  {{ aiAnalysis.cvss.vector }}
+                </a>
+              </div>
+              <p
+                v-if="aiAnalysis.cvss.justification"
+                class="text-[11px] text-theme-text leading-relaxed"
+              >{{ aiAnalysis.cvss.justification }}</p>
+            </div>
+            <!-- MITRE ATT&CK techniques cited by the model -->
+            <div v-if="aiAnalysis.mitreTechniques?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.mitreLabel') }}</div>
+              <div class="flex flex-wrap gap-1 mt-1">
+                <a
+                  v-for="technique in aiAnalysis.mitreTechniques"
+                  :key="technique.id"
+                  :href="technique.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20"
+                  :title="technique.name"
+                >
+                  {{ technique.id }} · {{ technique.name }}
+                </a>
+              </div>
             </div>
             <div v-if="aiAnalysis.indicatorsOfCompromise?.length">
               <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.ai.iocsLabel') }}</div>

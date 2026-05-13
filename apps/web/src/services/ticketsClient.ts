@@ -74,6 +74,19 @@ export async function getTicket(ticketId: string): Promise<Ticket> {
   return parseOrThrow<Ticket>(response, 'Failed to load ticket')
 }
 
+export type MitreTechnique = {
+  id: string
+  name: string
+  url: string
+}
+
+export type CvssAnalysis = {
+  score: number | null
+  severity: '' | 'None' | 'Low' | 'Medium' | 'High' | 'Critical'
+  vector: string
+  justification: string
+}
+
 export type IncidentAnalysis = {
   id: string
   incidentId: string
@@ -85,6 +98,8 @@ export type IncidentAnalysis = {
   indicatorsOfCompromise: string[]
   nextSteps: string[]
   references: string[]
+  cvss?: CvssAnalysis
+  mitreTechniques?: MitreTechnique[]
 }
 
 export type ContainmentStep = {

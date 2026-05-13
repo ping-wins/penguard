@@ -280,6 +280,15 @@ def _analysis_to_dict(analysis: IncidentAnalysis, *, analysis_id: str) -> dict[s
         "indicatorsOfCompromise": analysis.indicators_of_compromise,
         "nextSteps": analysis.next_steps,
         "references": analysis.references,
+        "cvss": {
+            "score": analysis.cvss_score,
+            "severity": analysis.cvss_severity,
+            "vector": analysis.cvss_vector,
+            "justification": analysis.cvss_justification,
+        },
+        "mitreTechniques": [
+            {"id": t.id, "name": t.name, "url": t.url} for t in analysis.mitre_techniques
+        ],
     }
 
 

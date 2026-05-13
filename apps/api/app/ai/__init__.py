@@ -14,6 +14,7 @@ from app.ai.provider import (
     ContainmentSuggestion,
     IncidentAnalysis,
     IncidentContext,
+    MitreTechnique,
     get_ai_provider,
 )
 
@@ -24,5 +25,6 @@ __all__ = [
     "ContainmentSuggestion",
     "IncidentAnalysis",
     "IncidentContext",
+    "MitreTechnique",
     "get_ai_provider",
 ]

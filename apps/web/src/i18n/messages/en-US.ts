@@ -278,6 +278,8 @@ export default {
       iocsLabel: 'IoCs',
       nextStepsLabel: 'Next steps',
       referencesLabel: 'References (click to open)',
+      cvssLabel: 'CVSS v3.1',
+      mitreLabel: 'MITRE ATT&CK',
       containmentPlanLabel: 'Containment plan',
       requiresApproval: 'requires approval',
       autoSafe: 'auto-safe',
