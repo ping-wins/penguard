@@ -1,5 +1,6 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WidgetFirewallPolicies from '../../src/components/widgets/WidgetFirewallPolicies.vue'
 import WidgetHealth from '../../src/components/widgets/WidgetHealth.vue'
 import WidgetAnomalyHighlights from '../../src/components/widgets/WidgetAnomalyHighlights.vue'
@@ -8,6 +9,29 @@ import WidgetRecentEvents from '../../src/components/widgets/WidgetRecentEvents.
 import WidgetRiskPosture from '../../src/components/widgets/WidgetRiskPosture.vue'
 import WidgetThreats from '../../src/components/widgets/WidgetThreats.vue'
 import WidgetGenericData from '../../src/components/widgets/WidgetGenericData.vue'
+import TicketsPanel from '../../src/components/tickets/TicketsPanel.vue'
+import { i18n, setLocale } from '../../src/i18n'
+import { useAuthStore } from '../../src/stores/useAuthStore'
+import { sourceBadgeFor } from '../../src/utils/sourceBadges'
+
+let pinia: ReturnType<typeof createPinia>
+
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+beforeEach(() => {
+  pinia = createPinia()
+  setActivePinia(pinia)
+  setLocale('en-US')
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('FortiGate widget renderers', () => {
   it('renders live FortiGate identity and health fields', () => {
@@ -85,6 +109,263 @@ describe('FortiGate widget renderers', () => {
     expect(statusList.text()).toContain('Endpoint Health')
     expect(statusList.text()).toContain('win-lab-01')
     expect(statusList.text()).toContain('warning')
+  })
+
+  it('renders provenance badges for generic SOC rows with existing metadata', () => {
+    const feed = mount(WidgetGenericData, {
+      props: {
+        catalogId: 'soc-recent-incidents',
+        data: {
+          incidents: [
+            {
+              title: 'Seeded port scan',
+              severity: 'high',
+              status: 'open',
+              summary: 'Demo replay event',
+              source: 'kowalski',
+              origin: { kind: 'demo.replay' },
+              attributes: { source: 'demo.replay', demoRunId: 'demo_01' },
+            },
+            {
+              title: 'Simulated endpoint beacon',
+              severity: 'medium',
+              status: 'open',
+              summary: 'Simulator event',
+              attributes: { source: 'simulator' },
+            },
+            {
+              title: 'Live FortiGate deny',
+              severity: 'high',
+              status: 'open',
+              summary: 'Forward traffic log',
+              provider: 'fortigate',
+            },
+          ],
+        },
+      },
+    })
+
+    const rows = feed.findAll('[data-test="generic-feed-row"]')
+    expect(rows[0].text()).toContain('Seeded demo')
+    expect(rows[0].text()).toContain('open')
+    expect(rows[1].text()).toContain('Simulator')
+    expect(rows[2].text()).toContain('Live')
+  })
+
+  it('maps provenance fields to source badge labels without cluttering unknown rows', () => {
+    expect(sourceBadgeFor({ attributes: { demoRunId: 'demo_01' } })?.label).toBe('Seeded demo')
+    expect(sourceBadgeFor({ origin: { kind: 'demo.replay' } })?.label).toBe('Seeded demo')
+    expect(sourceBadgeFor({ attributes: { source: 'demo.replay' } })?.label).toBe('Seeded demo')
+    expect(sourceBadgeFor({ source: 'simulator' })?.label).toBe('Simulator')
+    expect(sourceBadgeFor({ providerMode: 'scripted' })?.label).toBe('Scripted AI')
+    expect(sourceBadgeFor({ rawOutput: 'scripted' })?.label).toBe('Scripted AI')
+    expect(sourceBadgeFor({ raw_output: 'scripted' })?.label).toBe('Scripted AI')
+    expect(sourceBadgeFor({ origin: { kind: 'fortigate' } })?.label).toBe('Live')
+    expect(sourceBadgeFor({ source: 'manual' })).toBeNull()
+    expect(sourceBadgeFor(null)).toBeNull()
+  })
+
+  it('renders a scripted AI badge when ticket analysis exposes scripted provider metadata', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/tickets') {
+        return jsonResponse({
+          items: [{
+            id: 'inc_01',
+            ruleId: 'port_scan',
+            title: 'Possible port scan',
+            severity: 'high',
+            status: 'open',
+            source: 'kowalski',
+            entities: {},
+            summary: 'Multiple denied connections',
+            createdAt: '2026-05-12T10:00:00Z',
+            timeline: [],
+            eventIds: [],
+            triageLevel: 'T1',
+            ticketStatus: 'new',
+            assigneeUserId: null,
+            aiAnalysisId: null,
+          }],
+        })
+      }
+      if (url === '/api/soc/incidents/inc_01/analyze') {
+        return jsonResponse({
+          id: 'aian_01',
+          incidentId: 'inc_01',
+          headline: 'Scripted analysis',
+          summary: 'Deterministic fallback analysis.',
+          riskScore: 82,
+          suggestedTriage: 'T1',
+          suggestedTicketStatus: 'investigating',
+          indicatorsOfCompromise: [],
+          nextSteps: [],
+          references: [],
+          provider: 'scripted',
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(TicketsPanel, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-card-inc_01"]').trigger('click')
+    await wrapper.get('[data-test="ticket-ai-analyze"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="ticket-ai-analysis"]').text()).toContain('Scripted AI')
+    wrapper.unmount()
+  })
+
+  it('approves a paused containment run from the ticket drawer', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/tickets') {
+        return jsonResponse({
+          items: [{
+            id: 'inc_01',
+            ruleId: 'port_scan',
+            title: 'Possible port scan',
+            severity: 'high',
+            status: 'open',
+            source: 'kowalski',
+            entities: {},
+            summary: 'Multiple denied connections',
+            createdAt: '2026-05-12T10:00:00Z',
+            timeline: [],
+            eventIds: [],
+            triageLevel: 'T1',
+            ticketStatus: 'investigating',
+            assigneeUserId: null,
+            aiAnalysisId: null,
+          }],
+        })
+      }
+      if (url === '/api/soc/incidents/inc_01/containment-suggestions') {
+        return jsonResponse({
+          incidentId: 'inc_01',
+          summary: 'Contain the suspicious activity.',
+          playbookDraftId: null,
+          steps: [{
+            title: 'Block outbound beacon',
+            description: 'Draft a dry-run containment step.',
+            playbookNodeType: 'firewall.block_ip',
+            severity: 'high',
+            requiresApproval: true,
+          }],
+        })
+      }
+      if (url === '/api/soc/tickets/inc_01/draft-playbook') {
+        return jsonResponse({
+          ticketId: 'inc_01',
+          playbook: {
+            id: 'pb_01',
+            name: 'AI containment draft',
+            enabled: false,
+            nodes: [],
+            edges: [],
+          },
+          simulation: {
+            dryRun: true,
+            valid: true,
+            steps: [{ nodeId: 'approve_01', nodeType: 'approval.required', status: 'waiting', sensitive: true }],
+          },
+          suggestion: {
+            incidentId: 'inc_01',
+            summary: 'Contain the suspicious activity.',
+            playbookDraftId: null,
+            steps: [],
+          },
+        })
+      }
+      if (url === '/api/soc/tickets/inc_01/apply-containment') {
+        return jsonResponse({
+          ticketId: 'inc_01',
+          playbookId: 'pb_01',
+          ticket: null,
+          ticketStatus: 'investigating',
+          run: {
+            id: 'run_01',
+            incidentId: 'inc_01',
+            playbookId: 'pb_01',
+            dryRun: true,
+            status: 'waiting_approval',
+            steps: [],
+            createdAt: '2026-05-12T10:00:00Z',
+          },
+        })
+      }
+      if (url === '/api/soc/playbook-runs/run_01/approve') {
+        return jsonResponse({
+          id: 'run_01',
+          incidentId: 'inc_01',
+          playbookId: 'pb_01',
+          dryRun: true,
+          status: 'completed',
+          steps: [],
+          ticketUpdate: {
+            status: 'contained',
+            incidentId: 'inc_01',
+            ticket: {
+              id: 'inc_01',
+              ruleId: 'port_scan',
+              title: 'Possible port scan',
+              severity: 'high',
+              status: 'open',
+              source: 'kowalski',
+              entities: {},
+              summary: 'Multiple denied connections',
+              createdAt: '2026-05-12T10:00:00Z',
+              timeline: [],
+              eventIds: [],
+              triageLevel: 'T1',
+              ticketStatus: 'contained',
+              assigneeUserId: null,
+              aiAnalysisId: null,
+            },
+          },
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(TicketsPanel, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-card-inc_01"]').trigger('click')
+    await wrapper.get('[data-test="ticket-ai-containment"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-draft-playbook"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-apply-playbook"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="ticket-approve-playbook"]').text()).toContain('Approve')
+
+    await wrapper.get('[data-test="ticket-approve-playbook"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/soc/playbook-runs/run_01/approve',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    )
+    expect(wrapper.get('[data-test="ticket-containment-result"]').text()).toContain('Threat contained')
+    wrapper.unmount()
   })
 
   it('explains empty SOC preset states with first-setup next actions', () => {

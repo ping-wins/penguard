@@ -21,7 +21,6 @@ from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user
 from app.core.config import get_settings
 
-
 router = APIRouter(tags=["ai"])
 
 

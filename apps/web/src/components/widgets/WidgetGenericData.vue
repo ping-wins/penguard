@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Activity, BarChart2, ListChecks, Table } from 'lucide-vue-next'
+import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
 
 const props = defineProps<{
   catalogId: string
@@ -97,6 +98,7 @@ const rows = computed(() => {
       value: firstValue(row, meta.value.valueKeys) || '--',
       meta: firstValue(row, meta.value.metaKeys) || '',
       severity: severityFromRow(row),
+      sourceBadge: sourceBadgeFor(row),
     }))
 })
 
@@ -151,6 +153,13 @@ function dotClass(severity: string) {
   if (severity === 'warning') return 'bg-amber-300'
   return 'bg-theme-primary'
 }
+
+function sourceBadgeClass(badge: SourceBadge) {
+  if (badge.tone === 'demo') return 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+  if (badge.tone === 'simulator') return 'border-sky-500/40 bg-sky-500/10 text-sky-200'
+  if (badge.tone === 'ai') return 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200'
+  return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+}
 </script>
 
 <template>
@@ -193,7 +202,12 @@ function dotClass(severity: string) {
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-3">
             <p class="truncate text-xs font-semibold">{{ row.label }}</p>
-            <span class="shrink-0 text-[10px] capitalize text-theme-text-muted">{{ row.meta }}</span>
+            <div class="flex shrink-0 items-center gap-1">
+              <span v-if="row.sourceBadge" class="rounded border px-1.5 py-0.5 text-[10px]" :class="sourceBadgeClass(row.sourceBadge)">
+                {{ row.sourceBadge.label }}
+              </span>
+              <span class="text-[10px] capitalize text-theme-text-muted">{{ row.meta }}</span>
+            </div>
           </div>
           <p class="mt-1 truncate text-[11px] text-theme-text-muted">{{ row.value }}</p>
         </div>
@@ -214,7 +228,12 @@ function dotClass(severity: string) {
       >
         <span class="truncate font-medium">{{ row.label }}</span>
         <span class="truncate tabular-nums">{{ row.value }}</span>
-        <span class="truncate text-theme-text-muted">{{ row.meta }}</span>
+        <span class="flex min-w-0 items-center gap-1">
+          <span v-if="row.sourceBadge" class="shrink-0 rounded border px-1.5 py-0.5 text-[10px]" :class="sourceBadgeClass(row.sourceBadge)">
+            {{ row.sourceBadge.label }}
+          </span>
+          <span class="truncate text-theme-text-muted">{{ row.meta }}</span>
+        </span>
       </div>
     </div>
   </div>

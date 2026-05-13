@@ -268,10 +268,13 @@ def _build_incident_context(incident: dict[str, Any]) -> IncidentContext:
     )
 
 
-def _analysis_to_dict(analysis: IncidentAnalysis, *, analysis_id: str) -> dict[str, Any]:
+def _analysis_to_dict(
+    analysis: IncidentAnalysis, *, analysis_id: str, provider_name: str
+) -> dict[str, Any]:
     return {
         "id": analysis_id,
         "incidentId": analysis.incident_id,
+        "provider": provider_name,
         "headline": analysis.headline,
         "summary": analysis.summary,
         "riskScore": analysis.risk_score,
@@ -318,9 +321,12 @@ def _map_ai_step_to_soar_node(playbook_node_type: str) -> tuple[str, bool]:
     return _SOAR_NODE_MAPPING.get(playbook_node_type, ("case.note", False))
 
 
-def _containment_to_dict(suggestion: ContainmentSuggestion) -> dict[str, Any]:
+def _containment_to_dict(
+    suggestion: ContainmentSuggestion, *, provider_name: str
+) -> dict[str, Any]:
     return {
         "incidentId": suggestion.incident_id,
+        "provider": provider_name,
         "summary": suggestion.summary,
         "steps": [
             {
@@ -381,7 +387,11 @@ def analyze_incident(
         raise HTTPException(status_code=502, detail=f"AI provider failed: {exc}") from exc
 
     analysis_id = f"aian_{token_urlsafe(9)}"
-    response = _analysis_to_dict(analysis, analysis_id=analysis_id)
+    response = _analysis_to_dict(
+        analysis,
+        analysis_id=analysis_id,
+        provider_name=provider.name,
+    )
     # Persist the analysis_id back on the ticket so the cockpit can deep link.
     try:
         client.request(
@@ -527,7 +537,7 @@ def draft_containment_playbook(
         "ticketId": ticket_id,
         "playbook": created_playbook,
         "simulation": simulation,
-        "suggestion": _containment_to_dict(suggestion),
+        "suggestion": _containment_to_dict(suggestion, provider_name=provider.name),
     }
 
 
@@ -671,7 +681,7 @@ def suggest_incident_containment(
             "stepCount": len(suggestion.steps),
         },
     )
-    return _containment_to_dict(suggestion)
+    return _containment_to_dict(suggestion, provider_name=provider.name)
 
 
 @router.get("/soc/tickets")
@@ -1006,21 +1016,50 @@ def approve_playbook_run(
     run_id: str,
     request: Request,
     client: Annotated[SocClient, Depends(get_soar_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
     current_user: Annotated[dict, Depends(require_admin_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
     response = client.request("POST", f"/playbook-runs/{run_id}/approve", json={})
+    ticket_update: dict[str, Any] | None = None
+    outcome = "success"
+    if response.get("status") == "completed" and response.get("incidentId"):
+        incident_id = str(response["incidentId"])
+        try:
+            ticket = siem_client.request(
+                "PATCH",
+                f"/incidents/{incident_id}/triage",
+                json={
+                    "ticketStatus": "contained",
+                    "note": f"Playbook run {run_id} approved and completed containment.",
+                },
+            )
+            ticket_update = {
+                "status": "contained",
+                "incidentId": incident_id,
+                "ticket": ticket,
+            }
+        except Exception as exc:  # noqa: BLE001
+            outcome = "partial"
+            ticket_update = {
+                "status": "failed",
+                "incidentId": incident_id,
+                "error": str(exc)[:200],
+            }
+        response["ticketUpdate"] = ticket_update
     _audit(
         audit_store,
         request=request,
         current_user=current_user,
         action="soc.playbook_run.approved",
+        outcome=outcome,
         details={
             "runId": run_id,
             "playbookId": response.get("playbookId"),
             "incidentId": response.get("incidentId"),
             "service": "soar_skipper",
+            "ticketUpdate": ticket_update,
         },
     )
     return response
@@ -1041,6 +1080,41 @@ def get_endpoint(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return client.request("GET", f"/endpoints/{endpoint_id}")
+
+
+@router.get("/weapons/endpoints/{endpoint_id}/related-incidents")
+def get_endpoint_related_incidents(
+    endpoint_id: str,
+    xdr_client: Annotated[SocClient, Depends(get_xdr_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    endpoint = xdr_client.request("GET", f"/endpoints/{endpoint_id}")
+    incidents_response = siem_client.request("GET", "/incidents", params={"limit": 200})
+    items = incidents_response.get("items")
+    incidents = items if isinstance(items, list) else []
+
+    matched_incidents: list[dict[str, Any]] = []
+    matched_fields: dict[str, list[str]] = {}
+    for incident in incidents:
+        if not isinstance(incident, dict):
+            continue
+        fields = _incident_endpoint_matched_fields(incident, endpoint)
+        if not fields:
+            continue
+        matched_incidents.append(incident)
+        incident_id = incident.get("id")
+        if isinstance(incident_id, str) and incident_id:
+            matched_fields[incident_id] = fields
+
+    response: dict[str, Any] = {
+        "endpointId": endpoint_id,
+        "items": matched_incidents,
+        "total": len(matched_incidents),
+    }
+    if matched_fields:
+        response["matchedFields"] = matched_fields
+    return response
 
 
 @router.get("/weapons/endpoints/{endpoint_id}/timeline")
@@ -1066,6 +1140,7 @@ def create_endpoint_event(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Endpoint enrollment token required",
         )
+    payload = _endpoint_payload_with_observed_source_ip(payload, request)
     response = client.request(
         "POST",
         "/endpoint-events",
@@ -1094,6 +1169,115 @@ def create_endpoint_event(
     if siem_forwarding["status"] != "skipped":
         response["siemForwarding"] = siem_forwarding
     return response
+
+
+def _endpoint_payload_with_observed_source_ip(
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, Any]:
+    attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
+    return {
+        **payload,
+        "attributes": {
+            **attributes,
+            "observedSourceIp": _client_ip(request),
+        },
+    }
+
+
+def _incident_endpoint_matched_fields(
+    incident: dict[str, Any],
+    endpoint: dict[str, Any],
+) -> list[str]:
+    entities = incident.get("entities")
+    if not isinstance(entities, dict):
+        return []
+
+    endpoint_id = endpoint.get("id")
+    hostname = endpoint.get("hostname")
+    current_user = endpoint.get("currentUser")
+    ip_addresses = {
+        value
+        for value in endpoint.get("ipAddresses", [])
+        if isinstance(value, str) and value
+    }
+    attributes = endpoint.get("attributes")
+    if isinstance(attributes, dict):
+        observed_source_ip = attributes.get("observedSourceIp")
+        if isinstance(observed_source_ip, str) and observed_source_ip:
+            ip_addresses.add(observed_source_ip)
+
+    matched: list[str] = []
+    for field, value in _entity_string_values(entities):
+        normalized_field = field.lower()
+        if (
+            normalized_field in {"endpointid", "endpoint_id", "endpoint.id"}
+            and isinstance(endpoint_id, str)
+            and value == endpoint_id
+        ):
+            matched.append(field)
+            continue
+
+        if "ip" in normalized_field and value in ip_addresses:
+            matched.append(field)
+            continue
+
+        if normalized_field in {"hostname", "host", "endpointhostname"} and _same_text(
+            value,
+            hostname,
+        ):
+            matched.append(field)
+            continue
+
+        if normalized_field in {
+            "username",
+            "user",
+            "principal",
+            "currentuser",
+            "current_user",
+            "userprincipalname",
+        } and _same_user(value, current_user):
+            matched.append(field)
+
+    return matched
+
+
+def _entity_string_values(entities: dict[str, Any]) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    for field, raw_value in entities.items():
+        if isinstance(raw_value, str) and raw_value:
+            values.append((field, raw_value))
+        elif isinstance(raw_value, list):
+            values.extend(
+                (field, value)
+                for value in raw_value
+                if isinstance(value, str) and value
+            )
+    return values
+
+
+def _same_text(left: str, right: Any) -> bool:
+    return isinstance(right, str) and left.casefold() == right.casefold()
+
+
+def _same_user(left: str, right: Any) -> bool:
+    if not isinstance(right, str) or not right:
+        return False
+    left_folded = left.casefold()
+    right_folded = right.casefold()
+    if left_folded == right_folded:
+        return True
+    return _principal_name(left_folded) == _principal_name(right_folded)
+
+
+def _principal_name(value: str) -> str:
+    if "\\" in value:
+        value = value.rsplit("\\", 1)[-1]
+    if "/" in value:
+        value = value.rsplit("/", 1)[-1]
+    if "@" in value:
+        value = value.split("@", 1)[0]
+    return value
 
 
 def _forward_endpoint_event_to_siem(
@@ -1129,6 +1313,9 @@ def _endpoint_event_to_siem_events(
     response: dict[str, Any],
 ) -> list[dict[str, Any]]:
     event_type = payload.get("eventType")
+    if event_type in {"suspicious.process", "connection.snapshot"}:
+        suspicious_event = _suspicious_endpoint_event_to_siem_event(payload, response=response)
+        return [suspicious_event] if suspicious_event else []
     if event_type not in {"auth.failed_login", "auth.privileged_logon", "file.change"}:
         return []
     attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
@@ -1160,6 +1347,94 @@ def _endpoint_event_to_siem_events(
             "attributes": siem_attributes,
         }
     ]
+
+
+def _suspicious_endpoint_event_to_siem_event(
+    payload: dict[str, Any],
+    *,
+    response: dict[str, Any],
+) -> dict[str, Any] | None:
+    event_type = payload.get("eventType")
+    attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
+    suspicious_connection = _suspicious_connection(attributes)
+    if event_type == "connection.snapshot" and suspicious_connection is None:
+        return None
+    destination_ip = (
+        _first_string(
+            attributes.get("destinationIp"),
+            attributes.get("remoteIp"),
+            attributes.get("dstIp"),
+        )
+        or _first_string(
+            suspicious_connection.get("remoteIp") if suspicious_connection else None,
+            suspicious_connection.get("destinationIp") if suspicious_connection else None,
+            suspicious_connection.get("dstIp") if suspicious_connection else None,
+        )
+        or _first_string(
+            attributes.get("processRemoteIp"),
+            attributes.get("processDestinationIp"),
+        )
+    )
+    observed_source_ip = _first_string(attributes.get("observedSourceIp"))
+    source_ip = observed_source_ip or _first_payload_ip(payload)
+    current_user = payload.get("currentUser") or attributes.get("username")
+    timeline_item = response.get("timelineItem") if isinstance(response, dict) else {}
+    origin_source = _first_string(attributes.get("source"), payload.get("source"))
+
+    siem_attributes = dict(attributes)
+    siem_attributes["originKind"] = "xdr.endpoint_event"
+    if origin_source:
+        siem_attributes["originSource"] = origin_source
+    if observed_source_ip:
+        siem_attributes["observedSourceIp"] = observed_source_ip
+    if isinstance(timeline_item, dict) and timeline_item.get("id"):
+        siem_attributes["xdrTimelineItemId"] = timeline_item["id"]
+
+    entities: dict[str, Any] = {
+        "endpointId": payload.get("endpointId"),
+        "hostname": payload.get("hostname"),
+    }
+    if current_user:
+        entities["username"] = current_user
+    if source_ip:
+        entities["sourceIp"] = source_ip
+    if destination_ip:
+        entities["destinationIp"] = destination_ip
+
+    return {
+        "source": "xdr_rico.agent_private",
+        "eventType": "endpoint.suspicious_connection",
+        "severity": "high",
+        "occurredAt": payload.get("occurredAt"),
+        "entities": {key: value for key, value in entities.items() if value},
+        "attributes": siem_attributes,
+    }
+
+
+def _suspicious_connection(attributes: dict[str, Any]) -> dict[str, Any] | None:
+    if attributes.get("suspicious") is True:
+        return attributes
+    connections = attributes.get("connections")
+    if not isinstance(connections, list):
+        return None
+    for connection in connections:
+        if isinstance(connection, dict) and connection.get("suspicious") is True:
+            return connection
+    return None
+
+
+def _first_string(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _first_payload_ip(payload: dict[str, Any]) -> str | None:
+    ip_addresses = payload.get("ipAddresses")
+    if isinstance(ip_addresses, list):
+        return _first_string(*ip_addresses)
+    return _first_string(ip_addresses)
 
 
 def _endpoint_siem_severity(event_type: str, attributes: dict[str, Any]) -> str:
