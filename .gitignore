@@ -1,6 +1,7 @@
 # Local agent/runtime files
 .codex
 .superpowers/
+.worktrees/
 
 # Environment
 .env

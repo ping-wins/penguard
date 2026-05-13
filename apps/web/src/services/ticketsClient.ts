@@ -19,6 +19,8 @@ export type Ticket = {
   severity: string
   status: string
   source: 'kowalski'
+  origin?: Record<string, any>
+  attributes?: Record<string, any>
   entities: Record<string, any>
   summary: string
   createdAt: string
@@ -100,6 +102,10 @@ export type IncidentAnalysis = {
   references: string[]
   cvss?: CvssAnalysis
   mitreTechniques?: MitreTechnique[]
+  provider?: string
+  providerMode?: string
+  rawOutput?: string
+  raw_output?: string
 }
 
 export type ContainmentStep = {
@@ -112,6 +118,10 @@ export type ContainmentStep = {
 
 export type ContainmentSuggestion = {
   incidentId: string
+  provider?: string
+  providerMode?: string
+  rawOutput?: string
+  raw_output?: string
   summary: string
   steps: ContainmentStep[]
   playbookDraftId: string | null
@@ -172,6 +182,21 @@ export type ApplyContainmentResponse = {
   ticketStatus: 'contained' | 'investigating'
 }
 
+export type ApprovePlaybookRunResponse = {
+  id: string
+  incidentId?: string
+  playbookId?: string
+  dryRun?: boolean
+  status: string
+  steps?: Array<{ nodeId: string; nodeType: string; status: string; sensitive: boolean }>
+  ticketUpdate?: {
+    status: 'contained' | 'failed'
+    incidentId: string
+    ticket?: Ticket
+    error?: string
+  }
+}
+
 export async function draftContainmentPlaybook(ticketId: string): Promise<PlaybookDraftResponse> {
   const headers = { ...(await csrfHeaders()), ...localeHeaders() }
   const response = await fetch(
@@ -200,6 +225,16 @@ export async function applyContainmentPlaybook(
     },
   )
   return parseOrThrow<ApplyContainmentResponse>(response, 'Failed to apply containment playbook')
+}
+
+export async function approvePlaybookRun(runId: string): Promise<ApprovePlaybookRunResponse> {
+  const headers = await csrfHeaders()
+  const response = await fetch(`/api/soc/playbook-runs/${encodeURIComponent(runId)}/approve`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+  })
+  return parseOrThrow<ApprovePlaybookRunResponse>(response, 'Failed to approve playbook run')
 }
 
 export async function suggestContainment(incidentId: string): Promise<ContainmentSuggestion> {

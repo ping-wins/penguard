@@ -239,6 +239,9 @@ Current capabilities:
 - Track step state and approval waits.
 - Require approval for sensitive steps.
 - Audit create, update, simulate, run and approve actions through the BFF.
+- Completed approved runs update the linked SIEM ticket to `contained` through
+  the BFF; if SIEM patching fails after SOAR approval, the response is partial
+  and audited instead of hiding the approval result.
 
 Gateway API:
 
@@ -263,7 +266,8 @@ Current capabilities:
 - Ingest endpoint events.
 - Persist endpoint enrollment token hashes, inventory, heartbeat, hostname, OS, IPs, current user, health and timelines in service-owned SQL tables.
 - Correlate endpoints with SIEM incidents by endpoint ID, IP, hostname and username.
-- Expose endpoint timelines, incident endpoint context and health widgets.
+- Expose endpoint timelines, endpoint related incidents, incident endpoint
+  context and health widgets.
 - Provide simulator data for demos without installing the agent.
 
 Gateway API:
@@ -272,6 +276,7 @@ Gateway API:
 GET  /api/weapons/endpoints
 GET  /api/weapons/endpoints/{endpointId}
 GET  /api/weapons/endpoints/{endpointId}/timeline
+GET  /api/weapons/endpoints/{endpointId}/related-incidents
 GET  /api/soc/incidents/{incidentId}/endpoint-context
 POST /api/weapons/enrollments
 POST /api/weapons/endpoint-events
@@ -389,6 +394,20 @@ Current implementation status:
 ## AI Assistant Roadmap
 
 The internal AI assistant is a cockpit assistant, not an autonomous operator.
+Use three layers:
+
+- **Pydantic AI cockpit agent:** short-running, typed assistant for dashboard
+  chat, widget drafting, dashboard explanation and ticket summaries.
+- **LangGraph triage workflow:** durable ticket/incident workflow for
+  multi-step triage, endpoint correlation, containment planning, retryable AI
+  failures and human approval pauses.
+- **MCP server, later:** customer-facing tool surface for external agents. MCP
+  only exposes stable, audited and permission-aware tools after the internal
+  tool registry has settled.
+
+Shared internal tool contracts live in `apps/api/app/ai/tools/` and must be
+reused by the cockpit agent, triage graph and future MCP server. Do not let
+model runtimes call service internals directly.
 
 Allowed direction:
 
@@ -410,6 +429,27 @@ Forbidden operations:
 AI-created widgets must be drafts with `fieldBindings[]`, allowed provider field
 references, layout suggestions and validation before insertion into
 workspace manifests.
+
+Current AI tool foundation:
+
+```txt
+GET  /api/ai/tools
+POST /api/ai/tools/draft-widget
+```
+
+`draft-widget` returns a draft only. The cockpit must still ask the user to
+confirm before inserting the visual into a workspace manifest.
+
+Current cockpit agent foundation:
+
+- `/api/ai/chat` now routes through `apps/api/app/ai/cockpit_agent.py`.
+- The runtime uses Pydantic AI `Agent` + `FunctionModel` for deterministic
+  local/scripted behavior while registering the same internal tools that future
+  model-backed agents will use.
+- The chat response includes `runtime="pydantic_ai"` and audit entries record
+  provider, runtime, prompt length, reply length, tool count and used tools.
+- Natural-language prompts that mention known field IDs such as `system.cpu`
+  can produce a `draft_widget` response without persisting anything.
 
 ## Known Lab Setup Issues
 
@@ -667,8 +707,11 @@ Frontend:
   status and the per-step preview list. A green "Apply (dry-run)" button
   triggers `apply-containment` and, on success, swaps the ticket state in
   place and shows a green banner: "Threat contained" (or "Containment
-  paused at approval gate" if the run waits on approval). All
-  cockpit-side state resets when the operator switches ticket.
+  paused at approval gate" if the run waits on approval). When the run waits
+  on approval, the same drawer exposes an "Approve" action wired to
+  `/api/soc/playbook-runs/{runId}/approve`; completed approvals update the
+  linked ticket to `contained`. All cockpit-side state resets when the
+  operator switches ticket.
 
 Safety:
 
@@ -683,9 +726,6 @@ Safety:
 
 Open items for later:
 
-- Connect the analyst "Approve" button to the existing
-  `/playbook-runs/{runId}/approve` endpoint so an approval gate can be
-  cleared from the same drawer.
 - Add an explicit "Threat contained" success ticket linked back to the
   incident timeline (separate from the existing PATCH note).
 
@@ -962,8 +1002,9 @@ mergeable.
 - [x] Implement TUI-first `agent_private` flow plus CLI automation commands.
 - [x] Collect heartbeat, process snapshot and network connection snapshot.
 - [x] Correlate endpoints with incidents by endpoint ID, IP, hostname and username.
-- [ ] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM.
+- [x] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM (`docs/mvp/windows-server-agent-smoke.md`).
 - [x] Add Windows Security Event collection for failed logons and privileged logons.
+- [x] Forward suspicious endpoint process/connection telemetry to SIEM as `endpoint.suspicious_connection`.
 - [ ] Add optional directory monitoring with `watchdog`.
 
 ### apps/api Gateway
@@ -978,6 +1019,7 @@ mergeable.
 - [x] Require matching `integrationId` before serving Penguin widget data.
 - [x] Add provider data fields for Penguin tools.
 - [x] Forward Windows/AD endpoint events from `xdr_rico` to `siem_kowalski` after authenticated agent ingestion.
+- [x] Add endpoint related-incidents gateway route for endpoint detail views.
 - [x] Define and persist versioned workspace manifests as the canonical workspace format.
 - [x] Add manifest share/import/export endpoints with schema validation and secret rejection.
 - [x] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
@@ -999,25 +1041,34 @@ mergeable.
 - [x] Add generic SOC renderers for bar, feed, table and status-list widgets.
 - [ ] Add SOC navigation area for incidents, endpoints and playbooks.
 - [ ] Add incident list/detail panel.
-- [ ] Add endpoint inventory/timeline panel.
+- [x] Add endpoint inventory/timeline panel backed by `/api/weapons/endpoints` and `/api/weapons/endpoints/{id}/timeline`.
 - [ ] Add basic playbook builder and run result UI.
 - [x] Add workspace sharing UX: workspace list, origin badges, author details and community library.
 - [x] Add manifest import/export UX with validation errors that users can understand.
 - [x] Add presentation export UX based on the current workspace manifest.
 - [x] Allow per-widget integration rebind so imported workspaces can be reconnected without re-importing.
-- [ ] Add visible badges for live, seeded demo, simulator and scripted AI data.
-- [ ] Add endpoint detail panel with timeline and related incidents.
+- [x] Add visible badges for live, seeded demo, simulator and scripted AI data.
+- [x] Add related incidents to the endpoint detail panel.
 - [ ] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP
 
-- [ ] Define AI-safe operations and forbidden operations as API/tool contracts.
-- [ ] Add `draft` status for AI-generated playbooks and widgets.
-- [ ] Implement AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
-- [ ] Implement `list_data_fields`, `draft_widget`, `validate_widget`, `simulate_widget_data` and `add_widget_draft_to_workspace`.
-- [ ] Implement `analyze_incident` and `suggest_containment` tools for the MVP demo flow (Phase 3).
+- [x] Define AI-safe operations and forbidden operations as API/tool contracts.
+- [x] Add `draft` status for AI-generated playbooks and widgets.
+- [x] Implement initial AI tool registry with explicit schemas, permissions, timeouts and audit behavior.
+- [x] Implement the first widget-draft foundation: provider field validation,
+      `draft_widget`, validation output and clearly labeled simulated preview
+      data through `POST /api/ai/tools/draft-widget`.
+- [ ] Add standalone `validate_widget`, `simulate_widget_data` and
+      `add_widget_draft_to_workspace` endpoints/actions when the frontend
+      confirmation UX is ready.
+- [x] Implement `analyze_incident` and `suggest_containment` routes for the MVP demo flow (Phase 3).
+- [ ] Expose `analyze_incident` and `suggest_containment` through the formal AI tool registry for LangGraph/MCP reuse.
 - [x] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft via `_SOAR_NODE_MAPPING` + linear graph builder (Phase 4).
-- [ ] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
+- [x] Replace the mock chat in `Sidebar.vue` with a real AI chat backed by the provider abstraction.
+- [x] Wrap the tool registry with a Pydantic AI cockpit agent using
+      `apps/api/app/ai/cockpit_agent.py`.
+- [ ] Implement the LangGraph ticket triage workflow on top of the same tool registry.
 - [ ] Require confirmation before persisting AI-generated widgets.
 - [ ] Plan MCP server only after stable APIs exist for incidents and playbooks.
 
@@ -1047,6 +1098,10 @@ mergeable.
 - [x] Phase 4 — `POST /api/soc/tickets/{id}/draft-playbook` + ticket-side "Draft playbook" / "Apply (dry-run)" flow that auto-contains the ticket on success.
 - [x] Phase 5 — Toast/banner notifications for new SIEM incidents (`useIncidentToastsStore` + `IncidentToastContainer.vue`).
 - [x] Phase 5 — Demo walkthrough doc (`docs/mvp/walkthrough.md`) + smoke test covering seed → incident → AI → ticket → playbook → contained (`apps/api/tests/test_mvp_demo_chain.py`).
+- [x] MVP readiness — Source badges distinguish live, seeded demo, simulator and scripted AI data in SOC widgets and AI analysis.
+- [x] MVP readiness — Endpoint detail panel shows related SIEM incidents via `/api/weapons/endpoints/{id}/related-incidents`.
+- [x] MVP readiness — Suspicious endpoint process/connection telemetry creates SIEM-visible endpoint incidents.
+- [x] MVP readiness — Approval-gated playbook runs can be approved from the ticket drawer and complete the linked ticket.
 
 ### Production Readiness (MVP → real customer)
 

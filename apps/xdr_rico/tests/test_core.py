@@ -186,6 +186,12 @@ def test_simulator_creates_deterministic_demo_endpoint_and_events():
         "process.snapshot",
         "heartbeat",
     ]
+    assert [item["attributes"]["source"] for item in timeline["items"]] == [
+        "simulator",
+        "simulator",
+        "simulator",
+        "simulator",
+    ]
 
 
 def test_endpoint_context_correlation_matches_ip_hostname_and_username():
