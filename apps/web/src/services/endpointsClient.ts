@@ -23,6 +23,25 @@ export type EndpointTimelineItem = {
   attributes: Record<string, any>
 }
 
+export type EndpointRelatedIncident = {
+  id: string
+  title: string
+  severity: string
+  triageLevel?: string | null
+  ticketStatus?: string | null
+  source?: string | null
+  origin?: Record<string, any>
+  entities?: Record<string, any>
+  attributes?: Record<string, any>
+}
+
+export type EndpointRelatedIncidentsResponse = {
+  endpointId: string
+  items: EndpointRelatedIncident[]
+  total: number
+  matchedFields?: Record<string, string[]>
+}
+
 type EndpointsResponse = { items: Endpoint[] }
 type EndpointTimelineResponse = { endpointId: string; items: EndpointTimelineItem[] }
 type Fetcher = typeof fetch
@@ -62,4 +81,22 @@ export async function getEndpointTimeline(
     'Failed to load endpoint timeline',
   )
   return data.items ?? []
+}
+
+export async function getEndpointRelatedIncidents(
+  endpointId: string,
+  fetcher: Fetcher = fetch,
+): Promise<EndpointRelatedIncidentsResponse> {
+  const data = await parseOrThrow<EndpointRelatedIncidentsResponse>(
+    await fetcher(`/api/weapons/endpoints/${encodeURIComponent(endpointId)}/related-incidents`, {
+      credentials: 'include',
+    }),
+    'Failed to load related incidents',
+  )
+  return {
+    endpointId: data.endpointId,
+    items: data.items ?? [],
+    total: data.total ?? 0,
+    matchedFields: data.matchedFields,
+  }
 }

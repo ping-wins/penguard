@@ -83,6 +83,36 @@ def test_detection_thresholds_create_expected_incidents():
     assert not any(below_threshold["id"] in incident["eventIds"] for incident in incidents)
 
 
+def test_incidents_preserve_event_provenance_for_demo_badges():
+    event = client.post(
+        "/events",
+        json={
+            "source": "demo.replay",
+            "eventType": "network.deny",
+            "severity": "high",
+            "occurredAt": "2026-05-12T12:00:00.000Z",
+            "entities": {"sourceIp": "203.0.113.77"},
+            "attributes": {
+                "count": 42,
+                "demoRunId": "demo_contract_01",
+                "attackType": "port_scan",
+            },
+        },
+    ).json()
+
+    incident = next(
+        incident
+        for incident in client.get("/incidents").json()
+        if event["id"] in incident["eventIds"]
+    )
+
+    assert incident["source"] == "kowalski"
+    assert incident["origin"] == {"kind": "demo.replay"}
+    assert incident["attributes"]["source"] == "demo.replay"
+    assert incident["attributes"]["demoRunId"] == "demo_contract_01"
+    assert incident["attributes"]["attackType"] == "port_scan"
+
+
 def test_lists_detection_rules_with_safe_condition_metadata():
     response = client.get("/rules")
 

@@ -88,6 +88,17 @@ class FakeSiem:
                 "status": "open",
                 "summary": payload.get("attributes", {}).get("message")
                 or "Generated from demo replay",
+                "origin": {"kind": payload.get("source") or "unknown"},
+                "attributes": {
+                    "source": payload.get("attributes", {}).get("source")
+                    or payload.get("source")
+                    or "unknown",
+                    **{
+                        key: payload.get("attributes", {}).get(key)
+                        for key in ("demoRunId", "attackType")
+                        if payload.get("attributes", {}).get(key)
+                    },
+                },
                 "entities": payload.get("entities") or {},
                 "createdAt": "2026-05-12T00:00:00Z",
                 "timeline": [
@@ -112,6 +123,7 @@ class FakeSiem:
 class FakeSoar:
     def __init__(self) -> None:
         self.playbooks: dict[str, dict[str, Any]] = {}
+        self.runs: dict[str, dict[str, Any]] = {}
         self.calls: list[dict[str, Any]] = []
         self._run_seq = 0
 
@@ -156,7 +168,7 @@ class FakeSoar:
             pb = self.playbooks[playbook_id]
             # MVP guarantees dry-run; if any approval gate exists the run pauses.
             has_approval = any(node["type"] == "approval.required" for node in pb["nodes"])
-            return {
+            run = {
                 "id": f"run_{self._run_seq:03d}",
                 "incidentId": incident_id,
                 "playbookId": playbook_id,
@@ -165,6 +177,17 @@ class FakeSoar:
                 "steps": [],
                 "createdAt": "2026-05-12T00:00:00Z",
             }
+            self.runs[run["id"]] = run
+            return run
+        if method == "POST" and path.startswith("/playbook-runs/") and path.endswith("/approve"):
+            run_id = path.split("/")[2]
+            run = self.runs[run_id]
+            run = {
+                **run,
+                "status": "completed",
+            }
+            self.runs[run_id] = run
+            return run
         raise AssertionError(f"unexpected SOAR call {method} {path}")
 
 
@@ -188,6 +211,7 @@ def test_mvp_demo_chain_runs_end_to_end():
     app.dependency_overrides[soc_router.get_siem_client] = lambda: siem
     app.dependency_overrides[soc_router.get_soar_client] = lambda: soar
     app.dependency_overrides[auth_dependencies.get_current_api_user] = _stub_user
+    app.dependency_overrides[auth_dependencies.require_admin_user] = _stub_user
     client = TestClient(app)
     audit = auth_dependencies.get_auth_audit_store()
 
@@ -195,7 +219,8 @@ def test_mvp_demo_chain_runs_end_to_end():
         # Phase 1 — replay synthetic incident
         replay = client.post("/api/soc/demo/replay", headers=_csrf(client))
         assert replay.status_code == 200, replay.text
-        assert replay.json()["eventCount"] == 3
+        replay_payload = replay.json()
+        assert replay_payload["eventCount"] == 3
         assert len(siem.incidents) >= 1  # at least one incident raised
 
         ticket_id = next(iter(siem.incidents))
@@ -206,6 +231,9 @@ def test_mvp_demo_chain_runs_end_to_end():
         items = tickets.json()["items"]
         assert any(t["id"] == ticket_id for t in items)
         assert items[0]["triageLevel"] in {"T1", "T2", "T3"}
+        assert items[0]["source"] == "kowalski"
+        assert items[0]["origin"]["kind"] == "demo.replay"
+        assert items[0]["attributes"]["demoRunId"] == replay_payload["demoRunId"]
 
         # Phase 3 — analyze + suggest containment
         analyze = client.post(
@@ -216,6 +244,7 @@ def test_mvp_demo_chain_runs_end_to_end():
         analysis = analyze.json()
         assert analysis["incidentId"] == ticket_id
         assert analysis["suggestedTriage"] in {"T1", "T2", "T3"}
+        assert analysis["provider"] == "scripted"
         assert siem.incidents[ticket_id]["aiAnalysisId"] == analysis["id"]
 
         containment = client.post(
@@ -224,6 +253,7 @@ def test_mvp_demo_chain_runs_end_to_end():
         )
         assert containment.status_code == 200, containment.text
         containment_payload = containment.json()
+        assert containment_payload["provider"] == "scripted"
         assert len(containment_payload["steps"]) >= 1
 
         # Phase 4 — draft + apply playbook
@@ -251,6 +281,17 @@ def test_mvp_demo_chain_runs_end_to_end():
         assert apply_payload["ticketStatus"] in {"contained", "investigating"}
         assert siem.incidents[ticket_id]["ticketStatus"] == apply_payload["ticketStatus"]
 
+        if apply_payload["ticketStatus"] == "investigating":
+            approve_response = client.post(
+                f"/api/soc/playbook-runs/{apply_payload['run']['id']}/approve",
+                headers=_csrf(client),
+            )
+            assert approve_response.status_code == 200, approve_response.text
+            approve_payload = approve_response.json()
+            assert approve_payload["status"] == "completed"
+            assert approve_payload["ticketUpdate"]["status"] == "contained"
+            assert siem.incidents[ticket_id]["ticketStatus"] == "contained"
+
         # Audit trail must record every link in the chain.
         actions = {row["action"] for row in audit.list_events()["items"]}
         for required in (
@@ -265,4 +306,5 @@ def test_mvp_demo_chain_runs_end_to_end():
         app.dependency_overrides.pop(soc_router.get_siem_client, None)
         app.dependency_overrides.pop(soc_router.get_soar_client, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+        app.dependency_overrides.pop(auth_dependencies.require_admin_user, None)
         soc_router.get_ai_provider.cache_clear()

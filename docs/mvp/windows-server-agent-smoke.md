@@ -55,6 +55,11 @@ primary IP is the BFF-observed source address labeled **Observed via API**;
 agent-reported interface IPs are shown separately and may include NAT adapter
 addresses such as `10.0.2.15`.
 
+The same panel now includes **Related incidents**. Failed logon, privileged
+logon, file-change, suspicious process and suspicious connection events that
+match the endpoint by ID, hostname, username or IP should appear there after
+the BFF forwards them into `siem_kowalski`.
+
 Current verified lab result on 2026-05-12:
 
 - Endpoint ID: `win-server-01`.

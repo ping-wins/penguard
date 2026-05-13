@@ -75,6 +75,25 @@ describe('EndpointsPanel', () => {
           ],
         }))
       }
+      if (url === '/api/weapons/endpoints/win-server-01/related-incidents') {
+        return Promise.resolve(jsonResponse({
+          endpointId: 'win-server-01',
+          items: [
+            {
+              id: 'inc_endpoint',
+              title: 'Suspicious endpoint connection',
+              severity: 'high',
+              triageLevel: 'T1',
+              ticketStatus: 'investigating',
+              source: 'kowalski',
+              origin: { kind: 'demo.replay' },
+              attributes: { demoRunId: 'demo_endpoint_01' },
+              entities: { endpointId: 'win-server-01' },
+            },
+          ],
+          total: 1,
+        }))
+      }
       return Promise.resolve(jsonResponse({ detail: 'not found' }, { status: 404 }))
     })
     vi.stubGlobal('fetch', fetcher)
@@ -91,6 +110,12 @@ describe('EndpointsPanel', () => {
     expect(wrapper.text()).toContain('WIN-T2D53C8JOKL')
     expect(wrapper.text()).toContain('192.168.56.10')
     expect(wrapper.text()).toContain('Observed via API')
+    expect(wrapper.text()).toContain('Related incidents')
+    expect(wrapper.text()).toContain('Suspicious endpoint connection')
+    expect(wrapper.text()).toContain('high')
+    expect(wrapper.text()).toContain('T1')
+    expect(wrapper.text()).toContain('investigating')
+    expect(wrapper.text()).toContain('Seeded demo')
     expect(wrapper.text()).toContain('Connection Snapshot')
     expect(wrapper.text()).toContain('1 connection')
     expect(wrapper.text()).toContain('1 process')

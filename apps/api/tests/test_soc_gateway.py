@@ -208,6 +208,86 @@ def test_incident_endpoint_context_gateway_correlates_siem_incident_with_xdr():
     assert body["items"][0]["endpoint"]["id"] == "end_01"
 
 
+def test_endpoint_related_incidents_matches_endpoint_identity_and_excludes_unrelated():
+    client = TestClient(app)
+    endpoint = {
+        "id": "end_win_dc01",
+        "hostname": "WIN-SOC-DC01",
+        "ipAddresses": ["192.0.2.10", "10.0.2.15"],
+        "currentUser": "FORTIDASHBOARD\\felipe",
+        "attributes": {"os": "Windows"},
+    }
+    incidents = [
+        {
+            "id": "inc_endpoint_id",
+            "title": "Endpoint id match",
+            "severity": "high",
+            "triageLevel": "T1",
+            "ticketStatus": "new",
+            "entities": {"endpointId": "end_win_dc01"},
+        },
+        {
+            "id": "inc_hostname_ip",
+            "title": "Hostname and IP match",
+            "severity": "medium",
+            "triageLevel": "T2",
+            "ticketStatus": "investigating",
+            "entities": {"hostname": "win-soc-dc01", "sourceIp": "192.0.2.10"},
+        },
+        {
+            "id": "inc_user_principal",
+            "title": "Principal match",
+            "severity": "low",
+            "triageLevel": "T3",
+            "ticketStatus": "new",
+            "entities": {"username": "felipe@fortidashboard.local"},
+        },
+        {
+            "id": "inc_unrelated",
+            "title": "Other endpoint",
+            "severity": "critical",
+            "triageLevel": "T1",
+            "ticketStatus": "new",
+            "entities": {
+                "endpointId": "end_linux_01",
+                "hostname": "linux-01",
+                "sourceIp": "198.51.100.20",
+                "username": "other",
+            },
+        },
+    ]
+    fake_xdr = FakeSocClient(endpoint)
+    fake_siem = FakeSocClient({"items": incidents, "total": len(incidents)})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.get("/api/weapons/endpoints/end_win_dc01/related-incidents")
+
+    assert response.status_code == 200
+    assert fake_xdr.calls[0]["path"] == "/endpoints/end_win_dc01"
+    assert fake_siem.calls[0] == {
+        "method": "GET",
+        "path": "/incidents",
+        "json": None,
+        "params": {"limit": 200},
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+    body = response.json()
+    assert body["endpointId"] == "end_win_dc01"
+    assert [item["id"] for item in body["items"]] == [
+        "inc_endpoint_id",
+        "inc_hostname_ip",
+        "inc_user_principal",
+    ]
+    assert body["total"] == 3
+    assert body["matchedFields"] == {
+        "inc_endpoint_id": ["endpointId"],
+        "inc_hostname_ip": ["hostname", "sourceIp"],
+        "inc_user_principal": ["username"],
+    }
+
+
 def test_soar_playbook_run_gateway_forwards_and_audits():
     client = TestClient(app)
     fake_soar = FakeSocClient({"id": "pbr_01", "status": "waiting_approval"})
@@ -259,7 +339,7 @@ def test_soar_node_types_gateway_forwards_builder_catalog():
     }
 
 
-def test_soar_playbook_run_approval_requires_admin():
+def test_soar_playbook_run_approve_requires_admin():
     client = TestClient(app)
     fake_soar = FakeSocClient({"id": "pbr_01", "status": "completed"})
     app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
@@ -273,7 +353,7 @@ def test_soar_playbook_run_approval_requires_admin():
     assert fake_soar.calls == []
 
 
-def test_soar_playbook_run_approval_forwards_and_audits_for_admin():
+def test_soar_playbook_run_approve_forwards_and_audits_for_admin():
     client = TestClient(app)
     fake_soar = FakeSocClient(
         {
@@ -300,6 +380,118 @@ def test_soar_playbook_run_approval_forwards_and_audits_for_admin():
     assert fake_soar.calls[0]["path"] == "/playbook-runs/pbr_01/approve"
     assert audit["items"][0]["actor"]["id"] == "usr_admin"
     assert audit["items"][0]["details"]["runId"] == "pbr_01"
+
+
+def test_soar_playbook_run_approve_marks_completed_incident_contained():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "pbr_01",
+            "incidentId": "inc_01",
+            "playbookId": "pb_01",
+            "status": "completed",
+        }
+    )
+    fake_siem = FakeSocClient({"id": "inc_01", "ticketStatus": "contained"})
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.require_admin_user] = lambda: {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "roles": ["admin"],
+    }
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_01/approve",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ticketUpdate"] == {
+        "status": "contained",
+        "incidentId": "inc_01",
+        "ticket": {"id": "inc_01", "ticketStatus": "contained"},
+    }
+    assert fake_siem.calls == [
+        {
+            "method": "PATCH",
+            "path": "/incidents/inc_01/triage",
+            "json": {
+                "ticketStatus": "contained",
+                "note": "Playbook run pbr_01 approved and completed containment.",
+            },
+            "params": None,
+            "headers": None,
+            "pass_through_statuses": None,
+        }
+    ]
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="soc.playbook_run.approved")
+    assert audit["items"][0]["outcome"] == "success"
+    assert audit["items"][0]["details"]["ticketUpdate"]["status"] == "contained"
+
+
+def test_soar_playbook_run_approve_returns_partial_when_ticket_patch_fails():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "pbr_01",
+            "incidentId": "inc_01",
+            "playbookId": "pb_01",
+            "status": "completed",
+        }
+    )
+    fake_siem = FailingSocClient()
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.require_admin_user] = lambda: {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "roles": ["admin"],
+    }
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_01/approve",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["ticketUpdate"]["status"] == "failed"
+    assert response.json()["ticketUpdate"]["incidentId"] == "inc_01"
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="soc.playbook_run.approved")
+    assert audit["items"][0]["outcome"] == "partial"
+    assert audit["items"][0]["details"]["ticketUpdate"]["status"] == "failed"
+
+
+def test_soar_playbook_run_approve_waiting_approval_keeps_current_behavior():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "pbr_01",
+            "incidentId": "inc_01",
+            "playbookId": "pb_01",
+            "status": "waiting_approval",
+        }
+    )
+    fake_siem = FakeSocClient({"id": "inc_01", "ticketStatus": "contained"})
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.require_admin_user] = lambda: {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "roles": ["admin"],
+    }
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_01/approve",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert "ticketUpdate" not in response.json()
+    assert fake_siem.calls == []
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="soc.playbook_run.approved")
+    assert audit["items"][0]["outcome"] == "success"
 
 
 def test_xdr_enrollment_gateway_does_not_log_token():
@@ -462,6 +654,113 @@ def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
             "pass_through_statuses": None,
         }
     ]
+
+
+def test_xdr_endpoint_event_gateway_forwards_suspicious_process_to_suspicious_connection_siem():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "demo-endpoint-01"},
+            "timelineItem": {"id": "tl_suspicious_01", "eventType": "suspicious.process"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_suspicious_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "demo-endpoint-01",
+            "eventType": "suspicious.process",
+            "occurredAt": "2026-05-12T13:35:00.000Z",
+            "hostname": "demo-endpoint-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": "SOC-DEMO\\analyst",
+            "attributes": {
+                "source": "simulator",
+                "process": "curl",
+                "remoteIp": "198.51.100.20",
+                "reason": "unexpected outbound beacon pattern",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["siemForwarding"]["status"] == "created"
+    assert fake_siem.calls[0]["json"] == {
+        "source": "xdr_rico.agent_private",
+        "eventType": "endpoint.suspicious_connection",
+        "severity": "high",
+        "occurredAt": "2026-05-12T13:35:00.000Z",
+        "entities": {
+            "endpointId": "demo-endpoint-01",
+            "hostname": "demo-endpoint-01",
+            "username": "SOC-DEMO\\analyst",
+            "sourceIp": "192.0.2.50",
+            "destinationIp": "198.51.100.20",
+        },
+        "attributes": {
+            "source": "simulator",
+            "process": "curl",
+            "remoteIp": "198.51.100.20",
+            "reason": "unexpected outbound beacon pattern",
+            "observedSourceIp": "192.0.2.50",
+            "originKind": "xdr.endpoint_event",
+            "originSource": "simulator",
+            "xdrTimelineItemId": "tl_suspicious_01",
+        },
+    }
+
+
+def test_xdr_endpoint_event_gateway_forwards_suspicious_connection_snapshot_to_siem():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "demo-endpoint-01"},
+            "timelineItem": {"id": "tl_conn_01", "eventType": "connection.snapshot"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_conn_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "demo-endpoint-01",
+            "eventType": "connection.snapshot",
+            "occurredAt": "2026-05-12T13:35:00.000Z",
+            "hostname": "demo-endpoint-01",
+            "ipAddresses": ["192.0.2.50"],
+            "attributes": {
+                "source": "agent_private.connection_snapshot",
+                "connections": [
+                    {
+                        "remoteIp": "198.51.100.20",
+                        "remotePort": 443,
+                        "state": "established",
+                        "suspicious": True,
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["json"]["eventType"] == "endpoint.suspicious_connection"
+    assert fake_siem.calls[0]["json"]["entities"]["destinationIp"] == "198.51.100.20"
+    assert fake_siem.calls[0]["json"]["attributes"]["originSource"] == (
+        "agent_private.connection_snapshot"
+    )
 
 
 def test_xdr_endpoint_event_gateway_requires_enrollment_authorization():

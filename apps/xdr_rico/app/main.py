@@ -481,6 +481,7 @@ def create_simulator_events() -> SimulatorResponse:
             ipAddresses=["192.0.2.50"],
             currentUser="SOC-DEMO\\analyst",
             attributes={
+                "source": "simulator",
                 "processes": [
                     {"pid": 1200, "name": "python", "username": "SOC-DEMO\\analyst"},
                     {"pid": 1250, "name": "curl", "username": "SOC-DEMO\\analyst"},
@@ -495,8 +496,14 @@ def create_simulator_events() -> SimulatorResponse:
             ipAddresses=["192.0.2.50"],
             currentUser="SOC-DEMO\\analyst",
             attributes={
+                "source": "simulator",
                 "connections": [
-                    {"remoteIp": "198.51.100.20", "remotePort": 443, "state": "established"}
+                    {
+                        "remoteIp": "198.51.100.20",
+                        "remotePort": 443,
+                        "state": "established",
+                        "suspicious": True,
+                    }
                 ]
             },
         ),
@@ -508,7 +515,12 @@ def create_simulator_events() -> SimulatorResponse:
             ipAddresses=["192.0.2.50"],
             currentUser="SOC-DEMO\\analyst",
             health="warning",
-            attributes={"process": "curl", "reason": "unexpected outbound beacon pattern"},
+            attributes={
+                "source": "simulator",
+                "process": "curl",
+                "remoteIp": "198.51.100.20",
+                "reason": "unexpected outbound beacon pattern",
+            },
         ),
     ]
     timeline_items = [ingest_endpoint_event(event).timeline_item for event in demo_events]

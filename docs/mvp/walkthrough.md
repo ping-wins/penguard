@@ -43,15 +43,16 @@ The total demo runs in **2-3 minutes** including the AI containment walkthrough.
 | 1 | Sidebar (left rail) → `FolderTree` "Workspaces" tab | Workspace list, MVP demo panel, no tickets yet |
 | 2 | Click the yellow **Replay** button under "MVP demo", then pick **Cadeia completa / Full chain** in the popover (chips for `Port scan`, `Brute force SSH`, `Beacon C2 do endpoint` let you replay one attack at a time when re-recording a specific phase) | Success toast: `Demo injetado (3 eventos, run demo_…, ataques: Cadeia completa)` |
 | 3 | Bottom-right corner | Toast pops up: "New incident · T1 · Inbound port scan from 203.0.113.77" |
-| 4 | Sidebar → `Ticket` icon to open **SOC Tickets** | Three lanes (T1/T2/T3) populate; the port scan sits in T1 with status `new` |
+| 4 | Sidebar → `Ticket` icon to open **SOC Tickets** | Three lanes (T1/T2/T3) populate; the port scan sits in T1 with status `new`. Seeded replay data is badged as `Seeded demo` instead of looking live |
 | 5 | Click the T1 ticket | Detail drawer opens with summary, entities, timeline |
-| 6 | Inside the drawer → "AI assistant" block → click **Analyze** | Risk score, suggested triage, IoCs and next steps appear. The cockpit silently records `aiAnalysisId` on the ticket |
-| 7 | Click **Apply** next to "Suggested: T1 · investigating" | Ticket status flips to `investigating` and the timeline gets a "Status changed" entry |
-| 8 | Click **Suggest containment** | Numbered draft plan: block IP / notify SOC / collect endpoint telemetry, each with `requires approval` flag |
-| 9 | Click **Draft playbook** | A second green block renders the new `pb_ai_…` playbook plus its dry-run simulation steps |
-| 10 | Click **Apply (dry-run)** | Banner appears: "Threat contained" (or "Containment paused at approval gate" if the AI marked a step sensitive). The lane card updates to `contained` |
-| 11 | Sidebar → `History` (Audit Trail) | The full chain shows up: `soc.demo.replay → soc.incident.analyzed → soc.incident.containment_suggested → soc.ticket.playbook_drafted → soc.ticket.contained` |
-| 12 | Sidebar → Workspaces → **Export** | Manifest JSON downloads — show the audit trail bundling so the exec sees how everything ties together |
+| 6 | Sidebar → `Endpoints` icon, select the demo endpoint | Endpoint detail shows timeline plus **Related incidents**, proving XDR/endpoint context links back to the SIEM ticket |
+| 7 | Return to **SOC Tickets** → inside "AI assistant" click **Analyze** | Risk score, suggested triage, IoCs and next steps appear with a `Scripted AI` badge when the offline provider is used. The cockpit records `aiAnalysisId` on the ticket |
+| 8 | Click **Apply** next to "Suggested: T1 · investigating" | Ticket status flips to `investigating` and the timeline gets a "Status changed" entry |
+| 9 | Click **Suggest containment** | Numbered draft plan: block IP / notify SOC / collect endpoint telemetry, each with `requires approval` flag |
+| 10 | Click **Draft playbook** | A second green block renders the new `pb_ai_…` playbook plus its dry-run simulation steps |
+| 11 | Click **Apply (dry-run)**, then click **Approve** if the banner says approval is paused | Banner appears: "Threat contained". If the run paused at approval, the approval button clears the gate and the linked ticket transitions to `contained` |
+| 12 | Sidebar → `History` (Audit Trail) | The full chain shows up: `soc.demo.replay → soc.incident.analyzed → soc.incident.containment_suggested → soc.ticket.playbook_drafted → soc.ticket.contained` plus `soc.playbook_run.approved` if an approval gate was cleared |
+| 13 | Sidebar → Workspaces → **Export** | Manifest JSON downloads — show the audit trail bundling so the exec sees how everything ties together |
 
 ## Failure handling on camera
 

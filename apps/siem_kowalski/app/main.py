@@ -60,6 +60,8 @@ class Incident(BaseModel):
     severity: str
     status: IncidentStatus = "open"
     source: Literal["kowalski"] = "kowalski"
+    origin: dict[str, Any] = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
     entities: dict[str, Any] = Field(default_factory=dict)
     summary: str
     created_at: datetime = Field(alias="createdAt")
@@ -199,6 +201,8 @@ def _detect_incident(event: SecurityEvent) -> Incident | None:
         ruleId=rule.id,
         title=rule.title,
         severity=incident_severity,
+        origin={"kind": event.source},
+        attributes=_incident_attributes(event),
         entities=event.entities,
         summary=rule.summary,
         createdAt=_now(),
@@ -219,6 +223,17 @@ def _load_event(payload: dict[str, Any]) -> SecurityEvent:
 
 def _load_incident(payload: dict[str, Any]) -> Incident:
     return Incident(**payload)
+
+
+def _incident_attributes(event: SecurityEvent) -> dict[str, Any]:
+    attributes: dict[str, Any] = {
+        "source": event.attributes.get("source") or event.source,
+    }
+    for key in ("demoRunId", "attackType"):
+        value = event.attributes.get(key)
+        if value is not None and value != "":
+            attributes[key] = value
+    return attributes
 
 
 def _matches_rule(event: SecurityEvent, rule: DetectionRule) -> bool:

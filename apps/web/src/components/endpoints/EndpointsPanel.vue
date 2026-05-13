@@ -4,6 +4,7 @@ import { Activity, Clock, Cpu, Network, RefreshCw, Server, Shield, User } from '
 import { useI18n } from 'vue-i18n'
 import { useEndpointsStore } from '../../stores/useEndpointsStore'
 import type { Endpoint, EndpointTimelineItem } from '../../services/endpointsClient'
+import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
 
 const { t } = useI18n()
 const store = useEndpointsStore()
@@ -71,6 +72,13 @@ function timelineSummary(item: EndpointTimelineItem) {
     return `${username}`
   }
   return item.title
+}
+
+function sourceBadgeClass(badge: SourceBadge) {
+  if (badge.tone === 'demo') return 'border-yellow-400/40 bg-yellow-400/10 text-yellow-200'
+  if (badge.tone === 'simulator') return 'border-sky-400/40 bg-sky-400/10 text-sky-200'
+  if (badge.tone === 'ai') return 'border-purple-400/40 bg-purple-400/10 text-purple-200'
+  return 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200'
 }
 </script>
 
@@ -215,6 +223,67 @@ function timelineSummary(item: EndpointTimelineItem) {
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-3">
+            <section class="mb-3 rounded border border-theme-border bg-theme-panel p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
+                  <Shield :size="14" />
+                  {{ t('endpoints.related.title') }}
+                </div>
+                <span class="text-[10px] text-theme-text-muted">
+                  {{ store.relatedIncidents.length }}
+                </span>
+              </div>
+
+              <div v-if="store.isLoadingRelatedIncidents" class="text-xs text-theme-text-muted">
+                {{ t('common.loading') }}
+              </div>
+              <div v-else-if="store.relatedIncidentsError" class="text-xs text-red-300">
+                {{ store.relatedIncidentsError }}
+              </div>
+              <div v-else-if="store.relatedIncidents.length === 0" class="text-xs text-theme-text-muted">
+                {{ t('endpoints.related.empty') }}
+              </div>
+              <div v-else class="space-y-2">
+                <article
+                  v-for="incident in store.relatedIncidents.slice(0, 5)"
+                  :key="incident.id"
+                  class="rounded border border-theme-border/80 bg-theme-bg/60 p-2"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="truncate text-xs font-semibold text-theme-text">
+                        {{ incident.title }}
+                      </div>
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        <span class="rounded border border-theme-border px-1.5 py-0.5 text-[10px] uppercase text-theme-text-muted">
+                          {{ incident.severity }}
+                        </span>
+                        <span
+                          v-if="incident.triageLevel"
+                          class="rounded border border-theme-border px-1.5 py-0.5 text-[10px] uppercase text-theme-text-muted"
+                        >
+                          {{ incident.triageLevel }}
+                        </span>
+                        <span
+                          v-if="incident.ticketStatus"
+                          class="rounded border border-theme-border px-1.5 py-0.5 text-[10px] uppercase text-theme-text-muted"
+                        >
+                          {{ incident.ticketStatus }}
+                        </span>
+                        <span
+                          v-if="sourceBadgeFor(incident)"
+                          class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                          :class="sourceBadgeClass(sourceBadgeFor(incident)!)"
+                        >
+                          {{ sourceBadgeFor(incident)!.label }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </section>
+
             <div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
               <Activity :size="14" />
               {{ t('endpoints.timeline.title') }}

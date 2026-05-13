@@ -88,6 +88,10 @@ export default {
     user: 'Usuário',
     connections: 'Conexões',
     processes: 'Processos',
+    related: {
+      title: 'Incidentes relacionados',
+      empty: 'Nenhum incidente corresponde a este endpoint no momento.',
+    },
     timeline: {
       title: 'Timeline',
       empty: 'Ainda não há eventos de timeline para este endpoint.',
@@ -291,6 +295,8 @@ export default {
       suggestContainment: 'Sugerir contenção',
       draftPlaybook: 'Gerar playbook',
       applyDryRun: 'Aplicar (dry-run)',
+      approveRun: 'Aprovar',
+      approveTicketUpdateFailed: 'Run aprovado, mas o ticket não pôde ser marcado como contido.',
       riskScore: 'risco {score}/100',
       suggestedLabel: 'Sugerido:',
       iocsLabel: 'IoCs',

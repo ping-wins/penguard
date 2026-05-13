@@ -20,6 +20,7 @@ import { useI18n } from 'vue-i18n'
 import { useTicketsStore } from '../../stores/useTicketsStore'
 import {
   analyzeIncident,
+  approvePlaybookRun,
   applyContainmentPlaybook,
   draftContainmentPlaybook,
   suggestContainment,
@@ -31,6 +32,7 @@ import {
   type TicketStatus,
   type TriageLevel,
 } from '../../services/ticketsClient'
+import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
 
 const { t } = useI18n()
 const store = useTicketsStore()
@@ -49,9 +51,11 @@ const playbookDraft = ref<PlaybookDraftResponse | null>(null)
 const applyResult = ref<ApplyContainmentResponse | null>(null)
 const isDrafting = ref(false)
 const isApplying = ref(false)
+const isApprovingRun = ref(false)
 const playbookError = ref<string | null>(null)
 
 const tickets = computed(() => store.tickets)
+const aiAnalysisBadge = computed(() => aiAnalysis.value ? sourceBadgeFor(aiAnalysis.value) : null)
 
 const lanes = computed<{ level: TriageLevel; label: string; description: string; color: string }[]>(() => [
   {
@@ -199,10 +203,55 @@ async function runApplyPlaybook(ticket: Ticket) {
   }
 }
 
+async function runApprovePlaybook(ticket: Ticket) {
+  const runId = applyResult.value?.run?.id
+  if (!runId) return
+  playbookError.value = null
+  isApprovingRun.value = true
+  try {
+    const approved = await approvePlaybookRun(runId)
+    const ticketUpdate = approved.ticketUpdate
+    const updatedTicket = ticketUpdate?.ticket
+    if (updatedTicket) {
+      const idx = store.tickets.findIndex((t) => t.id === ticket.id)
+      if (idx >= 0) store.tickets[idx] = updatedTicket
+      selected.value = updatedTicket
+    } else if (ticketUpdate?.status === 'contained') {
+      await store.refresh()
+    }
+    if (applyResult.value) {
+      const ticketWasContained = ticketUpdate?.status === 'contained'
+      const ticketUpdateFailed = ticketUpdate?.status === 'failed'
+      if (ticketUpdateFailed) {
+        playbookError.value = ticketUpdate.error || t('tickets.ai.approveTicketUpdateFailed')
+      }
+      applyResult.value = {
+        ...applyResult.value,
+        run: { ...applyResult.value.run, ...approved },
+        ticket: updatedTicket ?? applyResult.value.ticket,
+        ticketStatus: ticketWasContained
+          ? 'contained'
+          : applyResult.value.ticketStatus,
+      }
+    }
+  } catch (e: any) {
+    playbookError.value = e?.message ?? 'Failed to approve playbook run'
+  } finally {
+    isApprovingRun.value = false
+  }
+}
+
 function severityChipClass(severity: 'low' | 'medium' | 'high') {
   if (severity === 'high') return 'border-red-500/40 bg-red-500/10 text-red-300'
   if (severity === 'medium') return 'border-amber-500/40 bg-amber-500/10 text-amber-300'
   return 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+}
+
+function sourceBadgeClass(badge: SourceBadge) {
+  if (badge.tone === 'demo') return 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+  if (badge.tone === 'simulator') return 'border-sky-500/40 bg-sky-500/10 text-sky-200'
+  if (badge.tone === 'ai') return 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200'
+  return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
 }
 
 function formatTime(value: string | null | undefined) {
@@ -302,6 +351,7 @@ onBeforeUnmount(() => store.stopPolling())
             <button
               type="button"
               @click="selected = ticket"
+              :data-test="`ticket-card-${ticket.id}`"
               class="w-full text-left px-3 py-2 hover:bg-theme-bg/60 transition flex items-start justify-between gap-3"
             >
               <div class="min-w-0 flex-1">
@@ -429,6 +479,7 @@ onBeforeUnmount(() => store.stopPolling())
                 type="button"
                 :disabled="isAnalyzing"
                 @click="runAnalysis(selected!)"
+                data-test="ticket-ai-analyze"
                 class="text-xs px-2 py-1 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20 disabled:opacity-50 flex items-center gap-1"
               >
                 <Loader2 v-if="isAnalyzing" :size="11" class="animate-spin" />
@@ -437,6 +488,7 @@ onBeforeUnmount(() => store.stopPolling())
               </button>
               <button
                 type="button"
+                data-test="ticket-ai-containment"
                 :disabled="isContaining"
                 @click="runContainment(selected!)"
                 class="text-xs px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
@@ -453,12 +505,21 @@ onBeforeUnmount(() => store.stopPolling())
             {{ aiError }}
           </div>
 
-          <div v-if="aiAnalysis" class="mt-2 p-3 rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 space-y-2">
+          <div v-if="aiAnalysis" data-test="ticket-ai-analysis" class="mt-2 p-3 rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-fuchsia-100">{{ aiAnalysis.headline }}</span>
-              <span class="text-xs font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
-                {{ t('tickets.ai.riskScore', { score: aiAnalysis.riskScore }) }}
-              </span>
+              <div class="flex items-center gap-1">
+                <span
+                  v-if="aiAnalysisBadge"
+                  class="rounded border px-1.5 py-0.5 text-[10px]"
+                  :class="sourceBadgeClass(aiAnalysisBadge)"
+                >
+                  {{ aiAnalysisBadge.label }}
+                </span>
+                <span class="text-xs font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
+                  {{ t('tickets.ai.riskScore', { score: aiAnalysis.riskScore }) }}
+                </span>
+              </div>
             </div>
             <p class="text-xs text-theme-text whitespace-pre-line leading-relaxed">{{ aiAnalysis.summary }}</p>
             <div class="text-xs">
@@ -540,6 +601,7 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
+                data-test="ticket-draft-playbook"
                 :disabled="isDrafting"
                 @click="runDraftPlaybook(selected!)"
                 class="text-xs px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50 flex items-center gap-1"
@@ -592,6 +654,7 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="flex gap-2 pt-2 border-t border-emerald-500/20">
               <button
                 type="button"
+                data-test="ticket-apply-playbook"
                 :disabled="isApplying || !!applyResult"
                 @click="runApplyPlaybook(selected!)"
                 class="text-xs px-3 py-1.5 rounded border border-emerald-500/50 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30 disabled:opacity-50 flex items-center gap-1 font-semibold"
@@ -606,7 +669,7 @@ onBeforeUnmount(() => store.stopPolling())
             </div>
           </div>
 
-          <div v-if="applyResult" class="mt-3 p-3 rounded-lg border border-emerald-400/50 bg-emerald-500/15 text-xs space-y-1">
+          <div v-if="applyResult" data-test="ticket-containment-result" class="mt-3 p-3 rounded-lg border border-emerald-400/50 bg-emerald-500/15 text-xs space-y-1">
             <div class="font-semibold text-emerald-100 flex items-center gap-1">
               <CheckCircle2 :size="13" />
               {{ applyResult.ticketStatus === 'contained' ? t('tickets.ai.threatContained') : t('tickets.ai.containmentPaused') }}
@@ -614,6 +677,18 @@ onBeforeUnmount(() => store.stopPolling())
             <div class="text-theme-text-muted">
               {{ t('tickets.ai.runStatus', { id: applyResult.run.id, status: applyResult.run.status }) }}
             </div>
+            <button
+              v-if="applyResult.run.status === 'waiting_approval'"
+              type="button"
+              data-test="ticket-approve-playbook"
+              :disabled="isApprovingRun"
+              @click="runApprovePlaybook(selected!)"
+              class="mt-2 text-xs px-3 py-1.5 rounded border border-amber-500/50 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30 disabled:opacity-50 flex items-center gap-1 font-semibold"
+            >
+              <Loader2 v-if="isApprovingRun" :size="12" class="animate-spin" />
+              <CheckCircle2 v-else :size="12" />
+              {{ t('tickets.ai.approveRun') }}
+            </button>
           </div>
 
           <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">

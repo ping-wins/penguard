@@ -1,9 +1,11 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  getEndpointRelatedIncidents,
   getEndpointTimeline,
   listEndpoints,
   type Endpoint,
+  type EndpointRelatedIncident,
   type EndpointTimelineItem,
 } from '../services/endpointsClient'
 
@@ -17,9 +19,12 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const endpoints = ref<Endpoint[]>([])
   const selectedEndpointId = ref<string | null>(null)
   const timeline = ref<EndpointTimelineItem[]>([])
+  const relatedIncidents = ref<EndpointRelatedIncident[]>([])
   const isLoading = ref(false)
   const isLoadingTimeline = ref(false)
+  const isLoadingRelatedIncidents = ref(false)
   const error = ref<string | null>(null)
+  const relatedIncidentsError = ref<string | null>(null)
   let pollHandle: ReturnType<typeof setInterval> | null = null
 
   const selectedEndpoint = computed(() => {
@@ -53,13 +58,32 @@ export const useEndpointsStore = defineStore('endpoints', () => {
 
   async function loadTimeline(endpointId: string) {
     isLoadingTimeline.value = true
+    isLoadingRelatedIncidents.value = true
+    relatedIncidentsError.value = null
     try {
-      timeline.value = await getEndpointTimeline(endpointId)
+      const [timelineResult, relatedResult] = await Promise.allSettled([
+        getEndpointTimeline(endpointId),
+        getEndpointRelatedIncidents(endpointId),
+      ])
+      if (timelineResult.status === 'fulfilled') {
+        timeline.value = timelineResult.value
+      } else {
+        error.value = timelineResult.reason?.message ?? 'Failed to load endpoint timeline'
+        timeline.value = []
+      }
+      if (relatedResult.status === 'fulfilled') {
+        relatedIncidents.value = relatedResult.value.items
+      } else {
+        relatedIncidentsError.value = relatedResult.reason?.message ?? 'Failed to load related incidents'
+        relatedIncidents.value = []
+      }
     } catch (e: any) {
       error.value = e?.message ?? 'Failed to load endpoint timeline'
       timeline.value = []
+      relatedIncidents.value = []
     } finally {
       isLoadingTimeline.value = false
+      isLoadingRelatedIncidents.value = false
     }
   }
 
@@ -86,9 +110,12 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     selectedEndpointId,
     selectedEndpoint,
     timeline,
+    relatedIncidents,
     isLoading,
     isLoadingTimeline,
+    isLoadingRelatedIncidents,
     error,
+    relatedIncidentsError,
     latestConnectionCount,
     latestProcessCount,
     refresh,
