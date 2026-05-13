@@ -35,6 +35,15 @@ services:
       FORTIDASHBOARD_SSO_REDIRECT_URI: ${FORTIDASHBOARD_SSO_REDIRECT_URI:-http://localhost:8000/api/auth/sso/kerberos/callback}
       FORTIDASHBOARD_SSO_POST_LOGIN_URL: ${FORTIDASHBOARD_SSO_POST_LOGIN_URL:-http://localhost:5173/}
       FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL: ${FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL:-http://localhost:5173/login}
+      # AI provider settings. Compose does NOT auto-forward .env keys to
+      # containers — they must be listed here so Pydantic Settings sees
+      # them. Without this block, FORTIDASHBOARD_AI_PROVIDER falls back
+      # to "scripted" and the cockpit chat returns the canned offline
+      # message even when a real key exists in .env.
+      FORTIDASHBOARD_AI_PROVIDER: ${FORTIDASHBOARD_AI_PROVIDER:-scripted}
+      FORTIDASHBOARD_AI_API_KEY: ${FORTIDASHBOARD_AI_API_KEY:-}
+      FORTIDASHBOARD_AI_MODEL: ${FORTIDASHBOARD_AI_MODEL:-}
+      FORTIDASHBOARD_AI_BASE_URL: ${FORTIDASHBOARD_AI_BASE_URL:-}
       FORTIDASHBOARD_SIEM_KOWALSKI_URL: http://siem-kowalski:8000
       FORTIDASHBOARD_SOAR_SKIPPER_URL: http://soar-skipper:8000
       FORTIDASHBOARD_XDR_RICO_URL: http://xdr-rico:8000
