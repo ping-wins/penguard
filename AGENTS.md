@@ -864,6 +864,50 @@ cd apps/agent_private && uv run agent-private
 Docker Compose must stay portable across Linux and Windows. Do not mount host
 `node_modules` into containers.
 
+## Cross-Platform Compatibility (non-negotiable)
+
+The codebase has active contributors on both Windows (PowerShell + Docker
+Desktop) and Linux (bash + Docker Engine). Every change must boot
+cleanly on both. Common pitfalls observed in practice:
+
+- **Hardcoded credentials in `docker-compose.yml`.** Every service env
+  var that references a secret or Postgres connection string MUST use
+  the `${VAR:-fallback}` form so the bootstrap-secrets script (or a
+  user-edited `.env`) can override it. PR rule: if you touch a
+  `DATABASE_URL`, `_PASSWORD`, `_SECRET`, `_API_KEY` or
+  `KC_BOOTSTRAP_*` line in compose, it must read from the env. The
+  past regressions for `SIEM_KOWALSKI_DATABASE_URL` and
+  `XDR_RICO_DATABASE_URL` crashing under a rotated Postgres password
+  came from skipping this rule. See Sprint 1.1 for the boot guard.
+- **Shell scripts.** Anything under `scripts/` that is callable by a
+  developer (not just CI) must ship in both `.sh` (bash) and `.ps1`
+  (PowerShell) flavours. Examples: `bootstrap-secrets`,
+  `sync-keycloak-client-secret`. Don't assume `jq`, `envsubst` or any
+  POSIX-only tool exists on Windows.
+- **Path separators and line endings.** Use forward slashes in
+  `docker-compose.yml`, Dockerfiles and Python paths. Trust the
+  repo's `.gitattributes` for CRLF normalisation; don't commit files
+  with hard-coded `\r\n`. Tests that compare file content should
+  normalise line endings.
+- **Local volumes.** Do not mount host `node_modules` or `.venv` into
+  containers (Linux uid/gid + Windows ACL mismatches break it). Keep
+  them in named Docker volumes (`web_node_modules`, etc.).
+- **Default ports and hostnames.** `fortidashboard.local` resolution
+  must work on both platforms. Document the hosts-file entry in
+  `configSSOKerberosKeycloak.md` so the Windows path
+  (`C:\Windows\System32\drivers\etc\hosts`) and the Linux path
+  (`/etc/hosts`) are both covered.
+- **Bash here-docs in container `command:` fields are fine** because
+  the host shell never sees them — the container shell runs them. But
+  any wrapper script the developer runs locally must avoid bash-only
+  syntax (`<<EOF`, process substitution, `[[ ]]`) unless a `.ps1`
+  mirror exists alongside.
+
+Acceptance criterion: a fresh checkout on Windows 11 PowerShell and on
+Ubuntu 24.04 bash must both reach a healthy `docker compose ps` after
+the same sequence of commands. If your change breaks that, it is not
+mergeable.
+
 ## Backlog
 
 ### Platform And Architecture
