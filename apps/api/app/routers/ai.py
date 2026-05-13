@@ -49,6 +49,10 @@ class ChatResponse(BaseModel):
     provider: str
     model: str
     runtime: str = "legacy"
+    widget_drafts: list[WidgetDraftResponse] = Field(
+        default_factory=list,
+        alias="widgetDrafts",
+    )
 
 
 class AIStatusResponse(BaseModel):
@@ -217,6 +221,7 @@ def ai_chat(
             "locale": locale,
             "toolCount": result.tool_count,
             "usedTools": result.used_tools,
+            "widgetDraftCount": len(result.widget_drafts),
         },
     )
 
@@ -225,4 +230,5 @@ def ai_chat(
         provider=result.provider,
         model=result.model,
         runtime=result.runtime,
+        widget_drafts=result.widget_drafts,
     )

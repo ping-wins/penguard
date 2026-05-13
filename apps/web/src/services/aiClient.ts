@@ -8,11 +8,52 @@ export type ChatTurn = {
   content: string
 }
 
+export type WidgetDraftFieldBinding = {
+  fieldId: string
+  label: string
+  type: string
+  unit?: string | null
+  source?: string | null
+  provider: string
+  integrationId?: string | null
+}
+
+export type WidgetDraft = {
+  status: 'draft'
+  provider: string
+  integrationId?: string | null
+  visualType: string
+  title: string
+  fieldBindings: WidgetDraftFieldBinding[]
+  layout: {
+    w: number
+    h: number
+  }
+  settings: Record<string, unknown>
+}
+
+export type WidgetDraftResponse = {
+  toolName: 'draft_widget'
+  status: 'draft'
+  requiresConfirmation: boolean
+  draft: WidgetDraft
+  preview: {
+    source: 'simulation'
+    values: Record<string, unknown>
+  }
+  validation: {
+    valid: boolean
+    warnings: string[]
+    errors: string[]
+  }
+}
+
 export type ChatReply = {
   reply: string
   provider: string
   model: string
   runtime: string
+  widgetDrafts?: WidgetDraftResponse[]
 }
 
 export type AIStatus = {

@@ -36,6 +36,50 @@ describe('useDashboardStore custom visual bindings', () => {
     expect(store.activeWidgets[0].fieldBindings).toEqual([binding])
   })
 
+  it('adds an AI widget draft as a custom visual with resolved field bindings', () => {
+    const store = useDashboardStore()
+
+    const widget = store.addWidgetDraft(
+      {
+        status: 'draft',
+        provider: 'fortigate',
+        integrationId: null,
+        visualType: 'card',
+        title: 'CPU Usage',
+        fieldBindings: [
+          {
+            fieldId: 'system.cpu',
+            label: 'CPU Usage',
+            type: 'number',
+            unit: 'percent',
+            source: 'fortigate-system-status',
+            provider: 'fortigate',
+            integrationId: null,
+          },
+        ],
+        layout: { w: 2, h: 2 },
+        settings: { aggregation: 'latest' },
+      },
+      'int_fgt_01',
+    )
+
+    expect(widget.catalogId).toBe('visual-template-card')
+    expect(widget.integrationId).toBe('int_fgt_01')
+    expect(widget.fieldBindings).toEqual([
+      {
+        fieldId: 'system.cpu',
+        label: 'CPU Usage',
+        type: 'number',
+        unit: 'percent',
+        source: 'fortigate-system-status',
+        provider: 'fortigate',
+        integrationId: 'int_fgt_01',
+        integrationType: 'fortigate',
+      },
+    ])
+    expect(store.activeWidgets).toHaveLength(1)
+  })
+
   it('loads widget catalogs for connected integration types and deduplicates item ids', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
