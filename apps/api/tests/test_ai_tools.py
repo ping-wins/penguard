@@ -88,7 +88,40 @@ def test_ai_chat_can_draft_widget_with_internal_tool():
     assert "CPU Usage" in payload["reply"]
     assert "draft_widget" in payload["reply"]
     assert "confirme" in payload["reply"].lower()
+    assert payload["widgetDrafts"] == [
+        {
+            "toolName": "draft_widget",
+            "status": "draft",
+            "requiresConfirmation": True,
+            "draft": {
+                "status": "draft",
+                "provider": "fortigate",
+                "integrationId": None,
+                "visualType": "card",
+                "title": "CPU Usage",
+                "fieldBindings": [
+                    {
+                        "fieldId": "system.cpu",
+                        "label": "CPU Usage",
+                        "type": "number",
+                        "unit": "percent",
+                        "source": "fortigate-system-status",
+                        "provider": "fortigate",
+                        "integrationId": None,
+                    }
+                ],
+                "layout": {"w": 2, "h": 2},
+                "settings": {"aggregation": "latest"},
+            },
+            "preview": {
+                "source": "simulation",
+                "values": {"system.cpu": 0},
+            },
+            "validation": {"valid": True, "warnings": [], "errors": []},
+        }
+    ]
     assert audit["items"][0]["details"]["usedTools"] == ["draft_widget"]
+    assert audit["items"][0]["details"]["widgetDraftCount"] == 1
 
 
 def test_draft_widget_tool_returns_validated_draft_without_persisting():

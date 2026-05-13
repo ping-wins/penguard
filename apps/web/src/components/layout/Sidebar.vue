@@ -13,7 +13,7 @@ import {
   SIDEBAR_DRAWER_MIN_WIDTH,
 } from '../../stores/useCockpitLayoutStore'
 import { useDraggableEdge } from '../../composables/useDraggableEdge'
-import { aiChat, aiStatus, type AIStatus } from '../../services/aiClient'
+import { aiChat, aiStatus, type AIStatus, type WidgetDraftResponse } from '../../services/aiClient'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
@@ -105,11 +105,18 @@ const drawerResizer = useDraggableEdge({
 })
 
 const chatInput = ref('')
-const chatMessages = ref<{role: 'user' | 'assistant', text: string}[]>([
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  text: string
+  widgetDrafts?: WidgetDraftResponse[]
+}
+
+const chatMessages = ref<ChatMessage[]>([
   { role: 'assistant', text: t('chat.greeting') }
 ])
 const isThinking = ref(false)
 const providerStatus = ref<AIStatus | null>(null)
+const addedDraftKeys = ref<Record<string, boolean>>({})
 
 async function refreshProviderStatus() {
   try {
@@ -232,6 +239,46 @@ function handleAddWidget(catalogId: string, integrationId?: string) {
   }
 }
 
+function draftKey(messageIndex: number, draftIndex: number) {
+  return `${messageIndex}:${draftIndex}`
+}
+
+function integrationForDraft(draft: WidgetDraftResponse) {
+  const explicitIntegrationId = draft.draft.integrationId
+    || draft.draft.fieldBindings.find(binding => binding.integrationId)?.integrationId
+  if (explicitIntegrationId) {
+    return integrationsStore.integrations.find(integration => integration.id === explicitIntegrationId)
+  }
+  const provider = draft.draft.provider === 'soc'
+    ? draft.draft.fieldBindings[0]?.provider
+    : draft.draft.provider
+  return integrationsStore.integrations.find(integration => integration.type === provider)
+}
+
+function handleAddWidgetDraft(draft: WidgetDraftResponse, key: string) {
+  const integration = integrationForDraft(draft)
+  if (!integration) {
+    chatMessages.value.push({
+      role: 'assistant',
+      text: t('chat.widgetDraftNeedsIntegration', { provider: draft.draft.provider }),
+    })
+    return
+  }
+  const widget = store.addWidgetDraft(draft.draft, integration.id)
+  if (!widget) {
+    chatMessages.value.push({
+      role: 'assistant',
+      text: t('chat.widgetDraftUnsupported', { visualType: draft.draft.visualType }),
+    })
+    return
+  }
+  addedDraftKeys.value[key] = true
+  chatMessages.value.push({
+    role: 'assistant',
+    text: t('chat.widgetDraftAdded', { title: draft.draft.title }),
+  })
+}
+
 async function handleLogout() {
   await authStore.logout()
   router.push({ name: 'login' })
@@ -274,7 +321,11 @@ async function handleChatSubmit() {
     }))
     const result = await aiChat(history)
     const reply = result.reply.trim() || t('chat.widgetNotFound')
-    chatMessages.value.push({ role: 'assistant', text: reply })
+    chatMessages.value.push({
+      role: 'assistant',
+      text: reply,
+      widgetDrafts: result.widgetDrafts ?? [],
+    })
   } catch (error: any) {
     chatMessages.value.push({
       role: 'assistant',
@@ -402,7 +453,52 @@ async function handleChatSubmit() {
             class="p-3 rounded-lg text-sm"
             :class="msg.role === 'user' ? 'bg-theme-primary/20 text-theme-text self-end ml-4' : 'bg-theme-border text-theme-text self-start mr-4'"
           >
-            {{ msg.text }}
+            <p class="whitespace-pre-wrap">{{ msg.text }}</p>
+            <div v-if="msg.widgetDrafts?.length" class="mt-3 flex flex-col gap-2">
+              <div
+                v-for="(draft, draftIndex) in msg.widgetDrafts"
+                :key="`${draft.draft.visualType}-${draft.draft.title}-${draftIndex}`"
+                data-test="ai-widget-draft"
+                class="rounded-lg border border-theme-primary/30 bg-theme-bg/80 p-3 text-xs text-theme-text"
+              >
+                <div class="mb-2 flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-[10px] font-semibold uppercase tracking-wider text-theme-text-muted">
+                      {{ t('chat.widgetDraftLabel') }}
+                    </p>
+                    <h3 class="truncate text-sm font-semibold text-theme-text">{{ draft.draft.title }}</h3>
+                    <p class="text-[11px] uppercase tracking-wider text-theme-text-muted">
+                      {{ draft.draft.visualType }} · {{ draft.draft.provider }}
+                    </p>
+                  </div>
+                  <span class="shrink-0 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                    {{ t('chat.requiresConfirmation') }}
+                  </span>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-theme-text-muted">
+                    {{ t('chat.draftFields') }}
+                  </p>
+                  <div
+                    v-for="binding in draft.draft.fieldBindings"
+                    :key="binding.fieldId"
+                    class="rounded border border-theme-border bg-theme-panel/70 px-2 py-1"
+                  >
+                    <div class="font-medium text-theme-text">{{ binding.label }}</div>
+                    <div class="text-[11px] text-theme-text-muted">{{ binding.fieldId }}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-test="ai-widget-draft-add"
+                  class="mt-3 w-full rounded-md bg-theme-primary px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="addedDraftKeys[draftKey(i, draftIndex)]"
+                  @click="handleAddWidgetDraft(draft, draftKey(i, draftIndex))"
+                >
+                  {{ addedDraftKeys[draftKey(i, draftIndex)] ? t('chat.widgetDraftAddedButton') : t('chat.addWidgetDraft') }}
+                </button>
+              </div>
+            </div>
           </div>
           <div v-if="isThinking" class="bg-theme-border text-theme-text-muted p-3 rounded-lg self-start text-xs italic animate-pulse">
             {{ t('chat.thinking') }}

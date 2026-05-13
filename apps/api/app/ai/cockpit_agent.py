@@ -27,6 +27,7 @@ class CockpitAgentResult:
     runtime: str = "pydantic_ai"
     used_tools: list[str] = field(default_factory=list)
     tool_count: int = 0
+    widget_drafts: list[WidgetDraftResponse] = field(default_factory=list)
 
 
 class CockpitAgentRuntime:
@@ -34,7 +35,7 @@ class CockpitAgentRuntime:
 
     def chat(self, messages: list[ChatMessage], *, locale: str = "pt-BR") -> CockpitAgentResult:
         settings = get_settings()
-        direct_reply, used_tools = _direct_tool_reply(messages, locale=locale)
+        direct_reply, used_tools, widget_drafts = _direct_tool_reply(messages, locale=locale)
         provider = get_ai_provider()
 
         def model_function(
@@ -64,6 +65,7 @@ class CockpitAgentRuntime:
             model=settings.ai_model or f"{provider.name}-cockpit",
             used_tools=used_tools,
             tool_count=len(list_tool_specs()),
+            widget_drafts=widget_drafts,
         )
 
 
@@ -131,21 +133,21 @@ def _direct_tool_reply(
     messages: list[ChatMessage],
     *,
     locale: str,
-) -> tuple[str | None, list[str]]:
+) -> tuple[str | None, list[str], list[WidgetDraftResponse]]:
     prompt = _latest_user_prompt(messages)
     normalized = prompt.lower()
     if "tool" in normalized or "ferramenta" in normalized:
-        return _available_tools_reply(locale), []
+        return _available_tools_reply(locale), [], []
 
     draft_request = _draft_widget_request_from_prompt(prompt)
     if draft_request is None:
-        return None, []
+        return None, [], []
 
     try:
         response = draft_widget(draft_request)
     except WidgetDraftValidationError as exc:
-        return _widget_error_reply(exc.errors, locale=locale), ["draft_widget"]
-    return _widget_draft_reply(response, locale=locale), ["draft_widget"]
+        return _widget_error_reply(exc.errors, locale=locale), ["draft_widget"], []
+    return _widget_draft_reply(response, locale=locale), ["draft_widget"], [response]
 
 
 def _available_tools_reply(locale: str) -> str:

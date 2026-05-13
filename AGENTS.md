@@ -449,7 +449,12 @@ Current cockpit agent foundation:
 - The chat response includes `runtime="pydantic_ai"` and audit entries record
   provider, runtime, prompt length, reply length, tool count and used tools.
 - Natural-language prompts that mention known field IDs such as `system.cpu`
-  can produce a `draft_widget` response without persisting anything.
+  can produce a structured `widgetDrafts[]` response without persisting
+  anything.
+- `Sidebar.vue` renders those widget drafts as explicit confirmation cards.
+  Clicking "Add to workspace" resolves the user's connected provider
+  integration and inserts a custom visual template with the draft
+  `fieldBindings[]`; no widget is added from AI text alone.
 
 ## Known Lab Setup Issues
 
@@ -1059,9 +1064,11 @@ mergeable.
 - [x] Implement the first widget-draft foundation: provider field validation,
       `draft_widget`, validation output and clearly labeled simulated preview
       data through `POST /api/ai/tools/draft-widget`.
-- [ ] Add standalone `validate_widget`, `simulate_widget_data` and
-      `add_widget_draft_to_workspace` endpoints/actions when the frontend
-      confirmation UX is ready.
+- [x] Surface AI `widgetDrafts[]` in the cockpit chat and insert confirmed
+      drafts as custom visuals with provider field bindings.
+- [ ] Add standalone `validate_widget`, `simulate_widget_data` and optional
+      server-side `add_widget_draft_to_workspace` endpoints/actions for future
+      non-chat consumers.
 - [x] Implement `analyze_incident` and `suggest_containment` routes for the MVP demo flow (Phase 3).
 - [ ] Expose `analyze_incident` and `suggest_containment` through the formal AI tool registry for LangGraph/MCP reuse.
 - [x] Implement `draft_containment_playbook` that emits a soar_skipper-compatible draft via `_SOAR_NODE_MAPPING` + linear graph builder (Phase 4).

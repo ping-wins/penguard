@@ -19,7 +19,40 @@ type WidgetInsertPosition = {
   y: number
 }
 
+type WidgetDraftInput = {
+  provider: string
+  integrationId?: string | null
+  visualType: string
+  fieldBindings: Array<{
+    fieldId: string
+    label: string
+    type: string
+    unit?: string | null
+    source?: string | null
+    provider: string
+    integrationId?: string | null
+  }>
+  layout?: {
+    w?: number
+    h?: number
+  }
+}
+
 const DEFAULT_CATALOG_TYPES = ['fortigate']
+
+const VISUAL_TEMPLATE_ID_BY_DRAFT_TYPE: Record<string, string> = {
+  card: 'visual-template-card',
+  kpi: 'visual-template-card',
+  gauge: 'visual-template-gauge',
+  bar: 'visual-template-bar',
+  chart: 'visual-template-bar',
+  line: 'visual-template-line',
+  table: 'visual-template-table',
+  feed: 'visual-template-feed',
+  list: 'visual-template-list',
+  'status-list': 'visual-template-list',
+  'risk-summary': 'visual-template-list',
+}
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const activeWidgets = ref<WorkspaceWidget[]>([])
@@ -264,6 +297,42 @@ export const useDashboardStore = defineStore('dashboard', () => {
     debouncedSave()
   }
 
+  function addWidgetDraft(
+    draft: WidgetDraftInput,
+    integrationId?: string,
+    position?: WidgetInsertPosition,
+  ): WorkspaceWidget | null {
+    const templateId = VISUAL_TEMPLATE_ID_BY_DRAFT_TYPE[draft.visualType]
+    const template = visualTemplatesById[templateId]
+    if (!template) return null
+
+    const resolvedIntegrationId = integrationId || draft.integrationId || ''
+    const defaultSize = {
+      w: Number(draft.layout?.w) || template.defaultSize.w,
+      h: Number(draft.layout?.h) || template.defaultSize.h,
+    }
+    const widget = createWidgetInstance({
+      catalogId: template.id,
+      integrationId: resolvedIntegrationId,
+      defaultSize,
+      zIndex: ++maxZIndex,
+      position,
+    })
+    widget.fieldBindings = draft.fieldBindings.map((binding): WidgetFieldBinding => ({
+      fieldId: binding.fieldId,
+      label: binding.label,
+      type: binding.type,
+      ...(binding.unit ? { unit: binding.unit } : {}),
+      source: binding.source ?? '',
+      provider: binding.provider,
+      integrationId: binding.integrationId || resolvedIntegrationId,
+      integrationType: binding.provider || draft.provider,
+    }))
+    activeWidgets.value.push(widget)
+    debouncedSave()
+    return widget
+  }
+
   function bindFieldToWidget(instanceId: string, binding: WidgetFieldBinding) {
     const widget = activeWidgets.value.find(w => w.instanceId === instanceId)
     if (!widget) return
@@ -310,6 +379,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     bringToFront,
     addWidget,
     addVisualTemplate,
+    addWidgetDraft,
     bindFieldToWidget,
     removeWidget
   }
