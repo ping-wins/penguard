@@ -1,8 +1,13 @@
 # Análise de Maturidade — MVP → Produto Real
 
-> Snapshot em 2026-05-12 da postura do FortiDashboard frente ao que um cliente
+> Snapshot em 2026-05-13 da postura do FortiDashboard frente ao que um cliente
 > real precisaria para rodar em produção. Tudo aqui está aterrissado em
 > arquivos existentes do repo; nenhuma sugestão sem evidência.
+>
+> **Atualização 2026-05-13:** Sprint 1 fechada. Antes de partir pra Sprint 2
+> (CI / observabilidade) o foco pivotou para **validação de telemetria
+> real** — sair do `/demo/replay` e fazer um port scan / brute force / etc
+> de verdade aparecer no cockpit. Roadmap reordenado na §4.
 
 ## Sumário executivo
 
@@ -201,28 +206,125 @@ Cliente não saberá o que mudou entre versões. Adicionar
 
 ---
 
-## 4. Roadmap proposto — próximas 3 sprints
+## 4. Roadmap proposto — reordenado em 2026-05-13
 
-| Sprint | Tema                       | Itens                                                                                                       |
-|--------|----------------------------|-------------------------------------------------------------------------------------------------------------|
-| **1**  | Não-vergonha-em-prod       | Secrets bootstrap script · SOAR migrado para SQL · TLS reverse-proxy + cookie secure · `docker-compose.prod.yml` |
-| **2**  | CI + observabilidade       | GitHub Actions (lint+test+smoke) · structured JSON logging · Prometheus `/metrics` · `/health/ready` separado · rate-limit em SSO/AI/replay |
-| **3**  | Telemetria real + UX       | Auto-ingest FortiGate via Dramatiq · onboarding wizard · empty states ricos · i18n integrações · AI token budget · Playwright golden path |
+A ordem original (CI → observabilidade → telemetria real) faz sentido pra
+ship pra cliente externo. Como ainda não existe cliente externo e a stack
+ainda só foi exercitada via `/demo/replay`, vale **antecipar a Sprint de
+telemetria real** — porque sem ela, nem dá pra demonstrar a tese central
+do produto ("FortiGate → SIEM → IA → contenção").
+
+| Sprint | Tema                          | Status         | Itens                                                                                                                  |
+|--------|-------------------------------|----------------|------------------------------------------------------------------------------------------------------------------------|
+| **1**  | Não-vergonha-em-prod          | ✅ entregue    | Secrets bootstrap · SOAR SQL · TLS reverse-proxy + cookie secure · `docker-compose.prod.yml`                            |
+| **1.5** | Quality-of-life entregue     | ✅ entregue    | Real chat Gemini/Anthropic · CVSS+MITRE na análise · Rename workspace · Resize panels · Cross-platform fixes            |
+| **2**  | **Validação de telemetria real (NOVA)** | 🔴 next | Lab setup que captura port scan REAL · Auto-ingest FortiGate (Dramatiq) · agent_private rodando + reportando · Runbook de "primeiro scan" com screenshots · UX dos states vazios da SOC-lite (mostra "aguardando primeiro evento" em vez de gráfico zerado) |
+| **3**  | CI + observabilidade          | ⏸ adiada       | GitHub Actions · structured JSON logging · Prometheus `/metrics` · `/health/ready` separado · rate-limit SSO/AI/replay  |
+| **4**  | Polish pré-cliente            | ⏸             | Onboarding wizard · i18n aba Integrações · AI token budget · Playwright golden path · CHANGELOG                         |
+
+### Sprint 2 detalhada — Validação de telemetria real
+
+Objetivo concreto: gravar um vídeo (ou demonstrar ao vivo) onde:
+
+1. Um nmap rodando de uma VM Kali bate no FortiGate (WAN).
+2. Em 5-10 minutos, o cockpit pisca incidente `denied_traffic_burst`.
+3. A IA analisa, sugere CVSS + MITRE, e o analista contém via playbook.
+
+Sem `/demo/replay` envolvido. O que precisa fechar para chegar lá:
+
+#### 2.1 Topologia de lab que realmente trafega via FortiGate
+
+Bloqueador documentado em `AGENTS.md → Known Lab Setup Issues`:
+
+- Bridge-mode VMs no mesmo /24 da management interface ficam no L2 →
+  FortiGate nunca roteia → Forward Traffic vazio.
+- Policy precisa ter `set logtraffic all`.
+- VMware NAT põe o FortiGate WAN atrás do host.
+
+Entregável: um doc novo `docs/lab/real-scan-setup.md` com:
+
+- Diagrama da topologia que **funciona** (port1 vmnet8 NAT, port2 LAN
+  segregada com guest Linux, Kali no NAT como atacante "externo").
+- Comandos `config firewall policy` exatos (incluindo `set logtraffic all`).
+- Comando nmap esperado (ex: `nmap -p- -sS -T4 <forti-wan-ip>`).
+- Print do log `Forward Traffic` populado.
+
+#### 2.2 Auto-ingest FortiGate via Dramatiq
+
+Hoje `POST /api/soc/fortigate/{id}/ingest-events` precisa ser chamado
+manualmente. Stack já tem Redis (compose) e `tenacity` para retry.
+
+Entregável: worker que, para cada integração FortiGate conectada, faz poll
+a cada N segundos (default 60s, configurável) e empurra eventos
+agregados para o SIEM. Tabela `fortigate_ingest_state(integration_id,
+last_seen_at)` evita reprocessar. Job tolerante a falha de rede com backoff.
+
+Pipeline:
+
+```
+[FortiGate REST /api/v2/log/...] ──poll a cada 60s─→ [Dramatiq worker BFF]
+   └─→ _aggregate_fortigate_events() ──→ [siem_kowalski POST /events]
+                                              └─→ regra denied_traffic_burst → incidente
+```
+
+UX: na aba Integrações, badge "última ingestão há 12s · 47 eventos" por
+integração.
+
+#### 2.3 agent_private end-to-end na VM Windows
+
+Bloqueador também na lista de Known Lab Setup Issues: existe TUI/CLI mas
+nunca foi exercitado contra o `xdr_rico` real em uma VM.
+
+Entregável:
+
+- Tutorial em `docs/lab/agent-private-windows.md`: como enrolar,
+  como o heartbeat aparece no widget Endpoints.
+- Smoke: rodar nmap **na própria workstation** Windows; agent_private
+  detecta processo `nmap.exe` + conexão saindo; `xdr_rico` correlaciona
+  com o evento do FortiGate via sourceIp; cockpit mostra os dois lados
+  do mesmo incidente.
+
+#### 2.4 Empty/error/loading states da SOC-lite
+
+Hoje quando não tem evento, os widgets renderizam "0" ou ficam vazios —
+parece bug. Antes de gravar o vídeo, cada widget SOC-lite (incidents,
+endpoints, playbook runs, audit trail) precisa de:
+
+- Estado vazio explicando *por que* está vazio ("aguardando primeiro
+  evento de FortiGate" / "agent_private não conectado").
+- Loading skeleton com motion suave.
+- Error state com CTA de retry e link pra docs.
+
+Item já no AGENTS.md backlog Frontend Cockpit — promovido a MVP-blocker
+visual nesta sprint.
+
+#### 2.5 Runbook do "primeiro scan"
+
+Arquivo novo `docs/lab/first-real-scan-walkthrough.md` com checklist
+passo-a-passo:
+
+1. Pré-requisitos (compose up, FortiGate conectada, agent_private
+   instalado).
+2. Comando nmap do Kali.
+3. Onde olhar no cockpit (sidebar Tickets → lane T1 deve piscar).
+4. Tempo esperado entre scan e incidente (esperar 60-120s pelo poll).
+5. Troubleshooting (Forward Traffic vazio? policy? logtraffic?).
 
 ## 5. Métricas para "MVP pronto para cliente"
 
 A aplicação pode ser oferecida para um cliente real quando:
 
-- `git ls-files | xargs gitleaks detect` retorna zero achados.
-- Todos os secrets vêm de `.env.local` (gerado) ou `vault`.
+- **`docs/lab/first-real-scan-walkthrough.md` foi executado com sucesso por
+  alguém que não escreveu o código** (esse é o teste-mor).
+- Todos os secrets vêm de `.env` gerado pelo bootstrap.
 - `docker compose restart soar-skipper` mantém playbooks e runs.
 - `docker compose -f docker-compose.prod.yml up` sobe com TLS válido.
-- GitHub Actions verde no `main` para `pytest`, `vue-tsc`, `pnpm test` e
-  `test_mvp_demo_chain.py`.
-- `/metrics` expõe contadores de incidentes, requests e AI calls.
 - Auto-ingest FortiGate cria incidentes sem chamada manual.
-- Tela vazia tem CTA acionável; primeiro login dispara onboarding.
-- `CHANGELOG.md` documenta a release tag.
+- Widgets vazios mostram "aguardando dados" em vez de zeros.
+- (Sprint 3+) GitHub Actions verde no `main`.
+- (Sprint 3+) `/metrics` expõe contadores de incidentes, requests e AI calls.
+- (Sprint 4+) Tela vazia tem CTA acionável; primeiro login dispara onboarding.
+- (Sprint 4+) `CHANGELOG.md` documenta a release tag.
 
 ## 6. O que **já está pronto** (para não reinventar)
 
@@ -230,15 +332,27 @@ Para evitar refazer trabalho — checklist do que o repo já tem hoje:
 
 - ✅ Keycloak BFF + sessions + CSRF + RBAC (`apps/api/app/auth/`).
 - ✅ Kerberos SSO documentado em `configSSOKerberosKeycloak.md`.
-- ✅ Detecções declarativas no `siem_kowalski`.
-- ✅ Playbooks SOAR com state machine e gate de aprovação.
+- ✅ Detecções declarativas no `siem_kowalski` (port_scan, denied_traffic_burst,
+  brute_force, suspicious_connection, high_severity_event).
+- ✅ Playbooks SOAR com state machine, gate de aprovação e SQL persistence.
 - ✅ XDR endpoint enrollment, heartbeat, timeline e correlação com SIEM.
-- ✅ AI provider abstraction (Anthropic / OpenAI-compatible / scripted).
-- ✅ Cockpit Vue 3 com Pinia, workspaces, tickets, audit, presentation.
+- ✅ AI provider abstraction (Anthropic / OpenAI-compatible / scripted) +
+  chat real funcionando contra Gemini OpenAI-compat e Anthropic.
+- ✅ CVSS v3.1 + MITRE ATT&CK no output da análise de incidente.
+- ✅ Cockpit Vue 3 com Pinia, workspaces (renomeáveis), tickets, audit,
+  presentation, painéis redimensionáveis, minimap colapsável.
 - ✅ i18n pt-BR/en-US cobrindo 95% da cockpit.
 - ✅ MVP demo replay com picker de ataques individuais.
 - ✅ Smoke test ponta a ponta (`test_mvp_demo_chain.py`).
 - ✅ Alembic migrations para BFF (`apps/api/migrations/versions/`).
-- ✅ Docker Compose dev funcional.
+- ✅ Docker Compose dev + `docker-compose.prod.yml` overlay com Caddy.
+- ✅ Bootstrap de secrets (`scripts/bootstrap-secrets.{sh,ps1}`) e
+  sync de Keycloak client secret (`scripts/sync-keycloak-client-secret.{sh,ps1}`).
+- ✅ Boot guard recusa subir com secrets default
+  (`apps/api/app/core/config.py:DANGEROUS_DEFAULT_SECRETS`).
+- ✅ Decisão arquitetural: single-tenant per deploy (sem `tenant_id`).
+- ✅ Cross-Platform Compatibility (non-negotiable) policy em `AGENTS.md`.
+- ✅ Aggregator `_aggregate_fortigate_events()` no router de integrações
+  (pronto para reuso no auto-ingest da Sprint 2).
 
 Não comece nada que esteja nessa lista sem antes verificar o código atual.
