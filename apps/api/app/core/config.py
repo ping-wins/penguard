@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     soar_skipper_url: str = "http://localhost:8012"
     xdr_rico_url: str = "http://localhost:8013"
     internal_service_timeout_seconds: float = 3.0
+    fortigate_ingestion_scheduler_enabled: bool = False
+    fortigate_ingestion_scheduler_tick_seconds: int = 10
+    fortigate_ingestion_default_interval_seconds: int = 30
+    fortigate_ingestion_min_interval_seconds: int = 10
+    fortigate_ingestion_max_interval_seconds: int = 3600
     ai_provider: str = "scripted"
     ai_api_key: str = ""
     ai_model: str = ""

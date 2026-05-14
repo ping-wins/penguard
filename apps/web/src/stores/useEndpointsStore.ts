@@ -1,10 +1,14 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  buildAgentRunCommand,
+  createEndpointEnrollment,
   getEndpointRelatedIncidents,
   getEndpointTimeline,
   listEndpoints,
   type Endpoint,
+  type EndpointEnrollment,
+  type EndpointEnrollmentRequest,
   type EndpointRelatedIncident,
   type EndpointTimelineItem,
 } from '../services/endpointsClient'
@@ -15,8 +19,18 @@ function latestCount(timeline: EndpointTimelineItem[], eventType: string, key: s
   return Array.isArray(values) ? values.length : 0
 }
 
+export type PendingEnrollment = {
+  enrollmentId: string
+  displayName: string
+  hostnameHint: string | null
+  createdAt: string
+  command: string
+  status: 'pending' | 'online'
+}
+
 export const useEndpointsStore = defineStore('endpoints', () => {
   const endpoints = ref<Endpoint[]>([])
+  const pendingEnrollments = ref<PendingEnrollment[]>([])
   const selectedEndpointId = ref<string | null>(null)
   const timeline = ref<EndpointTimelineItem[]>([])
   const relatedIncidents = ref<EndpointRelatedIncident[]>([])
@@ -38,11 +52,21 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     latestCount(timeline.value, 'process.snapshot', 'processes')
   ))
 
+  function resolvePendingEnrollments() {
+    pendingEnrollments.value = pendingEnrollments.value.filter((pending) => {
+      return !endpoints.value.some((endpoint) => {
+        if (endpoint.id === pending.enrollmentId) return true
+        return false
+      })
+    })
+  }
+
   async function refresh() {
     isLoading.value = true
     error.value = null
     try {
       endpoints.value = await listEndpoints()
+      resolvePendingEnrollments()
       if (!selectedEndpointId.value && endpoints.value.length > 0) {
         selectedEndpointId.value = endpoints.value[0].id
       }
@@ -87,6 +111,26 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     }
   }
 
+  async function createEnrollment(payload: EndpointEnrollmentRequest): Promise<EndpointEnrollment> {
+    const enrollment = await createEndpointEnrollment(payload)
+    pendingEnrollments.value.push({
+      enrollmentId: enrollment.id,
+      displayName: enrollment.displayName ?? payload.displayName ?? enrollment.hostnameHint ?? 'Windows endpoint',
+      hostnameHint: enrollment.hostnameHint ?? payload.hostnameHint ?? null,
+      createdAt: enrollment.createdAt,
+      command: buildAgentRunCommand(enrollment),
+      status: 'pending',
+    })
+    return enrollment
+  }
+
+  function forgetEnrollmentCommand(enrollmentId: string) {
+    pendingEnrollments.value = pendingEnrollments.value.map((pending) => {
+      if (pending.enrollmentId !== enrollmentId) return pending
+      return { ...pending, command: '' }
+    })
+  }
+
   async function selectEndpoint(endpointId: string) {
     selectedEndpointId.value = endpointId
     await loadTimeline(endpointId)
@@ -107,6 +151,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
 
   return {
     endpoints,
+    pendingEnrollments,
     selectedEndpointId,
     selectedEndpoint,
     timeline,
@@ -119,6 +164,8 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     latestConnectionCount,
     latestProcessCount,
     refresh,
+    createEnrollment,
+    forgetEnrollmentCommand,
     selectEndpoint,
     startPolling,
     stopPolling,

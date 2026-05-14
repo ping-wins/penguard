@@ -577,6 +577,21 @@ def build_parser() -> argparse.ArgumentParser:
     windows_security.add_argument("--limit", type=int, default=50)
     windows_security.add_argument("--allowed-admin-host", action="append", default=[])
     windows_security.add_argument("--critical-path", action="append", default=[])
+    subparsers.add_parser(
+        "run",
+        help="Open the interactive setup TUI and run the agent from there.",
+    )
+    run_parser = subparsers.add_parser(
+        "run-headless",
+        parents=[common],
+        help="Run the foreground endpoint sensor loop without the TUI.",
+    )
+    run_parser.add_argument("--heartbeat-interval", type=float, default=30.0)
+    run_parser.add_argument("--connection-interval", type=float, default=60.0)
+    run_parser.add_argument("--process-interval", type=float, default=300.0)
+    run_parser.add_argument("--windows-security-interval", type=float)
+    run_parser.add_argument("--windows-security-limit", type=int, default=50)
+    run_parser.add_argument("--once", action="store_true")
     subparsers.add_parser("simulate", parents=[common], help="Print deterministic demo events.")
     return parser
 
@@ -613,7 +628,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command is None or args.command == "tui":
+    if args.command is None or args.command in {"tui", "run"}:
         run_tui()
         return
 
@@ -622,6 +637,31 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     endpoint_id = _require_endpoint_id(parser, args)
+
+    if args.command == "run-headless":
+        if not args.api_url:
+            parser.error("--api-url or AGENT_PRIVATE_API_URL is required with run-headless")
+        if not args.enrollment_token:
+            parser.error(
+                "--enrollment-token or AGENT_PRIVATE_ENROLLMENT_TOKEN is required with "
+                "run-headless"
+            )
+        from agent_private.runner import AgentRunConfig, run_agent
+
+        run_agent(
+            AgentRunConfig(
+                api_url=args.api_url,
+                endpoint_id=endpoint_id,
+                enrollment_token=args.enrollment_token,
+                heartbeat_interval=args.heartbeat_interval,
+                connection_interval=args.connection_interval,
+                process_interval=args.process_interval,
+                windows_security_interval=args.windows_security_interval,
+                windows_security_limit=args.windows_security_limit,
+            ),
+            once=args.once,
+        )
+        return
 
     if args.command == "simulate":
         events = build_simulated_events(endpoint_id)

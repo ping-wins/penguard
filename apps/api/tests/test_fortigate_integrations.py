@@ -8,7 +8,11 @@ from sqlalchemy.pool import StaticPool
 from app.auth import dependencies as auth_dependencies
 from app.auth.token_cipher import TokenCipher
 from app.db.base import Base
-from app.db.models import FortiGateHealthCheckModel, FortiGateIntegrationModel
+from app.db.models import (
+    FortiGateHealthCheckModel,
+    FortiGateIngestionStatusModel,
+    FortiGateIntegrationModel,
+)
 from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.service import FortiGateIntegrationService
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
@@ -188,6 +192,78 @@ def test_fortigate_integration_store_deletes_only_owned_integration_and_health_c
 
     assert integration_ids == ["int_fgt_owner_b"]
     assert health_ids == []
+
+
+def test_fortigate_integration_store_persists_ingestion_pipeline_status():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    store = SqlAlchemyFortiGateIntegrationStore(
+        engine=engine,
+        secret_cipher=TokenCipher.from_secret("test-secret"),
+        id_factory=lambda: "int_fgt_ingest",
+        ingestion_id_factory=lambda: "fgt_ingest_status_01",
+    )
+    store.create(
+        owner_user_id="usr_owner",
+        name="FortiGate Lab",
+        host="https://fortigate.local/",
+        api_key="fg_api_key_from_user",
+        verify_tls=False,
+    )
+
+    configured = store.upsert_ingestion_status(
+        owner_user_id="usr_owner",
+        integration_id="int_fgt_ingest",
+        enabled=True,
+        interval_seconds=30,
+        updated_at=datetime(2026, 5, 13, 18, 0, tzinfo=UTC),
+    )
+    started = store.record_ingestion_started(
+        owner_user_id="usr_owner",
+        integration_id="int_fgt_ingest",
+        started_at=datetime(2026, 5, 13, 18, 1, tzinfo=UTC),
+        trigger="manual",
+    )
+    completed = store.record_ingestion_result(
+        owner_user_id="usr_owner",
+        integration_id="int_fgt_ingest",
+        ok=True,
+        raw_event_count=4,
+        created_count=1,
+        event_ids=["evt_01"],
+        error=None,
+        finished_at=datetime(2026, 5, 13, 18, 1, 2, tzinfo=UTC),
+    )
+
+    with Session(engine) as db:
+        row = db.execute(select(FortiGateIngestionStatusModel)).scalar_one()
+
+    assert configured["enabled"] is True
+    assert configured["intervalSeconds"] == 30
+    assert started["status"] == "running"
+    assert completed == {
+        "id": "fgt_ingest_status_01",
+        "integrationId": "int_fgt_ingest",
+        "enabled": True,
+        "intervalSeconds": 30,
+        "status": "success",
+        "lastStartedAt": "2026-05-13T18:01:00.000Z",
+        "lastFinishedAt": "2026-05-13T18:01:02.000Z",
+        "lastSuccessAt": "2026-05-13T18:01:02.000Z",
+        "lastError": None,
+        "lastRawEventCount": 4,
+        "lastCreatedCount": 1,
+        "lastEventIds": ["evt_01"],
+        "lastRunTrigger": "manual",
+        "updatedAt": "2026-05-13T18:01:02.000Z",
+    }
+    assert row.owner_user_id == "usr_owner"
+    assert row.integration_id == "int_fgt_ingest"
+    assert row.last_event_ids == ["evt_01"]
 
 
 def test_fortigate_integration_service_can_use_persistent_store():

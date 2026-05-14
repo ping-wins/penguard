@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -7,7 +7,11 @@ from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.token_cipher import TokenCipher
-from app.db.models import FortiGateHealthCheckModel, FortiGateIntegrationModel
+from app.db.models import (
+    FortiGateHealthCheckModel,
+    FortiGateIngestionStatusModel,
+    FortiGateIntegrationModel,
+)
 
 FORTIGATE_CAPABILITIES = ["system", "interfaces", "policies", "threat_logs"]
 
@@ -22,6 +26,8 @@ class SqlAlchemyFortiGateIntegrationStore:
         secret_cipher: TokenCipher,
         id_factory: Callable[[], str] | None = None,
         health_id_factory: Callable[[], str] | None = None,
+        ingestion_id_factory: Callable[[], str] | None = None,
+        default_ingestion_interval_seconds: int = 60,
     ) -> None:
         if session_factory is not None:
             self.session_factory = session_factory
@@ -34,6 +40,10 @@ class SqlAlchemyFortiGateIntegrationStore:
         self.secret_cipher = secret_cipher
         self.id_factory = id_factory or (lambda: f"int_fgt_{uuid4().hex[:12]}")
         self.health_id_factory = health_id_factory or (lambda: f"fgt_health_{uuid4().hex[:12]}")
+        self.ingestion_id_factory = ingestion_id_factory or (
+            lambda: f"fgt_ingest_{uuid4().hex[:12]}"
+        )
+        self.default_ingestion_interval_seconds = default_ingestion_interval_seconds
 
     def create(
         self,
@@ -103,6 +113,12 @@ class SqlAlchemyFortiGateIntegrationStore:
                     FortiGateHealthCheckModel.integration_id == integration_id,
                 )
             )
+            db.execute(
+                delete(FortiGateIngestionStatusModel).where(
+                    FortiGateIngestionStatusModel.owner_user_id == owner_user_id,
+                    FortiGateIngestionStatusModel.integration_id == integration_id,
+                )
+            )
             db.delete(model)
             db.commit()
             return True
@@ -165,6 +181,151 @@ class SqlAlchemyFortiGateIntegrationStore:
             ).scalars()
             return {"items": [self._health_check_payload(row) for row in rows]}
 
+    def get_ingestion_status(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+    ) -> dict[str, Any]:
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=datetime.now(UTC),
+            )
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def upsert_ingestion_status(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        enabled: bool,
+        interval_seconds: int,
+        updated_at: datetime,
+    ) -> dict[str, Any]:
+        updated_at = self._as_utc(updated_at)
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=updated_at,
+            )
+            model.enabled = enabled
+            model.interval_seconds = interval_seconds
+            if model.status == "running":
+                model.status = "idle"
+            model.updated_at = updated_at
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def record_ingestion_started(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        started_at: datetime,
+        trigger: str,
+    ) -> dict[str, Any]:
+        started_at = self._as_utc(started_at)
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=started_at,
+            )
+            model.status = "running"
+            model.last_started_at = started_at
+            model.last_run_trigger = trigger
+            model.last_error = None
+            model.updated_at = started_at
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def record_ingestion_result(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        ok: bool,
+        raw_event_count: int,
+        created_count: int,
+        event_ids: list[str],
+        error: str | None,
+        finished_at: datetime,
+    ) -> dict[str, Any]:
+        finished_at = self._as_utc(finished_at)
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=finished_at,
+            )
+            model.status = "success" if ok else "failed"
+            model.last_finished_at = finished_at
+            model.last_raw_event_count = raw_event_count
+            model.last_created_count = created_count
+            model.last_event_ids = event_ids
+            model.last_error = error
+            if ok:
+                model.last_success_at = finished_at
+            model.updated_at = finished_at
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def list_due_ingestion_statuses(
+        self,
+        *,
+        now: datetime,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        now = self._as_utc(now)
+        with self.session_factory() as db:
+            rows = db.execute(
+                select(FortiGateIngestionStatusModel)
+                .where(
+                    FortiGateIngestionStatusModel.enabled.is_(True),
+                    FortiGateIngestionStatusModel.status != "running",
+                )
+                .order_by(FortiGateIngestionStatusModel.updated_at)
+                .limit(limit)
+            ).scalars()
+            due: list[dict[str, Any]] = []
+            for row in rows:
+                last_finished = row.last_finished_at or row.last_started_at
+                if last_finished is None:
+                    due.append(self._ingestion_status_payload(row, include_owner=True))
+                    continue
+                last_finished = self._as_utc(last_finished)
+                if last_finished + timedelta(seconds=row.interval_seconds) <= now:
+                    due.append(self._ingestion_status_payload(row, include_owner=True))
+            return due
+
     def _created_payload(self, model: FortiGateIntegrationModel) -> dict[str, Any]:
         return {
             "id": model.id,
@@ -197,7 +358,218 @@ class SqlAlchemyFortiGateIntegrationStore:
             "checkedAt": self._format_datetime(model.checked_at),
         }
 
+    def _owned_integration(
+        self,
+        db: Session,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+    ) -> FortiGateIntegrationModel:
+        integration = db.get(FortiGateIntegrationModel, integration_id)
+        if integration is None or integration.owner_user_id != owner_user_id:
+            raise KeyError("Integration not found")
+        return integration
+
+    def _get_or_create_ingestion_status(
+        self,
+        db: Session,
+        *,
+        integration: FortiGateIntegrationModel,
+        now: datetime,
+    ) -> FortiGateIngestionStatusModel:
+        model = db.execute(
+            select(FortiGateIngestionStatusModel).where(
+                FortiGateIngestionStatusModel.owner_user_id == integration.owner_user_id,
+                FortiGateIngestionStatusModel.integration_id == integration.id,
+            )
+        ).scalar_one_or_none()
+        if model is not None:
+            return model
+        model = FortiGateIngestionStatusModel(
+            id=self.ingestion_id_factory(),
+            integration_id=integration.id,
+            owner_user_id=integration.owner_user_id,
+            enabled=False,
+            interval_seconds=self.default_ingestion_interval_seconds,
+            status="idle",
+            last_raw_event_count=0,
+            last_created_count=0,
+            last_event_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(model)
+        db.flush()
+        return model
+
+    def _ingestion_status_payload(
+        self,
+        model: FortiGateIngestionStatusModel,
+        *,
+        include_owner: bool = False,
+    ) -> dict[str, Any]:
+        payload = {
+            "id": model.id,
+            "integrationId": model.integration_id,
+            "enabled": model.enabled,
+            "intervalSeconds": model.interval_seconds,
+            "status": model.status,
+            "lastStartedAt": self._format_optional_datetime(model.last_started_at),
+            "lastFinishedAt": self._format_optional_datetime(model.last_finished_at),
+            "lastSuccessAt": self._format_optional_datetime(model.last_success_at),
+            "lastError": model.last_error,
+            "lastRawEventCount": model.last_raw_event_count,
+            "lastCreatedCount": model.last_created_count,
+            "lastEventIds": model.last_event_ids or [],
+            "lastRunTrigger": model.last_run_trigger,
+            "updatedAt": self._format_datetime(model.updated_at),
+        }
+        if include_owner:
+            payload["ownerUserId"] = model.owner_user_id
+        return payload
+
+    def _as_utc(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def _format_optional_datetime(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return self._format_datetime(value)
+
     def _format_datetime(self, value: datetime) -> str:
         if value.tzinfo is None:
             value = value.replace(tzinfo=UTC)
         return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+class InMemoryFortiGateIngestionStore:
+    def __init__(
+        self,
+        *,
+        default_ingestion_interval_seconds: int = 60,
+        id_factory: Callable[[], str] | None = None,
+    ) -> None:
+        self.default_ingestion_interval_seconds = default_ingestion_interval_seconds
+        self.id_factory = id_factory or (lambda: f"fgt_ingest_{uuid4().hex[:12]}")
+        self._statuses: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def get_ingestion_status(self, *, owner_user_id: str, integration_id: str) -> dict[str, Any]:
+        return dict(self._get_or_create(owner_user_id, integration_id))
+
+    def upsert_ingestion_status(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        enabled: bool,
+        interval_seconds: int,
+        updated_at: datetime,
+    ) -> dict[str, Any]:
+        status = self._get_or_create(owner_user_id, integration_id)
+        status["enabled"] = enabled
+        status["intervalSeconds"] = interval_seconds
+        if status["status"] == "running":
+            status["status"] = "idle"
+        status["updatedAt"] = self._format_datetime(updated_at)
+        return dict(status)
+
+    def record_ingestion_started(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        started_at: datetime,
+        trigger: str,
+    ) -> dict[str, Any]:
+        status = self._get_or_create(owner_user_id, integration_id)
+        formatted = self._format_datetime(started_at)
+        status["status"] = "running"
+        status["lastStartedAt"] = formatted
+        status["lastRunTrigger"] = trigger
+        status["lastError"] = None
+        status["updatedAt"] = formatted
+        return dict(status)
+
+    def record_ingestion_result(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        ok: bool,
+        raw_event_count: int,
+        created_count: int,
+        event_ids: list[str],
+        error: str | None,
+        finished_at: datetime,
+    ) -> dict[str, Any]:
+        status = self._get_or_create(owner_user_id, integration_id)
+        formatted = self._format_datetime(finished_at)
+        status["status"] = "success" if ok else "failed"
+        status["lastFinishedAt"] = formatted
+        status["lastRawEventCount"] = raw_event_count
+        status["lastCreatedCount"] = created_count
+        status["lastEventIds"] = event_ids
+        status["lastError"] = error
+        if ok:
+            status["lastSuccessAt"] = formatted
+        status["updatedAt"] = formatted
+        return dict(status)
+
+    def list_due_ingestion_statuses(
+        self,
+        *,
+        now: datetime,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        now = self._as_utc(now)
+        due: list[dict[str, Any]] = []
+        for (owner_user_id, _integration_id), status in self._statuses.items():
+            if not status["enabled"] or status["status"] == "running":
+                continue
+            last_finished_raw = status["lastFinishedAt"] or status["lastStartedAt"]
+            if last_finished_raw is not None:
+                last_finished = datetime.fromisoformat(last_finished_raw.replace("Z", "+00:00"))
+                if last_finished + timedelta(seconds=status["intervalSeconds"]) > now:
+                    continue
+            due_status = dict(status)
+            due_status["ownerUserId"] = owner_user_id
+            due.append(due_status)
+            if len(due) >= limit:
+                break
+        return due
+
+    def _get_or_create(self, owner_user_id: str, integration_id: str) -> dict[str, Any]:
+        key = (owner_user_id, integration_id)
+        status = self._statuses.get(key)
+        if status is not None:
+            return status
+        now = self._format_datetime(datetime.now(UTC))
+        status = {
+            "id": self.id_factory(),
+            "integrationId": integration_id,
+            "enabled": False,
+            "intervalSeconds": self.default_ingestion_interval_seconds,
+            "status": "idle",
+            "lastStartedAt": None,
+            "lastFinishedAt": None,
+            "lastSuccessAt": None,
+            "lastError": None,
+            "lastRawEventCount": 0,
+            "lastCreatedCount": 0,
+            "lastEventIds": [],
+            "lastRunTrigger": None,
+            "updatedAt": now,
+        }
+        self._statuses[key] = status
+        return status
+
+    def _as_utc(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def _format_datetime(self, value: datetime) -> str:
+        value = self._as_utc(value)
+        return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")

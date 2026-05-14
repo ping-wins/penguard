@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { Activity, Clock, Cpu, Network, RefreshCw, Server, Shield, User } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Activity, Clock, Cpu, Network, Plus, RefreshCw, Server, Shield, User } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useEndpointsStore } from '../../stores/useEndpointsStore'
 import type { Endpoint, EndpointTimelineItem } from '../../services/endpointsClient'
 import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
+import AgentEnrollmentModal from './AgentEnrollmentModal.vue'
 
 const { t } = useI18n()
 const store = useEndpointsStore()
+const isEnrollmentModalOpen = ref(false)
+const enrollmentCommand = ref<string | null>(null)
+const enrollmentError = ref<string | null>(null)
+const isCreatingEnrollment = ref(false)
 
 onMounted(() => store.startPolling(10000))
 onBeforeUnmount(() => store.stopPolling())
@@ -80,6 +85,33 @@ function sourceBadgeClass(badge: SourceBadge) {
   if (badge.tone === 'ai') return 'border-purple-400/40 bg-purple-400/10 text-purple-200'
   return 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200'
 }
+
+function openEnrollmentModal() {
+  enrollmentError.value = null
+  enrollmentCommand.value = null
+  isEnrollmentModalOpen.value = true
+}
+
+async function submitEnrollment(payload: { displayName?: string; hostnameHint?: string }) {
+  isCreatingEnrollment.value = true
+  enrollmentError.value = null
+  try {
+    const enrollment = await store.createEnrollment(payload)
+    const pending = store.pendingEnrollments.find((item) => item.enrollmentId === enrollment.id)
+    enrollmentCommand.value = pending?.command ?? null
+    store.forgetEnrollmentCommand(enrollment.id)
+  } catch (e: any) {
+    enrollmentError.value = e?.message ?? t('endpoints.enrollment.error')
+  } finally {
+    isCreatingEnrollment.value = false
+  }
+}
+
+async function copyAgentCommand(command: string) {
+  const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+  if (!clipboard?.writeText) return
+  await clipboard.writeText(command).catch(() => undefined)
+}
 </script>
 
 <template>
@@ -91,15 +123,26 @@ function sourceBadgeClass(badge: SourceBadge) {
           {{ t('endpoints.subtitle') }}
         </p>
       </div>
-      <button
-        type="button"
-        class="rounded border border-theme-border p-2 text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
-        :disabled="store.isLoading"
-        :title="t('common.refresh')"
-        @click="store.refresh()"
-      >
-        <RefreshCw :size="16" />
-      </button>
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          data-test="add-windows-agent"
+          class="inline-flex items-center gap-2 rounded border border-theme-primary bg-theme-primary px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+          @click="openEnrollmentModal"
+        >
+          <Plus :size="15" />
+          {{ t('endpoints.enrollment.addWindowsAgent') }}
+        </button>
+        <button
+          type="button"
+          class="rounded border border-theme-border p-2 text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
+          :disabled="store.isLoading"
+          :title="t('common.refresh')"
+          @click="store.refresh()"
+        >
+          <RefreshCw :size="16" />
+        </button>
+      </div>
     </header>
 
     <div v-if="store.error" class="mb-3 rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
@@ -119,6 +162,29 @@ function sourceBadgeClass(badge: SourceBadge) {
         </div>
 
         <div class="h-[138px] overflow-y-auto p-2">
+          <div v-if="store.pendingEnrollments.length > 0" class="mb-2 space-y-2">
+            <article
+              v-for="pending in store.pendingEnrollments"
+              :key="pending.enrollmentId"
+              data-test="pending-endpoint"
+              class="rounded border border-yellow-400/40 bg-yellow-400/10 p-2"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-theme-text">{{ pending.displayName }}</div>
+                  <div v-if="pending.hostnameHint" class="mt-1 truncate font-mono text-[11px] text-theme-text-muted">
+                    {{ pending.hostnameHint }}
+                  </div>
+                </div>
+                <span class="rounded border border-yellow-400/40 px-2 py-0.5 text-[10px] uppercase text-yellow-100">
+                  {{ t('endpoints.enrollment.pending') }}
+                </span>
+              </div>
+              <p class="mt-2 text-xs text-yellow-100">
+                {{ t('endpoints.enrollment.waitingForHeartbeat') }}
+              </p>
+            </article>
+          </div>
           <div v-if="store.isLoading && store.endpoints.length === 0" class="p-3 text-sm text-theme-text-muted">
             {{ t('common.loading') }}
           </div>
@@ -320,5 +386,15 @@ function sourceBadgeClass(badge: SourceBadge) {
         </div>
       </section>
     </div>
+
+    <AgentEnrollmentModal
+      :open="isEnrollmentModalOpen"
+      :command="enrollmentCommand"
+      :is-creating="isCreatingEnrollment"
+      :error="enrollmentError"
+      @close="isEnrollmentModalOpen = false"
+      @submit="submitEnrollment"
+      @copy="copyAgentCommand"
+    />
   </section>
 </template>

@@ -1,3 +1,8 @@
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -15,13 +20,40 @@ from app.routers import (
     workspaces,
 )
 
+logger = logging.getLogger(__name__)
+_settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    task: asyncio.Task | None = None
+    if _settings.fortigate_ingestion_scheduler_enabled:
+        task = asyncio.create_task(_fortigate_ingestion_scheduler_loop())
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+async def _fortigate_ingestion_scheduler_loop() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(integrations.run_due_fortigate_ingestions_once)
+        except Exception:
+            logger.exception("fortigate_ingestion_scheduler_tick_failed")
+        await asyncio.sleep(_settings.fortigate_ingestion_scheduler_tick_seconds)
+
+
 app = FastAPI(
     title="FortiDashboard API",
     version="0.1.0",
     description="Backend API for FortiDashboard Fortinet integrations and widgets.",
+    lifespan=lifespan,
 )
 
-_settings = get_settings()
 app.add_middleware(
     SessionMiddleware,
     secret_key=_settings.secret_key,

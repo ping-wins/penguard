@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -189,6 +189,36 @@ async function handleRemoveIntegration(integrationId: string) {
   if (!res.success) {
     fgTestError.value = res.error ?? 'Failed to remove integration'
   }
+}
+
+async function handleRunFortigateIngestion(integrationId: string) {
+  fgTestError.value = null
+  const res = await integrationsStore.runFortigateIngestion(integrationId)
+  if (!res.success) {
+    fgTestError.value = res.error ?? 'Failed to ingest FortiGate events'
+  }
+}
+
+async function handleToggleFortigateIngestion(integrationId: string) {
+  fgTestError.value = null
+  const current = fortigateIngestionStatus(integrationId)
+  const res = await integrationsStore.configureFortigateIngestion(integrationId, {
+    enabled: !current?.enabled,
+    intervalSeconds: current?.intervalSeconds ?? 30,
+  })
+  if (!res.success) {
+    fgTestError.value = res.error ?? 'Failed to configure FortiGate ingestion'
+  }
+}
+
+function fortigateIngestionStatus(integrationId: string) {
+  return integrationsStore.ingestionStatusById[integrationId]
+}
+
+function ingestionPipelineLabel(integrationId: string) {
+  const status = fortigateIngestionStatus(integrationId)
+  if (!status) return 'Pipeline unknown'
+  return `Pipeline ${status.status}`
 }
 
 function connectedPenguinTool(type: PenguinToolType) {
@@ -590,6 +620,42 @@ async function handleChatSubmit() {
                       <Trash2 :size="14" />
                     </button>
                   </div>
+                </div>
+                <div
+                  class="mt-3 rounded border border-theme-border bg-theme-bg/70 p-2 text-xs text-theme-text-muted"
+                  :data-test="`fortigate-ingestion-status-${intg.id}`"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-medium text-theme-text">{{ ingestionPipelineLabel(intg.id) }}</span>
+                    <button
+                      type="button"
+                      class="rounded border border-theme-border p-1 text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:cursor-not-allowed disabled:opacity-50"
+                      :disabled="integrationsStore.isIngesting[intg.id]"
+                      :data-test="`fortigate-ingest-run-${intg.id}`"
+                      title="Run FortiGate event ingestion now"
+                      @click="handleRunFortigateIngestion(intg.id)"
+                    >
+                      <RefreshCcw :size="13" :class="{ 'animate-spin': integrationsStore.isIngesting[intg.id] }" />
+                    </button>
+                  </div>
+                  <div v-if="fortigateIngestionStatus(intg.id)" class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    <span>{{ fortigateIngestionStatus(intg.id)?.lastRawEventCount ?? 0 }} raw</span>
+                    <span>{{ fortigateIngestionStatus(intg.id)?.lastCreatedCount ?? 0 }} SIEM</span>
+                    <span v-if="fortigateIngestionStatus(intg.id)?.enabled">
+                      every {{ fortigateIngestionStatus(intg.id)?.intervalSeconds }}s
+                    </span>
+                  </div>
+                  <div v-if="fortigateIngestionStatus(intg.id)?.lastError" class="mt-1 text-red-400">
+                    {{ fortigateIngestionStatus(intg.id)?.lastError }}
+                  </div>
+                  <button
+                    type="button"
+                    class="mt-2 rounded border border-theme-border px-2 py-1 text-[11px] font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text"
+                    :data-test="`fortigate-ingest-toggle-${intg.id}`"
+                    @click="handleToggleFortigateIngestion(intg.id)"
+                  >
+                    {{ fortigateIngestionStatus(intg.id)?.enabled ? 'Disable scheduler' : 'Enable scheduler' }}
+                  </button>
                 </div>
               </div>
             </div>
