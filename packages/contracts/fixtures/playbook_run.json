@@ -1,27 +1,26 @@
 {
   "id": "pbr_01",
-  "playbookId": "pb_01",
   "incidentId": "inc_01",
+  "playbookId": "pb_01",
+  "dryRun": true,
   "status": "waiting_approval",
-  "mode": "dry_run",
-  "startedAt": "2026-05-08T12:02:00.000Z",
-  "completedAt": null,
   "steps": [
     {
       "id": "step_01",
       "nodeId": "enrich_ip",
+      "nodeType": "enrich.ip",
       "status": "completed",
-      "message": "Source IP enrichment completed.",
-      "startedAt": "2026-05-08T12:02:00.000Z",
-      "completedAt": "2026-05-08T12:02:01.000Z"
+      "sensitive": false,
+      "createdAt": "2026-05-08T12:02:00.000Z"
     },
     {
       "id": "step_02",
       "nodeId": "approval",
+      "nodeType": "approval.required",
       "status": "waiting_approval",
-      "message": "Admin approval required before recommendation is applied.",
-      "startedAt": "2026-05-08T12:02:01.000Z",
-      "completedAt": null
+      "sensitive": false,
+      "createdAt": "2026-05-08T12:02:01.000Z"
     }
-  ]
+  ],
+  "createdAt": "2026-05-08T12:02:00.000Z"
 }

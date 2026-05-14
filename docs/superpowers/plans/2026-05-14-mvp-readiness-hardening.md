@@ -32,7 +32,7 @@ Baseline verification before changes:
 3. [x] Make the OAuth `f_session` cookie honor secure/samesite settings.
 4. [x] Make workspace saves fail visibly on HTTP errors.
 5. [x] Add CI workflow for the test/lint/build commands that currently pass locally.
-6. Refresh the most misleading contract fixtures for SIEM/SOAR.
+6. [x] Refresh the most misleading contract fixtures for SIEM/SOAR.
 7. Expand audit action i18n for MVP SOC/workspace actions.
 
 ### Deferred but tracked
@@ -144,6 +144,8 @@ Status: **implemented** in commit `ci: add baseline quality gate`.
 5. Commit: `ci: add baseline quality gate`.
 
 ## Task 6: Refresh stale contract fixtures
+
+Status: **implemented** in commit `fix(contracts): align SOC fixtures with services`.
 
 **Objective:** Shared fixtures must match actual MVP service response shapes.
 
