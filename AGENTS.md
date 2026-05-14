@@ -392,6 +392,47 @@ without rewriting the shell. Keep the widget id → component map narrow and
 keep `WidgetShell.source` a plain string — new providers slot in via the map,
 not via shell edits.
 
+### Marketplace Add-on Packages
+
+Direction (2026-05-14 onward): vendor connectors are not part of the monorepo.
+Each provider integration is a versioned **package** (manifest + Python
+connector code + fixtures) hosted in the private registry repo
+`ping-wins/fortidashboard-addons`. The dashboard ships zero vendor
+connectors and gains them at runtime via install endpoints that fetch a
+GitHub tarball, extract it onto a Docker volume, register the row in
+`installed_addons`, and dynamically import the package as
+`fortidashboard_addons.<id>`.
+
+Rules for contributors and agents:
+
+- **Authoritative docs:** `docs/marketplace/README.md` is the working
+  overview. Architecture details live in the spec at
+  `docs/superpowers/specs/2026-05-14-marketplace-addon-packages-design.md`.
+  Implementation is phased — see plans under `docs/superpowers/plans/`.
+- **Read before writing:** the spec lists decisions that are locked
+  (Python-code packages, tarball-by-tag fetch, importlib loader, one active
+  version per add-on, duck-typed Protocol contract, frontend widgets stay
+  in dashboard). Do not relitigate in PRs — amend the spec first.
+- **Do not extend the legacy bundled registry.** The local-dir loader at
+  `apps/api/app/addons/registry.py` and the `addons/<id>/` directory in
+  this repo are transitional. New add-ons go to the registry repo as
+  packages, not as JSON files inside this repo.
+- **Do not import vendor code paths.** After the FortiGate extraction
+  plan lands, `apps/api/app/integrations/fortigate/{client,normalizers,
+  widgets}.py` are deleted. New code calls the
+  `ConnectorRegistry.get(addon_id, integration_id, config)` and uses the
+  duck-typed connector interface.
+- **Schema changes are dual-write.** Adding fields to `AddonManifest`
+  must (1) ship as optional with sensible defaults so older manifests
+  keep parsing, and (2) be reflected in every existing package in the
+  registry repo before consumers depend on the field.
+- **Backend container rebuilds.** No source bind mount —
+  `docker compose up -d --build api` after every edit under
+  `apps/api/`.
+- **Secrets:** the `MARKETPLACE_GH_TOKEN` env var carries the registry
+  read token. It must never appear in committed files, .env templates
+  with real values, or logs.
+
 ## Workspace Manifests And Sharing
 
 Each user should eventually have a contextual workspace manifest. Treat it as a

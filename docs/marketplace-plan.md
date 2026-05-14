@@ -1,5 +1,13 @@
 # Marketplace Plan
 
+> **SUPERSEDED 2026-05-14.** This document describes the original
+> manifest-only marketplace. The current direction is **package-based**
+> (manifest + connector code, hosted in `ping-wins/fortidashboard-addons`,
+> installed at runtime via dynamic import). For the authoritative
+> overview, read `docs/marketplace/README.md`. The design spec is at
+> `docs/superpowers/specs/2026-05-14-marketplace-addon-packages-design.md`.
+> This file is kept for historical context.
+
 ## Goal
 
 Let an operator browse and install provider integrations without
