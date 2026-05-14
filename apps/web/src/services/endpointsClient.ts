@@ -146,6 +146,20 @@ export async function createEndpointEnrollment(
   )
 }
 
+export async function deleteEndpoint(endpointId: string, fetcher: Fetcher = fetch): Promise<void> {
+  const csrfToken = await getCsrfToken(fetcher)
+  await parseOrThrow(
+    await fetcher(`/api/weapons/endpoints/${encodeURIComponent(endpointId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+      },
+    }),
+    'Failed to delete endpoint',
+  )
+}
+
 export function buildAgentRunCommand(enrollment: EndpointEnrollment, apiUrl?: string): string {
   const resolvedApiUrl = apiUrl ?? (typeof window !== 'undefined' ? window.location.origin : '')
   return [

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAgentRunCommand,
   createEndpointEnrollment,
+  deleteEndpoint,
   getEndpointRelatedIncidents,
   getEndpointTimeline,
   listEndpoints,
@@ -112,6 +113,23 @@ describe('endpoints client and store', () => {
     }))
   })
 
+  it('deletes endpoint through the BFF with CSRF', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf_01' }))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true, endpointId: 'win-server-01' }))
+
+    await expect(deleteEndpoint('win-server-01', fetcher)).resolves.toBeUndefined()
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/auth/csrf', { credentials: 'include' })
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/weapons/endpoints/win-server-01', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'X-CSRF-Token': 'csrf_01',
+      },
+    })
+  })
+
   it('builds a PowerShell-friendly agent run command', () => {
     const command = buildAgentRunCommand({
       id: 'enr_01',
@@ -210,6 +228,47 @@ describe('endpoints client and store', () => {
     expect(store.pendingEnrollments).toEqual([])
   })
 
+  it('resolves pending enrollment when a fresh heartbeat arrives from the hinted hostname', async () => {
+    const onlineEndpoint = {
+      ...endpoint,
+      id: 'manually-configured-id',
+      hostname: 'WIN-LAB-01',
+      lastSeenAt: '2026-05-13T18:01:00.000Z',
+    }
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/auth/csrf') return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url === '/api/weapons/enrollments') {
+        return Promise.resolve(jsonResponse({
+          id: 'enr_01',
+          displayName: 'Windows Server Lab',
+          hostnameHint: 'WIN-LAB-01',
+          createdAt: '2026-05-13T18:00:00.000Z',
+          token: 'enrollment-token',
+        }))
+      }
+      if (url === '/api/weapons/endpoints') return Promise.resolve(jsonResponse({ items: [onlineEndpoint] }))
+      if (url === '/api/weapons/endpoints/manually-configured-id/timeline') {
+        return Promise.resolve(jsonResponse({ endpointId: 'manually-configured-id', items: [] }))
+      }
+      if (url === '/api/weapons/endpoints/manually-configured-id/related-incidents') {
+        return Promise.resolve(jsonResponse({ endpointId: 'manually-configured-id', items: [], total: 0 }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useEndpointsStore()
+    await store.createEnrollment({
+      displayName: 'Windows Server Lab',
+      hostnameHint: 'WIN-LAB-01',
+    })
+    await store.refresh()
+
+    expect(store.pendingEnrollments).toEqual([])
+    expect(store.endpoints[0].id).toBe('manually-configured-id')
+  })
+
   it('does not resolve pending enrollment only because a stale hostname matches', async () => {
     const staleEndpoint = {
       ...endpoint,
@@ -242,5 +301,41 @@ describe('endpoints client and store', () => {
 
     expect(store.pendingEnrollments).toHaveLength(1)
     expect(store.pendingEnrollments[0].enrollmentId).toBe('enr_01')
+  })
+
+  it('removes pending cards locally and deletes real endpoints through the store', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/auth/csrf') return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url === '/api/weapons/enrollments') {
+        return Promise.resolve(jsonResponse({
+          id: 'enr_01',
+          displayName: 'Windows Server Lab',
+          hostnameHint: 'WIN-LAB-01',
+          createdAt: '2026-05-13T18:00:00.000Z',
+          token: 'enrollment-token',
+        }))
+      }
+      if (url === '/api/weapons/endpoints/win-server-01' && init?.method === 'DELETE') {
+        return Promise.resolve(jsonResponse({ deleted: true }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useEndpointsStore()
+    await store.createEnrollment({
+      displayName: 'Windows Server Lab',
+      hostnameHint: 'WIN-LAB-01',
+    })
+    store.dismissPendingEnrollment('enr_01')
+    expect(store.pendingEnrollments).toEqual([])
+
+    store.endpoints = [endpoint]
+    store.selectedEndpointId = 'win-server-01'
+    await store.removeEndpoint('win-server-01')
+
+    expect(store.endpoints).toEqual([])
+    expect(store.selectedEndpointId).toBeNull()
   })
 })

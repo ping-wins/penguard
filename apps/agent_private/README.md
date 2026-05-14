@@ -46,6 +46,8 @@ Navigation:
 
 - Use `Tab` / `Shift+Tab` to move between fields and buttons.
 - Press `Enter` to activate the focused button.
+- Use `Ctrl+V` to paste into the focused field. On Windows, the TUI falls back
+  to the system clipboard when the terminal does not emit a paste event.
 - Use the mouse wheel to scroll when the terminal is short.
 - Shortcuts: `s` saves, `r` starts the agent loop, `x` stops it, `h` sends a
   heartbeat, `d` sends demo telemetry and `q` quits.

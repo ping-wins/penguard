@@ -1082,6 +1082,26 @@ def get_endpoint(
     return client.request("GET", f"/endpoints/{endpoint_id}")
 
 
+@router.delete("/weapons/endpoints/{endpoint_id}")
+def delete_endpoint(
+    endpoint_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    client.request("DELETE", f"/endpoints/{endpoint_id}", pass_through_statuses={404})
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="xdr.endpoint.deleted",
+        details={"endpointId": endpoint_id, "service": "xdr_rico"},
+    )
+    return {"deleted": True, "endpointId": endpoint_id}
+
+
 @router.get("/weapons/endpoints/{endpoint_id}/related-incidents")
 def get_endpoint_related_incidents(
     endpoint_id: str,

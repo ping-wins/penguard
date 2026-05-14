@@ -4,7 +4,7 @@ from hashlib import sha256
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, status
+from fastapi import FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.store import XdrStore
@@ -429,6 +429,14 @@ def list_endpoints() -> EndpointListResponse:
 @app.get("/endpoints/{endpoint_id}", response_model=Endpoint)
 def get_endpoint(endpoint_id: str) -> Endpoint:
     return get_endpoint_or_404(endpoint_id)
+
+
+@app.delete("/endpoints/{endpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_endpoint(endpoint_id: str) -> Response:
+    get_endpoint_or_404(endpoint_id)
+    get_store().delete_endpoint(endpoint_id)
+    logger.info("xdr_endpoint_deleted endpoint_id=%s", endpoint_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/endpoints/{endpoint_id}/timeline", response_model=EndpointTimelineResponse)

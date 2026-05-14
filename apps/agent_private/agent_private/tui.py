@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -67,7 +69,7 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
     payload = json.loads(config_path.read_text())
     if not isinstance(payload, dict):
         return AgentPrivateConfig()
-    return AgentPrivateConfig(
+    stored = AgentPrivateConfig(
         api_url=str(payload.get("api_url") or payload.get("apiUrl") or ""),
         endpoint_id=str(payload.get("endpoint_id") or payload.get("endpointId") or ""),
         enrollment_token=str(
@@ -93,6 +95,17 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
             0.0,
             allow_zero=True,
         ),
+    )
+    return AgentPrivateConfig(
+        api_url=os.environ.get("AGENT_PRIVATE_API_URL") or stored.api_url,
+        endpoint_id=os.environ.get("AGENT_PRIVATE_ENDPOINT_ID") or stored.endpoint_id,
+        enrollment_token=(
+            os.environ.get("AGENT_PRIVATE_ENROLLMENT_TOKEN") or stored.enrollment_token
+        ),
+        heartbeat_interval=stored.heartbeat_interval,
+        connection_interval=stored.connection_interval,
+        process_interval=stored.process_interval,
+        windows_security_interval=stored.windows_security_interval,
     )
 
 
@@ -159,8 +172,22 @@ def _parse_interval(value: Any, default: float, *, allow_zero: bool = False) -> 
 
 OPERATOR_HELP = (
     "Navigation: Tab / Shift+Tab moves between fields, Enter activates focused buttons, "
-    "mouse wheel scrolls, q quits."
+    "Ctrl+V pastes from the system clipboard, mouse wheel scrolls, q quits."
 )
+
+
+class SystemClipboardInput(Input):
+    """Input with an OS clipboard fallback for terminals that do not emit paste events."""
+
+    def action_paste(self) -> None:
+        text = self.app.clipboard or read_system_clipboard()
+        line = _first_clipboard_line(text)
+        if not line:
+            if hasattr(self.app, "_log"):
+                self.app._log("Clipboard is empty or unavailable.")  # type: ignore[attr-defined]
+            return
+        start, end = self.selection
+        self.replace(line, start, end)
 
 
 class AgentPrivateTui(App[None]):
@@ -275,6 +302,10 @@ class AgentPrivateTui(App[None]):
         self.config_path = config_path or default_config_path()
         self.config = load_config(self.config_path)
         self.loop_timers: list[Any] = []
+        self.sent_count = 0
+        self.failed_count = 0
+        self.last_event = "none"
+        self.is_loop_running = False
 
     def compose(self) -> ComposeResult:
         identity = build_identity_payload()
@@ -286,13 +317,13 @@ class AgentPrivateTui(App[None]):
             with Vertical(classes="panel"):
                 yield Static("Setup", classes="section-title")
                 yield Static("API URL", id="api-url-label", classes="field-label")
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.api_url,
                     placeholder="http://localhost:8000",
                     id="api-url",
                 )
                 yield Static("Endpoint ID", id="endpoint-id-label", classes="field-label")
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.endpoint_id or identity["hostname"],
                     placeholder="endpoint-id",
                     id="endpoint-id",
@@ -302,7 +333,7 @@ class AgentPrivateTui(App[None]):
                     id="enrollment-token-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.enrollment_token,
                     placeholder="enrollment token",
                     password=True,
@@ -322,7 +353,7 @@ class AgentPrivateTui(App[None]):
                     id="heartbeat-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.heartbeat_interval:g}",
                     placeholder="heartbeat interval",
                     id="heartbeat-interval",
@@ -332,7 +363,7 @@ class AgentPrivateTui(App[None]):
                     id="connection-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.connection_interval:g}",
                     placeholder="connection snapshot interval",
                     id="connection-interval",
@@ -342,7 +373,7 @@ class AgentPrivateTui(App[None]):
                     id="process-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.process_interval:g}",
                     placeholder="process snapshot interval",
                     id="process-interval",
@@ -352,7 +383,7 @@ class AgentPrivateTui(App[None]):
                     id="windows-security-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.windows_security_interval:g}",
                     placeholder="windows security interval, 0 disables",
                     id="windows-security-interval",
@@ -362,6 +393,12 @@ class AgentPrivateTui(App[None]):
                     yield Button("Stop agent (x)", id="stop-loop", variant="error")
             with Vertical(classes="panel"):
                 yield Static("Status", classes="section-title")
+                yield Static("Agent stopped", id="agent-state", classes="muted")
+                yield Static(
+                    "sent=0 failed=0 last=none",
+                    id="telemetry-counters",
+                    classes="muted",
+                )
                 yield Static(f"Hostname: {identity['hostname']}", classes="muted")
                 yield Static(f"User: {identity['username']}", classes="muted")
                 yield Static(f"OS: {identity['os']}", classes="muted")
@@ -478,22 +515,31 @@ class AgentPrivateTui(App[None]):
                     name="windows-security-loop",
                 )
             )
-        self._send_single("heartbeat")
-        self._log(f"Agent loop started: {config.safe_summary()}")
+        self.is_loop_running = True
+        self._render_agent_status()
+        if self._send_single("heartbeat"):
+            self._log(f"Agent loop running. Initial heartbeat OK: {config.safe_summary()}")
+        else:
+            self._log(
+                "Agent loop started, but initial heartbeat failed. "
+                "Check API URL, enrollment token and backend logs."
+            )
 
     def _stop_loop(self, *, silent: bool = False) -> None:
         for timer in self.loop_timers:
             timer.stop()
         self.loop_timers = []
+        self.is_loop_running = False
+        self._render_agent_status()
         if not silent:
             self._log("Agent loop stopped.")
 
-    def _send_single(self, kind: str) -> None:
+    def _send_single(self, kind: str) -> bool:
         config = self._current_config()
         error = _validate_post_config(config)
         if error:
             self._log(error)
-            return
+            return False
 
         identity = build_identity_payload()
         ip_addresses = get_ip_addresses()
@@ -519,8 +565,8 @@ class AgentPrivateTui(App[None]):
             )
         else:
             self._log(f"Unknown telemetry action: {kind}")
-            return
-        self._post_payload(config, payload, success=f"Sent {payload['eventType']}.")
+            return False
+        return self._post_payload(config, payload, success=f"Sent {payload['eventType']}.")
 
     def _send_demo_burst(self) -> None:
         config = self._current_config()
@@ -561,6 +607,9 @@ class AgentPrivateTui(App[None]):
         *,
         success: str,
     ) -> bool:
+        event_type = str(payload.get("eventType") or "endpoint event")
+        self.last_event = event_type
+        self._log(f"Posting {event_type} for endpoint {config.endpoint_id}...")
         try:
             post_endpoint_event(
                 api_url=config.api_url,
@@ -568,14 +617,27 @@ class AgentPrivateTui(App[None]):
                 payload=payload,
             )
         except Exception as exc:  # noqa: BLE001 - TUI must keep running after transport errors.
-            self._log(f"Post failed: {_redact(str(exc), config.enrollment_token)}")
+            self.failed_count += 1
+            self._render_agent_status()
+            self._log(
+                f"Post failed for {event_type}: {_redact(str(exc), config.enrollment_token)}"
+            )
             return False
+        self.sent_count += 1
+        self._render_agent_status()
         if success:
-            self._log(success)
+            self._log(f"{success} sent={self.sent_count} failed={self.failed_count}")
         return True
 
     def _log(self, message: str) -> None:
         self.query_one("#status-log", Static).update(message)
+
+    def _render_agent_status(self) -> None:
+        state = "running" if self.is_loop_running else "stopped"
+        self.query_one("#agent-state", Static).update(f"Agent {state}")
+        self.query_one("#telemetry-counters", Static).update(
+            f"sent={self.sent_count} failed={self.failed_count} last={self.last_event}"
+        )
 
 
 def _validate_post_config(config: AgentPrivateConfig) -> str | None:
@@ -592,6 +654,80 @@ def _redact(value: str, secret: str) -> str:
     if not secret:
         return value
     return value.replace(secret, "[redacted]")
+
+
+def read_system_clipboard() -> str:
+    if os.name == "nt":
+        return _read_windows_clipboard()
+    return _read_subprocess_clipboard()
+
+
+def _read_windows_clipboard() -> str:
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return ""
+
+    cf_unicode_text = 13
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(cf_unicode_text)
+        if not handle:
+            return ""
+        locked = kernel32.GlobalLock(handle)
+        if not locked:
+            return ""
+        try:
+            return ctypes.wstring_at(locked)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def _read_subprocess_clipboard() -> str:
+    commands = [["pbpaste"]] if sys.platform == "darwin" else [
+        ["wl-paste", "--no-newline"],
+        ["xclip", "-selection", "clipboard", "-o"],
+        ["xsel", "--clipboard", "--output"],
+    ]
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=0.5,
+            )
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            continue
+        if result.stdout:
+            return result.stdout
+    return ""
+
+
+def _first_clipboard_line(text: str) -> str:
+    if not text:
+        return ""
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n", maxsplit=1)[0]
 
 
 def run_tui() -> None:

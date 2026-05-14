@@ -178,4 +178,65 @@ describe('EndpointsPanel', () => {
     expect(wrapper.find('[data-test="pending-endpoint"]').text()).toContain('Windows Server Lab')
     expect(wrapper.find('[data-test="pending-endpoint"]').text()).toContain('Waiting for first heartbeat')
   })
+
+  it('lets the analyst dismiss pending endpoints and delete stale real endpoints', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/weapons/endpoints') {
+        return Promise.resolve(jsonResponse({ items: [endpoint] }))
+      }
+      if (url === '/api/weapons/endpoints/win-server-01/timeline') {
+        return Promise.resolve(jsonResponse({ endpointId: 'win-server-01', items: [] }))
+      }
+      if (url === '/api/weapons/endpoints/win-server-01/related-incidents') {
+        return Promise.resolve(jsonResponse({ endpointId: 'win-server-01', items: [], total: 0 }))
+      }
+      if (url === '/api/auth/csrf') {
+        return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      }
+      if (url === '/api/weapons/enrollments') {
+        return Promise.resolve(jsonResponse({
+          id: 'enr_01',
+          displayName: 'Windows Server Lab',
+          hostnameHint: 'WIN-LAB-01',
+          createdAt: '2026-05-13T18:00:00.000Z',
+          token: 'enrollment-token',
+        }))
+      }
+      if (url === '/api/weapons/endpoints/win-server-01' && init?.method === 'DELETE') {
+        return Promise.resolve(jsonResponse({ deleted: true }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+
+    const wrapper = mount(EndpointsPanel, {
+      global: {
+        plugins: [i18n],
+      },
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-test="add-windows-agent"]').trigger('click')
+    await wrapper.find('input[name="displayName"]').setValue('Windows Server Lab')
+    await wrapper.find('input[name="hostnameHint"]').setValue('WIN-LAB-01')
+    await wrapper.find('form[data-test="agent-enrollment-form"]').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="pending-endpoint"]').exists()).toBe(true)
+    await wrapper.find('[data-test="dismiss-pending-endpoint"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pending-endpoint"]').exists()).toBe(false)
+
+    expect(wrapper.find('[data-test="endpoint-row-win-server-01"]').exists()).toBe(true)
+    await wrapper.find('[data-test="delete-endpoint-win-server-01"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/weapons/endpoints/win-server-01', expect.objectContaining({
+      method: 'DELETE',
+      headers: { 'X-CSRF-Token': 'csrf_01' },
+    }))
+    expect(wrapper.find('[data-test="endpoint-row-win-server-01"]').exists()).toBe(false)
+  })
 })

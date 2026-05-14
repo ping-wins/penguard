@@ -557,6 +557,34 @@ def test_xdr_endpoint_event_gateway_forwards_enrollment_authorization():
     assert audit["items"][0]["details"]["actorType"] == "agent_private"
 
 
+def test_xdr_endpoint_delete_gateway_audits_and_uses_csrf():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient({"deleted": True, "endpointId": "end_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.delete(
+        "/api/weapons/endpoints/end_01",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert fake_xdr.calls == [
+        {
+            "method": "DELETE",
+            "path": "/endpoints/end_01",
+            "json": None,
+            "params": None,
+            "headers": None,
+            "pass_through_statuses": {404},
+        }
+    ]
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="xdr.endpoint.deleted")
+    assert audit["items"][0]["details"] == {
+        "endpointId": "end_01",
+        "service": "xdr_rico",
+    }
+
+
 def test_xdr_endpoint_event_gateway_adds_observed_source_ip_to_payload():
     client = TestClient(app, client=("192.168.56.10", 55088))
     fake_xdr = FakeSocClient({"endpoint": {"id": "win-server-01"}, "timelineItem": {"id": "tl_01"}})

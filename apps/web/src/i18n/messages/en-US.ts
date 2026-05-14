@@ -88,6 +88,9 @@ export default {
     user: 'User',
     connections: 'Connections',
     processes: 'Processes',
+    remove: 'Remove endpoint',
+    removeConfirm: 'Remove endpoint "{label}" from the local XDR inventory? If the agent is still running, it can appear again on the next heartbeat.',
+    removeError: 'Failed to remove endpoint',
     enrollment: {
       addWindowsAgent: 'Add Windows Agent',
       title: 'Add Windows agent',
@@ -101,6 +104,7 @@ export default {
       copy: 'Copy command',
       pending: 'Pending',
       waitingForHeartbeat: 'Waiting for first heartbeat',
+      dismissPending: 'Dismiss pending endpoint',
       error: 'Failed to create endpoint enrollment',
     },
     related: {
