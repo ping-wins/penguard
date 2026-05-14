@@ -229,7 +229,16 @@ def _incident_attributes(event: SecurityEvent) -> dict[str, Any]:
     attributes: dict[str, Any] = {
         "source": event.attributes.get("source") or event.source,
     }
-    for key in ("demoRunId", "attackType"):
+    for key in (
+        "demoRunId",
+        "attackType",
+        "count",
+        "users",
+        "attempts",
+        "message",
+        "action",
+        "subtype",
+    ):
         value = event.attributes.get(key)
         if value is not None and value != "":
             attributes[key] = value

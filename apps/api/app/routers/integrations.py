@@ -628,6 +628,11 @@ def _run_fortigate_event_ingestion(
     siem_client: SocClient,
     ingestion_store: FortiGateIngestionStore,
 ) -> dict[str, Any]:
+    cursor_status = ingestion_store.get_ingestion_status(
+        owner_user_id=owner_user_id,
+        integration_id=integration_id,
+    )
+    cursor_iso = cursor_status.get("lastSuccessAt")
     ingestion_store.record_ingestion_started(
         owner_user_id=owner_user_id,
         integration_id=integration_id,
@@ -648,7 +653,8 @@ def _run_fortigate_event_ingestion(
             raise RuntimeError(str(error_message))
         events = widget_payload.get("data", {}).get("events", [])
         raw_event_count = len([event for event in events if isinstance(event, dict)])
-        aggregated = _aggregate_fortigate_events(events, integration_id=integration_id)
+        new_events = _filter_events_after_cursor(events, cursor_iso=cursor_iso)
+        aggregated = _aggregate_fortigate_events(new_events, integration_id=integration_id)
         created_events = [
             siem_client.request("POST", "/events", json=siem_event)
             for siem_event in aggregated
@@ -687,6 +693,31 @@ def _run_fortigate_event_ingestion(
             finished_at=datetime.now(UTC),
         )
         raise
+
+
+def _filter_events_after_cursor(
+    events: list[Any],
+    *,
+    cursor_iso: str | None,
+) -> list[dict[str, Any]]:
+    """Drop events older than or equal to the last successful ingestion run.
+
+    The cursor is the previous run's ``lastSuccessAt`` (UTC ISO). Events
+    arrive normalized with an ISO ``timestamp``; ISO strings compare
+    lexicographically when both end in ``Z``, so a string compare is
+    enough as long as both are in the same canonical form.
+    """
+    if not cursor_iso:
+        return [event for event in events if isinstance(event, dict)]
+    filtered: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        timestamp = event.get("timestamp")
+        if isinstance(timestamp, str) and timestamp <= cursor_iso:
+            continue
+        filtered.append(event)
+    return filtered
 
 
 _SEVERITY_RANK = {
@@ -730,6 +761,12 @@ def _aggregate_fortigate_events(
         occurred_at = raw_event.get("timestamp") or _now_iso()
         destination_ip = raw_event.get("destinationIp")
         message = raw_event.get("message")
+        user_name = str(raw_event.get("user") or "").strip()
+        sample_attempt = {
+            "at": occurred_at,
+            "user": user_name or None,
+            "message": message,
+        }
         if existing is None:
             groups[key] = {
                 "source": "fortigate",
@@ -748,12 +785,19 @@ def _aggregate_fortigate_events(
                     "message": message,
                     "count": 1,
                     "uniqueDestinationIps": {destination_ip} if destination_ip else set(),
+                    "users": {user_name} if user_name else set(),
+                    "attempts": [sample_attempt],
                 },
             }
         else:
             existing["attributes"]["count"] += 1
             if destination_ip:
                 existing["attributes"]["uniqueDestinationIps"].add(destination_ip)
+            if user_name:
+                existing["attributes"]["users"].add(user_name)
+            attempts = existing["attributes"]["attempts"]
+            if len(attempts) < 20:
+                attempts.append(sample_attempt)
             if _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(existing["severity"], 0):
                 existing["severity"] = severity
             if occurred_at > existing["occurredAt"]:
@@ -765,6 +809,8 @@ def _aggregate_fortigate_events(
     for event in groups.values():
         unique = event["attributes"].pop("uniqueDestinationIps", set())
         event["attributes"]["uniqueDestinationCount"] = len(unique) or 0
+        users = event["attributes"].pop("users", set())
+        event["attributes"]["users"] = sorted(users)
         aggregated.append(event)
     return aggregated
 

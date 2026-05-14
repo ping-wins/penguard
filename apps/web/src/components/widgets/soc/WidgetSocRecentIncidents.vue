@@ -46,6 +46,18 @@ const visibleIncidents = computed(() =>
   showArchived.value ? sortedIncidents.value : triageOpenIncidents.value
 )
 
+function incidentAttempts(incident: any): Array<{ at?: string, user?: string, message?: string }> {
+  const attrs = incident?.attributes
+  if (!attrs || !Array.isArray(attrs.attempts)) return []
+  return attrs.attempts.filter((entry: any) => entry && typeof entry === 'object')
+}
+
+function incidentUsers(incident: any): string[] {
+  const attrs = incident?.attributes
+  if (!attrs || !Array.isArray(attrs.users)) return []
+  return attrs.users.filter((value: any) => typeof value === 'string' && value.length > 0)
+}
+
 const selectedId = ref<string | null>(null)
 
 function selectIncident(id: string | null) {
@@ -137,6 +149,28 @@ const mttrAvg = computed(() => {
           <span class="shrink-0 text-[10px] text-theme-text-muted">{{ selectedIncident.ruleId || selectedIncident.rule_id || '--' }}</span>
         </div>
         <div v-if="selectedIncident.summary" class="text-xs text-theme-text-muted">{{ selectedIncident.summary }}</div>
+        <div v-if="incidentAttempts(selectedIncident).length" class="flex flex-col gap-1">
+          <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-theme-text-muted">
+            <span>Attempts: {{ selectedIncident.attributes?.count ?? incidentAttempts(selectedIncident).length }}</span>
+            <span v-if="incidentUsers(selectedIncident).length">Users tried: {{ incidentUsers(selectedIncident).join(', ') }}</span>
+          </div>
+          <div class="max-h-40 overflow-y-auto rounded border border-theme-border/50 bg-theme-bg/50 p-2 text-[11px]">
+            <div
+              v-for="(attempt, idx) in incidentAttempts(selectedIncident)"
+              :key="idx"
+              class="flex flex-col gap-0.5 border-b border-theme-border/30 py-1 last:border-0"
+            >
+              <div class="flex items-center justify-between gap-2 text-[10px] text-theme-text-muted">
+                <span class="font-mono">{{ attempt.at ? new Date(attempt.at).toISOString().slice(11, 19) : '--' }}</span>
+                <span v-if="attempt.user" class="font-semibold text-theme-text">user: {{ attempt.user }}</span>
+              </div>
+              <div v-if="attempt.message" class="break-words text-theme-text">{{ attempt.message }}</div>
+            </div>
+          </div>
+          <div class="text-[10px] italic text-theme-text-muted">
+            Note: FortiGate does not log attempted passwords. Usernames and source IPs are the strongest identifiers available.
+          </div>
+        </div>
         <div v-if="selectedIncident.entities && Object.keys(selectedIncident.entities).length" class="flex flex-wrap gap-1.5">
           <span
             v-for="(value, key) in selectedIncident.entities"
