@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.addons.manifest import AddonManifest
 
 
@@ -35,3 +38,16 @@ def test_manifest_dump_round_trips_new_fields():
     dumped = AddonManifest.model_validate(payload).model_dump(by_alias=True)
     assert dumped["entrypoint"] == "src"
     assert dumped["requirements"] == ["httpx"]
+
+
+def test_manifest_dump_includes_defaults_when_fields_absent():
+    dumped = AddonManifest.model_validate(_base_payload()).model_dump(by_alias=True)
+    assert dumped["entrypoint"] == "connector"
+    assert dumped["requirements"] == []
+
+
+def test_manifest_rejects_empty_entrypoint():
+    payload = _base_payload()
+    payload["entrypoint"] = ""
+    with pytest.raises(ValidationError):
+        AddonManifest.model_validate(payload)

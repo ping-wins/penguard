@@ -65,5 +65,5 @@ class AddonManifest(BaseModel):
     routes: list[AddonRoute] = Field(default_factory=list)
     widgets: list[str] = Field(default_factory=list)
     siem_event_types: list[str] = Field(default_factory=list, alias="siemEventTypes")
-    entrypoint: str = "connector"
+    entrypoint: str = Field(default="connector", min_length=1)
     requirements: list[str] = Field(default_factory=list)
