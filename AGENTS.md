@@ -291,7 +291,22 @@ Current capabilities:
 - TUI-first operator flow.
 - CLI commands for automation and tests.
 - Heartbeat, process snapshot, network connection snapshot and deterministic simulator mode.
+- Windows Security Log collection for failed logons, privileged logons and file
+  access events when the Windows audit policy emits them.
 - Retry/backoff when the backend is offline.
+
+Near-term product direction:
+
+- The dashboard must own endpoint onboarding. Analysts should create a Windows
+  agent enrollment from the cockpit, receive a ready-to-run PowerShell command
+  or bootstrap script, and watch the endpoint move from pending to online after
+  first heartbeat.
+- `agent_private` should gain a foreground `run` mode that behaves like a real
+  lightweight agent loop: heartbeat, process snapshot, connection snapshot and
+  optional Windows Security polling on intervals.
+- Windows background execution should start as a Scheduled Task installer before
+  a true Windows Service. Keep install/uninstall explicit, visible and
+  reversible; no stealth persistence.
 
 Do not add hidden behavior, credential harvesting, persistence tricks or
 destructive response actions.
@@ -475,9 +490,11 @@ end-to-end nmap pipeline for demo footage.
 - **A policy with `set logtraffic all` is mandatory.** Even when packets cross
   interfaces, an accept policy without that flag leaves the dashboard widgets
   empty.
-- **The current FortiGate→SIEM ingest is manual.** Operators must call
-  `POST /api/soc/fortigate/{integrationId}/ingest-events`. Auto-ingest is part
-  of the MVP demo backlog below.
+- **FortiGate→SIEM ingest supports manual and scheduled runs.** Operators can
+  still call `POST /api/soc/fortigate/{integrationId}/ingest-events`, and the
+  cockpit exposes run-now plus scheduler enable/disable controls. Scheduled
+  polling is opt-in through the persisted ingestion status and the API-side
+  scheduler env flags.
 - **`denied_traffic_burst` detection requires `attributes.count >= 20` on a
   single event.** `_fortigate_event_to_siem_event` writes one event per deny
   with `count=1`, so the rule will not fire from raw FortiGate ingestion until
@@ -512,7 +529,7 @@ phase before the previous one is mergeable.
 
 ### Phase 1 — Reliable incident generation
 
-Status: **in progress — backend done, frontend wiring next.**
+Status: **delivered.**
 
 Delivered in this branch (`lucas/mvp-demo-roadmap`):
 
@@ -528,6 +545,14 @@ Delivered in this branch (`lucas/mvp-demo-roadmap`):
   `rawEventCount` and `createdCount` (aggregated) and records both in the
   `soc.fortigate_events.ingested` audit detail (`count` retained as an alias
   of `aggregatedCount` for backwards-compat with the existing test suite).
+- `GET/PUT /api/soc/fortigate/{integrationId}/ingestion-status` persist the
+  FortiGate ingestion pipeline state per user/integration, including enabled
+  flag, interval, last start/finish/success, error text, raw event count,
+  created SIEM count and last event IDs.
+- The API has an opt-in lightweight scheduler controlled by
+  `FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED` and tick/interval
+  settings. It reuses the same ingestion executor as the manual run-now path
+  and writes `soc.fortigate_events.auto_ingested` audit events.
 - `POST /api/soc/demo/replay` injects canned events directly into
   `siem_kowalski`: an inbound port scan (`network.deny`, count 42), repeated
   SSH login failures (`auth.failed_login`, count 9) and an
@@ -555,6 +580,9 @@ Delivered cockpit-side:
   panel surfaces the last `demoRunId`, the event count and the per-attack
   list so the operator can re-run the recording confident the seed
   actually fired.
+- The integrations drawer shows FortiGate ingestion health on the connected
+  card: pipeline state, raw events, created SIEM events, last error, run-now
+  button and scheduler enable/disable.
 
 Still pending (next phase or stretch):
 
@@ -1010,6 +1038,13 @@ mergeable.
 - [x] Add Windows Server lab enrollment smoke path for `agent_private` and validate it manually on the VirtualBox Windows Server VM (`docs/mvp/windows-server-agent-smoke.md`).
 - [x] Add Windows Security Event collection for failed logons and privileged logons.
 - [x] Forward suspicious endpoint process/connection telemetry to SIEM as `endpoint.suspicious_connection`.
+- [x] Add cockpit-driven Windows agent onboarding wizard with enrollment
+      generation, one-time token display, copyable PowerShell/bootstrap command
+      and pending/online status.
+- [x] Add `agent_private run` foreground loop with configurable heartbeat,
+      process, connection and Windows Security polling intervals.
+- [ ] Add explicit Windows Scheduled Task install/uninstall commands for
+      `agent_private` after foreground loop is stable.
 - [ ] Add optional directory monitoring with `watchdog`.
 
 ### apps/api Gateway
@@ -1030,7 +1065,7 @@ mergeable.
 - [x] Add RBAC and audit events for workspace share, unshare, import, export and presentation export.
 - [x] Add provider-binding resolution so shared manifests do not expose another user's private `integrationId`.
 - [ ] Add Windows Server AD/Kerberos SSO smoke test and operator checklist.
-- [ ] Add scheduled FortiGate event ingestion control with aggregation status.
+- [x] Add scheduled FortiGate event ingestion control with aggregation status.
 - [ ] Add admin-only audit filters for SOC actions.
 
 ### Frontend Cockpit
@@ -1181,18 +1216,22 @@ Persistence + multi-tenancy:
 
 Real telemetry path (so the customer can stop using `demo/replay`):
 
-- [ ] Auto-ingest FortiGate events on a schedule instead of requiring a
-      manual `POST /api/soc/fortigate/{id}/ingest-events`. Use Dramatiq +
-      Redis (already in stack) to poll per integration.
+- [x] Auto-ingest FortiGate events on a schedule instead of requiring a
+      manual `POST /api/soc/fortigate/{id}/ingest-events`. Current cut uses
+      an opt-in API-side scheduler with persisted per-integration state; move
+      it to Dramatiq + Redis when load or multi-replica deployment requires it.
 - [ ] Resolve the lab-setup issues in this file (`set logtraffic all`,
       bridged-host visibility) by shipping a one-page operator checklist
       embedded in the cockpit "Integrations → FortiGate" panel.
-- [ ] Wire `agent_private` heartbeats into the same XDR ingestion path
+- [x] Wire `agent_private` heartbeats into the same XDR ingestion path
       currently exercised by the simulator so a customer can install the
       sensor and see live endpoint data.
-- [ ] Surface ingestion lag in the cockpit (last successful poll per
-      integration, last incident raised) so the analyst knows the pipeline
-      is alive without grepping logs.
+- [x] Replace command-line-only XDR enrollment with a cockpit onboarding flow
+      that creates a pending endpoint, shows installation instructions and
+      confirms the first heartbeat without requiring container log inspection.
+- [x] Surface FortiGate ingestion state in the cockpit (last successful poll,
+      raw event count, created SIEM count and last error) so the analyst knows
+      the pipeline is alive without grepping logs.
 
 Observability + ops:
 

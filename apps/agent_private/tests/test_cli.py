@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime
 
-from agent_private import cli
+from agent_private import cli, runner
 from agent_private.cli import (
     build_connection_snapshot_payload,
     build_heartbeat_payload,
@@ -404,3 +404,47 @@ def test_tui_command_launches_tui(monkeypatch):
     main(["tui"])
 
     assert calls == ["tui"]
+
+
+def test_run_command_calls_foreground_runner(monkeypatch):
+    calls = []
+
+    def fake_run_agent(config, *, once=False):
+        calls.append((config, once))
+
+    monkeypatch.setattr(runner, "run_agent", fake_run_agent)
+
+    main(
+        [
+            "run",
+            "--api-url",
+            "http://localhost:8000",
+            "--endpoint-id",
+            "end_win_lab",
+            "--enrollment-token",
+            "secret-token",
+            "--heartbeat-interval",
+            "1",
+            "--connection-interval",
+            "2",
+            "--process-interval",
+            "3",
+            "--windows-security-interval",
+            "4",
+            "--windows-security-limit",
+            "5",
+            "--once",
+        ]
+    )
+
+    assert len(calls) == 1
+    config, once = calls[0]
+    assert once is True
+    assert config.api_url == "http://localhost:8000"
+    assert config.endpoint_id == "end_win_lab"
+    assert config.enrollment_token == "secret-token"
+    assert config.heartbeat_interval == 1
+    assert config.connection_interval == 2
+    assert config.process_interval == 3
+    assert config.windows_security_interval == 4
+    assert config.windows_security_limit == 5

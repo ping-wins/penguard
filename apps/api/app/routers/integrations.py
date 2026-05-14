@@ -16,7 +16,10 @@ from app.integrations.fortigate.service import (
     FortiGateIntegrationService,
     MockFortiGateIntegrationService,
 )
-from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
+from app.integrations.fortigate.store import (
+    InMemoryFortiGateIngestionStore,
+    SqlAlchemyFortiGateIntegrationStore,
+)
 from app.integrations.penguin_tools import (
     MockPenguinToolIntegrationService,
     PenguinToolConnectionFailed,
@@ -37,6 +40,7 @@ FortiGateService = FortiGateIntegrationService | MockFortiGateIntegrationService
 PenguinToolService = PenguinToolIntegrationService | MockPenguinToolIntegrationService
 AuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
 PenguinToolType = Literal["siem_kowalski", "soar_skipper", "xdr_rico"]
+FortiGateIngestionStore = SqlAlchemyFortiGateIntegrationStore | InMemoryFortiGateIngestionStore
 
 
 class SocClient(Protocol):
@@ -79,6 +83,13 @@ class PenguinToolConnectionTest(BaseModel):
     type: PenguinToolType
 
 
+class FortiGateIngestionStatusUpdate(BaseModel):
+    enabled: bool
+    interval_seconds: int = Field(alias="intervalSeconds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 @lru_cache
 def get_fortigate_integration_service() -> FortiGateService:
     settings = get_settings()
@@ -91,6 +102,24 @@ def get_fortigate_integration_service() -> FortiGateService:
                 settings.token_encryption_key or settings.secret_key
             ),
         )
+    )
+
+
+@lru_cache
+def get_fortigate_ingestion_store() -> FortiGateIngestionStore:
+    settings = get_settings()
+    if settings.mock_mode:
+        return InMemoryFortiGateIngestionStore(
+            default_ingestion_interval_seconds=(
+                settings.fortigate_ingestion_default_interval_seconds
+            )
+        )
+    return SqlAlchemyFortiGateIntegrationStore(
+        database_url=settings.database_url,
+        secret_cipher=TokenCipher.from_secret(
+            settings.token_encryption_key or settings.secret_key
+        ),
+        default_ingestion_interval_seconds=settings.fortigate_ingestion_default_interval_seconds,
     )
 
 
@@ -381,58 +410,283 @@ def list_fortigate_health_checks(
         raise HTTPException(status_code=404, detail="Integration not found") from exc
 
 
+@router.get("/soc/fortigate/{integration_id}/ingestion-status")
+def get_fortigate_ingestion_status(
+    integration_id: str,
+    ingestion_store: Annotated[
+        FortiGateIngestionStore,
+        Depends(get_fortigate_ingestion_store),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    try:
+        return ingestion_store.get_ingestion_status(
+            owner_user_id=str(current_user["id"]),
+            integration_id=integration_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+
+
+@router.put("/soc/fortigate/{integration_id}/ingestion-status")
+def configure_fortigate_ingestion_status(
+    integration_id: str,
+    payload: FortiGateIngestionStatusUpdate,
+    request: Request,
+    ingestion_store: Annotated[
+        FortiGateIngestionStore,
+        Depends(get_fortigate_ingestion_store),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    settings = get_settings()
+    if not (
+        settings.fortigate_ingestion_min_interval_seconds
+        <= payload.interval_seconds
+        <= settings.fortigate_ingestion_max_interval_seconds
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "intervalSeconds must be between "
+                f"{settings.fortigate_ingestion_min_interval_seconds} and "
+                f"{settings.fortigate_ingestion_max_interval_seconds}"
+            ),
+        )
+
+    owner_user_id = str(current_user["id"])
+    try:
+        result = ingestion_store.upsert_ingestion_status(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            enabled=payload.enabled,
+            interval_seconds=payload.interval_seconds,
+            updated_at=datetime.now(UTC),
+        )
+    except KeyError as exc:
+        audit_store.record(
+            action="soc.fortigate_ingestion.configured",
+            outcome="failure",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "integrationId": integration_id,
+                "error": "Integration not found",
+            },
+        )
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+
+    audit_store.record(
+        action="soc.fortigate_ingestion.configured",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "enabled": result["enabled"],
+            "intervalSeconds": result["intervalSeconds"],
+        },
+    )
+    return result
+
+
 @router.post("/soc/fortigate/{integration_id}/ingest-events")
 def ingest_fortigate_events_into_siem(
     integration_id: str,
     request: Request,
     widget_service: Annotated[FortiGateWidgetService, Depends(get_fortigate_widget_service)],
     siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    ingestion_store: Annotated[
+        FortiGateIngestionStore,
+        Depends(get_fortigate_ingestion_store),
+    ],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
+    owner_user_id = str(current_user["id"])
     try:
-        widget_payload = widget_service.get_widget_data(
-            "fortigate-recent-events",
-            integration_id,
-            owner_user_id=str(current_user["id"]),
+        result = _run_fortigate_event_ingestion(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+            trigger="manual",
+            widget_service=widget_service,
+            siem_client=siem_client,
+            ingestion_store=ingestion_store,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Integration not found") from exc
-
-    events = widget_payload.get("data", {}).get("events", [])
-    aggregated = _aggregate_fortigate_events(events, integration_id=integration_id)
-    created_events = []
-    for siem_event in aggregated:
-        created_events.append(
-            siem_client.request(
-                "POST",
-                "/events",
-                json=siem_event,
-            )
+    except Exception as exc:
+        audit_store.record(
+            action="soc.fortigate_events.ingested",
+            outcome="failure",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "integrationId": integration_id,
+                "error": str(exc),
+                "service": "siem_kowalski",
+                "trigger": "manual",
+            },
         )
+        logger.warning(
+            "FortiGate event ingestion failed: integration_id=%s owner_user_id=%s error=%s",
+            integration_id,
+            owner_user_id,
+            exc,
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     audit_store.record(
         action="soc.fortigate_events.ingested",
         outcome="success",
         email=current_user.get("email"),
-        user_id=str(current_user["id"]),
+        user_id=owner_user_id,
         client_ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         details={
             "integrationId": integration_id,
-            "rawEventCount": len([e for e in events if isinstance(e, dict)]),
-            "aggregatedCount": len(created_events),
-            "count": len(created_events),
+            "rawEventCount": result["rawEventCount"],
+            "aggregatedCount": result["createdCount"],
+            "count": result["createdCount"],
             "service": "siem_kowalski",
+            "trigger": "manual",
         },
     )
-    return {
-        "integrationId": integration_id,
-        "rawEventCount": len([e for e in events if isinstance(e, dict)]),
-        "createdCount": len(created_events),
-        "eventIds": [event.get("id") for event in created_events if event.get("id")],
-    }
+    return result
+
+
+def run_due_fortigate_ingestions_once() -> list[dict[str, Any]]:
+    ingestion_store = get_fortigate_ingestion_store()
+    widget_service = get_fortigate_widget_service()
+    siem_client = get_siem_client()
+    audit_store = get_auth_audit_store()
+    results: list[dict[str, Any]] = []
+    for status_payload in ingestion_store.list_due_ingestion_statuses(now=datetime.now(UTC)):
+        integration_id = str(status_payload["integrationId"])
+        owner_user_id = str(status_payload["ownerUserId"])
+        try:
+            result = _run_fortigate_event_ingestion(
+                integration_id=integration_id,
+                owner_user_id=owner_user_id,
+                trigger="scheduled",
+                widget_service=widget_service,
+                siem_client=siem_client,
+                ingestion_store=ingestion_store,
+            )
+        except Exception as exc:
+            audit_store.record(
+                action="soc.fortigate_events.auto_ingested",
+                outcome="failure",
+                email=None,
+                user_id=owner_user_id,
+                client_ip="system",
+                user_agent="fortigate-ingestion-scheduler",
+                details={
+                    "integrationId": integration_id,
+                    "error": str(exc),
+                    "service": "siem_kowalski",
+                    "trigger": "scheduled",
+                },
+            )
+            continue
+
+        audit_store.record(
+            action="soc.fortigate_events.auto_ingested",
+            outcome="success",
+            email=None,
+            user_id=owner_user_id,
+            client_ip="system",
+            user_agent="fortigate-ingestion-scheduler",
+            details={
+                "integrationId": integration_id,
+                "rawEventCount": result["rawEventCount"],
+                "aggregatedCount": result["createdCount"],
+                "count": result["createdCount"],
+                "service": "siem_kowalski",
+                "trigger": "scheduled",
+            },
+        )
+        results.append(result)
+    return results
+
+
+def _run_fortigate_event_ingestion(
+    *,
+    integration_id: str,
+    owner_user_id: str,
+    trigger: str,
+    widget_service: FortiGateWidgetService,
+    siem_client: SocClient,
+    ingestion_store: FortiGateIngestionStore,
+) -> dict[str, Any]:
+    ingestion_store.record_ingestion_started(
+        owner_user_id=owner_user_id,
+        integration_id=integration_id,
+        started_at=datetime.now(UTC),
+        trigger=trigger,
+    )
+    try:
+        widget_payload = widget_service.get_widget_data(
+            "fortigate-recent-events",
+            integration_id,
+            owner_user_id=owner_user_id,
+        )
+        if widget_payload.get("status") == "error":
+            error_message = (
+                widget_payload.get("meta", {}).get("error", {}).get("message")
+                or "FortiGate event widget returned an error"
+            )
+            raise RuntimeError(str(error_message))
+        events = widget_payload.get("data", {}).get("events", [])
+        raw_event_count = len([event for event in events if isinstance(event, dict)])
+        aggregated = _aggregate_fortigate_events(events, integration_id=integration_id)
+        created_events = [
+            siem_client.request("POST", "/events", json=siem_event)
+            for siem_event in aggregated
+        ]
+        event_ids = [
+            str(event["id"])
+            for event in created_events
+            if isinstance(event, dict) and event.get("id")
+        ]
+        ingestion = ingestion_store.record_ingestion_result(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            ok=True,
+            raw_event_count=raw_event_count,
+            created_count=len(created_events),
+            event_ids=event_ids,
+            error=None,
+            finished_at=datetime.now(UTC),
+        )
+        return {
+            "integrationId": integration_id,
+            "rawEventCount": raw_event_count,
+            "createdCount": len(created_events),
+            "eventIds": event_ids,
+            "ingestion": ingestion,
+        }
+    except Exception as exc:
+        ingestion_store.record_ingestion_result(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            ok=False,
+            raw_event_count=0,
+            created_count=0,
+            event_ids=[],
+            error=str(exc),
+            finished_at=datetime.now(UTC),
+        )
+        raise
 
 
 _SEVERITY_RANK = {
