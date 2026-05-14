@@ -23,6 +23,7 @@ import {
   approvePlaybookRun,
   applyContainmentPlaybook,
   draftContainmentPlaybook,
+  resetIncidentStore,
   suggestContainment,
   type ApplyContainmentResponse,
   type ContainmentSuggestion,
@@ -32,6 +33,7 @@ import {
   type TicketStatus,
   type TriageLevel,
 } from '../../services/ticketsClient'
+import { Trash2 } from 'lucide-vue-next'
 import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
 
 const { t } = useI18n()
@@ -293,6 +295,28 @@ watch(
 
 onMounted(() => store.startPolling(8000))
 onBeforeUnmount(() => store.stopPolling())
+
+const isResetting = ref(false)
+const resetMessage = ref<string | null>(null)
+async function resetIncidents() {
+  if (isResetting.value) return
+  const ok = window.confirm(t('tickets.resetConfirm'))
+  if (!ok) return
+  isResetting.value = true
+  resetMessage.value = null
+  try {
+    const result = await resetIncidentStore()
+    resetMessage.value = t('tickets.resetDone', {
+      events: result.eventsDeleted,
+      incidents: result.incidentsDeleted,
+    })
+    await store.refresh()
+  } catch (error: any) {
+    resetMessage.value = error?.message ?? t('tickets.resetFailed')
+  } finally {
+    isResetting.value = false
+  }
+}
 </script>
 
 <template>
@@ -308,16 +332,32 @@ onBeforeUnmount(() => store.stopPolling())
           {{ t('tickets.subtitle') }}
         </p>
       </div>
-      <button
-        type="button"
-        @click="store.refresh()"
-        class="text-theme-text-muted hover:text-theme-text"
-        :disabled="store.isLoading"
-        :title="t('tickets.refreshTooltip')"
-      >
-        <RefreshCcw :size="16" :class="store.isLoading ? 'animate-spin' : ''" />
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          @click="resetIncidents"
+          class="flex items-center gap-1 rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+          :disabled="isResetting || store.isLoading"
+          :title="t('tickets.resetTooltip')"
+        >
+          <Trash2 :size="14" />
+          <span>{{ isResetting ? t('tickets.resetWorking') : t('tickets.resetLabel') }}</span>
+        </button>
+        <button
+          type="button"
+          @click="store.refresh()"
+          class="text-theme-text-muted hover:text-theme-text"
+          :disabled="store.isLoading"
+          :title="t('tickets.refreshTooltip')"
+        >
+          <RefreshCcw :size="16" :class="store.isLoading ? 'animate-spin' : ''" />
+        </button>
+      </div>
     </div>
+    <div
+      v-if="resetMessage"
+      class="px-4 py-2 text-xs border-b border-amber-500/30 bg-amber-500/10 text-amber-200"
+    >{{ resetMessage }}</div>
 
     <!-- Filters -->
     <div class="px-4 py-2 border-b border-theme-border bg-theme-bg/30 flex items-center gap-2 flex-wrap text-xs">

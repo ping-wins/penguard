@@ -69,6 +69,22 @@ export async function listTickets(filters: {
   return data.items ?? []
 }
 
+export async function resetIncidentStore(): Promise<{ eventsDeleted: number, incidentsDeleted: number }> {
+  const response = await fetch('/api/soc/incidents/reset', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await csrfHeaders()),
+      ...localeHeaders(),
+    },
+  })
+  return parseOrThrow<{ eventsDeleted: number, incidentsDeleted: number }>(
+    response,
+    'Failed to reset incidents',
+  )
+}
+
 export async function getTicket(ticketId: string): Promise<Ticket> {
   const response = await fetch(`/api/soc/tickets/${encodeURIComponent(ticketId)}`, {
     credentials: 'include',

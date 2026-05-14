@@ -619,6 +619,39 @@ def run_due_fortigate_ingestions_once() -> list[dict[str, Any]]:
     return results
 
 
+@router.post("/soc/incidents/reset")
+def reset_incidents_store(
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    ingestion_store: Annotated[
+        FortiGateIngestionStore,
+        Depends(get_fortigate_ingestion_store),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    """Lab-only: wipe SIEM events and incidents, reset ingestion cursors."""
+    deleted = siem_client.request("POST", "/admin/reset")
+    ingestion_store.reset_ingestion_cursors()
+    audit_store.record(
+        action="soc.incidents.reset",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "eventsDeleted": deleted.get("events", 0),
+            "incidentsDeleted": deleted.get("incidents", 0),
+        },
+    )
+    return {
+        "eventsDeleted": deleted.get("events", 0),
+        "incidentsDeleted": deleted.get("incidents", 0),
+    }
+
+
 def _run_fortigate_event_ingestion(
     *,
     integration_id: str,

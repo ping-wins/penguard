@@ -298,6 +298,23 @@ class SqlAlchemyFortiGateIntegrationStore:
             db.refresh(model)
             return self._ingestion_status_payload(model)
 
+    def reset_ingestion_cursors(self) -> None:
+        with self.session_factory() as db:
+            db.execute(
+                FortiGateIngestionStatusModel.__table__.update().values(
+                    last_started_at=None,
+                    last_finished_at=None,
+                    last_success_at=None,
+                    last_error=None,
+                    last_raw_event_count=0,
+                    last_created_count=0,
+                    last_event_ids=[],
+                    last_run_trigger=None,
+                    status="idle",
+                )
+            )
+            db.commit()
+
     def list_due_ingestion_statuses(
         self,
         *,
@@ -539,6 +556,18 @@ class InMemoryFortiGateIngestionStore:
             if len(due) >= limit:
                 break
         return due
+
+    def reset_ingestion_cursors(self) -> None:
+        for status in self._statuses.values():
+            status["status"] = "idle"
+            status["lastStartedAt"] = None
+            status["lastFinishedAt"] = None
+            status["lastSuccessAt"] = None
+            status["lastError"] = None
+            status["lastRawEventCount"] = 0
+            status["lastCreatedCount"] = 0
+            status["lastEventIds"] = []
+            status["lastRunTrigger"] = None
 
     def _get_or_create(self, owner_user_id: str, integration_id: str) -> dict[str, Any]:
         key = (owner_user_id, integration_id)

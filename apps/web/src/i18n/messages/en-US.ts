@@ -280,6 +280,12 @@ export default {
     subtitle: 'T1/T2/T3 triage over Kowalski SIEM incidents. Refreshes every 8s.',
     total: 'Total: {count}',
     refreshTooltip: 'Refresh now',
+    resetLabel: 'Reset incidents',
+    resetWorking: 'Resetting...',
+    resetTooltip: 'Wipe all SIEM events and incidents (lab only)',
+    resetConfirm: 'Delete every SIEM event and incident? This cannot be undone.',
+    resetDone: 'Reset complete. Removed {events} events and {incidents} incidents.',
+    resetFailed: 'Reset failed. Check the server logs.',
     filters: {
       allStatuses: 'All statuses',
       allSeverities: 'All severities',

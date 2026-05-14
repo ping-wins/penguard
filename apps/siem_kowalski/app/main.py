@@ -355,6 +355,17 @@ def create_event(event: SecurityEvent) -> SecurityEvent:
     return stored_event
 
 
+@app.post("/admin/reset")
+def reset_store() -> dict[str, int]:
+    deleted = store.reset()
+    logger.info(
+        "siem_store_reset events_deleted=%s incidents_deleted=%s",
+        deleted.get("events"),
+        deleted.get("incidents"),
+    )
+    return deleted
+
+
 @app.get("/events", response_model=list[SecurityEvent])
 def list_events(
     limit: int | None = Query(default=None, ge=1),
