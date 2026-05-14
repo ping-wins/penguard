@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   buildAgentRunCommand,
   createEndpointEnrollment,
+  deleteEndpoint,
   getEndpointRelatedIncidents,
   getEndpointTimeline,
   listEndpoints,
@@ -17,6 +18,29 @@ function latestCount(timeline: EndpointTimelineItem[], eventType: string, key: s
   const item = timeline.find((entry) => entry.eventType === eventType)
   const values = item?.attributes?.[key]
   return Array.isArray(values) ? values.length : 0
+}
+
+function sameText(left: string | null | undefined, right: string | null | undefined) {
+  return Boolean(left && right && left.toLocaleLowerCase() === right.toLocaleLowerCase())
+}
+
+function isAtOrAfter(value: string | null | undefined, floor: string) {
+  if (!value) return false
+  const valueMs = Date.parse(value)
+  const floorMs = Date.parse(floor)
+  return Number.isFinite(valueMs) && Number.isFinite(floorMs) && valueMs >= floorMs
+}
+
+function endpointMatchesPending(endpoint: Endpoint, pending: PendingEnrollment) {
+  if (endpoint.id === pending.enrollmentId) return true
+  if (
+    pending.hostnameHint
+    && sameText(endpoint.hostname, pending.hostnameHint)
+    && isAtOrAfter(endpoint.lastSeenAt, pending.createdAt)
+  ) {
+    return true
+  }
+  return false
 }
 
 export type PendingEnrollment = {
@@ -54,10 +78,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
 
   function resolvePendingEnrollments() {
     pendingEnrollments.value = pendingEnrollments.value.filter((pending) => {
-      return !endpoints.value.some((endpoint) => {
-        if (endpoint.id === pending.enrollmentId) return true
-        return false
-      })
+      return !endpoints.value.some((endpoint) => endpointMatchesPending(endpoint, pending))
     })
   }
 
@@ -131,6 +152,25 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     })
   }
 
+  function dismissPendingEnrollment(enrollmentId: string) {
+    pendingEnrollments.value = pendingEnrollments.value.filter((pending) => (
+      pending.enrollmentId !== enrollmentId
+    ))
+  }
+
+  async function removeEndpoint(endpointId: string) {
+    await deleteEndpoint(endpointId)
+    endpoints.value = endpoints.value.filter((endpoint) => endpoint.id !== endpointId)
+    if (selectedEndpointId.value === endpointId) {
+      selectedEndpointId.value = endpoints.value[0]?.id ?? null
+      timeline.value = []
+      relatedIncidents.value = []
+      if (selectedEndpointId.value) {
+        await loadTimeline(selectedEndpointId.value)
+      }
+    }
+  }
+
   async function selectEndpoint(endpointId: string) {
     selectedEndpointId.value = endpointId
     await loadTimeline(endpointId)
@@ -166,6 +206,8 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     refresh,
     createEnrollment,
     forgetEnrollmentCommand,
+    dismissPendingEnrollment,
+    removeEndpoint,
     selectEndpoint,
     startPolling,
     stopPolling,

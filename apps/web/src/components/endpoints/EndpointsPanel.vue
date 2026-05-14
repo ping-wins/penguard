@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Activity, Clock, Cpu, Network, Plus, RefreshCw, Server, Shield, User } from 'lucide-vue-next'
+import { Activity, Clock, Cpu, Network, Plus, RefreshCw, Server, Shield, Trash2, User } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useEndpointsStore } from '../../stores/useEndpointsStore'
 import type { Endpoint, EndpointTimelineItem } from '../../services/endpointsClient'
@@ -13,6 +13,8 @@ const isEnrollmentModalOpen = ref(false)
 const enrollmentCommand = ref<string | null>(null)
 const enrollmentError = ref<string | null>(null)
 const isCreatingEnrollment = ref(false)
+const endpointDeleteError = ref<string | null>(null)
+const deletingEndpointId = ref<string | null>(null)
 
 onMounted(() => store.startPolling(10000))
 onBeforeUnmount(() => store.stopPolling())
@@ -112,6 +114,27 @@ async function copyAgentCommand(command: string) {
   if (!clipboard?.writeText) return
   await clipboard.writeText(command).catch(() => undefined)
 }
+
+function dismissPendingEnrollment(enrollmentId: string) {
+  store.dismissPendingEnrollment(enrollmentId)
+}
+
+async function deleteEndpointFromPanel(endpoint: Endpoint) {
+  const label = endpoint.hostname || endpoint.id
+  const confirmDelete = typeof confirm === 'function'
+    ? confirm(t('endpoints.removeConfirm', { label }))
+    : true
+  if (!confirmDelete) return
+  deletingEndpointId.value = endpoint.id
+  endpointDeleteError.value = null
+  try {
+    await store.removeEndpoint(endpoint.id)
+  } catch (e: any) {
+    endpointDeleteError.value = e?.message ?? t('endpoints.removeError')
+  } finally {
+    deletingEndpointId.value = null
+  }
+}
 </script>
 
 <template>
@@ -145,8 +168,8 @@ async function copyAgentCommand(command: string) {
       </div>
     </header>
 
-    <div v-if="store.error" class="mb-3 rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
-      {{ store.error }}
+    <div v-if="store.error || endpointDeleteError" class="mb-3 rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
+      {{ store.error || endpointDeleteError }}
     </div>
 
     <div class="grid min-h-0 flex-1 grid-rows-[minmax(120px,190px)_1fr] gap-3">
@@ -179,6 +202,15 @@ async function copyAgentCommand(command: string) {
                 <span class="rounded border border-yellow-400/40 px-2 py-0.5 text-[10px] uppercase text-yellow-100">
                   {{ t('endpoints.enrollment.pending') }}
                 </span>
+                <button
+                  type="button"
+                  data-test="dismiss-pending-endpoint"
+                  class="rounded border border-yellow-400/40 p-1 text-yellow-100 transition-colors hover:bg-yellow-400/20"
+                  :title="t('endpoints.enrollment.dismissPending')"
+                  @click="dismissPendingEnrollment(pending.enrollmentId)"
+                >
+                  <Trash2 :size="13" />
+                </button>
               </div>
               <p class="mt-2 text-xs text-yellow-100">
                 {{ t('endpoints.enrollment.waitingForHeartbeat') }}
@@ -192,30 +224,47 @@ async function copyAgentCommand(command: string) {
             {{ t('endpoints.empty') }}
           </div>
           <template v-else>
-            <button
+            <div
               v-for="endpoint in store.endpoints"
               :key="endpoint.id"
-              type="button"
+              :data-test="`endpoint-row-${endpoint.id}`"
               class="mb-2 w-full rounded border px-3 py-2 text-left transition-colors"
               :class="store.selectedEndpointId === endpoint.id ? 'border-theme-primary bg-theme-primary/10' : 'border-theme-border bg-theme-panel hover:bg-theme-border/40'"
-              @click="store.selectEndpoint(endpoint.id)"
             >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate text-sm font-semibold text-theme-text">{{ endpoint.hostname || endpoint.id }}</span>
-                <span class="rounded border border-theme-border px-2 py-0.5 text-[10px] uppercase text-theme-text-muted">
-                  {{ endpoint.health }}
-                </span>
+              <div class="flex items-start gap-2">
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 text-left"
+                  @click="store.selectEndpoint(endpoint.id)"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="truncate text-sm font-semibold text-theme-text">{{ endpoint.hostname || endpoint.id }}</span>
+                    <span class="rounded border border-theme-border px-2 py-0.5 text-[10px] uppercase text-theme-text-muted">
+                      {{ endpoint.health }}
+                    </span>
+                  </div>
+                  <div class="mt-1 truncate font-mono text-xs text-theme-text-muted">
+                    {{ primaryIp(endpoint) }}
+                  </div>
+                  <div
+                    v-if="observedSourceIp(endpoint)"
+                    class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-theme-primary"
+                  >
+                    {{ t('endpoints.observedViaApi') }}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  :data-test="`delete-endpoint-${endpoint.id}`"
+                  class="mt-0.5 rounded border border-theme-border p-1.5 text-theme-text-muted transition-colors hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50"
+                  :disabled="deletingEndpointId === endpoint.id"
+                  :title="t('endpoints.remove')"
+                  @click="deleteEndpointFromPanel(endpoint)"
+                >
+                  <Trash2 :size="14" />
+                </button>
               </div>
-              <div class="mt-1 truncate font-mono text-xs text-theme-text-muted">
-                {{ primaryIp(endpoint) }}
-              </div>
-              <div
-                v-if="observedSourceIp(endpoint)"
-                class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-theme-primary"
-              >
-                {{ t('endpoints.observedViaApi') }}
-              </div>
-            </button>
+            </div>
           </template>
         </div>
       </section>

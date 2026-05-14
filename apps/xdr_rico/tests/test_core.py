@@ -167,6 +167,29 @@ def test_missing_endpoint_returns_404_for_detail_and_timeline():
     assert timeline_response.status_code == 404
 
 
+def test_delete_endpoint_removes_inventory_and_timeline():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+            "hostname": "demo-endpoint-01",
+        },
+    )
+    assert response.status_code == 201
+
+    delete_response = test_client.delete("/endpoints/end_01")
+
+    assert delete_response.status_code == 204
+    assert test_client.get("/endpoints/end_01").status_code == 404
+    assert test_client.get("/endpoints/end_01/timeline").status_code == 404
+    assert test_client.get("/endpoints").json()["items"] == []
+
+
 def test_simulator_creates_deterministic_demo_endpoint_and_events():
     test_client = client()
 

@@ -69,7 +69,7 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
     payload = json.loads(config_path.read_text())
     if not isinstance(payload, dict):
         return AgentPrivateConfig()
-    return AgentPrivateConfig(
+    stored = AgentPrivateConfig(
         api_url=str(payload.get("api_url") or payload.get("apiUrl") or ""),
         endpoint_id=str(payload.get("endpoint_id") or payload.get("endpointId") or ""),
         enrollment_token=str(
@@ -95,6 +95,17 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
             0.0,
             allow_zero=True,
         ),
+    )
+    return AgentPrivateConfig(
+        api_url=os.environ.get("AGENT_PRIVATE_API_URL") or stored.api_url,
+        endpoint_id=os.environ.get("AGENT_PRIVATE_ENDPOINT_ID") or stored.endpoint_id,
+        enrollment_token=(
+            os.environ.get("AGENT_PRIVATE_ENROLLMENT_TOKEN") or stored.enrollment_token
+        ),
+        heartbeat_interval=stored.heartbeat_interval,
+        connection_interval=stored.connection_interval,
+        process_interval=stored.process_interval,
+        windows_security_interval=stored.windows_security_interval,
     )
 
 
@@ -291,6 +302,10 @@ class AgentPrivateTui(App[None]):
         self.config_path = config_path or default_config_path()
         self.config = load_config(self.config_path)
         self.loop_timers: list[Any] = []
+        self.sent_count = 0
+        self.failed_count = 0
+        self.last_event = "none"
+        self.is_loop_running = False
 
     def compose(self) -> ComposeResult:
         identity = build_identity_payload()
@@ -378,6 +393,12 @@ class AgentPrivateTui(App[None]):
                     yield Button("Stop agent (x)", id="stop-loop", variant="error")
             with Vertical(classes="panel"):
                 yield Static("Status", classes="section-title")
+                yield Static("Agent stopped", id="agent-state", classes="muted")
+                yield Static(
+                    "sent=0 failed=0 last=none",
+                    id="telemetry-counters",
+                    classes="muted",
+                )
                 yield Static(f"Hostname: {identity['hostname']}", classes="muted")
                 yield Static(f"User: {identity['username']}", classes="muted")
                 yield Static(f"OS: {identity['os']}", classes="muted")
@@ -494,22 +515,31 @@ class AgentPrivateTui(App[None]):
                     name="windows-security-loop",
                 )
             )
-        self._send_single("heartbeat")
-        self._log(f"Agent loop started: {config.safe_summary()}")
+        self.is_loop_running = True
+        self._render_agent_status()
+        if self._send_single("heartbeat"):
+            self._log(f"Agent loop running. Initial heartbeat OK: {config.safe_summary()}")
+        else:
+            self._log(
+                "Agent loop started, but initial heartbeat failed. "
+                "Check API URL, enrollment token and backend logs."
+            )
 
     def _stop_loop(self, *, silent: bool = False) -> None:
         for timer in self.loop_timers:
             timer.stop()
         self.loop_timers = []
+        self.is_loop_running = False
+        self._render_agent_status()
         if not silent:
             self._log("Agent loop stopped.")
 
-    def _send_single(self, kind: str) -> None:
+    def _send_single(self, kind: str) -> bool:
         config = self._current_config()
         error = _validate_post_config(config)
         if error:
             self._log(error)
-            return
+            return False
 
         identity = build_identity_payload()
         ip_addresses = get_ip_addresses()
@@ -535,8 +565,8 @@ class AgentPrivateTui(App[None]):
             )
         else:
             self._log(f"Unknown telemetry action: {kind}")
-            return
-        self._post_payload(config, payload, success=f"Sent {payload['eventType']}.")
+            return False
+        return self._post_payload(config, payload, success=f"Sent {payload['eventType']}.")
 
     def _send_demo_burst(self) -> None:
         config = self._current_config()
@@ -577,6 +607,9 @@ class AgentPrivateTui(App[None]):
         *,
         success: str,
     ) -> bool:
+        event_type = str(payload.get("eventType") or "endpoint event")
+        self.last_event = event_type
+        self._log(f"Posting {event_type} for endpoint {config.endpoint_id}...")
         try:
             post_endpoint_event(
                 api_url=config.api_url,
@@ -584,14 +617,27 @@ class AgentPrivateTui(App[None]):
                 payload=payload,
             )
         except Exception as exc:  # noqa: BLE001 - TUI must keep running after transport errors.
-            self._log(f"Post failed: {_redact(str(exc), config.enrollment_token)}")
+            self.failed_count += 1
+            self._render_agent_status()
+            self._log(
+                f"Post failed for {event_type}: {_redact(str(exc), config.enrollment_token)}"
+            )
             return False
+        self.sent_count += 1
+        self._render_agent_status()
         if success:
-            self._log(success)
+            self._log(f"{success} sent={self.sent_count} failed={self.failed_count}")
         return True
 
     def _log(self, message: str) -> None:
         self.query_one("#status-log", Static).update(message)
+
+    def _render_agent_status(self) -> None:
+        state = "running" if self.is_loop_running else "stopped"
+        self.query_one("#agent-state", Static).update(f"Agent {state}")
+        self.query_one("#telemetry-counters", Static).update(
+            f"sent={self.sent_count} failed={self.failed_count} last={self.last_event}"
+        )
 
 
 def _validate_post_config(config: AgentPrivateConfig) -> str | None:

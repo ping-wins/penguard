@@ -268,6 +268,8 @@ Current capabilities:
 - Correlate endpoints with SIEM incidents by endpoint ID, IP, hostname and username.
 - Expose endpoint timelines, endpoint related incidents, incident endpoint
   context and health widgets.
+- Allow local deletion of stale endpoints from the cockpit. If the endpoint
+  sensor is still running, the endpoint can reappear on the next heartbeat.
 - Provide simulator data for demos without installing the agent.
 
 Gateway API:
@@ -277,6 +279,7 @@ GET  /api/weapons/endpoints
 GET  /api/weapons/endpoints/{endpointId}
 GET  /api/weapons/endpoints/{endpointId}/timeline
 GET  /api/weapons/endpoints/{endpointId}/related-incidents
+DELETE /api/weapons/endpoints/{endpointId}
 GET  /api/soc/incidents/{incidentId}/endpoint-context
 POST /api/weapons/enrollments
 POST /api/weapons/endpoint-events
@@ -304,6 +307,8 @@ Near-term product direction:
 - `agent_private run` is the operator-facing TUI. The operator configures API
   URL, endpoint ID, enrollment token and polling intervals there, then starts
   or stops the foreground loop from inside the TUI.
+- Onboarding environment variables from the cockpit command must override
+  stale saved local TUI config for API URL, endpoint ID and enrollment token.
 - `agent_private run-headless` is the automation/test entrypoint for the same
   lightweight loop: heartbeat, process snapshot, connection snapshot and
   optional Windows Security polling on intervals.
