@@ -19,9 +19,6 @@ import {
   Clock,
   Tag as TagIcon,
   RefreshCcw,
-  Zap,
-  ChevronDown,
-  ChevronRight,
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -36,11 +33,8 @@ import {
   listCommunityTemplates,
   publishWorkspaceTemplate,
   readManifestFile,
-  replayDemoIncident,
   updatePresentation,
-  DEMO_ATTACK_TYPES,
   type CommunityTemplate,
-  type DemoAttackType,
   type PresentationMetadata,
   type PresentationSlide,
   type WorkspaceManifest,
@@ -236,59 +230,6 @@ const filteredCommunity = computed(() => {
       (t.tags || []).some((tag) => tag.toLowerCase().includes(q)),
   )
 })
-
-// ----- MVP Demo -----
-const lastDemoRun = ref<{
-  demoRunId: string
-  eventCount: number
-  attackTypes: DemoAttackType[]
-} | null>(null)
-const demoPickerOpen = ref(false)
-const demoBusyType = ref<DemoAttackType | 'all' | null>(null)
-
-function attackTypeLabel(type: DemoAttackType | 'all'): string {
-  return t(`workspaces.mvpDemo.attackTypes.${type}`)
-}
-
-function formatAttackTypes(types: DemoAttackType[]): string {
-  if (!types.length) return ''
-  if (types.length === DEMO_ATTACK_TYPES.length) {
-    return attackTypeLabel('all')
-  }
-  return types.map((t) => attackTypeLabel(t)).join(', ')
-}
-
-function toggleDemoPicker() {
-  resetMessages()
-  demoPickerOpen.value = !demoPickerOpen.value
-}
-
-async function handleReplayDemo(selection: DemoAttackType | 'all') {
-  resetMessages()
-  demoBusyType.value = selection
-  isBusy.value = true
-  try {
-    const result = await replayDemoIncident(
-      selection === 'all' ? undefined : [selection],
-    )
-    lastDemoRun.value = {
-      demoRunId: result.demoRunId,
-      eventCount: result.eventCount,
-      attackTypes: result.attackTypes,
-    }
-    successMsg.value = t('workspaces.mvpDemo.success', {
-      count: result.eventCount,
-      id: result.demoRunId,
-      types: formatAttackTypes(result.attackTypes),
-    })
-    demoPickerOpen.value = false
-  } catch (e: any) {
-    errorMsg.value = e?.message ?? t('workspaces.mvpDemo.error')
-  } finally {
-    isBusy.value = false
-    demoBusyType.value = null
-  }
-}
 
 // ----- Presentation -----
 function hydratePresentationDraft() {
@@ -488,61 +429,6 @@ const actions = computed(() => [
         <component :is="action.icon" :size="14" class="text-theme-text-muted" />
         <span class="truncate">{{ action.label }}</span>
       </button>
-    </div>
-
-    <!-- MVP demo replay -->
-    <div class="px-4 py-3 border-b border-theme-border bg-amber-500/5">
-      <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-xs font-semibold uppercase tracking-wider text-amber-300 flex items-center gap-1">
-            <Zap :size="13" />
-            {{ t('workspaces.mvpDemo.title') }}
-          </div>
-          <p class="mt-1 text-xs text-theme-text-muted leading-snug">
-            {{ t('workspaces.mvpDemo.description') }}
-          </p>
-          <p v-if="lastDemoRun" class="mt-1 text-[11px] text-theme-text-muted">
-            {{ t('workspaces.mvpDemo.lastRun', { id: lastDemoRun.demoRunId, count: lastDemoRun.eventCount, types: formatAttackTypes(lastDemoRun.attackTypes) }) }}
-          </p>
-        </div>
-        <button
-          type="button"
-          :disabled="isBusy"
-          :aria-expanded="demoPickerOpen ? 'true' : 'false'"
-          @click="toggleDemoPicker"
-          class="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-amber-400/50 bg-amber-400/15 text-amber-200 text-xs font-semibold hover:bg-amber-400/30 disabled:opacity-50"
-        >
-          <Zap :size="13" />
-          {{ t('workspaces.mvpDemo.replay') }}
-          <component :is="demoPickerOpen ? ChevronDown : ChevronRight" :size="12" />
-        </button>
-      </div>
-      <div v-if="demoPickerOpen" class="mt-3 flex flex-col gap-2">
-        <p class="text-[11px] text-theme-text-muted">{{ t('workspaces.mvpDemo.pickHint') }}</p>
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="type in DEMO_ATTACK_TYPES"
-            :key="type"
-            type="button"
-            :disabled="isBusy"
-            @click="handleReplayDemo(type)"
-            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-amber-400/40 bg-theme-bg/40 text-amber-200 text-[11px] font-medium hover:bg-amber-400/15 disabled:opacity-50"
-          >
-            <span v-if="demoBusyType === type" class="inline-block size-2 rounded-full bg-amber-300 animate-pulse" />
-            {{ attackTypeLabel(type) }}
-          </button>
-          <button
-            type="button"
-            :disabled="isBusy"
-            @click="handleReplayDemo('all')"
-            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-amber-400/60 bg-amber-400/15 text-amber-100 text-[11px] font-semibold hover:bg-amber-400/30 disabled:opacity-50"
-          >
-            <span v-if="demoBusyType === 'all'" class="inline-block size-2 rounded-full bg-amber-300 animate-pulse" />
-            <Zap :size="11" />
-            {{ attackTypeLabel('all') }}
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- Current origin pill -->

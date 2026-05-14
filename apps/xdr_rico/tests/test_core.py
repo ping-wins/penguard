@@ -219,9 +219,13 @@ def test_delete_endpoint_removes_inventory_and_timeline():
     assert test_client.get("/endpoints").json()["items"] == []
 
 
-def test_simulator_creates_deterministic_demo_endpoint_and_events():
+def test_simulator_creates_deterministic_demo_endpoint_and_events(monkeypatch):
     test_client = client()
 
+    disabled_response = test_client.post("/simulator/events")
+    assert disabled_response.status_code == 404
+
+    monkeypatch.setenv("XDR_RICO_ENABLE_SIMULATOR", "true")
     response = test_client.post("/simulator/events")
 
     assert response.status_code == 201

@@ -86,7 +86,7 @@ void seriesStore
       <WidgetEmptyState
         v-if="noData"
         title="No incidents to score"
-        hint="Add the Recent Incidents widget or seed demo data to populate this metric."
+        hint="Add the Recent Incidents widget and ingest live SIEM, FortiGate, or endpoint telemetry to populate this metric."
       />
     </template>
 

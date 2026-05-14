@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Annotated, Literal
@@ -488,6 +489,9 @@ def create_authorized_endpoint_event(
     status_code=status.HTTP_201_CREATED,
 )
 def create_simulator_events() -> SimulatorResponse:
+    if os.getenv("XDR_RICO_ENABLE_SIMULATOR", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
     store = get_store()
     endpoint_id = "demo-endpoint-01"
     store.delete_endpoint(endpoint_id)

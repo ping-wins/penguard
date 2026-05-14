@@ -149,33 +149,6 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await parseOrThrow(response, 'Failed to delete workspace')
 }
 
-export type DemoAttackType = 'port_scan' | 'brute_force' | 'c2_beacon'
-
-export const DEMO_ATTACK_TYPES: readonly DemoAttackType[] = [
-  'port_scan',
-  'brute_force',
-  'c2_beacon',
-]
-
-export async function replayDemoIncident(
-  attackTypes?: DemoAttackType[],
-): Promise<{
-  demoRunId: string
-  eventCount: number
-  attackTypes: DemoAttackType[]
-  eventIds: string[]
-}> {
-  const headers = await csrfHeaders()
-  const body = attackTypes && attackTypes.length ? JSON.stringify({ attackTypes }) : undefined
-  const response = await fetch('/api/soc/demo/replay', {
-    method: 'POST',
-    credentials: 'include',
-    headers: body ? { ...headers, 'Content-Type': 'application/json' } : headers,
-    body,
-  })
-  return parseOrThrow(response, 'Failed to replay demo incident')
-}
-
 export async function rebindWidgetIntegration(
   workspaceId: string,
   instanceId: string,

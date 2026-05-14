@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.auth import dependencies as auth_dependencies
+from app.core.config import get_settings
 from app.main import app
 from app.routers import soc
 from app.soc import client as soc_client_module
@@ -59,6 +60,7 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 
 def teardown_function():
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
 
 
 def _user_with_roles(*roles: str) -> dict:
@@ -70,7 +72,28 @@ def _user_with_roles(*roles: str) -> dict:
     }
 
 
-def test_demo_replay_rejects_non_admin_analysts():
+def _enable_lab_demo_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    get_settings.cache_clear()
+
+
+def test_demo_replay_is_not_available_by_default():
+    get_settings.cache_clear()
+    client = TestClient(app)
+    fake_siem = FakeSocClient({"id": "evt_01"})
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
+        "admin"
+    )
+
+    response = client.post("/api/soc/demo/replay", headers=csrf_headers(client))
+
+    assert response.status_code == 404
+    assert fake_siem.calls == []
+
+
+def test_demo_replay_rejects_non_admin_analysts(monkeypatch):
+    _enable_lab_demo_tools(monkeypatch)
     client = TestClient(app)
     fake_siem = FakeSocClient({"id": "evt_01"})
     app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
@@ -84,7 +107,8 @@ def test_demo_replay_rejects_non_admin_analysts():
     assert fake_siem.calls == []
 
 
-def test_demo_replay_allows_admin_users():
+def test_demo_replay_allows_admin_users(monkeypatch):
+    _enable_lab_demo_tools(monkeypatch)
     client = TestClient(app)
     fake_siem = FakeSocClient({"id": "evt_01"})
     app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem

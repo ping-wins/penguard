@@ -12,6 +12,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.auth import dependencies as auth_dependencies
+from app.core.config import get_settings
 from app.main import app
 from app.routers import soc as soc_router
 
@@ -215,9 +216,11 @@ def _csrf(client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": client.get("/api/auth/csrf").json()["csrfToken"]}
 
 
-def test_mvp_demo_chain_runs_end_to_end():
+def test_mvp_demo_chain_runs_end_to_end(monkeypatch):
     siem = FakeSiem()
     soar = FakeSoar()
+    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    get_settings.cache_clear()
     soc_router.get_ai_provider.cache_clear()
     app.dependency_overrides[soc_router.get_siem_client] = lambda: siem
     app.dependency_overrides[soc_router.get_soar_client] = lambda: soar
@@ -324,4 +327,5 @@ def test_mvp_demo_chain_runs_end_to_end():
         app.dependency_overrides.pop(soc_router.get_soar_client, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
         app.dependency_overrides.pop(auth_dependencies.require_admin_user, None)
+        get_settings.cache_clear()
         soc_router.get_ai_provider.cache_clear()

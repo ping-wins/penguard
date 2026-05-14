@@ -444,7 +444,7 @@ describe('FortiGate widget renderers', () => {
     })
 
     expect(incidents.text()).toContain('No incidents yet')
-    expect(incidents.text()).toContain('Seed SOC demo data or ingest FortiGate events')
+    expect(incidents.text()).toContain('Connect a SIEM or FortiGate provider')
     expect(endpoints.text()).toContain('No endpoints yet')
     expect(endpoints.text()).toContain('run agent_private')
   })

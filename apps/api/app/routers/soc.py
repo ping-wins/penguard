@@ -197,6 +197,9 @@ def replay_demo_incident(
     Optional JSON body: `{"attackTypes": ["port_scan", "brute_force", "c2_beacon"]}`.
     Omit or pass an empty list to inject the full canonical chain.
     """
+    if not get_settings().enable_lab_demo_tools:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
     roles = set(current_user.get("roles") or [])
     if "admin" not in roles:
         raise HTTPException(
@@ -1504,6 +1507,9 @@ def create_simulator_events(
     _csrf: Annotated[None, Depends(require_csrf)],
     payload: Annotated[dict[str, Any] | None, Body()] = None,
 ) -> dict:
+    if not get_settings().enable_lab_demo_tools:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
     response = client.request("POST", "/simulator/events", json=payload or {})
     _audit(
         audit_store,

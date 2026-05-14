@@ -30,7 +30,7 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     valueKeys: ['count', 'value', 'total'],
     metaKeys: ['severity'],
     emptyTitle: 'No incidents yet',
-    emptyHint: 'Seed SOC demo data or ingest FortiGate events to populate this chart.',
+    emptyHint: 'Connect a SIEM or FortiGate provider and ingest real events to populate this chart.',
   },
   'soc-recent-incidents': {
     title: 'Recent Incidents',
@@ -40,7 +40,7 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     valueKeys: ['summary', 'status', 'severity'],
     metaKeys: ['status', 'severity', 'source'],
     emptyTitle: 'No recent incidents yet',
-    emptyHint: 'Ingest SIEM events or run the SOC demo seed to create incident activity.',
+    emptyHint: 'Ingest live SIEM, FortiGate, or endpoint telemetry to create incident activity.',
   },
   'soc-top-entities': {
     title: 'Top Entities',
@@ -60,7 +60,7 @@ const metadataByCatalogId: Record<string, GenericWidgetMeta> = {
     valueKeys: ['health', 'status', 'os'],
     metaKeys: ['os', 'currentUser', 'lastSeenAt'],
     emptyTitle: 'No endpoints yet',
-    emptyHint: 'Create endpoint telemetry with the XDR simulator or run agent_private.',
+    emptyHint: 'Enroll an endpoint and run agent_private to send live telemetry.',
   },
   'soar-active-playbook-runs': {
     title: 'Active Playbook Runs',

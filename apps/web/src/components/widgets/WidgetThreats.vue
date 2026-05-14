@@ -33,7 +33,7 @@ void props
         <WidgetEmptyState
           v-if="!(data?.threats?.length)"
           title="No recent threats"
-          hint="FortiGate threat log is empty. Trigger a scan or seed demo events."
+          hint="FortiGate threat log is empty. Verify policy logging, generate routed traffic, then run ingestion from the integration card."
         />
       </div>
     </template>

@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     fortigate_ingestion_default_interval_seconds: int = 30
     fortigate_ingestion_min_interval_seconds: int = 10
     fortigate_ingestion_max_interval_seconds: int = 3600
+    enable_lab_demo_tools: bool = False
     ai_provider: str = "scripted"
     ai_api_key: str = ""
     ai_model: str = ""

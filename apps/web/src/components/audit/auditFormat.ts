@@ -27,7 +27,6 @@ const ACTION_KEYS: Record<string, string> = {
   'workspace.exported': 'audit.actions.workspaceExported',
   'workspace.presentation.updated': 'audit.actions.workspacePresentationUpdated',
   'workspace.widget.rebound': 'audit.actions.workspaceWidgetRebound',
-  'soc.demo.replay': 'audit.actions.socDemoReplay',
   'soc.incident.analyzed': 'audit.actions.socIncidentAnalyzed',
   'soc.ticket.playbook_drafted': 'audit.actions.socTicketPlaybookDrafted',
   'soc.ticket.contained': 'audit.actions.socTicketContained',

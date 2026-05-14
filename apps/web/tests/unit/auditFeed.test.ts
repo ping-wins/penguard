@@ -75,8 +75,6 @@ describe('audit feed', () => {
       .toBe('FortiGate integration removed')
     expect(formatAuditEvent({ ...loginEvent, action: 'workspace.updated' }).title)
       .toBe('Workspace updated')
-    expect(formatAuditEvent({ ...loginEvent, action: 'soc.demo.replay' }).title)
-      .toBe('Demo incident replayed')
     expect(formatAuditEvent({ ...loginEvent, action: 'soc.incident.analyzed' }).title)
       .toBe('Incident analyzed by AI')
     expect(formatAuditEvent({ ...loginEvent, action: 'soc.ticket.playbook_drafted' }).title)
