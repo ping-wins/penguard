@@ -151,7 +151,7 @@ def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
         ("GET", "/api/v2/monitor/web-ui/state"),
         ("GET", "/api/v2/cmdb/system/interface"),
         ("GET", "/api/v2/cmdb/firewall/policy"),
-        ("GET", "/api/v2/log/memory/utm/ips"),
+        ("GET", "/api/v2/log/memory/ips"),
     ]
 
 

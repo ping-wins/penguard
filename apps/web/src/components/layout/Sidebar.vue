@@ -14,6 +14,7 @@ import {
 } from '../../stores/useCockpitLayoutStore'
 import { useDraggableEdge } from '../../composables/useDraggableEdge'
 import { aiChat, aiStatus, type AIStatus, type WidgetDraftResponse } from '../../services/aiClient'
+import { renderMarkdown } from '../../lib/markdown'
 import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
@@ -155,6 +156,7 @@ function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'worksp
 function refreshAuditTrail() {
   auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
 }
+
 
 onBeforeUnmount(() => {
   auditStore.stopPolling()
@@ -483,7 +485,12 @@ async function handleChatSubmit() {
             class="p-3 rounded-lg text-sm"
             :class="msg.role === 'user' ? 'bg-theme-primary/20 text-theme-text self-end ml-4' : 'bg-theme-border text-theme-text self-start mr-4'"
           >
-            <p class="whitespace-pre-wrap">{{ msg.text }}</p>
+            <div
+              v-if="msg.role === 'assistant'"
+              class="ai-markdown flex flex-col gap-1"
+              v-html="renderMarkdown(msg.text)"
+            />
+            <p v-else class="whitespace-pre-wrap">{{ msg.text }}</p>
             <div v-if="msg.widgetDrafts?.length" class="mt-3 flex flex-col gap-2">
               <div
                 v-for="(draft, draftIndex) in msg.widgetDrafts"
@@ -849,6 +856,7 @@ async function handleChatSubmit() {
       <div v-if="activeTab === 'endpoints'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <EndpointsPanel />
       </div>
+
 
       <!-- Audit Tab -->
       <div v-if="activeTab === 'audit'" class="h-full shrink-0 p-4" :style="{ width: `${drawerPx}px` }">

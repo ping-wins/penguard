@@ -619,6 +619,39 @@ def run_due_fortigate_ingestions_once() -> list[dict[str, Any]]:
     return results
 
 
+@router.post("/soc/incidents/reset")
+def reset_incidents_store(
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    ingestion_store: Annotated[
+        FortiGateIngestionStore,
+        Depends(get_fortigate_ingestion_store),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    """Lab-only: wipe SIEM events and incidents, reset ingestion cursors."""
+    deleted = siem_client.request("POST", "/admin/reset")
+    ingestion_store.reset_ingestion_cursors()
+    audit_store.record(
+        action="soc.incidents.reset",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "eventsDeleted": deleted.get("events", 0),
+            "incidentsDeleted": deleted.get("incidents", 0),
+        },
+    )
+    return {
+        "eventsDeleted": deleted.get("events", 0),
+        "incidentsDeleted": deleted.get("incidents", 0),
+    }
+
+
 def _run_fortigate_event_ingestion(
     *,
     integration_id: str,
@@ -628,6 +661,11 @@ def _run_fortigate_event_ingestion(
     siem_client: SocClient,
     ingestion_store: FortiGateIngestionStore,
 ) -> dict[str, Any]:
+    cursor_status = ingestion_store.get_ingestion_status(
+        owner_user_id=owner_user_id,
+        integration_id=integration_id,
+    )
+    cursor_iso = cursor_status.get("lastSuccessAt")
     ingestion_store.record_ingestion_started(
         owner_user_id=owner_user_id,
         integration_id=integration_id,
@@ -648,7 +686,8 @@ def _run_fortigate_event_ingestion(
             raise RuntimeError(str(error_message))
         events = widget_payload.get("data", {}).get("events", [])
         raw_event_count = len([event for event in events if isinstance(event, dict)])
-        aggregated = _aggregate_fortigate_events(events, integration_id=integration_id)
+        new_events = _filter_events_after_cursor(events, cursor_iso=cursor_iso)
+        aggregated = _aggregate_fortigate_events(new_events, integration_id=integration_id)
         created_events = [
             siem_client.request("POST", "/events", json=siem_event)
             for siem_event in aggregated
@@ -689,6 +728,31 @@ def _run_fortigate_event_ingestion(
         raise
 
 
+def _filter_events_after_cursor(
+    events: list[Any],
+    *,
+    cursor_iso: str | None,
+) -> list[dict[str, Any]]:
+    """Drop events older than or equal to the last successful ingestion run.
+
+    The cursor is the previous run's ``lastSuccessAt`` (UTC ISO). Events
+    arrive normalized with an ISO ``timestamp``; ISO strings compare
+    lexicographically when both end in ``Z``, so a string compare is
+    enough as long as both are in the same canonical form.
+    """
+    if not cursor_iso:
+        return [event for event in events if isinstance(event, dict)]
+    filtered: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        timestamp = event.get("timestamp")
+        if isinstance(timestamp, str) and timestamp <= cursor_iso:
+            continue
+        filtered.append(event)
+    return filtered
+
+
 _SEVERITY_RANK = {
     "informational": 0,
     "info": 0,
@@ -716,7 +780,13 @@ def _aggregate_fortigate_events(
         if not isinstance(raw_event, dict):
             continue
         action = str(raw_event.get("action") or "").lower()
-        event_type = "network.deny" if action in {"deny", "blocked", "block"} else "network.event"
+        explicit_type = raw_event.get("eventType")
+        if isinstance(explicit_type, str) and explicit_type:
+            event_type = explicit_type
+        elif action in {"deny", "blocked", "block"}:
+            event_type = "network.deny"
+        else:
+            event_type = "network.event"
         source_ip = str(raw_event.get("sourceIp") or "unknown")
         key = (event_type, source_ip)
         existing = groups.get(key)
@@ -724,6 +794,12 @@ def _aggregate_fortigate_events(
         occurred_at = raw_event.get("timestamp") or _now_iso()
         destination_ip = raw_event.get("destinationIp")
         message = raw_event.get("message")
+        user_name = str(raw_event.get("user") or "").strip()
+        sample_attempt = {
+            "at": occurred_at,
+            "user": user_name or None,
+            "message": message,
+        }
         if existing is None:
             groups[key] = {
                 "source": "fortigate",
@@ -742,12 +818,19 @@ def _aggregate_fortigate_events(
                     "message": message,
                     "count": 1,
                     "uniqueDestinationIps": {destination_ip} if destination_ip else set(),
+                    "users": {user_name} if user_name else set(),
+                    "attempts": [sample_attempt],
                 },
             }
         else:
             existing["attributes"]["count"] += 1
             if destination_ip:
                 existing["attributes"]["uniqueDestinationIps"].add(destination_ip)
+            if user_name:
+                existing["attributes"]["users"].add(user_name)
+            attempts = existing["attributes"]["attempts"]
+            if len(attempts) < 20:
+                attempts.append(sample_attempt)
             if _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(existing["severity"], 0):
                 existing["severity"] = severity
             if occurred_at > existing["occurredAt"]:
@@ -759,6 +842,8 @@ def _aggregate_fortigate_events(
     for event in groups.values():
         unique = event["attributes"].pop("uniqueDestinationIps", set())
         event["attributes"]["uniqueDestinationCount"] = len(unique) or 0
+        users = event["attributes"].pop("users", set())
+        event["attributes"]["users"] = sorted(users)
         aggregated.append(event)
     return aggregated
 

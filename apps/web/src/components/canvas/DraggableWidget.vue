@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff, Plug, ChevronDown, Check } from 'lucide-vue-next'
+import WidgetSkeleton from '../widgets/shell/WidgetSkeleton.vue'
 import { fetchWidgetData } from '../../services/widgetDataClient'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
 import { visualTemplatesById } from '../../constants/visualTemplates'
@@ -109,14 +110,21 @@ const lastUpdatedLabel = computed(() => {
   return date.toISOString().replace('T', ' ').slice(0, 19)
 })
 
+const ageTick = ref(Date.now())
+let ageInterval: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  ageInterval = setInterval(() => { ageTick.value = Date.now() }, 1000)
+})
+
 const lastUpdatedAge = computed(() => {
   const refreshedAt = widgetResponse.value?.refreshedAt
   if (!refreshedAt) return null
 
-  const elapsedMs = Date.now() - new Date(refreshedAt).getTime()
+  const elapsedMs = ageTick.value - new Date(refreshedAt).getTime()
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return null
 
   const elapsedSeconds = Math.floor(elapsedMs / 1000)
+  if (elapsedSeconds < 5) return 'just now'
   if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`
 
   const elapsedMinutes = Math.floor(elapsedSeconds / 60)
@@ -227,6 +235,7 @@ onBeforeUnmount(() => {
   clearRefreshTimeout()
   currentController?.abort()
   widgetSeriesStore.clearInstance(props.instanceId)
+  if (ageInterval) clearInterval(ageInterval)
 })
 
 const clampedLayout = computed(() => clampWidgetLayoutSize(props.layout, props.catalogId))
@@ -443,6 +452,22 @@ async function selectIntegration(integrationId: string) {
       <div class="flex items-center gap-2 text-theme-text-muted min-w-0">
         <GripHorizontal :size="16" />
         <span class="text-xs font-semibold text-theme-text uppercase tracking-wider truncate">{{ widgetTitle }}</span>
+        <span
+          v-if="isRefreshing"
+          class="flex items-center gap-1 text-[10px] text-theme-primary"
+          :title="lastUpdatedLabel ? `Last updated ${lastUpdatedLabel}` : undefined"
+        >
+          <Loader2 :size="11" class="animate-spin" />
+          <span class="normal-case tracking-normal">Refreshing</span>
+        </span>
+        <span
+          v-else-if="lastUpdatedAge"
+          class="flex items-center gap-1 text-[10px] text-theme-text-muted normal-case tracking-normal"
+          :title="lastUpdatedLabel ? `Last updated ${lastUpdatedLabel}` : undefined"
+        >
+          <Clock3 :size="11" />
+          <span>{{ lastUpdatedAge }}</span>
+        </span>
       </div>
       <div class="flex items-center gap-1 shrink-0">
         <div class="relative">
@@ -506,21 +531,8 @@ async function selectIntegration(integrationId: string) {
 
     <!-- Content slot -->
     <div class="flex-1 p-4 overflow-hidden relative pointer-events-auto bg-gradient-to-br from-transparent to-black/10 rounded-b-md">
-      <div class="absolute top-2 right-3 z-10 flex items-center gap-2 text-[10px] text-theme-text-muted pointer-events-none">
-        <div v-if="isRefreshing" class="flex items-center gap-1 text-theme-primary">
-          <Loader2 :size="12" class="animate-spin" />
-          <span>Refreshing</span>
-        </div>
-        <div v-if="lastUpdatedLabel" class="flex items-center gap-1">
-          <Clock3 :size="12" />
-          <span>Updated {{ lastUpdatedLabel }}</span>
-          <span v-if="lastUpdatedAge">({{ lastUpdatedAge }})</span>
-        </div>
-      </div>
-
-      <div v-if="isLoading" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-theme-text-muted bg-theme-panel/70 backdrop-blur-sm z-20">
-        <Loader2 :size="24" class="animate-spin text-theme-primary" />
-        <span class="text-xs">Loading widget data...</span>
+      <div v-if="isLoading" class="absolute inset-0 z-20 bg-theme-panel/85 backdrop-blur-sm p-4">
+        <WidgetSkeleton />
       </div>
       <div v-else-if="isBlockingError" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-red-300 bg-red-950/25 backdrop-blur-sm z-20 p-4 text-center">
         <component :is="statusIcon" :size="24" />

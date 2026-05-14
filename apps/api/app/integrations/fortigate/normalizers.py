@@ -69,6 +69,49 @@ def normalize_policies(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return normalized
 
 
+def normalize_admin_login_failures(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in raw:
+        if str(item.get("status") or "").lower() != "failed":
+            continue
+        if str(item.get("action") or "").lower() != "login":
+            continue
+        timestamp_value = _event_timestamp(item)
+        source_ip = _string(item, "srcip", "source_ip", default="") or ""
+        user_name = _string(item, "user", default="") or ""
+        normalized.append(
+            {
+                "id": f"admin-login-fail-{timestamp_value}-{source_ip}-{user_name}",
+                "timestamp": _timestamp(timestamp_value),
+                "type": "event",
+                "subtype": "admin_login_failed",
+                "severity": _string(item, "level", "severity", default="medium"),
+                "sourceIp": source_ip,
+                "destinationIp": "",
+                "action": "login_failed",
+                "eventType": "auth.failed_login",
+                "user": user_name,
+                "message": _string(item, "msg", "logdesc", "message", default=""),
+            }
+        )
+    return normalized
+
+
+def _event_timestamp(item: dict[str, Any]) -> int:
+    raw = item.get("eventtime") or item.get("itime") or item.get("timestamp") or 0
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    if value > 10_000_000_000_000_000:
+        value //= 1_000_000_000
+    elif value > 10_000_000_000_000:
+        value //= 1_000_000
+    elif value > 10_000_000_000:
+        value //= 1_000
+    return value
+
+
 def normalize_threat_logs(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = []
     for item in raw:

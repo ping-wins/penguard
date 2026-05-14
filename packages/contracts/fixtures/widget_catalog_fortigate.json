@@ -107,6 +107,20 @@
       "fieldBindings": {
         "anomalies": "risk.anomalies"
       }
+    },
+    {
+      "id": "fortigate-top-source-ips",
+      "title": "Top Source IPs",
+      "kind": "table",
+      "source": "fortigate",
+      "requiredCapabilities": ["threat_logs"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/fortigate-recent-events/data",
+      "template": "ip-table",
+      "dataGroup": "events",
+      "fieldBindings": {
+        "events": "events"
+      }
     }
   ]
 }

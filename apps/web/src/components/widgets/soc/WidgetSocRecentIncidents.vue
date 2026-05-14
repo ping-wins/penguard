@@ -27,6 +27,37 @@ const sortedIncidents = computed(() => [...incidents.value].sort((a: any, b: any
   return ageA - ageB
 }))
 
+const triageOpenIncidents = computed(() =>
+  sortedIncidents.value.filter((inc: any) => {
+    const status = String(inc?.ticketStatus ?? inc?.ticket_status ?? '').toLowerCase()
+    return status !== 'closed' && status !== 'contained'
+  })
+)
+
+const archivedIncidents = computed(() =>
+  sortedIncidents.value.filter((inc: any) => {
+    const status = String(inc?.ticketStatus ?? inc?.ticket_status ?? '').toLowerCase()
+    return status === 'closed' || status === 'contained'
+  })
+)
+
+const showArchived = ref(false)
+const visibleIncidents = computed(() =>
+  showArchived.value ? sortedIncidents.value : triageOpenIncidents.value
+)
+
+function incidentAttempts(incident: any): Array<{ at?: string, user?: string, message?: string }> {
+  const attrs = incident?.attributes
+  if (!attrs || !Array.isArray(attrs.attempts)) return []
+  return attrs.attempts.filter((entry: any) => entry && typeof entry === 'object')
+}
+
+function incidentUsers(incident: any): string[] {
+  const attrs = incident?.attributes
+  if (!attrs || !Array.isArray(attrs.users)) return []
+  return attrs.users.filter((value: any) => typeof value === 'string' && value.length > 0)
+}
+
 const selectedId = ref<string | null>(null)
 
 function selectIncident(id: string | null) {
@@ -68,9 +99,18 @@ const mttrAvg = computed(() => {
         <WidgetKpiTile label="SLA breach" :value="slaBreaches" :tone="slaBreaches > 0 ? 'warning' : 'default'" />
         <WidgetKpiTile label="MTTD avg" :value="mttdAvg !== null ? formatAge(mttdAvg) : '--'" />
       </div>
-      <div class="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
+      <div class="mt-1 flex items-center justify-between gap-2 text-[10px] text-theme-text-muted">
+        <span>{{ visibleIncidents.length }} shown · {{ archivedIncidents.length }} archived</span>
         <button
-          v-for="incident in sortedIncidents.slice(0, 12)"
+          v-if="archivedIncidents.length > 0"
+          type="button"
+          class="rounded border border-theme-border/60 bg-theme-text/5 px-2 py-0.5 text-[10px] uppercase tracking-wide hover:border-theme-primary/40"
+          @click.stop="showArchived = !showArchived"
+        >{{ showArchived ? 'Hide archived' : 'Show archived' }}</button>
+      </div>
+      <div class="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1 incident-list">
+        <button
+          v-for="incident in visibleIncidents"
           :key="incident.id"
           type="button"
           class="flex flex-col gap-1 rounded border border-theme-border/40 bg-theme-text/5 p-2 text-left text-xs transition-colors hover:border-theme-primary/40"
@@ -93,8 +133,8 @@ const mttrAvg = computed(() => {
             <WidgetSlaBadge :created-at="incident.createdAt" />
           </div>
         </button>
-        <div v-if="incidents.length === 0" class="flex flex-1 items-center justify-center text-xs italic text-theme-text-muted">
-          No incidents.
+        <div v-if="visibleIncidents.length === 0" class="flex flex-1 items-center justify-center text-xs italic text-theme-text-muted">
+          {{ incidents.length === 0 ? 'No incidents.' : 'No open incidents. Toggle archived to view closed.' }}
         </div>
       </div>
     </template>
@@ -109,6 +149,28 @@ const mttrAvg = computed(() => {
           <span class="shrink-0 text-[10px] text-theme-text-muted">{{ selectedIncident.ruleId || selectedIncident.rule_id || '--' }}</span>
         </div>
         <div v-if="selectedIncident.summary" class="text-xs text-theme-text-muted">{{ selectedIncident.summary }}</div>
+        <div v-if="incidentAttempts(selectedIncident).length" class="flex flex-col gap-1">
+          <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-theme-text-muted">
+            <span>Attempts: {{ selectedIncident.attributes?.count ?? incidentAttempts(selectedIncident).length }}</span>
+            <span v-if="incidentUsers(selectedIncident).length">Users tried: {{ incidentUsers(selectedIncident).join(', ') }}</span>
+          </div>
+          <div class="max-h-40 overflow-y-auto rounded border border-theme-border/50 bg-theme-bg/50 p-2 text-[11px]">
+            <div
+              v-for="(attempt, idx) in incidentAttempts(selectedIncident)"
+              :key="idx"
+              class="flex flex-col gap-0.5 border-b border-theme-border/30 py-1 last:border-0"
+            >
+              <div class="flex items-center justify-between gap-2 text-[10px] text-theme-text-muted">
+                <span class="font-mono">{{ attempt.at ? new Date(attempt.at).toISOString().slice(11, 19) : '--' }}</span>
+                <span v-if="attempt.user" class="font-semibold text-theme-text">user: {{ attempt.user }}</span>
+              </div>
+              <div v-if="attempt.message" class="break-words text-theme-text">{{ attempt.message }}</div>
+            </div>
+          </div>
+          <div class="text-[10px] italic text-theme-text-muted">
+            Note: FortiGate does not log attempted passwords. Usernames and source IPs are the strongest identifiers available.
+          </div>
+        </div>
         <div v-if="selectedIncident.entities && Object.keys(selectedIncident.entities).length" class="flex flex-wrap gap-1.5">
           <span
             v-for="(value, key) in selectedIncident.entities"

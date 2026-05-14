@@ -245,8 +245,7 @@ describe('DraggableWidget', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No data returned')
-    expect(wrapper.text()).toContain('Updated')
-    expect(wrapper.text()).toContain('2026-04-26')
+    expect(wrapper.html()).toContain('2026-04-26')
   })
 
   it('lets SOC renderers handle empty ready payloads', async () => {

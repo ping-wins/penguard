@@ -229,7 +229,16 @@ def _incident_attributes(event: SecurityEvent) -> dict[str, Any]:
     attributes: dict[str, Any] = {
         "source": event.attributes.get("source") or event.source,
     }
-    for key in ("demoRunId", "attackType"):
+    for key in (
+        "demoRunId",
+        "attackType",
+        "count",
+        "users",
+        "attempts",
+        "message",
+        "action",
+        "subtype",
+    ):
         value = event.attributes.get(key)
         if value is not None and value != "":
             attributes[key] = value
@@ -344,6 +353,17 @@ def create_event(event: SecurityEvent) -> SecurityEvent:
         store.count_incidents(),
     )
     return stored_event
+
+
+@app.post("/admin/reset")
+def reset_store() -> dict[str, int]:
+    deleted = store.reset()
+    logger.info(
+        "siem_store_reset events_deleted=%s incidents_deleted=%s",
+        deleted.get("events"),
+        deleted.get("incidents"),
+    )
+    return deleted
 
 
 @app.get("/events", response_model=list[SecurityEvent])

@@ -563,11 +563,33 @@ end-to-end nmap pipeline for demo footage.
   polling is opt-in through the persisted ingestion status and the API-side
   scheduler env flags.
 - **`denied_traffic_burst` detection requires `attributes.count >= 20` on a
-  single event.** `_fortigate_event_to_siem_event` writes one event per deny
-  with `count=1`, so the rule will not fire from raw FortiGate ingestion until
-  we aggregate denies per source before forwarding. Use synthetic events with
-  inflated counts (or run the seed script) when the demo flow needs an
-  incident.
+  single event.** `_aggregate_fortigate_events` (in `apps/api/app/routers/integrations.py`)
+  now collapses raw FortiGate logs per `(eventType, sourceIp)` before
+  forwarding, so the rule fires from real ingestion when a single source
+  emits ≥20 denies in a tick. Synthetic events with inflated counts are
+  only needed when there is no live traffic.
+- **FortiOS 7.6 moved the IPS log path.** `/api/v2/log/memory/utm/ips`
+  returns 404; the client now hits `/api/v2/log/memory/ips`. Admin
+  login failures live at `/api/v2/log/memory/event/system` and must
+  be queried with **repeated** `filter` params
+  (`filter=action==login&filter=status==failed`) — a single combined
+  filter string returns zero rows. The current backend ingests both,
+  emitting `network.deny`/`network.event` from IPS and
+  `auth.failed_login` from admin login failures.
+- **Reset wipes everything but replays the backlog on the next tick.**
+  `POST /soc/incidents/reset` sets the FortiGate ingestion cursor to
+  `NULL`, so the first scheduled run pulls the full event backlog and
+  re-creates `repeated_failed_login` incidents from history. Until we
+  set the cursor to `now` on reset, an analyst-friendly reset has to
+  also bump the cursor manually (or accept one round of replayed
+  incidents).
+- **FortiGate admin lockout silently drops follow-up brute force.**
+  Default lab config is `admin-lockout-threshold=3` /
+  `admin-lockout-duration=60`. After a few fails the FortiGate refuses
+  new attempts **without** writing more `event/system` entries, so the
+  cockpit looks idle even while Hydra runs. For the lab demo, raise
+  the threshold and lower the duration:
+  `config system global → set admin-lockout-threshold 10 → set admin-lockout-duration 1`.
 - **VMware bridge ARP can show the host's MAC for a bridged guest.** When the
   scan from Debian reports the Samsung OUI for `192.168.0.100`, that is a
   bridge quirk — `ssh admin@192.168.0.100` and the FortiGate banner are the

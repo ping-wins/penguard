@@ -63,13 +63,23 @@ class FortiGateApiClient:
         return self._get_list("/api/v2/cmdb/firewall/policy")
 
     def get_threat_logs(self, *, limit: int = 25) -> list[dict[str, Any]]:
-        return self._get_list("/api/v2/log/memory/utm/ips", params={"count": limit})
+        return self._get_list("/api/v2/log/memory/ips", params={"count": limit})
+
+    def get_admin_login_failures(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._get_list(
+            "/api/v2/log/memory/event/system",
+            params=[
+                ("count", limit),
+                ("filter", "action==login"),
+                ("filter", "status==failed"),
+            ],
+        )
 
     def _get_list(
         self,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         results = self._get(path, params=params)
         if isinstance(results, list):
@@ -85,7 +95,7 @@ class FortiGateApiClient:
         self,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
         include_metadata: bool = False,
     ) -> Any:
         try:
@@ -102,8 +112,17 @@ class FortiGateApiClient:
                 response = client.get(path, params=params)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in (401, 403):
+                raise FortiGateApiError(
+                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                ) from exc
+            if status_code == 404:
+                raise FortiGateApiError(
+                    f"FortiGate API endpoint not found ({path}); check host URL and firmware version"
+                ) from exc
             raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {exc.response.status_code}"
+                f"FortiGate API request failed with HTTP {status_code}"
             ) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc

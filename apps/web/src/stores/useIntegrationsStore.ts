@@ -93,6 +93,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         }
         return { success: false, error: data.error?.message ?? 'Connection failed' }
       }
+      if (res.status === 401) await useAuthStore().fetchSession()
       return { success: false, error: await responseErrorMessage(res, 'Connection failed') }
     } catch (e) {
       return { success: false, error: 'Network error' }
@@ -126,6 +127,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         
         return { success: true, data }
       }
+      if (res.status === 401) await useAuthStore().fetchSession()
       return { success: false, error: await responseErrorMessage(res, 'Failed to add integration') }
     } catch (e) {
       return { success: false, error: 'Network error' }
@@ -155,6 +157,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         }
         return { success: false, error: data.error?.message ?? 'Connection failed' }
       }
+      if (res.status === 401) await useAuthStore().fetchSession()
       return { success: false, error: await responseErrorMessage(res, 'Connection failed') }
     } catch (e) {
       return { success: false, error: 'Network error' }
@@ -327,6 +330,12 @@ function isFortiGateIngestionStatus(value: any): value is FortiGateIngestionStat
 }
 
 async function responseErrorMessage(response: Response, fallback: string) {
+  if (response.status === 401) {
+    return 'Session expired. Please sign in again.'
+  }
+  if (response.status === 403) {
+    return 'CSRF validation failed. Refresh the page and try again.'
+  }
   try {
     const body = await response.json()
     if (typeof body.detail === 'string') return body.detail
