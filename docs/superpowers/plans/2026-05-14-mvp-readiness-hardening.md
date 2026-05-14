@@ -31,7 +31,7 @@ Baseline verification before changes:
 2. [x] Gate `/api/soc/demo/replay` to admin/lab mode and add tests.
 3. [x] Make the OAuth `f_session` cookie honor secure/samesite settings.
 4. [x] Make workspace saves fail visibly on HTTP errors.
-5. Add CI workflow for the test/lint/build commands that currently pass locally.
+5. [x] Add CI workflow for the test/lint/build commands that currently pass locally.
 6. Refresh the most misleading contract fixtures for SIEM/SOAR.
 7. Expand audit action i18n for MVP SOC/workspace actions.
 
@@ -127,6 +127,8 @@ Status: **implemented** in commit `fix(web): expose workspace save failures`.
 5. Commit: `fix(web): expose workspace save failures`.
 
 ## Task 5: Add CI quality gate
+
+Status: **implemented** in commit `ci: add baseline quality gate`.
 
 **Objective:** GitHub Actions must run the same commands that currently pass locally.
 
