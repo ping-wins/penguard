@@ -42,6 +42,14 @@ foreground agent loop, or send one-off heartbeat, process snapshot, connection
 snapshot and demo telemetry. The enrollment token is masked in the UI log and is
 sent only as `Authorization: Bearer ...`.
 
+Navigation:
+
+- Use `Tab` / `Shift+Tab` to move between fields and buttons.
+- Press `Enter` to activate the focused button.
+- Use the mouse wheel to scroll when the terminal is short.
+- Shortcuts: `s` saves, `r` starts the agent loop, `x` stops it, `h` sends a
+  heartbeat, `d` sends demo telemetry and `q` quits.
+
 Local config path:
 
 - Linux: `$XDG_CONFIG_HOME/agent_private/config.json` or `~/.config/agent_private/config.json`.
