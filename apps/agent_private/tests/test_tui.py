@@ -1,7 +1,8 @@
 import asyncio
 
-from textual.widgets import Button, Static
+from textual.widgets import Button, Input, Static
 
+import agent_private.tui as tui
 from agent_private.tui import (
     AgentPrivateConfig,
     AgentPrivateTui,
@@ -72,6 +73,7 @@ def test_tui_renders_windows_friendly_navigation_and_field_labels(tmp_path):
             assert "Tab" in help_text
             assert "Shift+Tab" in help_text
             assert "Enter" in help_text
+            assert "Ctrl+V" in help_text
 
             assert str(app.query_one("#api-url-label", Static).render()) == "API URL"
             assert str(app.query_one("#endpoint-id-label", Static).render()) == "Endpoint ID"
@@ -88,5 +90,22 @@ def test_tui_renders_windows_friendly_navigation_and_field_labels(tmp_path):
             assert "(r)" in str(app.query_one("#start-loop", Button).label)
             assert "Stop" in str(app.query_one("#stop-loop", Button).label)
             assert "(x)" in str(app.query_one("#stop-loop", Button).label)
+
+    asyncio.run(run_app())
+
+
+def test_tui_ctrl_v_pastes_system_clipboard_into_focused_input(tmp_path, monkeypatch):
+    monkeypatch.setattr(tui, "read_system_clipboard", lambda: "http://192.168.56.1:8000\nignored")
+
+    async def run_app() -> None:
+        app = AgentPrivateTui(config_path=tmp_path / "config.json")
+        async with app.run_test() as pilot:
+            api_url = app.query_one("#api-url", Input)
+            api_url.value = ""
+            api_url.focus()
+
+            await pilot.press("ctrl+v")
+
+            assert api_url.value == "http://192.168.56.1:8000"
 
     asyncio.run(run_app())

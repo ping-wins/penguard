@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -159,8 +161,22 @@ def _parse_interval(value: Any, default: float, *, allow_zero: bool = False) -> 
 
 OPERATOR_HELP = (
     "Navigation: Tab / Shift+Tab moves between fields, Enter activates focused buttons, "
-    "mouse wheel scrolls, q quits."
+    "Ctrl+V pastes from the system clipboard, mouse wheel scrolls, q quits."
 )
+
+
+class SystemClipboardInput(Input):
+    """Input with an OS clipboard fallback for terminals that do not emit paste events."""
+
+    def action_paste(self) -> None:
+        text = self.app.clipboard or read_system_clipboard()
+        line = _first_clipboard_line(text)
+        if not line:
+            if hasattr(self.app, "_log"):
+                self.app._log("Clipboard is empty or unavailable.")  # type: ignore[attr-defined]
+            return
+        start, end = self.selection
+        self.replace(line, start, end)
 
 
 class AgentPrivateTui(App[None]):
@@ -286,13 +302,13 @@ class AgentPrivateTui(App[None]):
             with Vertical(classes="panel"):
                 yield Static("Setup", classes="section-title")
                 yield Static("API URL", id="api-url-label", classes="field-label")
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.api_url,
                     placeholder="http://localhost:8000",
                     id="api-url",
                 )
                 yield Static("Endpoint ID", id="endpoint-id-label", classes="field-label")
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.endpoint_id or identity["hostname"],
                     placeholder="endpoint-id",
                     id="endpoint-id",
@@ -302,7 +318,7 @@ class AgentPrivateTui(App[None]):
                     id="enrollment-token-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=self.config.enrollment_token,
                     placeholder="enrollment token",
                     password=True,
@@ -322,7 +338,7 @@ class AgentPrivateTui(App[None]):
                     id="heartbeat-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.heartbeat_interval:g}",
                     placeholder="heartbeat interval",
                     id="heartbeat-interval",
@@ -332,7 +348,7 @@ class AgentPrivateTui(App[None]):
                     id="connection-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.connection_interval:g}",
                     placeholder="connection snapshot interval",
                     id="connection-interval",
@@ -342,7 +358,7 @@ class AgentPrivateTui(App[None]):
                     id="process-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.process_interval:g}",
                     placeholder="process snapshot interval",
                     id="process-interval",
@@ -352,7 +368,7 @@ class AgentPrivateTui(App[None]):
                     id="windows-security-interval-label",
                     classes="field-label",
                 )
-                yield Input(
+                yield SystemClipboardInput(
                     value=f"{self.config.windows_security_interval:g}",
                     placeholder="windows security interval, 0 disables",
                     id="windows-security-interval",
@@ -592,6 +608,80 @@ def _redact(value: str, secret: str) -> str:
     if not secret:
         return value
     return value.replace(secret, "[redacted]")
+
+
+def read_system_clipboard() -> str:
+    if os.name == "nt":
+        return _read_windows_clipboard()
+    return _read_subprocess_clipboard()
+
+
+def _read_windows_clipboard() -> str:
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return ""
+
+    cf_unicode_text = 13
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(cf_unicode_text)
+        if not handle:
+            return ""
+        locked = kernel32.GlobalLock(handle)
+        if not locked:
+            return ""
+        try:
+            return ctypes.wstring_at(locked)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def _read_subprocess_clipboard() -> str:
+    commands = [["pbpaste"]] if sys.platform == "darwin" else [
+        ["wl-paste", "--no-newline"],
+        ["xclip", "-selection", "clipboard", "-o"],
+        ["xsel", "--clipboard", "--output"],
+    ]
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=0.5,
+            )
+        except (FileNotFoundError, OSError, subprocess.SubprocessError):
+            continue
+        if result.stdout:
+            return result.stdout
+    return ""
+
+
+def _first_clipboard_line(text: str) -> str:
+    if not text:
+        return ""
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n", maxsplit=1)[0]
 
 
 def run_tui() -> None:
