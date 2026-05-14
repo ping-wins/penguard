@@ -310,6 +310,65 @@ Required UX direction:
 - Audit drawer stays real-time/polling and must include Penguin tool actions.
 - Future SOC consoles should cover incidents, endpoints and playbooks without turning the app into a toy automation demo.
 
+### Widget Shell Pattern
+
+All workspace widgets share a tiered shell to keep header, drill and detail UX
+consistent. Add new widgets on top of this shell — do not roll your own
+header/empty state.
+
+- `apps/web/src/components/widgets/shell/WidgetShell.vue` wraps every SOC and
+  FortiGate widget with three slots: `glance` (T1 — fast scan), `drill` (T2 —
+  inline expand on click), `detail` (T3 — teleported modal with focus trap and
+  `Esc` close). Glance is required; drill and detail are opt-in via the
+  `disable-drill` / `disable-detail` props.
+- Shared sub-components live under the same folder: `WidgetSparkline`,
+  `WidgetKpiTile`, `WidgetSlaBadge`, `WidgetEntityChip`, `WidgetEmptyState`,
+  `WidgetDrillModal`. Reuse these instead of duplicating tiles or empty states.
+- SOC analyst helpers live in `apps/web/src/composables/useSocMetrics.ts`:
+  `ageMs`, `formatAge`, `slaBucket` (green <15m / amber <1h / red ≥1h by
+  default), `mttdEstimate`, `mttrEstimate`, `topByCount`. Severity tokens and
+  colour classes live in `apps/web/src/lib/severityTokens.ts`; never hardcode
+  Tailwind severity classes.
+- Cockpit-wide widget density is controlled by `useWidgetCompactStore`
+  (persisted in `localStorage` under `fortidashboard.widgetCompact`). The
+  toggle on the workspace header flips every shell-wrapped widget at once.
+- The workspace header also renders an aggregated SIEM severity heat-strip
+  derived from `soc-incidents-by-severity` data of currently connected
+  integrations. Strip is read-only and stays hidden when there is nothing to
+  show.
+
+### Widget Series Buffer
+
+Widget sparklines and "vs last poll" deltas are computed client-side from a
+rolling buffer of recent poll snapshots.
+
+- `apps/web/src/stores/useWidgetSeriesStore.ts` keeps a per-instance buffer of
+  numeric metrics (capacity `SERIES_CAPACITY = 30`, FIFO drop). It also caches
+  the latest payload per `widgetId::integrationId` so widgets can drill into
+  sibling-widget data (e.g. `soc-top-entities` opens incidents from
+  `soc-recent-incidents`) without firing extra fetches.
+- Each widget id registers a sampler in `apps/web/src/lib/widgetSeries.ts`.
+  Samplers must be pure, null-safe and only emit numeric metrics. Never push
+  IPs, hostnames, usernames or full payloads into the buffer — the buffer is
+  in-memory only and must not become a sensitive data surface.
+- `DraggableWidget.vue` calls `recordSample(instanceId, catalogId, data,
+  integrationId)` on every successful poll and clears the instance buffer on
+  unmount and on integration rebind. The buffer is never persisted, never
+  serialized to workspace manifest exports.
+- Sparkline windows are short (≈30 polls × ~5s = ~2.5 min). UI must label the
+  window honestly when it surfaces "trend" metrics. A future backend `/series`
+  endpoint is anticipated; widget contracts should not depend on the literal
+  buffer length.
+
+### Forward-Compat Hooks For Future Marketplace
+
+`useProviderDataStore` and the widget resolver in `DashboardCanvas.vue` are
+intentionally kept extensible so a future addon marketplace (signed manifests,
+dynamic route resolution, dynamic connect-session forms) can register widgets
+without rewriting the shell. Keep the widget id → component map narrow and
+keep `WidgetShell.source` a plain string — new providers slot in via the map,
+not via shell edits.
+
 ## Workspace Manifests And Sharing
 
 Each user should eventually have a contextual workspace manifest. Treat it as a
