@@ -10,7 +10,10 @@ import {
   IdCard,
   ShieldCheck,
   CheckCircle2,
+  Boxes,
 } from 'lucide-vue-next'
+import MarketplacePanel from '../marketplace/MarketplacePanel.vue'
+import type { AddonManifest } from '../../services/marketplaceClient'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -25,7 +28,7 @@ const themeStore = useThemeStore()
 const router = useRouter()
 const { t, locale } = useI18n()
 
-type Tab = 'profile' | 'appearance' | 'language'
+type Tab = 'profile' | 'appearance' | 'language' | 'marketplace'
 const activeTab = ref<Tab>('profile')
 const localeSaved = ref(false)
 
@@ -33,7 +36,14 @@ const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => [
   { id: 'profile', label: t('settings.tabs.profile'), icon: UserCog },
   { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
   { id: 'language', label: t('settings.tabs.language'), icon: Languages },
+  { id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes },
 ])
+
+function onMarketplaceInstall(_addon: AddonManifest) {
+  // Close the settings modal so the user can finish provisioning the
+  // integration in the existing sidebar flow.
+  close()
+}
 
 function close() {
   emit('close')
@@ -251,6 +261,10 @@ watch(
               </transition>
             </div>
           </section>
+
+          <div v-if="activeTab === 'marketplace'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
+            <MarketplacePanel @install="onMarketplaceInstall" />
+          </div>
         </div>
       </div>
     </div>

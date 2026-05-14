@@ -69,7 +69,6 @@ export default {
   sidebar: {
     dashboard: 'Dashboard',
     assistant: 'SOC Assistant',
-    marketplace: 'Marketplace',
     integrations: 'SOC Integrations',
     workspaces: 'Workspaces',
     tickets: 'SOC Tickets',
@@ -412,6 +411,7 @@ export default {
       profile: 'Profile',
       appearance: 'Appearance',
       language: 'Language',
+      marketplace: 'Marketplace',
     },
     profile: {
       title: 'User profile',
