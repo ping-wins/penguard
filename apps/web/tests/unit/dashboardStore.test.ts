@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
+import { useAuthStore } from '../../src/stores/useAuthStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -151,5 +152,23 @@ describe('useDashboardStore custom visual bindings', () => {
       source: 'siem_kowalski',
       integrationType: 'siem_kowalski',
     })
+  })
+
+  it('exposes workspace save failures instead of swallowing them', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/auth/csrf') {
+        return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'database unavailable' }, { status: 503 }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf-token'
+    const store = useDashboardStore()
+
+    await expect(store.saveWorkspace()).rejects.toThrow('Workspace save failed with HTTP 503')
+    expect(store.workspaceSaveError).toBe('Workspace save failed with HTTP 503')
   })
 })

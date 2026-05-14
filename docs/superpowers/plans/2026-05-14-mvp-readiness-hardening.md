@@ -27,10 +27,10 @@ Baseline verification before changes:
 
 ### P0/P1 selected for immediate development
 
-1. Bind XDR enrollment tokens to endpoint identity to stop spoofing.
-2. Gate `/api/soc/demo/replay` to admin/lab mode and add tests.
-3. Make the OAuth `f_session` cookie honor secure/samesite settings.
-4. Make workspace saves fail visibly on HTTP errors.
+1. [x] Bind XDR enrollment tokens to endpoint identity to stop spoofing.
+2. [x] Gate `/api/soc/demo/replay` to admin/lab mode and add tests.
+3. [x] Make the OAuth `f_session` cookie honor secure/samesite settings.
+4. [x] Make workspace saves fail visibly on HTTP errors.
 5. Add CI workflow for the test/lint/build commands that currently pass locally.
 6. Refresh the most misleading contract fixtures for SIEM/SOAR.
 7. Expand audit action i18n for MVP SOC/workspace actions.
@@ -48,6 +48,8 @@ Baseline verification before changes:
 ---
 
 ## Task 1: Stop XDR endpoint spoofing
+
+Status: **implemented** in commit `fix(xdr): bind enrollment tokens to endpoints`.
 
 **Objective:** A bearer enrollment token can only report for the endpoint it first claimed, or for the endpoint pre-bound to that enrollment.
 
@@ -71,6 +73,8 @@ Baseline verification before changes:
 
 ## Task 2: Gate demo replay
 
+Status: **implemented** in commit `fix(api): gate synthetic SOC replay`.
+
 **Objective:** Synthetic replay must be impossible in normal analyst sessions unless demo mode is explicitly enabled.
 
 **Files:**
@@ -89,6 +93,8 @@ Baseline verification before changes:
 
 ## Task 3: Harden OAuth state cookie settings
 
+Status: **implemented** in commit `fix(api): honor secure session cookie settings`.
+
 **Objective:** Starlette `SessionMiddleware` must use the same secure/samesite posture as the BFF session in production.
 
 **Files:**
@@ -103,6 +109,8 @@ Baseline verification before changes:
 4. Commit: `fix(auth): honor secure setting for oauth state cookie`.
 
 ## Task 4: Surface workspace save failures
+
+Status: **implemented** in commit `fix(web): expose workspace save failures`.
 
 **Objective:** Workspace persistence HTTP failures should not be swallowed.
 
