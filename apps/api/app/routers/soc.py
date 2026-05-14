@@ -197,6 +197,13 @@ def replay_demo_incident(
     Optional JSON body: `{"attackTypes": ["port_scan", "brute_force", "c2_beacon"]}`.
     Omit or pass an empty list to inject the full canonical chain.
     """
+    roles = set(current_user.get("roles") or [])
+    if "admin" not in roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo replay requires the admin role.",
+        )
+
     raw_types = (payload or {}).get("attackTypes") if isinstance(payload, dict) else None
     if raw_types is not None and not isinstance(raw_types, list):
         raise HTTPException(status_code=400, detail="attackTypes must be a list of strings")

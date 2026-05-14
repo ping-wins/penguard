@@ -196,7 +196,7 @@ def _stub_user() -> dict[str, Any]:
         "id": "usr_demo",
         "email": "demo@fortidashboard.local",
         "displayName": "Demo",
-        "roles": ["analyst"],
+        "roles": ["admin", "analyst"],
     }
 
 
