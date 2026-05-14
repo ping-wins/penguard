@@ -89,6 +89,8 @@ describe('SOAR playbooks console', () => {
     vi.stubGlobal('fetch', fetcher)
 
     await expect(listPlaybooks()).resolves.toEqual([portScanPlaybook])
+    fetcher.mockResolvedValueOnce(jsonResponse({ items: [portScanPlaybook] }))
+    await expect(listPlaybooks()).resolves.toEqual([portScanPlaybook])
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'
     await expect(simulatePlaybook('pb_port_scan_triage')).resolves.toMatchObject({ dryRun: true, valid: true })

@@ -64,11 +64,16 @@ async function parseOrThrow<T>(response: Response, fallback: string): Promise<T>
   throw new Error(message)
 }
 
+type PlaybookListResponse = Playbook[] | { items?: Playbook[] }
+
 export async function listPlaybooks(): Promise<Playbook[]> {
-  return parseOrThrow<Playbook[]>(
+  const data = await parseOrThrow<PlaybookListResponse>(
     await fetch('/api/soc/playbooks', { credentials: 'include' }),
     'Failed to load playbooks',
   )
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data.items)) return data.items
+  return []
 }
 
 export async function createPlaybook(payload: PlaybookDraft): Promise<Playbook> {
