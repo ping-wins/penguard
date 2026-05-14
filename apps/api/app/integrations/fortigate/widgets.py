@@ -5,10 +5,10 @@ from typing import Any, Protocol
 from app.core.fixtures import load_fixture
 from app.integrations.fortigate.client import FortiGateApiClient, FortiGateApiError
 from app.integrations.fortigate.normalizers import (
+    normalize_admin_login_failures,
     normalize_interfaces,
     normalize_policies,
     normalize_system_status,
-    normalize_admin_login_failures,
     normalize_threat_logs,
 )
 

@@ -119,7 +119,8 @@ class FortiGateApiClient:
                 ) from exc
             if status_code == 404:
                 raise FortiGateApiError(
-                    f"FortiGate API endpoint not found ({path}); check host URL and firmware version"
+                    "FortiGate API endpoint not found "
+                    f"({path}); check host URL and firmware version"
                 ) from exc
             raise FortiGateApiError(
                 f"FortiGate API request failed with HTTP {status_code}"

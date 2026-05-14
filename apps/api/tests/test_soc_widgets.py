@@ -92,6 +92,7 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 
 def teardown_function():
     app.dependency_overrides.clear()
+    integrations_router.get_fortigate_ingestion_store.cache_clear()
 
 
 def test_soc_widget_catalog_returns_soc_widgets():

@@ -163,8 +163,12 @@ class SiemStore:
 
     def reset(self) -> dict[str, int]:
         with self.engine.begin() as connection:
-            event_count = int(connection.execute(select(func.count()).select_from(events_table)).scalar_one())
-            incident_count = int(connection.execute(select(func.count()).select_from(incidents_table)).scalar_one())
+            event_count = int(
+                connection.execute(select(func.count()).select_from(events_table)).scalar_one()
+            )
+            incident_count = int(
+                connection.execute(select(func.count()).select_from(incidents_table)).scalar_one()
+            )
             connection.execute(incidents_table.delete())
             connection.execute(events_table.delete())
         return {"events": event_count, "incidents": incident_count}
