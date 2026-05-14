@@ -63,7 +63,13 @@ class FortiGateApiClient:
         return self._get_list("/api/v2/cmdb/firewall/policy")
 
     def get_threat_logs(self, *, limit: int = 25) -> list[dict[str, Any]]:
-        return self._get_list("/api/v2/log/memory/utm/ips", params={"count": limit})
+        return self._get_list("/api/v2/log/memory/ips", params={"count": limit})
+
+    def get_admin_login_failures(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._get_list(
+            "/api/v2/log/memory/event/system",
+            params={"count": limit, "filter": "action==login&status==failed"},
+        )
 
     def _get_list(
         self,

@@ -8,6 +8,7 @@ from app.integrations.fortigate.normalizers import (
     normalize_interfaces,
     normalize_policies,
     normalize_system_status,
+    normalize_admin_login_failures,
     normalize_threat_logs,
 )
 
@@ -59,6 +60,9 @@ class FortiGateWidgetClient(Protocol):
         pass
 
     def get_threat_logs(self, *, limit: int = 25) -> list[dict[str, Any]]:
+        pass
+
+    def get_admin_login_failures(self, *, limit: int = 50) -> list[dict[str, Any]]:
         pass
 
 
@@ -247,7 +251,15 @@ class FortiGateWidgetDataService:
         }
 
     def _recent_events_data(self, client: FortiGateWidgetClient) -> dict[str, Any]:
-        events = normalize_threat_logs(client.get_threat_logs(limit=25))
+        threats = normalize_threat_logs(client.get_threat_logs(limit=25))
+        admin_failures: list[dict[str, Any]] = []
+        fetch_failures = getattr(client, "get_admin_login_failures", None)
+        if callable(fetch_failures):
+            try:
+                admin_failures = normalize_admin_login_failures(fetch_failures(limit=50))
+            except FortiGateApiError:
+                admin_failures = []
+        events = [*threats, *admin_failures]
         return {
             "events": events,
             "summary": _event_summary(events),

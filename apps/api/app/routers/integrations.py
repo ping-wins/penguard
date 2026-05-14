@@ -716,7 +716,13 @@ def _aggregate_fortigate_events(
         if not isinstance(raw_event, dict):
             continue
         action = str(raw_event.get("action") or "").lower()
-        event_type = "network.deny" if action in {"deny", "blocked", "block"} else "network.event"
+        explicit_type = raw_event.get("eventType")
+        if isinstance(explicit_type, str) and explicit_type:
+            event_type = explicit_type
+        elif action in {"deny", "blocked", "block"}:
+            event_type = "network.deny"
+        else:
+            event_type = "network.event"
         source_ip = str(raw_event.get("sourceIp") or "unknown")
         key = (event_type, source_ip)
         existing = groups.get(key)
