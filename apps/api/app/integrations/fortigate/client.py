@@ -68,14 +68,18 @@ class FortiGateApiClient:
     def get_admin_login_failures(self, *, limit: int = 50) -> list[dict[str, Any]]:
         return self._get_list(
             "/api/v2/log/memory/event/system",
-            params={"count": limit, "filter": "action==login&status==failed"},
+            params=[
+                ("count", limit),
+                ("filter", "action==login"),
+                ("filter", "status==failed"),
+            ],
         )
 
     def _get_list(
         self,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         results = self._get(path, params=params)
         if isinstance(results, list):
@@ -91,7 +95,7 @@ class FortiGateApiClient:
         self,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
         include_metadata: bool = False,
     ) -> Any:
         try:
