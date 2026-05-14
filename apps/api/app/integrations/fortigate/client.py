@@ -102,8 +102,17 @@ class FortiGateApiClient:
                 response = client.get(path, params=params)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in (401, 403):
+                raise FortiGateApiError(
+                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                ) from exc
+            if status_code == 404:
+                raise FortiGateApiError(
+                    f"FortiGate API endpoint not found ({path}); check host URL and firmware version"
+                ) from exc
             raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {exc.response.status_code}"
+                f"FortiGate API request failed with HTTP {status_code}"
             ) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
