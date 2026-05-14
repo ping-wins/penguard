@@ -301,8 +301,11 @@ Near-term product direction:
   agent enrollment from the cockpit, receive a ready-to-run PowerShell command
   or bootstrap script, and watch the endpoint move from pending to online after
   first heartbeat.
-- `agent_private` should gain a foreground `run` mode that behaves like a real
-  lightweight agent loop: heartbeat, process snapshot, connection snapshot and
+- `agent_private run` is the operator-facing TUI. The operator configures API
+  URL, endpoint ID, enrollment token and polling intervals there, then starts
+  or stops the foreground loop from inside the TUI.
+- `agent_private run-headless` is the automation/test entrypoint for the same
+  lightweight loop: heartbeat, process snapshot, connection snapshot and
   optional Windows Security polling on intervals.
 - Windows background execution should start as a Scheduled Task installer before
   a true Windows Service. Keep install/uninstall explicit, visible and
@@ -1041,8 +1044,9 @@ mergeable.
 - [x] Add cockpit-driven Windows agent onboarding wizard with enrollment
       generation, one-time token display, copyable PowerShell/bootstrap command
       and pending/online status.
-- [x] Add `agent_private run` foreground loop with configurable heartbeat,
-      process, connection and Windows Security polling intervals.
+- [x] Add `agent_private run` TUI flow plus `run-headless` foreground loop
+      with configurable heartbeat, process, connection and Windows Security
+      polling intervals.
 - [ ] Add explicit Windows Scheduled Task install/uninstall commands for
       `agent_private` after foreground loop is stable.
 - [ ] Add optional directory monitoring with `watchdog`.

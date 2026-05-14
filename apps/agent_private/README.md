@@ -10,25 +10,24 @@ available for tests, scripts and dry-run demos.
 1. Open FortiDashboard, go to **Endpoints**, and choose **Add Windows Agent**.
 2. Enter a display name and optional hostname hint for the Windows host.
 3. Generate the enrollment and copy the one-time PowerShell command.
-4. Run the command from `apps\agent_private` on the Windows host.
-5. Keep the terminal open. The cockpit moves the endpoint from pending to
+4. Run the command from the repository root on the Windows host.
+5. The command opens the `agent_private` TUI with the enrollment values already
+   loaded. Review the setup and press **Start agent**.
+6. Keep the terminal open. The cockpit moves the endpoint from pending to
    inventory after the first heartbeat.
 
 PowerShell command shape:
 
 ```powershell
-cd apps\agent_private
-$env:AGENT_PRIVATE_API_URL="http://<fortidashboard-host>:8000"; $env:AGENT_PRIVATE_ENDPOINT_ID="<enrollment-id>"; $env:AGENT_PRIVATE_ENROLLMENT_TOKEN="<token-returned-once>"; uv run agent-private run
+cd apps\agent_private; $env:AGENT_PRIVATE_API_URL="http://<fortidashboard-host>:8000"; $env:AGENT_PRIVATE_ENDPOINT_ID="<enrollment-id>"; $env:AGENT_PRIVATE_ENROLLMENT_TOKEN="<token-returned-once>"; uv run agent-private run
 ```
 
-To include Windows Security events in the foreground loop:
+To include Windows Security events, set the Windows Security interval in the TUI
+to a positive number before starting the agent. `0` disables collection.
 
-```powershell
-uv run agent-private run --windows-security-interval 60
-```
-
-Stop the foreground agent with `Ctrl+C`. Windows Scheduled Task installation is
-planned as the next cut after the foreground loop is stable.
+Stop the foreground agent with the **Stop agent** button or close the TUI with
+`Ctrl+C`. Windows Scheduled Task installation is planned as the next cut after
+the foreground loop is stable.
 
 ## TUI Usage
 
@@ -37,7 +36,11 @@ cd apps/agent_private
 uv run agent-private
 ```
 
-The TUI lets the operator set the FortiDashboard API URL, endpoint ID and enrollment token, save a local config, then send heartbeat, process snapshot, connection snapshot or demo telemetry. The enrollment token is masked in the UI log and is sent only as `Authorization: Bearer ...`.
+The TUI lets the operator set the FortiDashboard API URL, endpoint ID,
+enrollment token and loop intervals, save a local config, start/stop the
+foreground agent loop, or send one-off heartbeat, process snapshot, connection
+snapshot and demo telemetry. The enrollment token is masked in the UI log and is
+sent only as `Authorization: Bearer ...`.
 
 Local config path:
 
@@ -95,12 +98,18 @@ export AGENT_PRIVATE_ENROLLMENT_TOKEN=<token-returned-once>
 uv run agent-private heartbeat --post
 ```
 
-Foreground loop:
+Interactive foreground loop:
 
 ```bash
 uv run agent-private run
-uv run agent-private run --heartbeat-interval 30 --connection-interval 60 --process-interval 300
-uv run agent-private run --windows-security-interval 60
+```
+
+Headless foreground loop for scripts/tests:
+
+```bash
+uv run agent-private run-headless
+uv run agent-private run-headless --heartbeat-interval 30 --connection-interval 60 --process-interval 300
+uv run agent-private run-headless --windows-security-interval 60
 ```
 
 Windows PowerShell:
@@ -111,7 +120,7 @@ $env:AGENT_PRIVATE_ENDPOINT_ID = "demo-endpoint-01"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
 
 uv run agent-private heartbeat --post
-uv run agent-private run --windows-security-interval 60
+uv run agent-private run
 ```
 
 ## Safety Notes
@@ -119,6 +128,7 @@ uv run agent-private run --windows-security-interval 60
 - No daemon install, privilege escalation or remote command execution.
 - Saved TUI config stores the enrollment token in the user's local config file; Linux files are written with `0600`. Use lab-scoped tokens and clear the config after demos.
 - Enrollment tokens are sent only as `Authorization: Bearer ...`.
-- The foreground `run` command logs event status but never prints the enrollment token.
+- The interactive `run` command masks the enrollment token in the TUI log.
+- The `run-headless` command logs event status but never prints the enrollment token.
 - Process and connection snapshots may include usernames, process names and remote IPs; use only in authorized labs.
 - Keep dry-run mode for demos unless the SOC stack is running and the token is scoped to the lab endpoint.

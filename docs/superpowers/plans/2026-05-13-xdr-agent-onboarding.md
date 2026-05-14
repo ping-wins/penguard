@@ -230,7 +230,8 @@ class AgentRunConfig:
 - [x] Add CLI parser:
 
 ```python
-run_parser = subparsers.add_parser("run", parents=[common], help="Run the foreground endpoint sensor loop.")
+subparsers.add_parser("run", help="Open the interactive setup TUI and run the agent from there.")
+run_parser = subparsers.add_parser("run-headless", parents=[common], help="Run the foreground endpoint sensor loop without the TUI.")
 run_parser.add_argument("--heartbeat-interval", type=float, default=30.0)
 run_parser.add_argument("--connection-interval", type=float, default=60.0)
 run_parser.add_argument("--process-interval", type=float, default=300.0)
@@ -239,7 +240,8 @@ run_parser.add_argument("--windows-security-limit", type=int, default=50)
 run_parser.add_argument("--once", action="store_true")
 ```
 
-- [x] In `main()`, require `--api-url`, `--endpoint-id` and `--enrollment-token` for `run`, then call `run_agent()`.
+- [x] In `main()`, route `run` to the TUI and require `--api-url`, `--endpoint-id`
+  and `--enrollment-token` for `run-headless`, then call `run_agent()`.
 - [x] Run:
 
 ```bash
@@ -262,16 +264,16 @@ cd apps\agent_private
 $env:AGENT_PRIVATE_API_URL="http://<fortidashboard-host>:8000"
 $env:AGENT_PRIVATE_ENDPOINT_ID="<enrollment-id>"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN="<token-returned-once>"
-uv run agent-private run --windows-security-interval 60
+uv run agent-private run
 ```
 
-- [x] State that `run` is foreground-only and safe by default.
-- [x] Document `Ctrl+C` as the stop path.
+- [x] State that `run` is TUI-first and safe by default.
+- [x] Document **Stop agent** and `Ctrl+C` as stop paths.
 - [x] Mention that Scheduled Task installation is the next cut, not part of this cut.
 - [x] Update `AGENTS.md` current implementation status after tests pass:
   - Cockpit enrollment wizard implemented.
   - Pending/online endpoint UX implemented.
-  - `agent-private run` foreground loop implemented.
+  - `agent-private run` TUI and `run-headless` foreground loop implemented.
   - Scheduled Task installation remains pending.
 
 ## Task 6: Full Verification

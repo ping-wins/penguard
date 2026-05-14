@@ -406,7 +406,17 @@ def test_tui_command_launches_tui(monkeypatch):
     assert calls == ["tui"]
 
 
-def test_run_command_calls_foreground_runner(monkeypatch):
+def test_run_command_launches_tui(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(cli, "run_tui", lambda: calls.append("tui"))
+
+    main(["run"])
+
+    assert calls == ["tui"]
+
+
+def test_run_headless_command_calls_foreground_runner(monkeypatch):
     calls = []
 
     def fake_run_agent(config, *, once=False):
@@ -416,7 +426,7 @@ def test_run_command_calls_foreground_runner(monkeypatch):
 
     main(
         [
-            "run",
+            "run-headless",
             "--api-url",
             "http://localhost:8000",
             "--endpoint-id",

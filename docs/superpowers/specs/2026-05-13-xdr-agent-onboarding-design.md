@@ -52,7 +52,10 @@ telemetry.
 
 `agent_private` should gain:
 
-- `agent-private run`: foreground loop, safe to kill with Ctrl+C.
+- `agent-private run`: operator-facing TUI that loads config/env values and
+  lets the analyst start or stop the foreground loop.
+- `agent-private run-headless`: automation/test foreground loop, safe to kill
+  with Ctrl+C.
 - Configurable intervals:
   - heartbeat: default 30 seconds,
   - connection snapshot: default 60 seconds,
@@ -68,8 +71,8 @@ After this foreground loop is validated, add:
 - `agent-private uninstall-scheduled-task`
 
 These commands should create/remove a visible Windows Scheduled Task that runs
-the same `agent-private run` command. A true Windows Service can be a later
-production hardening step.
+the same `agent-private run-headless` command. A true Windows Service can be a
+later production hardening step.
 
 ## Backend Requirements
 
@@ -124,8 +127,8 @@ production hardening step.
    endpoint APIs.
 
 2. **Foreground agent loop**
-   Add `agent-private run` with interval scheduling, config loading and masked
-   logs.
+   Add `agent-private run` as the TUI entrypoint and `agent-private
+   run-headless` with interval scheduling, config loading and masked logs.
 
 3. **Windows Scheduled Task**
    Add explicit install/uninstall commands that wrap the foreground loop.
