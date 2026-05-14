@@ -33,7 +33,7 @@ Baseline verification before changes:
 4. [x] Make workspace saves fail visibly on HTTP errors.
 5. [x] Add CI workflow for the test/lint/build commands that currently pass locally.
 6. [x] Refresh the most misleading contract fixtures for SIEM/SOAR.
-7. Expand audit action i18n for MVP SOC/workspace actions.
+7. [x] Expand audit action i18n for MVP SOC/workspace actions.
 
 ### Deferred but tracked
 
@@ -164,6 +164,8 @@ Status: **implemented** in commit `fix(contracts): align SOC fixtures with servi
 5. Commit: `fix(contracts): align SOC fixtures with services`.
 
 ## Task 7: Translate MVP audit actions
+
+Status: **implemented** in commit `fix(web): translate MVP audit actions`.
 
 **Objective:** Audit feed should not show raw technical action names for delivered MVP flows.
 
