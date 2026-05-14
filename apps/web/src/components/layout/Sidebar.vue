@@ -157,6 +157,7 @@ function refreshAuditTrail() {
   auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
 }
 
+
 onBeforeUnmount(() => {
   auditStore.stopPolling()
   ticketsStore.stopPolling()
@@ -855,6 +856,7 @@ async function handleChatSubmit() {
       <div v-if="activeTab === 'endpoints'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <EndpointsPanel />
       </div>
+
 
       <!-- Audit Tab -->
       <div v-if="activeTab === 'audit'" class="h-full shrink-0 p-4" :style="{ width: `${drawerPx}px` }">
