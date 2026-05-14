@@ -52,6 +52,9 @@ import WidgetSocRecentIncidents from '../widgets/soc/WidgetSocRecentIncidents.vu
 import WidgetSocTopEntities from '../widgets/soc/WidgetSocTopEntities.vue'
 import WidgetXdrEndpointHealth from '../widgets/soc/WidgetXdrEndpointHealth.vue'
 import WidgetSoarPlaybookRuns from '../widgets/soc/WidgetSoarPlaybookRuns.vue'
+import WidgetSocSlaBreach from '../widgets/soc/WidgetSocSlaBreach.vue'
+import WidgetSocMttdMttr from '../widgets/soc/WidgetSocMttdMttr.vue'
+import WidgetFortigateTopSourceIps from '../widgets/fortigate/WidgetFortigateTopSourceIps.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
 import type { WidgetFieldBinding } from '../../types/dashboard'
@@ -491,6 +494,9 @@ const widgetMap: Record<string, any> = {
   'soc-top-entities': WidgetSocTopEntities,
   'xdr-endpoint-health': WidgetXdrEndpointHealth,
   'soar-active-playbook-runs': WidgetSoarPlaybookRuns,
+  'soc-sla-breach': WidgetSocSlaBreach,
+  'soc-mttd-mttr': WidgetSocMttdMttr,
+  'fortigate-top-source-ips': WidgetFortigateTopSourceIps,
 }
 
 void WidgetGenericData
@@ -600,9 +606,16 @@ function handleWheel(e: WheelEvent) {
 }
 
 function handleViewportKeyDown(event: KeyboardEvent) {
-  if (event.code !== 'Space' || isEditableTarget(event.target)) return
-  event.preventDefault()
-  isSpacePanning.value = true
+  if (isEditableTarget(event.target)) return
+  if (event.code === 'Space') {
+    event.preventDefault()
+    isSpacePanning.value = true
+    return
+  }
+  if (event.code === 'KeyC' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault()
+    compactStore.toggle()
+  }
 }
 
 function handleViewportKeyUp(event: KeyboardEvent) {

@@ -71,6 +71,34 @@
       "fieldBindings": {
         "rows": "playbookRun.items"
       }
+    },
+    {
+      "id": "soc-sla-breach",
+      "title": "SLA Breach",
+      "kind": "feed",
+      "source": "siem_kowalski",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/soc-recent-incidents/data",
+      "template": "sla-breach-feed",
+      "dataGroup": "incidents",
+      "fieldBindings": {
+        "items": "incident.items"
+      }
+    },
+    {
+      "id": "soc-mttd-mttr",
+      "title": "MTTD / MTTR",
+      "kind": "kpi",
+      "source": "siem_kowalski",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 4, "h": 3 },
+      "dataEndpoint": "/api/widgets/soc-recent-incidents/data",
+      "template": "kpi-grid",
+      "dataGroup": "incidents",
+      "fieldBindings": {
+        "items": "incident.items"
+      }
     }
   ]
 }
