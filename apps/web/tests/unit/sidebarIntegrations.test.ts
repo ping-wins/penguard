@@ -63,6 +63,84 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.text()).not.toContain('integration.fortigate.created')
   })
 
+  it('shows FortiGate ingestion status and can trigger a run now', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/integrations') {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'int_fgt_01',
+              type: 'fortigate',
+              name: 'FortiGate Lab',
+              host: 'https://192.0.2.118',
+              status: 'connected',
+            },
+          ],
+        }))
+      }
+      if (url.endsWith('/ingestion-status')) {
+        return Promise.resolve(jsonResponse({
+          integrationId: 'int_fgt_01',
+          enabled: true,
+          intervalSeconds: 30,
+          status: 'idle',
+          lastStartedAt: null,
+          lastFinishedAt: null,
+          lastSuccessAt: null,
+          lastError: null,
+          lastRawEventCount: 0,
+          lastCreatedCount: 0,
+          lastEventIds: [],
+          lastRunTrigger: null,
+          updatedAt: '2026-05-13T18:00:00.000Z',
+        }))
+      }
+      if (url.endsWith('/ingest-events')) {
+        expect(init?.method).toBe('POST')
+        return Promise.resolve(jsonResponse({
+          integrationId: 'int_fgt_01',
+          rawEventCount: 4,
+          createdCount: 1,
+          eventIds: ['evt_01'],
+          ingestion: {
+            integrationId: 'int_fgt_01',
+            enabled: true,
+            intervalSeconds: 30,
+            status: 'success',
+            lastStartedAt: '2026-05-13T18:01:00.000Z',
+            lastFinishedAt: '2026-05-13T18:01:02.000Z',
+            lastSuccessAt: '2026-05-13T18:01:02.000Z',
+            lastError: null,
+            lastRawEventCount: 4,
+            lastCreatedCount: 1,
+            lastEventIds: ['evt_01'],
+            lastRunTrigger: 'manual',
+            updatedAt: '2026-05-13T18:01:02.000Z',
+          },
+        }))
+      }
+      return Promise.resolve(jsonResponse({ items: [] }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mountSidebar()
+
+    await wrapper.get('[title="Integrações SOC"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('Pipeline idle')
+
+    await wrapper.get('[data-test="fortigate-ingest-run-int_fgt_01"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('Pipeline success')
+    expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('4 raw')
+    expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('1 SIEM')
+  })
+
   it('opens a real admin audit drawer from the sidebar', async () => {
     const authStore = useAuthStore()
     authStore.isAuthenticated = true

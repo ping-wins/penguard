@@ -16,11 +16,14 @@ from agent_private.cli import (
     build_identity_payload,
     build_process_snapshot_payload,
     build_simulated_events,
+    build_windows_security_event_payloads,
     collect_connections,
     collect_processes,
+    collect_windows_security_events,
     get_ip_addresses,
     post_endpoint_event,
 )
+from agent_private.runner import AgentRunConfig
 
 
 @dataclass(frozen=True)
@@ -28,12 +31,20 @@ class AgentPrivateConfig:
     api_url: str = ""
     endpoint_id: str = ""
     enrollment_token: str = ""
+    heartbeat_interval: float = 30.0
+    connection_interval: float = 60.0
+    process_interval: float = 300.0
+    windows_security_interval: float = 0.0
 
     def safe_summary(self) -> dict[str, str]:
         return {
             "apiUrl": self.api_url,
             "endpointId": self.endpoint_id,
             "enrollmentToken": mask_secret(self.enrollment_token),
+            "heartbeatInterval": f"{self.heartbeat_interval:g}s",
+            "connectionInterval": f"{self.connection_interval:g}s",
+            "processInterval": f"{self.process_interval:g}s",
+            "windowsSecurityInterval": f"{self.windows_security_interval:g}s",
         }
 
 
@@ -62,6 +73,26 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
         enrollment_token=str(
             payload.get("enrollment_token") or payload.get("enrollmentToken") or ""
         ),
+        heartbeat_interval=_interval_value(
+            payload,
+            "heartbeat_interval",
+            "heartbeatInterval",
+            30.0,
+        ),
+        connection_interval=_interval_value(
+            payload,
+            "connection_interval",
+            "connectionInterval",
+            60.0,
+        ),
+        process_interval=_interval_value(payload, "process_interval", "processInterval", 300.0),
+        windows_security_interval=_interval_value(
+            payload,
+            "windows_security_interval",
+            "windowsSecurityInterval",
+            0.0,
+            allow_zero=True,
+        ),
     )
 
 
@@ -85,6 +116,45 @@ def mask_secret(value: str) -> str:
     if len(value) <= 8:
         return "*" * len(value)
     return f"{value[:4]}{'*' * (len(value) - 8)}{value[-4:]}"
+
+
+def build_run_config(config: AgentPrivateConfig) -> AgentRunConfig:
+    return AgentRunConfig(
+        api_url=config.api_url,
+        endpoint_id=config.endpoint_id,
+        enrollment_token=config.enrollment_token,
+        heartbeat_interval=config.heartbeat_interval,
+        connection_interval=config.connection_interval,
+        process_interval=config.process_interval,
+        windows_security_interval=(
+            config.windows_security_interval if config.windows_security_interval > 0 else None
+        ),
+    )
+
+
+def _interval_value(
+    payload: dict[str, Any],
+    snake_key: str,
+    camel_key: str,
+    default: float,
+    *,
+    allow_zero: bool = False,
+) -> float:
+    return _parse_interval(
+        payload.get(snake_key, payload.get(camel_key)),
+        default,
+        allow_zero=allow_zero,
+    )
+
+
+def _parse_interval(value: Any, default: float, *, allow_zero: bool = False) -> float:
+    try:
+        interval = float(value)
+    except (TypeError, ValueError):
+        return default
+    if interval > 0 or (allow_zero and interval == 0):
+        return interval
+    return default
 
 
 class AgentPrivateTui(App[None]):
@@ -129,6 +199,8 @@ class AgentPrivateTui(App[None]):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("s", "save", "Save config"),
+        ("r", "start_loop", "Run agent"),
+        ("x", "stop_loop", "Stop agent"),
         ("h", "heartbeat", "Heartbeat"),
         ("d", "demo", "Demo burst"),
     ]
@@ -137,6 +209,7 @@ class AgentPrivateTui(App[None]):
         super().__init__()
         self.config_path = config_path or default_config_path()
         self.config = load_config(self.config_path)
+        self.loop_timers: list[Any] = []
 
     def compose(self) -> ComposeResult:
         identity = build_identity_payload()
@@ -166,6 +239,35 @@ class AgentPrivateTui(App[None]):
                     yield Button("Save", id="save-config", variant="primary")
                     yield Button("Clear", id="clear-config")
             with Vertical(classes="panel"):
+                yield Static("Run loop", classes="title")
+                yield Static(
+                    "Intervals are seconds. Windows Security 0 disables collection.",
+                    classes="muted",
+                )
+                yield Input(
+                    value=f"{self.config.heartbeat_interval:g}",
+                    placeholder="heartbeat interval",
+                    id="heartbeat-interval",
+                )
+                yield Input(
+                    value=f"{self.config.connection_interval:g}",
+                    placeholder="connection snapshot interval",
+                    id="connection-interval",
+                )
+                yield Input(
+                    value=f"{self.config.process_interval:g}",
+                    placeholder="process snapshot interval",
+                    id="process-interval",
+                )
+                yield Input(
+                    value=f"{self.config.windows_security_interval:g}",
+                    placeholder="windows security interval, 0 disables",
+                    id="windows-security-interval",
+                )
+                with Horizontal():
+                    yield Button("Start agent", id="start-loop", variant="success")
+                    yield Button("Stop agent", id="stop-loop", variant="error")
+            with Vertical(classes="panel"):
                 yield Static("Status", classes="title")
                 yield Static(f"Hostname: {identity['hostname']}", classes="muted")
                 yield Static(f"User: {identity['username']}", classes="muted")
@@ -187,6 +289,12 @@ class AgentPrivateTui(App[None]):
     def action_heartbeat(self) -> None:
         self._send_single("heartbeat")
 
+    def action_start_loop(self) -> None:
+        self._start_loop()
+
+    def action_stop_loop(self) -> None:
+        self._stop_loop()
+
     def action_demo(self) -> None:
         self._send_demo_burst()
 
@@ -197,6 +305,10 @@ class AgentPrivateTui(App[None]):
             case "clear-config":
                 clear_config(self.config_path)
                 self._log("Local config cleared.")
+            case "start-loop":
+                self._start_loop()
+            case "stop-loop":
+                self._stop_loop()
             case "send-heartbeat":
                 self._send_single("heartbeat")
             case "send-processes":
@@ -211,6 +323,23 @@ class AgentPrivateTui(App[None]):
             api_url=self.query_one("#api-url", Input).value.strip(),
             endpoint_id=self.query_one("#endpoint-id", Input).value.strip(),
             enrollment_token=self.query_one("#enrollment-token", Input).value.strip(),
+            heartbeat_interval=_parse_interval(
+                self.query_one("#heartbeat-interval", Input).value.strip(),
+                30.0,
+            ),
+            connection_interval=_parse_interval(
+                self.query_one("#connection-interval", Input).value.strip(),
+                60.0,
+            ),
+            process_interval=_parse_interval(
+                self.query_one("#process-interval", Input).value.strip(),
+                300.0,
+            ),
+            windows_security_interval=_parse_interval(
+                self.query_one("#windows-security-interval", Input).value.strip(),
+                0.0,
+                allow_zero=True,
+            ),
         )
 
     def _save_config_from_inputs(self) -> None:
@@ -218,6 +347,50 @@ class AgentPrivateTui(App[None]):
         save_config(config, self.config_path)
         self.config = config
         self._log(f"Config saved: {config.safe_summary()}")
+
+    def _start_loop(self) -> None:
+        config = self._current_config()
+        error = _validate_post_config(config)
+        if error:
+            self._log(error)
+            return
+        self._stop_loop(silent=True)
+        save_config(config, self.config_path)
+        self.config = config
+        self.loop_timers = [
+            self.set_interval(
+                config.heartbeat_interval,
+                lambda: self._send_single("heartbeat"),
+                name="heartbeat-loop",
+            ),
+            self.set_interval(
+                config.connection_interval,
+                lambda: self._send_single("connections"),
+                name="connection-loop",
+            ),
+            self.set_interval(
+                config.process_interval,
+                lambda: self._send_single("processes"),
+                name="process-loop",
+            ),
+        ]
+        if config.windows_security_interval > 0:
+            self.loop_timers.append(
+                self.set_interval(
+                    config.windows_security_interval,
+                    self._send_windows_security,
+                    name="windows-security-loop",
+                )
+            )
+        self._send_single("heartbeat")
+        self._log(f"Agent loop started: {config.safe_summary()}")
+
+    def _stop_loop(self, *, silent: bool = False) -> None:
+        for timer in self.loop_timers:
+            timer.stop()
+        self.loop_timers = []
+        if not silent:
+            self._log("Agent loop stopped.")
 
     def _send_single(self, kind: str) -> None:
         config = self._current_config()
@@ -265,6 +438,26 @@ class AgentPrivateTui(App[None]):
                 sent += 1
         self._log(f"Sent demo burst with {sent} events.")
 
+    def _send_windows_security(self) -> None:
+        config = self._current_config()
+        error = _validate_post_config(config)
+        if error:
+            self._log(error)
+            return
+        identity = build_identity_payload()
+        ip_addresses = get_ip_addresses()
+        payloads = build_windows_security_event_payloads(
+            endpoint_id=config.endpoint_id,
+            hostname=identity["hostname"],
+            ip_addresses=ip_addresses,
+            events=collect_windows_security_events(limit=50),
+        )
+        sent = 0
+        for payload in payloads:
+            if self._post_payload(config, payload, success=""):
+                sent += 1
+        self._log(f"Sent Windows Security batch with {sent} events.")
+
     def _post_payload(
         self,
         config: AgentPrivateConfig,
@@ -279,7 +472,7 @@ class AgentPrivateTui(App[None]):
                 payload=payload,
             )
         except Exception as exc:  # noqa: BLE001 - TUI must keep running after transport errors.
-            self._log(f"Post failed: {exc}")
+            self._log(f"Post failed: {_redact(str(exc), config.enrollment_token)}")
             return False
         if success:
             self._log(success)
@@ -297,6 +490,12 @@ def _validate_post_config(config: AgentPrivateConfig) -> str | None:
     if not config.enrollment_token:
         return "Enrollment token is required."
     return None
+
+
+def _redact(value: str, secret: str) -> str:
+    if not secret:
+        return value
+    return value.replace(secret, "[redacted]")
 
 
 def run_tui() -> None:

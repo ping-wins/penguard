@@ -1,6 +1,10 @@
+from datetime import datetime
+
 from fastapi.testclient import TestClient
 
 from app.auth import dependencies as auth_dependencies
+from app.auth.audit import InMemoryAuthAuditStore
+from app.integrations.fortigate.store import InMemoryFortiGateIngestionStore
 from app.main import app
 from app.routers import integrations as integrations_router
 from app.routers import widgets as widgets_router
@@ -58,6 +62,11 @@ class FakeFortiGateWidgetService:
                 ]
             }
         }
+
+
+class FailingFortiGateWidgetService:
+    def get_widget_data(self, widget_id, integration_id, *, owner_user_id):
+        raise RuntimeError("FortiGate logs unavailable")
 
 
 class FakePenguinToolIntegrationService:
@@ -237,7 +246,7 @@ def test_ingest_fortigate_events_posts_normalized_events_to_siem():
     fake_siem = FakeSocClient(
         {
             "/events": lambda **kwargs: {
-                "id": f"evt_{len(fake_siem.calls)}",
+                "id": f"evt_{len(fake_siem.calls) - 1}",
                 "eventType": kwargs["json"]["eventType"],
             }
         }
@@ -260,3 +269,114 @@ def test_ingest_fortigate_events_posts_normalized_events_to_siem():
     assert fake_siem.calls[0]["json"]["eventType"] == "network.deny"
     assert fake_siem.calls[0]["json"]["entities"]["integrationId"] == "int_fgt_01"
     assert audit["items"][0]["details"]["count"] == 1
+
+
+def test_fortigate_ingestion_status_can_be_configured_and_updated_by_run_now():
+    client = TestClient(app)
+    fake_siem = FakeSocClient(
+        {
+            "/events": lambda **kwargs: {
+                "id": f"evt_{len(fake_siem.calls) - 1}",
+                "eventType": kwargs["json"]["eventType"],
+            }
+        }
+    )
+    app.dependency_overrides[integrations_router.get_fortigate_widget_service] = lambda: (
+        FakeFortiGateWidgetService()
+    )
+    app.dependency_overrides[integrations_router.get_siem_client] = lambda: fake_siem
+
+    configured = client.put(
+        "/api/soc/fortigate/int_fgt_01/ingestion-status",
+        headers=csrf_headers(client),
+        json={"enabled": True, "intervalSeconds": 30},
+    )
+    run_now = client.post(
+        "/api/soc/fortigate/int_fgt_01/ingest-events",
+        headers=csrf_headers(client),
+    )
+    current = client.get("/api/soc/fortigate/int_fgt_01/ingestion-status")
+
+    assert configured.status_code == 200
+    assert configured.json()["enabled"] is True
+    assert configured.json()["intervalSeconds"] == 30
+    assert run_now.status_code == 200
+    assert run_now.json()["createdCount"] == 1
+    assert run_now.json()["ingestion"]["status"] == "success"
+    assert run_now.json()["ingestion"]["lastRawEventCount"] == 1
+    assert run_now.json()["ingestion"]["lastCreatedCount"] == 1
+    assert run_now.json()["ingestion"]["lastEventIds"] == ["evt_0"]
+    assert current.status_code == 200
+    assert current.json()["enabled"] is True
+    assert current.json()["status"] == "success"
+    assert current.json()["lastEventIds"] == ["evt_0"]
+
+
+def test_fortigate_ingestion_status_records_failed_run_without_leaking_secrets():
+    client = TestClient(app)
+    app.dependency_overrides[integrations_router.get_fortigate_widget_service] = lambda: (
+        FailingFortiGateWidgetService()
+    )
+
+    response = client.post(
+        "/api/soc/fortigate/int_fgt_01/ingest-events",
+        headers=csrf_headers(client),
+    )
+    current = client.get("/api/soc/fortigate/int_fgt_01/ingestion-status")
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="soc.fortigate_events.ingested"
+    )
+
+    assert response.status_code == 502
+    assert current.json()["status"] == "failed"
+    assert current.json()["lastError"] == "FortiGate logs unavailable"
+    assert audit["items"][0]["outcome"] == "failure"
+    assert "api" not in str(audit["items"][0]["details"]).lower()
+
+
+def test_scheduled_fortigate_ingestion_runs_due_enabled_integrations(monkeypatch):
+    fake_siem = FakeSocClient(
+        {
+            "/events": lambda **kwargs: {
+                "id": f"evt_{len(fake_siem.calls) - 1}",
+                "eventType": kwargs["json"]["eventType"],
+            }
+        }
+    )
+    ingestion_store = InMemoryFortiGateIngestionStore(
+        default_ingestion_interval_seconds=30,
+        id_factory=lambda: "fgt_ingest_due_01",
+    )
+    audit_store = InMemoryAuthAuditStore()
+    ingestion_store.upsert_ingestion_status(
+        owner_user_id="usr_owner",
+        integration_id="int_fgt_01",
+        enabled=True,
+        interval_seconds=30,
+        updated_at=datetime.fromisoformat("2026-05-13T18:00:00+00:00"),
+    )
+    monkeypatch.setattr(
+        integrations_router,
+        "get_fortigate_ingestion_store",
+        lambda: ingestion_store,
+    )
+    monkeypatch.setattr(
+        integrations_router,
+        "get_fortigate_widget_service",
+        lambda: FakeFortiGateWidgetService(),
+    )
+    monkeypatch.setattr(integrations_router, "get_siem_client", lambda: fake_siem)
+    monkeypatch.setattr(integrations_router, "get_auth_audit_store", lambda: audit_store)
+
+    results = integrations_router.run_due_fortigate_ingestions_once()
+    current = ingestion_store.get_ingestion_status(
+        owner_user_id="usr_owner",
+        integration_id="int_fgt_01",
+    )
+    audit = audit_store.list_events(action="soc.fortigate_events.auto_ingested")
+
+    assert results[0]["createdCount"] == 1
+    assert current["status"] == "success"
+    assert current["lastRunTrigger"] == "scheduled"
+    assert audit["items"][0]["outcome"] == "success"
+    assert audit["items"][0]["details"]["trigger"] == "scheduled"

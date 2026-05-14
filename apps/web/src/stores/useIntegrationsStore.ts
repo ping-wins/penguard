@@ -4,11 +4,30 @@ import { useAuthStore } from './useAuthStore'
 
 export type PenguinToolType = 'siem_kowalski' | 'xdr_rico' | 'soar_skipper'
 
+export type FortiGateIngestionStatus = {
+  id?: string
+  integrationId: string
+  enabled: boolean
+  intervalSeconds: number
+  status: 'idle' | 'running' | 'success' | 'failed' | string
+  lastStartedAt: string | null
+  lastFinishedAt: string | null
+  lastSuccessAt: string | null
+  lastError: string | null
+  lastRawEventCount: number
+  lastCreatedCount: number
+  lastEventIds: string[]
+  lastRunTrigger: string | null
+  updatedAt: string
+}
+
 export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
   const isTesting = ref(false)
   const isDeleting = ref<Record<string, boolean>>({})
+  const isIngesting = ref<Record<string, boolean>>({})
+  const ingestionStatusById = ref<Record<string, FortiGateIngestionStatus>>({})
   const error = ref<string | null>(null)
 
   const hasFortigate = computed(() => integrations.value.some(i => i.type === 'fortigate'))
@@ -36,6 +55,11 @@ export const useIntegrationsStore = defineStore('integrations', () => {
       if (res.ok) {
         const data = await res.json()
         integrations.value = data.items || []
+        await Promise.all(
+          integrations.value
+            .filter(integration => integration.type === 'fortigate')
+            .map(integration => fetchFortigateIngestionStatus(integration.id)),
+        )
       } else {
         error.value = 'Failed to load integrations'
       }
@@ -98,6 +122,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         const idx = integrations.value.findIndex(i => i.id === data.id)
         if (idx >= 0) integrations.value[idx] = data
         else integrations.value.push(data)
+        await fetchFortigateIngestionStatus(data.id)
         
         return { success: true, data }
       }
@@ -185,6 +210,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
       if (res.ok) {
         const data = await res.json()
         integrations.value = integrations.value.filter(item => item.id !== integrationId)
+        delete ingestionStatusById.value[integrationId]
         return { success: true, data }
       }
       return { success: false, error: await responseErrorMessage(res, 'Failed to remove integration') }
@@ -195,11 +221,85 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
+  async function fetchFortigateIngestionStatus(integrationId: string) {
+    try {
+      const res = await fetch(`/api/soc/fortigate/${encodeURIComponent(integrationId)}/ingestion-status`, {
+        credentials: 'include',
+      })
+      if (!res.ok) return { success: false, error: await responseErrorMessage(res, 'Failed to load ingestion status') }
+      const data = await res.json()
+      if (isFortiGateIngestionStatus(data)) {
+        ingestionStatusById.value[integrationId] = data
+      }
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function configureFortigateIngestion(
+    integrationId: string,
+    payload: { enabled: boolean, intervalSeconds: number },
+  ) {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/soc/fortigate/${encodeURIComponent(integrationId)}/ingestion-status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken,
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to configure ingestion') }
+      }
+      const data = await res.json()
+      if (isFortiGateIngestionStatus(data)) {
+        ingestionStatusById.value[integrationId] = data
+      }
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function runFortigateIngestion(integrationId: string) {
+    isIngesting.value[integrationId] = true
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/soc/fortigate/${encodeURIComponent(integrationId)}/ingest-events`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': authStore.csrfToken },
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to ingest events') }
+      }
+      const data = await res.json()
+      if (isFortiGateIngestionStatus(data.ingestion)) {
+        ingestionStatusById.value[integrationId] = data.ingestion
+      }
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    } finally {
+      delete isIngesting.value[integrationId]
+    }
+  }
+
   return {
     integrations,
     isLoading,
     isTesting,
     isDeleting,
+    isIngesting,
+    ingestionStatusById,
     error,
     hasFortigate,
     hasWorkspaceIntegrations,
@@ -209,9 +309,22 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     addFortigate,
     testPenguinTool,
     addPenguinTool,
-    removeIntegration
+    removeIntegration,
+    fetchFortigateIngestionStatus,
+    configureFortigateIngestion,
+    runFortigateIngestion,
   }
 })
+
+function isFortiGateIngestionStatus(value: any): value is FortiGateIngestionStatus {
+  return Boolean(
+    value
+      && typeof value === 'object'
+      && typeof value.integrationId === 'string'
+      && typeof value.status === 'string'
+      && typeof value.intervalSeconds === 'number',
+  )
+}
 
 async function responseErrorMessage(response: Response, fallback: string) {
   try {

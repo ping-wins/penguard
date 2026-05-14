@@ -151,4 +151,96 @@ describe('useIntegrationsStore', () => {
     })
     expect(store.integrations.map(item => item.id)).toEqual(['int_fgt_01'])
   })
+
+  it('fetches and triggers FortiGate ingestion status with CSRF credentials', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/ingestion-status') && init?.method === 'PUT') {
+        return Promise.resolve(jsonResponse({
+          integrationId: 'int_fgt_01',
+          enabled: true,
+          intervalSeconds: 30,
+          status: 'idle',
+          lastStartedAt: null,
+          lastFinishedAt: null,
+          lastSuccessAt: null,
+          lastError: null,
+          lastRawEventCount: 0,
+          lastCreatedCount: 0,
+          lastEventIds: [],
+          lastRunTrigger: null,
+          updatedAt: '2026-05-13T18:00:00.000Z',
+        }))
+      }
+      if (url.endsWith('/ingest-events')) {
+        return Promise.resolve(jsonResponse({
+          integrationId: 'int_fgt_01',
+          rawEventCount: 4,
+          createdCount: 1,
+          eventIds: ['evt_01'],
+          ingestion: {
+            integrationId: 'int_fgt_01',
+            enabled: true,
+            intervalSeconds: 30,
+            status: 'success',
+            lastStartedAt: '2026-05-13T18:01:00.000Z',
+            lastFinishedAt: '2026-05-13T18:01:02.000Z',
+            lastSuccessAt: '2026-05-13T18:01:02.000Z',
+            lastError: null,
+            lastRawEventCount: 4,
+            lastCreatedCount: 1,
+            lastEventIds: ['evt_01'],
+            lastRunTrigger: 'manual',
+            updatedAt: '2026-05-13T18:01:02.000Z',
+          },
+        }))
+      }
+      return Promise.resolve(jsonResponse({ items: [] }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useIntegrationsStore()
+
+    await expect(store.configureFortigateIngestion('int_fgt_01', {
+      enabled: true,
+      intervalSeconds: 30,
+    })).resolves.toEqual({
+      success: true,
+      data: expect.objectContaining({
+        enabled: true,
+        intervalSeconds: 30,
+      }),
+    })
+    await expect(store.runFortigateIngestion('int_fgt_01')).resolves.toEqual({
+      success: true,
+      data: expect.objectContaining({
+        rawEventCount: 4,
+        createdCount: 1,
+      }),
+    })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/soc/fortigate/int_fgt_01/ingestion-status', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ enabled: true, intervalSeconds: 30 }),
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/soc/fortigate/int_fgt_01/ingest-events', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': 'csrf_01' },
+      credentials: 'include',
+    })
+    expect(store.ingestionStatusById.int_fgt_01).toMatchObject({
+      enabled: true,
+      status: 'success',
+      lastRawEventCount: 4,
+      lastCreatedCount: 1,
+      lastEventIds: ['evt_01'],
+    })
+  })
 })
