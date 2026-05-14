@@ -31,11 +31,22 @@ class AddonRouteParam(BaseModel):
 
 
 class AddonRoute(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
     path: str
     summary: str | None = None
     params: list[AddonRouteParam] = Field(default_factory=list)
+    min_provider_version: str | None = Field(default=None, alias="minProviderVersion")
+
+
+class AddonCompatibility(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    min_provider_version: str | None = Field(default=None, alias="minProviderVersion")
+    tested_versions: list[str] = Field(default_factory=list, alias="testedVersions")
+    notes: str | None = None
 
 
 class AddonManifest(BaseModel):
@@ -50,6 +61,7 @@ class AddonManifest(BaseModel):
     icon: str | None = None
     min_dashboard_version: str | None = Field(default=None, alias="minDashboardVersion")
     provider: AddonProvider
+    compatibility: AddonCompatibility | None = None
     routes: list[AddonRoute] = Field(default_factory=list)
     widgets: list[str] = Field(default_factory=list)
     siem_event_types: list[str] = Field(default_factory=list, alias="siemEventTypes")

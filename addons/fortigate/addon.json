@@ -1,6 +1,6 @@
 {
   "id": "fortigate-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "FortiGate Core",
   "vendor": "Fortinet",
   "category": "firewall",
@@ -18,14 +18,19 @@
       ]
     }
   },
+  "compatibility": {
+    "minProviderVersion": "7.6.0",
+    "testedVersions": ["7.6.0", "7.6.1"],
+    "notes": "Routes targeted at FortiOS 7.6+. Memory IPS log path /api/v2/log/memory/ips is the 7.6 form; older firmwares exposed /api/v2/log/memory/ips/ips and returned a different envelope. System event log requires repeated filter params (action==login & status==failed) to surface brute-force attempts."
+  },
   "routes": [
     { "id": "system-status", "method": "GET", "path": "/api/v2/monitor/system/status", "summary": "Device hostname, model, firmware, serial." },
     { "id": "performance-status", "method": "GET", "path": "/api/v2/monitor/system/performance/status", "summary": "CPU and memory utilization." },
     { "id": "resource-usage", "method": "GET", "path": "/api/v2/monitor/system/resource/usage", "summary": "Session and resource counters." },
     { "id": "interface-status", "method": "GET", "path": "/api/v2/monitor/system/interface", "summary": "Per-interface RX/TX counters and link state." },
     { "id": "firewall-policy", "method": "GET", "path": "/api/v2/cmdb/firewall/policy", "summary": "Configured firewall policies." },
-    { "id": "log-ips", "method": "GET", "path": "/api/v2/log/memory/ips", "summary": "IPS hits from memory log (FortiOS 7.6+)." },
-    { "id": "log-admin-login", "method": "GET", "path": "/api/v2/log/memory/event/system", "summary": "System event log; filter action==login & status==failed for brute-force.", "params": [{ "name": "filter", "repeated": true }] }
+    { "id": "log-ips", "method": "GET", "path": "/api/v2/log/memory/ips", "summary": "IPS hits from memory log.", "minProviderVersion": "7.6.0" },
+    { "id": "log-admin-login", "method": "GET", "path": "/api/v2/log/memory/event/system", "summary": "System event log; filter action==login & status==failed for brute-force.", "params": [{ "name": "filter", "repeated": true }], "minProviderVersion": "7.6.0" }
   ],
   "widgets": [
     "fortigate-system-status",
