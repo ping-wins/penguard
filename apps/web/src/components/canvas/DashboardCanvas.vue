@@ -67,7 +67,7 @@ const layoutStore = useCockpitLayoutStore()
 const compactStore = useWidgetCompactStore()
 const widgetSeriesStore = useWidgetSeriesStore()
 const { t } = useI18n()
-const { activeWidgets, workspaceName, catalogItems } = storeToRefs(dashboardStore)
+const { activeWidgets, workspaceName, catalogItems, workspaceSaveError } = storeToRefs(dashboardStore)
 const { buildPaneWidth, minimapCollapsed } = storeToRefs(layoutStore)
 
 // --- workspace rename (inline editable header) ---
@@ -775,6 +775,16 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </header>
+
+    <div
+      v-if="workspaceSaveError"
+      data-test="workspace-save-error"
+      class="mx-6 mt-3 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+      role="alert"
+    >
+      <AlertTriangle :size="16" />
+      <span>{{ workspaceSaveError }}</span>
+    </div>
 
     <div class="flex flex-1 overflow-hidden relative">
       <!-- Canvas Area -->

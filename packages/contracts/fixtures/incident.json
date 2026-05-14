@@ -1,9 +1,18 @@
 {
   "id": "inc_01",
+  "ruleId": "network_scan_burst",
   "title": "Possible port scan",
   "severity": "high",
   "status": "open",
-  "source": "siem_kowalski",
+  "source": "kowalski",
+  "origin": {
+    "provider": "demo.replay",
+    "attackType": "port_scan"
+  },
+  "attributes": {
+    "count": 42,
+    "uniqueDestinationCount": 12
+  },
   "entities": {
     "sourceIp": "192.0.2.10",
     "endpointId": "end_01"
@@ -13,10 +22,15 @@
     {
       "id": "tl_01",
       "type": "incident.created",
+      "status": "open",
       "message": "Kowalski created the incident from detection rule network_scan_burst.",
-      "createdAt": "2026-05-08T12:01:00.000Z"
+      "occurredAt": "2026-05-08T12:01:00.000Z"
     }
   ],
-  "createdAt": "2026-05-08T12:01:00.000Z",
-  "updatedAt": "2026-05-08T12:01:00.000Z"
+  "eventIds": ["evt_01"],
+  "triageLevel": "T1",
+  "ticketStatus": "new",
+  "assigneeUserId": null,
+  "aiAnalysisId": null,
+  "createdAt": "2026-05-08T12:01:00.000Z"
 }

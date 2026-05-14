@@ -64,6 +64,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const isInitialized = ref(false)
   const isCatalogLoaded = ref(false)
   const catalogItems = ref<WidgetCatalogItem[]>([])
+  const workspaceSaveError = ref<string | null>(null)
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null
   let maxZIndex = 100
@@ -208,7 +209,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
 
     try {
-      await fetch(`/api/workspaces/${encodeURIComponent(activeWorkspaceId.value)}`, {
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(activeWorkspaceId.value)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -229,15 +230,24 @@ export const useDashboardStore = defineStore('dashboard', () => {
           }))
         })
       })
+      if (!res.ok) {
+        throw new Error(`Workspace save failed with HTTP ${res.status}`)
+      }
+      workspaceSaveError.value = null
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'Workspace save failed'
+      workspaceSaveError.value = message
       console.error('Failed to save workspace', e)
+      throw e
     }
   }
 
   function debouncedSave() {
     if (saveTimeout) clearTimeout(saveTimeout)
     saveTimeout = setTimeout(() => {
-      saveWorkspace()
+      saveWorkspace().catch(() => {
+        // saveWorkspace already records workspaceSaveError for UI surfaces.
+      })
     }, 1000)
   }
 
@@ -365,6 +375,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     isInitialized,
     isCatalogLoaded,
     catalogItems,
+    workspaceSaveError,
     setZoom,
     fetchCatalog,
     loadWorkspace,

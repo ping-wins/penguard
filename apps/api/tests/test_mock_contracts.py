@@ -117,6 +117,7 @@ def test_widget_catalog_filters_to_fortigate_widgets():
         "fortigate-interface-health",
         "fortigate-recent-events",
         "fortigate-anomaly-highlights",
+        "fortigate-top-source-ips",
     ]
     assert payload["items"][0]["defaultSize"] == {"w": 3, "h": 2}
     risk_posture = next(item for item in payload["items"] if item["id"] == "fortigate-risk-posture")

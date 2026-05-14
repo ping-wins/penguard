@@ -55,12 +55,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _session_middleware_options(settings) -> dict:
+    return {
+        "secret_key": settings.secret_key,
+        "session_cookie": "f_session",
+        "same_site": settings.session_cookie_samesite,
+        "https_only": settings.session_cookie_secure,
+    }
+
+
 app.add_middleware(
     SessionMiddleware,
-    secret_key=_settings.secret_key,
-    session_cookie="f_session",
-    same_site="lax",
-    https_only=False,
+    **_session_middleware_options(_settings),
 )
 
 app.include_router(health.router)

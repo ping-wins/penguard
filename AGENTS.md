@@ -1241,6 +1241,11 @@ The MVP demo flow works end-to-end, but several gaps must close before a
 customer can run FortiDashboard against their own SOC. Track each as a
 deliverable, not a nice-to-have. Order roughly by blast radius.
 
+Current hardening execution plan: `docs/superpowers/plans/2026-05-14-mvp-readiness-hardening.md`.
+It tracks the 2026-05-14 review findings and the first implementation sprint:
+XDR token binding, demo replay gating, OAuth state cookie hardening, workspace
+save error surfacing, CI, SOC contract fixture refresh and audit action i18n.
+
 Security hardening:
 
 - [x] Rotate every default secret out of tracked files. Shipped in Sprint 1:

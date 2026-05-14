@@ -1,15 +1,13 @@
 {
   "id": "pb_01",
   "name": "Port Scan Triage",
-  "status": "draft",
   "enabled": false,
-  "trigger": {
-    "type": "incident.created",
-    "filters": {
-      "severity": ["high", "critical"]
-    }
-  },
   "nodes": [
+    {
+      "id": "trigger",
+      "type": "trigger.incident_created",
+      "config": {}
+    },
     {
       "id": "enrich_ip",
       "type": "enrich.ip",
@@ -28,11 +26,16 @@
       "id": "recommend",
       "type": "fortigate.recommend_block",
       "config": {
-        "mode": "dry_run"
+        "mode": "dry_run",
+        "field": "entities.sourceIp"
       }
     }
   ],
   "edges": [
+    {
+      "from": "trigger",
+      "to": "enrich_ip"
+    },
     {
       "from": "enrich_ip",
       "to": "approval"

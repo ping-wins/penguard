@@ -61,6 +61,43 @@ def teardown_function():
     app.dependency_overrides.clear()
 
 
+def _user_with_roles(*roles: str) -> dict:
+    return {
+        "id": "usr_test",
+        "email": "test@example.com",
+        "displayName": "Test User",
+        "roles": list(roles),
+    }
+
+
+def test_demo_replay_rejects_non_admin_analysts():
+    client = TestClient(app)
+    fake_siem = FakeSocClient({"id": "evt_01"})
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
+        "analyst"
+    )
+
+    response = client.post("/api/soc/demo/replay", headers=csrf_headers(client))
+
+    assert response.status_code == 403
+    assert fake_siem.calls == []
+
+
+def test_demo_replay_allows_admin_users():
+    client = TestClient(app)
+    fake_siem = FakeSocClient({"id": "evt_01"})
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
+        "admin"
+    )
+
+    response = client.post("/api/soc/demo/replay", headers=csrf_headers(client))
+
+    assert response.status_code == 200
+    assert [call["path"] for call in fake_siem.calls] == ["/events", "/events", "/events"]
+
+
 def test_siem_event_gateway_forwards_payload_and_audits():
     client = TestClient(app)
     fake_siem = FakeSocClient({"id": "evt_01", "eventType": "network.scan"})

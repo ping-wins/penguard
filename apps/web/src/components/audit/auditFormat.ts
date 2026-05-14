@@ -23,6 +23,14 @@ const ACTION_KEYS: Record<string, string> = {
   'integration.fortigate.deleted': 'audit.actions.fortigateDeleted',
   'integration.fortigate.health_checked': 'audit.actions.fortigateHealthCheck',
   'workspace.updated': 'audit.actions.workspaceUpdated',
+  'workspace.imported': 'audit.actions.workspaceImported',
+  'workspace.exported': 'audit.actions.workspaceExported',
+  'workspace.presentation.updated': 'audit.actions.workspacePresentationUpdated',
+  'workspace.widget.rebound': 'audit.actions.workspaceWidgetRebound',
+  'soc.demo.replay': 'audit.actions.socDemoReplay',
+  'soc.incident.analyzed': 'audit.actions.socIncidentAnalyzed',
+  'soc.ticket.playbook_drafted': 'audit.actions.socTicketPlaybookDrafted',
+  'soc.ticket.contained': 'audit.actions.socTicketContained',
   'audit.events.viewed': 'audit.actions.auditViewed',
 }
 
