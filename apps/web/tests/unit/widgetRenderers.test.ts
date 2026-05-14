@@ -225,6 +225,67 @@ describe('FortiGate widget renderers', () => {
     wrapper.unmount()
   })
 
+  it('renders detection explanation metadata in the ticket drawer', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/tickets') {
+        return jsonResponse({
+          items: [{
+            id: 'inc_01',
+            ruleId: 'denied_traffic_burst',
+            title: 'Denied traffic burst',
+            severity: 'high',
+            status: 'open',
+            source: 'kowalski',
+            origin: { kind: 'demo.replay' },
+            attributes: {
+              attackType: 'port_scan',
+              count: 42,
+              detection: {
+                ruleId: 'denied_traffic_burst',
+                title: 'Denied traffic burst',
+                summary: 'Denied network traffic exceeded the configured burst threshold.',
+                matchedEventType: 'network.deny',
+                observedCount: 42,
+                thresholds: [{ path: 'attributes.count', operator: 'gte', value: 20 }],
+              },
+            },
+            entities: { sourceIp: '203.0.113.77', destinationIp: '192.168.0.50' },
+            summary: 'Multiple denied connections',
+            createdAt: '2026-05-12T10:00:00Z',
+            timeline: [],
+            eventIds: ['evt_01'],
+            triageLevel: 'T1',
+            ticketStatus: 'new',
+            assigneeUserId: null,
+            aiAnalysisId: null,
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(TicketsPanel, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-card-inc_01"]').trigger('click')
+    await flushPromises()
+
+    const explanation = wrapper.get('[data-test="ticket-detection-explanation"]').text()
+    expect(explanation).toContain('Detection explanation')
+    expect(explanation).toContain('denied_traffic_burst')
+    expect(explanation).toContain('network.deny')
+    expect(explanation).toContain('42')
+    expect(explanation).toContain('attributes.count gte 20')
+    expect(explanation).toContain('port_scan')
+    wrapper.unmount()
+  })
+
   it('approves a paused containment run from the ticket drawer', async () => {
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'

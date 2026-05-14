@@ -202,7 +202,7 @@ def _detect_incident(event: SecurityEvent) -> Incident | None:
         title=rule.title,
         severity=incident_severity,
         origin={"kind": event.source},
-        attributes=_incident_attributes(event),
+        attributes=_incident_attributes(event, rule),
         entities=event.entities,
         summary=rule.summary,
         createdAt=_now(),
@@ -225,9 +225,25 @@ def _load_incident(payload: dict[str, Any]) -> Incident:
     return Incident(**payload)
 
 
-def _incident_attributes(event: SecurityEvent) -> dict[str, Any]:
+def _incident_attributes(event: SecurityEvent, rule: DetectionRule) -> dict[str, Any]:
     attributes: dict[str, Any] = {
         "source": event.attributes.get("source") or event.source,
+        "detection": {
+            "ruleId": rule.id,
+            "title": rule.title,
+            "summary": rule.summary,
+            "matchedEventType": event.event_type,
+            "observedCount": event.attributes.get("count"),
+            "thresholds": [
+                {
+                    "path": condition.path,
+                    "operator": condition.operator,
+                    "value": condition.value,
+                }
+                for condition in rule.conditions
+                if condition.operator == "gte"
+            ],
+        },
     }
     for key in (
         "demoRunId",

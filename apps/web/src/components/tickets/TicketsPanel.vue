@@ -79,6 +79,17 @@ const playbookError = ref<string | null>(null)
 
 const tickets = computed(() => store.tickets)
 const aiAnalysisBadge = computed(() => aiAnalysis.value ? sourceBadgeFor(aiAnalysis.value) : null)
+const selectedDetection = computed(() => {
+  const detection = selected.value?.attributes?.detection
+  return detection && typeof detection === 'object' ? detection as Record<string, any> : null
+})
+
+function thresholdLabel(threshold: any): string {
+  if (!threshold || typeof threshold !== 'object') return ''
+  return [threshold.path, threshold.operator, threshold.value]
+    .filter((part) => part !== undefined && part !== null && part !== '')
+    .join(' ')
+}
 
 const lanes = computed<{ level: TriageLevel; label: string; description: string; color: string }[]>(() => [
   {
@@ -477,6 +488,39 @@ async function resetIncidents() {
           <p class="text-sm text-theme-text whitespace-pre-line">{{ selected.summary }}</p>
           <div class="mt-2 text-xs text-theme-text-muted">
             {{ t('tickets.drawer.openedAt', { date: formatTime(selected.createdAt) }) }}
+          </div>
+        </div>
+
+        <div
+          v-if="selectedDetection"
+          data-test="ticket-detection-explanation"
+          class="px-4 py-3 border-b border-theme-border bg-sky-500/5 space-y-2"
+        >
+          <h4 class="text-xs uppercase tracking-wider text-sky-300 flex items-center gap-1">
+            <Shield :size="13" />
+            {{ t('tickets.drawer.detectionExplanation') }}
+          </h4>
+          <p v-if="selectedDetection.summary" class="text-xs text-theme-text-muted">
+            {{ selectedDetection.summary }}
+          </p>
+          <dl class="grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
+            <dt class="text-theme-text-muted">{{ t('tickets.drawer.ruleId') }}</dt>
+            <dd class="col-span-2 font-mono text-theme-text break-all">{{ selectedDetection.ruleId || selected.ruleId }}</dd>
+            <dt class="text-theme-text-muted">{{ t('tickets.drawer.eventType') }}</dt>
+            <dd class="col-span-2 font-mono text-theme-text break-all">{{ selectedDetection.matchedEventType || '—' }}</dd>
+            <dt class="text-theme-text-muted">{{ t('tickets.drawer.observedCount') }}</dt>
+            <dd class="col-span-2 font-mono text-theme-text break-all">{{ selectedDetection.observedCount ?? selected.attributes?.count ?? '—' }}</dd>
+            <dt v-if="selected.attributes?.attackType" class="text-theme-text-muted">{{ t('tickets.drawer.attackType') }}</dt>
+            <dd v-if="selected.attributes?.attackType" class="col-span-2 font-mono text-theme-text break-all">{{ selected.attributes.attackType }}</dd>
+          </dl>
+          <div v-if="Array.isArray(selectedDetection.thresholds) && selectedDetection.thresholds.length" class="flex flex-wrap gap-1">
+            <span
+              v-for="threshold in selectedDetection.thresholds"
+              :key="thresholdLabel(threshold)"
+              class="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-100"
+            >
+              {{ thresholdLabel(threshold) }}
+            </span>
           </div>
         </div>
 

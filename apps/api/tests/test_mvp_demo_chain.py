@@ -69,19 +69,30 @@ class FakeSiem:
         event_id = f"evt_{len(self.events) + 1}"
         stored = {**payload, "id": event_id}
         self.events.append(stored)
-        # Mimic the real detection rules: a deny event with count>=20 creates an
-        # incident, and any high-severity event creates one too.
         event_type = str(payload.get("eventType") or "")
         count = int((payload.get("attributes") or {}).get("count", 1))
         severity = str(payload.get("severity") or "informational")
-        if (event_type == "network.deny" and count >= 20) or severity in {"critical", "high"}:
+        # Mimic the real detection rules used by the demo replay: deny bursts
+        # become port-scan incidents, failed-login bursts become brute-force
+        # incidents, and high-severity endpoint/FortiGate events still create
+        # visible demo incidents.
+        should_create = (
+            (event_type == "network.deny" and count >= 20)
+            or (event_type == "auth.failed_login" and count >= 5)
+            or severity in {"critical", "high"}
+        )
+        if should_create:
             self._inc_seq += 1
             incident_id = f"inc_{self._inc_seq:03d}"
+            if event_type == "network.deny":
+                rule_id = "denied_traffic_burst"
+            elif event_type == "auth.failed_login":
+                rule_id = "repeated_failed_login"
+            else:
+                rule_id = "high_severity_event"
             incident: dict[str, Any] = {
                 "id": incident_id,
-                "ruleId": "denied_traffic_burst"
-                if event_type == "network.deny"
-                else "high_severity_event",
+                "ruleId": rule_id,
                 "title": payload.get("attributes", {}).get("message")
                 or f"Incident from {event_type}",
                 "severity": severity,
@@ -221,7 +232,13 @@ def test_mvp_demo_chain_runs_end_to_end():
         assert replay.status_code == 200, replay.text
         replay_payload = replay.json()
         assert replay_payload["eventCount"] == 3
-        assert len(siem.incidents) >= 1  # at least one incident raised
+        incident_rules = {incident["ruleId"] for incident in siem.incidents.values()}
+        incident_attacks = {
+            incident["attributes"].get("attackType") for incident in siem.incidents.values()
+        }
+        assert "denied_traffic_burst" in incident_rules
+        assert "repeated_failed_login" in incident_rules
+        assert {"port_scan", "brute_force"} <= incident_attacks
 
         ticket_id = next(iter(siem.incidents))
 

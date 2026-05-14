@@ -141,6 +141,25 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('1 SIEM')
   })
 
+  it('opens the SOAR playbooks drawer from the sidebar', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/playbooks') {
+        return Promise.resolve(jsonResponse([{ id: 'pb_01', name: 'Port scan triage', enabled: false, nodes: [], edges: [] }]))
+      }
+      return Promise.resolve(jsonResponse({ items: [] }))
+    }))
+
+    const wrapper = mountSidebar()
+
+    await wrapper.get('[title="Playbooks SOAR"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Playbooks SOAR')
+    expect(wrapper.text()).toContain('Port scan triage')
+    wrapper.unmount()
+  })
+
   it('opens a real admin audit drawer from the sidebar', async () => {
     const authStore = useAuthStore()
     authStore.isAuthenticated = true

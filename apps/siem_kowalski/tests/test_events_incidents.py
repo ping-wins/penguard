@@ -113,6 +113,39 @@ def test_incidents_preserve_event_provenance_for_demo_badges():
     assert incident["attributes"]["attackType"] == "port_scan"
 
 
+def test_incidents_include_detection_explanation_for_analysts():
+    event = client.post(
+        "/events",
+        json={
+            "source": "demo.replay",
+            "eventType": "network.deny",
+            "severity": "high",
+            "occurredAt": "2026-05-12T12:00:00.000Z",
+            "entities": {"sourceIp": "203.0.113.77", "destinationIp": "192.168.0.50"},
+            "attributes": {
+                "count": 42,
+                "demoRunId": "demo_contract_02",
+                "attackType": "port_scan",
+            },
+        },
+    ).json()
+
+    incident = next(
+        incident
+        for incident in client.get("/incidents").json()
+        if event["id"] in incident["eventIds"]
+    )
+
+    assert incident["attributes"]["detection"] == {
+        "ruleId": "denied_traffic_burst",
+        "title": "Denied traffic burst",
+        "summary": "Denied network traffic exceeded the configured burst threshold.",
+        "matchedEventType": "network.deny",
+        "observedCount": 42,
+        "thresholds": [{"path": "attributes.count", "operator": "gte", "value": 20}],
+    }
+
+
 def test_lists_detection_rules_with_safe_condition_metadata():
     response = client.get("/rules")
 
