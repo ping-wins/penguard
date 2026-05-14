@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ShieldAlert } from 'lucide-vue-next'
+import WidgetShell from './shell/WidgetShell.vue'
+import WidgetEmptyState from './shell/WidgetEmptyState.vue'
+import WidgetSparkline from './shell/WidgetSparkline.vue'
+import { useWidgetSeries } from '../../composables/useWidgetSeries'
 
-const props = defineProps<{ data: any }>()
+const props = defineProps<{ data: any, catalogId?: string, instanceId?: string }>()
+
+const instance = computed(() => props.instanceId || `fortigate-risk-posture::${props.catalogId ?? ''}`)
+const scoreSeries = useWidgetSeries(instance.value, 'score')
 
 const signals = computed(() => Array.isArray(props.data?.signals) ? props.data.signals : [])
 const summary = computed(() => ({
@@ -66,77 +73,83 @@ function formatSignalValue(signal: any) {
 </script>
 
 <template>
-  <div class="h-full w-full flex flex-col gap-4">
-    <div class="flex items-start justify-between gap-3">
-      <div class="flex items-center gap-3 text-theme-text min-w-0">
-        <ShieldAlert :size="24" class="text-amber-400 shrink-0" />
-        <div class="min-w-0">
-          <span class="text-xl font-bold">Risk Posture</span>
-          <div class="text-xs text-theme-text-muted truncate">Derived SOC signals from FortiGate telemetry</div>
-        </div>
+  <WidgetShell
+    :widget-id="props.catalogId || 'fortigate-risk-posture'"
+    title="Risk Posture"
+    subtitle="Derived SOC signals from FortiGate telemetry"
+    :icon="ShieldAlert"
+    source="fortigate"
+    :disable-drill="true"
+    :disable-detail="true"
+  >
+    <template #glance>
+      <div class="flex items-center justify-end">
+        <span class="rounded-md border px-2 py-1 text-xs font-semibold uppercase" :class="levelClass()">
+          {{ levelLabel }}
+        </span>
       </div>
-      <span class="shrink-0 rounded-md border px-2 py-1 text-xs font-semibold uppercase" :class="levelClass()">
-        {{ levelLabel }}
-      </span>
-    </div>
 
-    <div class="grid grid-cols-[auto_1fr] gap-4 rounded-md bg-theme-text/5 p-3">
-      <div class="text-5xl font-bold leading-none text-theme-text">{{ scoreDisplay }}</div>
-      <div class="flex min-w-0 flex-col justify-center gap-2">
-        <div class="flex items-center justify-between text-xs text-theme-text-muted">
-          <span>Risk score</span>
-          <span>{{ scorePercent }} / 100</span>
-        </div>
-        <div class="h-2 overflow-hidden rounded-full bg-theme-bg">
-          <div
-            class="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-400"
-            :style="{ width: `${scorePercent}%` }"
-          />
-        </div>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-3 gap-2 text-center text-xs">
-      <div class="rounded-md bg-red-500/10 p-2 text-red-200">
-        <div class="font-bold text-theme-text">{{ summary.critical }}</div>
-        <div>Critical</div>
-      </div>
-      <div class="rounded-md bg-amber-500/10 p-2 text-amber-100">
-        <div class="font-bold text-theme-text">{{ summary.warning }}</div>
-        <div>Warning</div>
-      </div>
-      <div class="rounded-md bg-emerald-500/10 p-2 text-emerald-100">
-        <div class="font-bold text-theme-text">{{ summary.healthy }}</div>
-        <div>Healthy</div>
-      </div>
-    </div>
-
-    <div class="flex-1 space-y-2 overflow-y-auto pr-1 no-scrollbar">
-      <div
-        v-for="signal in signals"
-        :key="signal.id || signal.label"
-        class="rounded-md border p-2 text-sm"
-        :class="severityClass(signal.severity)"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2 font-semibold text-theme-text">
-              <span class="h-2 w-2 rounded-full" :class="severityDotClass(signal.severity)" />
-              <span class="truncate">{{ signal.label || 'Risk signal' }}</span>
-            </div>
-            <div v-if="signal.description" class="mt-1 text-xs text-theme-text-muted">
-              {{ signal.description }}
-            </div>
+      <div class="grid grid-cols-[auto_1fr] gap-4 rounded-md bg-theme-text/5 p-3">
+        <div class="text-5xl font-bold leading-none text-theme-text">{{ scoreDisplay }}</div>
+        <div class="flex min-w-0 flex-col justify-center gap-2">
+          <div class="flex items-center justify-between text-xs text-theme-text-muted">
+            <span>Risk score</span>
+            <span>{{ scorePercent }} / 100</span>
           </div>
-          <span class="shrink-0 rounded bg-theme-bg/70 px-2 py-1 text-xs font-semibold text-theme-text">
-            {{ formatSignalValue(signal) }}
-          </span>
+          <div class="h-2 overflow-hidden rounded-full bg-theme-bg">
+            <div
+              class="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-400"
+              :style="{ width: `${scorePercent}%` }"
+            />
+          </div>
+          <WidgetSparkline v-if="scoreSeries.points.value.length > 0" :points="scoreSeries.points.value" :width="160" :height="20" />
         </div>
       </div>
 
-      <div v-if="signals.length === 0" class="flex h-full min-h-24 items-center justify-center text-center text-xs italic text-theme-text-muted">
-        No risk signals returned.
+      <div class="grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="rounded-md bg-red-500/10 p-2 text-red-200">
+          <div class="font-bold text-theme-text">{{ summary.critical }}</div>
+          <div>Critical</div>
+        </div>
+        <div class="rounded-md bg-amber-500/10 p-2 text-amber-100">
+          <div class="font-bold text-theme-text">{{ summary.warning }}</div>
+          <div>Warning</div>
+        </div>
+        <div class="rounded-md bg-emerald-500/10 p-2 text-emerald-100">
+          <div class="font-bold text-theme-text">{{ summary.healthy }}</div>
+          <div>Healthy</div>
+        </div>
       </div>
-    </div>
-  </div>
+
+      <div class="flex-1 space-y-2 overflow-y-auto pr-1 no-scrollbar">
+        <div
+          v-for="signal in signals"
+          :key="signal.id || signal.label"
+          class="rounded-md border p-2 text-sm"
+          :class="severityClass(signal.severity)"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 font-semibold text-theme-text">
+                <span class="h-2 w-2 rounded-full" :class="severityDotClass(signal.severity)" />
+                <span class="truncate">{{ signal.label || 'Risk signal' }}</span>
+              </div>
+              <div v-if="signal.description" class="mt-1 text-xs text-theme-text-muted">
+                {{ signal.description }}
+              </div>
+            </div>
+            <span class="shrink-0 rounded bg-theme-bg/70 px-2 py-1 text-xs font-semibold text-theme-text">
+              {{ formatSignalValue(signal) }}
+            </span>
+          </div>
+        </div>
+
+        <WidgetEmptyState
+          v-if="signals.length === 0"
+          title="No risk signals returned."
+          hint="FortiGate telemetry is currently clean for this device."
+        />
+      </div>
+    </template>
+  </WidgetShell>
 </template>

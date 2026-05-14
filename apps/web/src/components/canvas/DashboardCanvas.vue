@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useProviderDataStore } from '../../stores/useProviderDataStore'
+import { useWidgetCompactStore } from '../../stores/useWidgetCompactStore'
+import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
 import {
   useCockpitLayoutStore,
   BUILD_PANE_MAX_WIDTH,
@@ -14,6 +16,8 @@ import { storeToRefs } from 'pinia'
 import {
   PanelRightClose,
   PanelRightOpen,
+  Minimize2,
+  Maximize2,
   Filter,
   BarChart2,
   Database,
@@ -43,6 +47,11 @@ import WidgetRecentEvents from '../widgets/WidgetRecentEvents.vue'
 import WidgetAnomalyHighlights from '../widgets/WidgetAnomalyHighlights.vue'
 import WidgetEmptyVisual from '../widgets/WidgetEmptyVisual.vue'
 import WidgetGenericData from '../widgets/WidgetGenericData.vue'
+import WidgetSocIncidentsBySeverity from '../widgets/soc/WidgetSocIncidentsBySeverity.vue'
+import WidgetSocRecentIncidents from '../widgets/soc/WidgetSocRecentIncidents.vue'
+import WidgetSocTopEntities from '../widgets/soc/WidgetSocTopEntities.vue'
+import WidgetXdrEndpointHealth from '../widgets/soc/WidgetXdrEndpointHealth.vue'
+import WidgetSoarPlaybookRuns from '../widgets/soc/WidgetSoarPlaybookRuns.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
 import type { WidgetFieldBinding } from '../../types/dashboard'
@@ -52,6 +61,8 @@ const dashboardStore = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
 const providerDataStore = useProviderDataStore()
 const layoutStore = useCockpitLayoutStore()
+const compactStore = useWidgetCompactStore()
+const widgetSeriesStore = useWidgetSeriesStore()
 const { t } = useI18n()
 const { activeWidgets, workspaceName, catalogItems } = storeToRefs(dashboardStore)
 const { buildPaneWidth, minimapCollapsed } = storeToRefs(layoutStore)
@@ -134,6 +145,29 @@ watch(() => integrationsStore.connectedIntegrationTypes.join('|'), (typesKey) =>
     dashboardStore.fetchCatalog([])
   }
 })
+
+const severityHeatStrip = computed(() => {
+  const counts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 }
+  const seenIntegrations = new Set<string>()
+  for (const widget of activeWidgets.value) {
+    if (widget.catalogId !== 'soc-incidents-by-severity') continue
+    if (!widget.integrationId) continue
+    const dedupeKey = widget.integrationId
+    if (seenIntegrations.has(dedupeKey)) continue
+    seenIntegrations.add(dedupeKey)
+    const data: any = widgetSeriesStore.getSiblingData('soc-incidents-by-severity', widget.integrationId)
+    if (!data || !Array.isArray(data.items)) continue
+    for (const row of data.items) {
+      if (!row || typeof row !== 'object') continue
+      const sev = String(row.severity ?? '').toLowerCase()
+      const count = Number(row.count) || 0
+      if (sev in counts) counts[sev] += count
+    }
+  }
+  return counts
+})
+
+const heatStripTotal = computed(() => Object.values(severityHeatStrip.value).reduce((sum, v) => sum + v, 0))
 
 const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
@@ -452,12 +486,14 @@ const widgetMap: Record<string, any> = {
   'fortigate-interface-health': WidgetInterfaceHealth,
   'fortigate-recent-events': WidgetRecentEvents,
   'fortigate-anomaly-highlights': WidgetAnomalyHighlights,
-  'soc-incidents-by-severity': WidgetGenericData,
-  'soc-recent-incidents': WidgetGenericData,
-  'soc-top-entities': WidgetGenericData,
-  'xdr-endpoint-health': WidgetGenericData,
-  'soar-active-playbook-runs': WidgetGenericData
+  'soc-incidents-by-severity': WidgetSocIncidentsBySeverity,
+  'soc-recent-incidents': WidgetSocRecentIncidents,
+  'soc-top-entities': WidgetSocTopEntities,
+  'xdr-endpoint-health': WidgetXdrEndpointHealth,
+  'soar-active-playbook-runs': WidgetSoarPlaybookRuns,
 }
+
+void WidgetGenericData
 
 function getIconForKind(kind: string) {
   switch (kind) {
@@ -672,16 +708,59 @@ onBeforeUnmount(() => {
         >{{ renameError }}</span>
       </div>
 
-      <button
-        v-if="integrationsStore.hasWorkspaceIntegrations"
-        @click="isBuildPaneOpen = !isBuildPaneOpen"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-        :class="isBuildPaneOpen ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
-      >
-        <PanelRightOpen v-if="!isBuildPaneOpen" :size="18" />
-        <PanelRightClose v-else :size="18" />
-        Build Pane
-      </button>
+      <div class="flex items-center gap-3">
+        <div
+          v-if="heatStripTotal > 0"
+          data-test="severity-heat-strip"
+          class="flex items-center gap-2 rounded-lg border border-theme-border bg-theme-bg/60 px-3 py-1.5 text-xs"
+          title="Aggregated SIEM severity posture across active workspaces"
+        >
+          <span class="text-[10px] uppercase tracking-wider text-theme-text-muted">SOC</span>
+          <span v-if="severityHeatStrip.critical > 0" class="flex items-center gap-1 text-red-300">
+            <span class="h-2 w-2 rounded-full bg-red-400" />
+            <span class="font-semibold tabular-nums">{{ severityHeatStrip.critical }}</span>
+            <span class="text-[10px] uppercase text-theme-text-muted">crit</span>
+          </span>
+          <span v-if="severityHeatStrip.high > 0" class="flex items-center gap-1 text-orange-300">
+            <span class="h-2 w-2 rounded-full bg-orange-400" />
+            <span class="font-semibold tabular-nums">{{ severityHeatStrip.high }}</span>
+            <span class="text-[10px] uppercase text-theme-text-muted">high</span>
+          </span>
+          <span v-if="severityHeatStrip.medium > 0" class="flex items-center gap-1 text-amber-200">
+            <span class="h-2 w-2 rounded-full bg-amber-400" />
+            <span class="font-semibold tabular-nums">{{ severityHeatStrip.medium }}</span>
+            <span class="text-[10px] uppercase text-theme-text-muted">med</span>
+          </span>
+          <span v-if="severityHeatStrip.low > 0" class="flex items-center gap-1 text-blue-200">
+            <span class="h-2 w-2 rounded-full bg-blue-400" />
+            <span class="font-semibold tabular-nums">{{ severityHeatStrip.low }}</span>
+            <span class="text-[10px] uppercase text-theme-text-muted">low</span>
+          </span>
+        </div>
+
+        <button
+          type="button"
+          data-test="widget-compact-toggle"
+          @click="compactStore.toggle()"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="compactStore.isCompact ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
+          :title="compactStore.isCompact ? 'Switch to comfortable widget density' : 'Switch to compact widget density'"
+        >
+          <component :is="compactStore.isCompact ? Maximize2 : Minimize2" :size="14" />
+          {{ compactStore.isCompact ? 'Compact' : 'Comfort' }}
+        </button>
+
+        <button
+          v-if="integrationsStore.hasWorkspaceIntegrations"
+          @click="isBuildPaneOpen = !isBuildPaneOpen"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          :class="isBuildPaneOpen ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
+        >
+          <PanelRightOpen v-if="!isBuildPaneOpen" :size="18" />
+          <PanelRightClose v-else :size="18" />
+          Build Pane
+        </button>
+      </div>
     </header>
 
     <div class="flex flex-1 overflow-hidden relative">
@@ -731,6 +810,7 @@ onBeforeUnmount(() => {
                 v-if="getWidgetComponent(widget.catalogId)"
                 :data="widgetData"
                 :catalog-id="widget.catalogId"
+                :instance-id="widget.instanceId"
                 :integration-id="widget.integrationId"
                 :field-bindings="fieldBindings"
               />

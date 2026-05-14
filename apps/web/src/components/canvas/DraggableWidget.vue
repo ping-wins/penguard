@@ -2,6 +2,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff, Plug, ChevronDown, Check } from 'lucide-vue-next'
 import { fetchWidgetData } from '../../services/widgetDataClient'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 
 const store = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
+const widgetSeriesStore = useWidgetSeriesStore()
 
 const isDragging = ref(false)
 const zoom = computed(() => store.zoom)
@@ -180,6 +182,7 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
     if (result.state === 'ready') {
       widgetData.value = result.data
       widgetResponse.value = result.response
+      widgetSeriesStore.recordSample(props.instanceId, props.catalogId, result.data, props.integrationId)
     } else {
       fetchError.value = result.errorMessage
       fetchErrorKind.value = result.errorKind
@@ -210,10 +213,20 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => props.integrationId,
+  (next, previous) => {
+    if (previous !== undefined && next !== previous) {
+      widgetSeriesStore.clearInstance(props.instanceId)
+    }
+  },
+)
+
 onBeforeUnmount(() => {
   requestId += 1
   clearRefreshTimeout()
   currentController?.abort()
+  widgetSeriesStore.clearInstance(props.instanceId)
 })
 
 const clampedLayout = computed(() => clampWidgetLayoutSize(props.layout, props.catalogId))
