@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-dev
 
 COPY apps/api /app/apps/api
 COPY packages/contracts /app/packages/contracts
+COPY addons /app/addons
 
 EXPOSE 8000
 

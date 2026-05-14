@@ -1,0 +1,42 @@
+{
+  "id": "fortigate-core",
+  "version": "0.1.0",
+  "name": "FortiGate Core",
+  "vendor": "Fortinet",
+  "category": "firewall",
+  "description": "Pull system status, traffic, policies, threat logs and admin login events from FortiGate REST API.",
+  "icon": "fortinet",
+  "minDashboardVersion": "0.1.0",
+  "provider": {
+    "type": "fortigate",
+    "auth": {
+      "kind": "apiKey",
+      "fields": [
+        { "id": "host", "label": "Host URL", "type": "url", "required": true, "placeholder": "https://192.168.0.100" },
+        { "id": "apiKey", "label": "API Key", "type": "secret", "required": true },
+        { "id": "verifyTls", "label": "Verify TLS", "type": "boolean", "default": false }
+      ]
+    }
+  },
+  "routes": [
+    { "id": "system-status", "method": "GET", "path": "/api/v2/monitor/system/status", "summary": "Device hostname, model, firmware, serial." },
+    { "id": "performance-status", "method": "GET", "path": "/api/v2/monitor/system/performance/status", "summary": "CPU and memory utilization." },
+    { "id": "resource-usage", "method": "GET", "path": "/api/v2/monitor/system/resource/usage", "summary": "Session and resource counters." },
+    { "id": "interface-status", "method": "GET", "path": "/api/v2/monitor/system/interface", "summary": "Per-interface RX/TX counters and link state." },
+    { "id": "firewall-policy", "method": "GET", "path": "/api/v2/cmdb/firewall/policy", "summary": "Configured firewall policies." },
+    { "id": "log-ips", "method": "GET", "path": "/api/v2/log/memory/ips", "summary": "IPS hits from memory log (FortiOS 7.6+)." },
+    { "id": "log-admin-login", "method": "GET", "path": "/api/v2/log/memory/event/system", "summary": "System event log; filter action==login & status==failed for brute-force.", "params": [{ "name": "filter", "repeated": true }] }
+  ],
+  "widgets": [
+    "fortigate-system-status",
+    "fortigate-network-traffic",
+    "fortigate-firewall-policies",
+    "fortigate-top-threats",
+    "fortigate-recent-events",
+    "fortigate-risk-posture",
+    "fortigate-interface-health",
+    "fortigate-anomaly-highlights",
+    "fortigate-kpi-sessions"
+  ],
+  "siemEventTypes": ["auth.failed_login", "network.deny", "network.event"]
+}
