@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import Button, Footer, Header, Input, Static
 
 from agent_private.cli import (
@@ -157,21 +157,32 @@ def _parse_interval(value: Any, default: float, *, allow_zero: bool = False) -> 
     return default
 
 
+OPERATOR_HELP = (
+    "Navigation: Tab / Shift+Tab moves between fields, Enter activates focused buttons, "
+    "mouse wheel scrolls, q quits."
+)
+
+
 class AgentPrivateTui(App[None]):
     CSS = """
     Screen {
         background: #0f1115;
+        color: #e5edf8;
     }
 
     #root {
         height: 100%;
+        width: 100%;
         padding: 1;
+        overflow-y: auto;
     }
 
     .panel {
         border: solid #2f3b52;
         padding: 1 2;
         margin-bottom: 1;
+        height: auto;
+        width: 100%;
     }
 
     .title {
@@ -180,24 +191,78 @@ class AgentPrivateTui(App[None]):
         margin-bottom: 1;
     }
 
+    .section-title {
+        color: #00ff88;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    .help {
+        color: #e5edf8;
+        background: #18202b;
+        border: tall #3a4a63;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
+    .field-label {
+        color: #d7e2f0;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 0;
+    }
+
     .muted {
         color: #96a3b8;
     }
 
     Input {
+        background: #111827;
+        color: #f8fafc;
+        border: tall #52627a;
+        height: 3;
+        padding: 0 1;
         margin-bottom: 1;
+        width: 100%;
+    }
+
+    Input:focus {
+        border: tall #00ff88;
     }
 
     Button {
+        background: #18202b;
+        color: #f8fafc;
+        border: tall #52627a;
+        height: 3;
+        min-width: 20;
         margin-right: 1;
+        content-align: center middle;
+    }
+
+    Button:focus {
+        background: #20324a;
+        border: tall #00ff88;
+    }
+
+    .button-row {
+        height: auto;
+        margin-top: 1;
+        margin-bottom: 1;
     }
 
     #status-log {
-        min-height: 7;
+        border: tall #3a4a63;
+        background: #111827;
+        color: #f8fafc;
+        min-height: 5;
+        padding: 1;
     }
     """
     BINDINGS = [
         ("q", "quit", "Quit"),
+        ("tab", "focus_next", "Next field"),
+        ("shift+tab", "focus_previous", "Previous field"),
         ("s", "save", "Save config"),
         ("r", "start_loop", "Run agent"),
         ("x", "stop_loop", "Stop agent"),
@@ -215,19 +280,27 @@ class AgentPrivateTui(App[None]):
         identity = build_identity_payload()
         ips = get_ip_addresses()
         yield Header(show_clock=True)
-        with Vertical(id="root"):
+        with ScrollableContainer(id="root"):
             yield Static("agent_private endpoint sensor", classes="title")
+            yield Static(OPERATOR_HELP, id="operator-help", classes="help")
             with Vertical(classes="panel"):
-                yield Static("Setup", classes="title")
+                yield Static("Setup", classes="section-title")
+                yield Static("API URL", id="api-url-label", classes="field-label")
                 yield Input(
                     value=self.config.api_url,
                     placeholder="http://localhost:8000",
                     id="api-url",
                 )
+                yield Static("Endpoint ID", id="endpoint-id-label", classes="field-label")
                 yield Input(
                     value=self.config.endpoint_id or identity["hostname"],
                     placeholder="endpoint-id",
                     id="endpoint-id",
+                )
+                yield Static(
+                    "Enrollment token",
+                    id="enrollment-token-label",
+                    classes="field-label",
                 )
                 yield Input(
                     value=self.config.enrollment_token,
@@ -235,53 +308,76 @@ class AgentPrivateTui(App[None]):
                     password=True,
                     id="enrollment-token",
                 )
-                with Horizontal():
-                    yield Button("Save", id="save-config", variant="primary")
-                    yield Button("Clear", id="clear-config")
+                with Horizontal(classes="button-row"):
+                    yield Button("Save (s)", id="save-config", variant="primary")
+                    yield Button("Clear config", id="clear-config")
             with Vertical(classes="panel"):
-                yield Static("Run loop", classes="title")
+                yield Static("Run loop", classes="section-title")
                 yield Static(
                     "Intervals are seconds. Windows Security 0 disables collection.",
                     classes="muted",
+                )
+                yield Static(
+                    "Heartbeat interval",
+                    id="heartbeat-interval-label",
+                    classes="field-label",
                 )
                 yield Input(
                     value=f"{self.config.heartbeat_interval:g}",
                     placeholder="heartbeat interval",
                     id="heartbeat-interval",
                 )
+                yield Static(
+                    "Connection snapshot interval",
+                    id="connection-interval-label",
+                    classes="field-label",
+                )
                 yield Input(
                     value=f"{self.config.connection_interval:g}",
                     placeholder="connection snapshot interval",
                     id="connection-interval",
+                )
+                yield Static(
+                    "Process snapshot interval",
+                    id="process-interval-label",
+                    classes="field-label",
                 )
                 yield Input(
                     value=f"{self.config.process_interval:g}",
                     placeholder="process snapshot interval",
                     id="process-interval",
                 )
+                yield Static(
+                    "Windows Security interval",
+                    id="windows-security-interval-label",
+                    classes="field-label",
+                )
                 yield Input(
                     value=f"{self.config.windows_security_interval:g}",
                     placeholder="windows security interval, 0 disables",
                     id="windows-security-interval",
                 )
-                with Horizontal():
-                    yield Button("Start agent", id="start-loop", variant="success")
-                    yield Button("Stop agent", id="stop-loop", variant="error")
+                with Horizontal(classes="button-row"):
+                    yield Button("Start agent (r)", id="start-loop", variant="success")
+                    yield Button("Stop agent (x)", id="stop-loop", variant="error")
             with Vertical(classes="panel"):
-                yield Static("Status", classes="title")
+                yield Static("Status", classes="section-title")
                 yield Static(f"Hostname: {identity['hostname']}", classes="muted")
                 yield Static(f"User: {identity['username']}", classes="muted")
                 yield Static(f"OS: {identity['os']}", classes="muted")
                 yield Static(f"IPs: {', '.join(ips) if ips else 'none'}", classes="muted")
             with Vertical(classes="panel"):
-                yield Static("Telemetry", classes="title")
-                with Horizontal():
-                    yield Button("Heartbeat", id="send-heartbeat", variant="success")
+                yield Static("Telemetry", classes="section-title")
+                with Horizontal(classes="button-row"):
+                    yield Button("Heartbeat (h)", id="send-heartbeat", variant="success")
                     yield Button("Processes", id="send-processes")
                     yield Button("Connections", id="send-connections")
-                    yield Button("Demo burst", id="send-demo", variant="warning")
+                    yield Button("Demo burst (d)", id="send-demo", variant="warning")
             yield Static("Ready. Save setup, then send telemetry.", id="status-log")
         yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#api-url", Input).focus()
 
     def action_save(self) -> None:
         self._save_config_from_inputs()
