@@ -355,6 +355,9 @@ def test_soar_node_types_gateway_forwards_builder_catalog():
                     "category": "action",
                     "sensitive": False,
                     "dryRunOnly": True,
+                    "executionMode": "dry_run",
+                    "liveAvailable": False,
+                    "boundary": "case_note",
                     "configSchema": {"type": "object"},
                 }
             ]

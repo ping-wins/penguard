@@ -225,7 +225,7 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.text()).toContain('Kowalski SIEM-lite')
     expect(wrapper.text()).toContain('XDR/EDR-lite manager')
     expect(wrapper.text()).toContain('SOAR-lite workflows')
-    expect(wrapper.text()).toContain('Connected as Kowalski SIEM')
+    expect(wrapper.text()).toContain('Conectado como Kowalski SIEM')
     expect(wrapper.get('[data-test="penguin-connect-siem_kowalski"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-test="penguin-connect-xdr_rico"]').attributes('disabled')).toBeUndefined()
   })
@@ -242,18 +242,18 @@ describe('Sidebar integrations panel', () => {
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Fortinet Providers')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Adicionar FortiGate')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Provedores Fortinet')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
     expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Penguin SOC Lite')
     expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Kowalski SIEM-lite')
-    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Endpoint Sensor / Future')
+    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Sensor de endpoint / onboarding')
     expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).not.toContain('agent_private')
     expect(wrapper.get('[data-test="integration-toggle-endpoint"]').attributes('aria-expanded')).toBe('false')
 
     await wrapper.get('[data-test="integration-toggle-endpoint"]').trigger('click')
 
     expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('agent_private')
-    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Future onboarding')
+    expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Onboarding no XDR')
     expect(wrapper.find('[data-test="penguin-connect-agent_private"]').exists()).toBe(false)
   })
 
@@ -270,17 +270,17 @@ describe('Sidebar integrations panel', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Adicionar FortiGate')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
 
     await wrapper.get('[data-test="integration-toggle-fortinet"]').trigger('click')
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).not.toContain('Adicionar FortiGate')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).not.toContain('Host (URL)')
 
     await wrapper.get('[data-test="integration-toggle-fortinet"]').trigger('click')
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Adicionar FortiGate')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
   })
 
   it('renders AI widget drafts and inserts them into the workspace after confirmation', async () => {

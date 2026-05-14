@@ -21,12 +21,24 @@ NodeType = Literal[
     "condition.severity",
     "enrich.ip",
     "case.note",
+    "audit.note",
     "approval.required",
     "notify.webhook",
     "fortigate.recommend_block",
     "webhook.dry_run",
 ]
 NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
+ExecutionMode = Literal["dry_run", "live"]
+NodeBoundary = Literal[
+    "trigger_only",
+    "decision_only",
+    "enrichment_read_only",
+    "case_note",
+    "approval_gate",
+    "notification_dry_run",
+    "recommendation_only",
+    "webhook_dry_run",
+]
 RunStatus = Literal["completed", "waiting_approval"]
 StepStatus = Literal["completed", "waiting_approval"]
 
@@ -55,6 +67,9 @@ class NodeTypeDefinition(BaseModel):
     category: NodeCategory
     sensitive: bool = False
     dry_run_only: bool = Field(default=True, alias="dryRunOnly")
+    execution_mode: ExecutionMode = Field(default="dry_run", alias="executionMode")
+    live_available: bool = Field(default=False, alias="liveAvailable")
+    boundary: NodeBoundary
     config_schema: dict[str, Any] = Field(default_factory=dict, alias="configSchema")
 
 
@@ -132,12 +147,14 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             id="trigger.incident_created",
             label="Incident Created",
             category="trigger",
+            boundary="trigger_only",
             config_schema={"type": "object", "properties": {}},
         ),
         NodeTypeDefinition(
             id="condition.severity",
             label="Severity Condition",
             category="condition",
+            boundary="decision_only",
             config_schema={
                 "type": "object",
                 "properties": {
@@ -153,6 +170,7 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             id="enrich.ip",
             label="Enrich IP",
             category="enrichment",
+            boundary="enrichment_read_only",
             config_schema={
                 "type": "object",
                 "properties": {"field": {"type": "string"}},
@@ -163,6 +181,7 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             id="case.note",
             label="Create Case Note",
             category="action",
+            boundary="case_note",
             config_schema={
                 "type": "object",
                 "properties": {"template": {"type": "string"}},
@@ -170,9 +189,21 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             },
         ),
         NodeTypeDefinition(
+            id="audit.note",
+            label="Write Audit Note",
+            category="action",
+            boundary="case_note",
+            config_schema={
+                "type": "object",
+                "properties": {"message": {"type": "string"}},
+                "required": ["message"],
+            },
+        ),
+        NodeTypeDefinition(
             id="approval.required",
             label="Require Approval",
             category="control",
+            boundary="approval_gate",
             config_schema={
                 "type": "object",
                 "properties": {"role": {"type": "string", "default": "admin"}},
@@ -182,6 +213,7 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             id="notify.webhook",
             label="Notify Webhook",
             category="action",
+            boundary="notification_dry_run",
             config_schema={
                 "type": "object",
                 "properties": {
@@ -195,6 +227,7 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             label="Recommend FortiGate Block",
             category="action",
             sensitive=True,
+            boundary="recommendation_only",
             config_schema={
                 "type": "object",
                 "properties": {
@@ -208,6 +241,7 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             id="webhook.dry_run",
             label="Webhook Dry Run",
             category="action",
+            boundary="webhook_dry_run",
             config_schema={
                 "type": "object",
                 "properties": {

@@ -35,7 +35,18 @@ def test_lists_playbook_node_types_for_visual_builder():
     assert recommend_block["category"] == "action"
     assert recommend_block["sensitive"] is True
     assert recommend_block["dryRunOnly"] is True
+    assert recommend_block["executionMode"] == "dry_run"
+    assert recommend_block["liveAvailable"] is False
+    assert recommend_block["boundary"] == "recommendation_only"
     assert recommend_block["configSchema"]["required"] == ["field"]
+
+    case_note = next(item for item in body["items"] if item["id"] == "case.note")
+    assert case_note["boundary"] == "case_note"
+    assert case_note["executionMode"] == "dry_run"
+
+    webhook = next(item for item in body["items"] if item["id"] == "webhook.dry_run")
+    assert webhook["boundary"] == "webhook_dry_run"
+    assert webhook["dryRunOnly"] is True
 
 
 def test_create_playbook_rejects_unknown_node_type():

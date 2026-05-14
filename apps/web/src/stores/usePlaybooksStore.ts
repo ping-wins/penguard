@@ -3,17 +3,20 @@ import { defineStore } from 'pinia'
 import {
   approvePlaybookRun,
   createPlaybook,
+  listPlaybookNodeTypes,
   listPlaybooks,
   runPlaybook,
   simulatePlaybook,
   type Playbook,
   type PlaybookDraft,
+  type PlaybookNodeType,
   type PlaybookRun,
   type PlaybookSimulation,
 } from '../services/playbooksClient'
 
 export const usePlaybooksStore = defineStore('playbooks', () => {
   const playbooks = ref<Playbook[]>([])
+  const nodeTypes = ref<PlaybookNodeType[]>([])
   const simulations = ref<Record<string, PlaybookSimulation>>({})
   const runs = ref<Record<string, PlaybookRun>>({})
   const latestRunByPlaybook = ref<Record<string, string>>({})
@@ -25,12 +28,19 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
   const error = ref<string | null>(null)
 
   const isEmpty = computed(() => !isLoading.value && playbooks.value.length === 0)
+  const nodeTypeById = computed(() => Object.fromEntries(nodeTypes.value.map((nodeType) => [nodeType.id, nodeType])))
+  const safeActionNodeTypes = computed(() => nodeTypes.value.filter((nodeType) => nodeType.category === 'action' || nodeType.category === 'enrichment' || nodeType.category === 'control'))
 
   async function refresh() {
     isLoading.value = true
     error.value = null
     try {
-      playbooks.value = await listPlaybooks()
+      const [nextPlaybooks, nextNodeTypes] = await Promise.all([
+        listPlaybooks(),
+        listPlaybookNodeTypes(),
+      ])
+      playbooks.value = nextPlaybooks
+      nodeTypes.value = nextNodeTypes
     } catch (e: any) {
       error.value = e?.message ?? 'Failed to load playbooks'
     } finally {
@@ -102,6 +112,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
 
   return {
     playbooks,
+    nodeTypes,
     simulations,
     runs,
     latestRunByPlaybook,
@@ -112,6 +123,8 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     isCreating,
     error,
     isEmpty,
+    nodeTypeById,
+    safeActionNodeTypes,
     refresh,
     simulate,
     run,

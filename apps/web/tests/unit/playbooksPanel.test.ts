@@ -32,6 +32,16 @@ const portScanPlaybook = {
   ],
 }
 
+const nodeTypesResponse = {
+  items: [
+    { id: 'enrich.ip', label: 'Enrich IP', category: 'enrichment', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, boundary: 'enrichment_read_only', configSchema: {} },
+    { id: 'case.note', label: 'Create Case Note', category: 'action', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, boundary: 'case_note', configSchema: {} },
+    { id: 'approval.required', label: 'Require Approval', category: 'control', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, boundary: 'approval_gate', configSchema: {} },
+    { id: 'fortigate.recommend_block', label: 'Recommend FortiGate Block', category: 'action', sensitive: true, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, boundary: 'recommendation_only', configSchema: {} },
+    { id: 'webhook.dry_run', label: 'Webhook Dry Run', category: 'action', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, boundary: 'webhook_dry_run', configSchema: {} },
+  ],
+}
+
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
@@ -60,6 +70,7 @@ describe('SOAR playbooks console', () => {
         edges: [],
       }, { status: 201 })
       if (url === '/api/soc/playbooks') return jsonResponse([portScanPlaybook])
+      if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
       if (url === '/api/auth/csrf') return jsonResponse({ csrfToken: 'csrf_01' })
       if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') {
         return jsonResponse({
@@ -133,14 +144,22 @@ describe('SOAR playbooks console', () => {
     }))
   })
 
-  it('store exposes loading, empty, error, simulation and run states', async () => {
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse({ detail: 'SOAR unavailable' }, { status: 503 }))
-      .mockResolvedValueOnce(jsonResponse([portScanPlaybook]))
-      .mockResolvedValueOnce(jsonResponse({ dryRun: true, valid: true, steps: [] }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'run_01', status: 'waiting_approval', steps: [] }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'run_01', status: 'completed', steps: [] }))
+  it('store exposes loading, empty, error, node catalog, simulation and run states', async () => {
+    let playbookLoads = 0
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
+      if (url === '/api/soc/playbooks') {
+        playbookLoads += 1
+        if (playbookLoads === 1) return jsonResponse([])
+        if (playbookLoads === 2) return jsonResponse({ detail: 'SOAR unavailable' }, { status: 503 })
+        return jsonResponse([portScanPlaybook])
+      }
+      if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') return jsonResponse({ dryRun: true, valid: true, steps: [] })
+      if (url === '/api/soc/incidents/inc_01/playbooks/pb_port_scan_triage/run') return jsonResponse({ id: 'run_01', status: 'waiting_approval', playbookId: 'pb_port_scan_triage', steps: [] })
+      if (url === '/api/soc/playbook-runs/run_01/approve') return jsonResponse({ id: 'run_01', status: 'completed', playbookId: 'pb_port_scan_triage', steps: [] })
+      throw new Error(`unexpected url ${url}`)
+    })
     vi.stubGlobal('fetch', fetcher)
     useAuthStore().csrfToken = 'csrf_01'
 
@@ -154,6 +173,8 @@ describe('SOAR playbooks console', () => {
 
     await store.refresh()
     expect(store.playbooks[0].id).toBe('pb_port_scan_triage')
+    expect(store.nodeTypeById['fortigate.recommend_block'].boundary).toBe('recommendation_only')
+    expect(store.safeActionNodeTypes.map((nodeType) => nodeType.id)).toContain('webhook.dry_run')
     await store.simulate('pb_port_scan_triage')
     expect(store.simulations.pb_port_scan_triage.valid).toBe(true)
     await store.run('inc_01', 'pb_port_scan_triage')
@@ -167,6 +188,7 @@ describe('SOAR playbooks console', () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/soc/playbooks') return jsonResponse([portScanPlaybook])
+      if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
       if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') {
         return jsonResponse({
           dryRun: true,

@@ -236,6 +236,11 @@ Current capabilities:
 - Store playbooks as validated JSON graphs/lists.
 - Support default disabled playbooks for port scan and suspicious endpoint triage.
 - Simulate playbooks and run dry-run workflows.
+- Expose node-type metadata with `executionMode`, `liveAvailable` and
+  `boundary` flags so the cockpit can label dry-run-only vs future live
+  behavior per step.
+- Keep safe connector boundaries explicit for case/audit notes,
+  notification dry-runs, FortiGate block recommendations and webhook dry-runs.
 - Track step state and approval waits.
 - Require approval for sensitive steps.
 - Audit create, update, simulate, run and approve actions through the BFF.
@@ -254,6 +259,7 @@ POST /api/soc/playbooks/{playbookId}/simulate
 POST /api/soc/incidents/{incidentId}/playbooks/{playbookId}/run
 GET  /api/soc/playbook-runs/{runId}
 POST /api/soc/playbook-runs/{runId}/approve
+GET  /api/soc/playbook-node-types
 ```
 
 ### xdr_rico
@@ -1108,8 +1114,8 @@ mergeable.
 - [x] Add default disabled playbooks.
 - [x] Persist playbooks and run history in SQL tables.
 - [x] Expose `GET /node-types` and `/api/soc/playbook-node-types` as the contract for the future n8n-like visual builder.
-- [ ] Add safe real connector boundaries for case note, audit note, notification dry-run and webhook dry-run.
-- [ ] Add explicit live-vs-dry-run UI/API flags for every playbook step.
+- [x] Add safe real connector boundaries for case note, audit note, notification dry-run and webhook dry-run.
+- [x] Add explicit live-vs-dry-run UI/API flags for every playbook step.
 - [ ] Prepare AI/MCP-safe playbook drafting boundary.
 
 ### xdr_rico And agent_private
@@ -1169,17 +1175,17 @@ mergeable.
 - [x] Group Visual presets by provider category.
 - [x] Load SOC data fields and bind custom visuals with field-specific `integrationId`.
 - [x] Add generic SOC renderers for bar, feed, table and status-list widgets.
-- [ ] Add SOC navigation area for incidents, endpoints and playbooks.
-- [ ] Add incident list/detail panel.
+- [x] Add SOC navigation area for incidents, endpoints and playbooks.
+- [x] Add incident list/detail panel.
 - [x] Add endpoint inventory/timeline panel backed by `/api/weapons/endpoints` and `/api/weapons/endpoints/{id}/timeline`.
-- [ ] Add basic playbook builder and run result UI.
+- [x] Add basic playbook builder and run result UI.
 - [x] Add workspace sharing UX: workspace list, origin badges, author details and community library.
 - [x] Add manifest import/export UX with validation errors that users can understand.
 - [x] Add presentation export UX based on the current workspace manifest.
 - [x] Allow per-widget integration rebind so imported workspaces can be reconnected without re-importing.
 - [x] Add visible badges for live, seeded demo, simulator and scripted AI data.
 - [x] Add related incidents to the endpoint detail panel.
-- [ ] Add richer loading/error/empty states for each SOC-lite tool.
+- [x] Add richer loading/error/empty states for each SOC-lite tool.
 
 ### AI And MCP
 
@@ -1215,7 +1221,7 @@ mergeable.
 - [x] Translate the WorkspacePanel dialog bodies (export preview, publish form, community library entries, presentation editor labels).
 - [x] Translate the audit drawer (AuditFeed header, scope-aware admin/mine titles, action labels in `auditFormat.ts`, fallback strings, locale-aware date formatting).
 - [x] Translate the Sidebar chat box (assistant tab) including bot replies and input placeholder.
-- [ ] Translate the Sidebar integrations tab (Fortinet/Penguin/endpoint sections, connection-state badges, form labels, test/connect buttons and error strings).
+- [x] Translate the Sidebar integrations tab (Fortinet/Penguin/endpoint sections, connection-state badges, form labels, test/connect buttons and error strings).
 - [ ] Add automated tests for locale persistence (localStorage roundtrip + `<html lang>` sync).
 
 ### MVP Demo (cross-cutting)

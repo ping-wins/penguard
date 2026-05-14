@@ -7,6 +7,18 @@ export type PlaybookNode = {
   sensitive?: boolean
 }
 
+export type PlaybookNodeType = {
+  id: string
+  label: string
+  category: 'trigger' | 'condition' | 'enrichment' | 'action' | 'control' | string
+  sensitive: boolean
+  dryRunOnly: boolean
+  executionMode: 'dry_run' | 'live' | string
+  liveAvailable: boolean
+  boundary: string
+  configSchema: Record<string, any>
+}
+
 export type PlaybookEdge = {
   from: string
   to: string
@@ -65,6 +77,15 @@ async function parseOrThrow<T>(response: Response, fallback: string): Promise<T>
 }
 
 type PlaybookListResponse = Playbook[] | { items?: Playbook[] }
+type PlaybookNodeTypesResponse = { items?: PlaybookNodeType[] }
+
+export async function listPlaybookNodeTypes(): Promise<PlaybookNodeType[]> {
+  const data = await parseOrThrow<PlaybookNodeTypesResponse>(
+    await fetch('/api/soc/playbook-node-types', { credentials: 'include' }),
+    'Failed to load playbook node types',
+  )
+  return Array.isArray(data.items) ? data.items : []
+}
 
 export async function listPlaybooks(): Promise<Playbook[]> {
   const data = await parseOrThrow<PlaybookListResponse>(

@@ -220,8 +220,8 @@ function fortigateIngestionStatus(integrationId: string) {
 
 function ingestionPipelineLabel(integrationId: string) {
   const status = fortigateIngestionStatus(integrationId)
-  if (!status) return 'Pipeline unknown'
-  return `Pipeline ${status.status}`
+  if (!status) return t('integrations.pipelineUnknown')
+  return t('integrations.pipelineStatus', { status: status.status })
 }
 
 function connectedPenguinTool(type: PenguinToolType) {
@@ -573,14 +573,14 @@ async function handleChatSubmit() {
       <!-- Integrations Tab -->
       <div v-if="activeTab === 'integrations'" class="p-4 flex flex-col h-full shrink-0 overflow-y-auto" :style="{ width: `${drawerPx}px` }">
         <div class="mb-4">
-          <h2 class="font-bold text-lg text-theme-text">Integrações SOC</h2>
+          <h2 class="font-bold text-lg text-theme-text">{{ t('integrations.title') }}</h2>
           <p class="mt-1 text-xs text-theme-text-muted">
-            Connect live providers first; SOC-lite tools unlock their own workspace widgets.
+            {{ t('integrations.subtitle') }}
           </p>
         </div>
 
         <div v-if="integrationsStore.isLoading" class="mb-3 rounded border border-theme-border bg-theme-bg px-3 py-2 text-sm text-theme-text-muted">
-          Carregando integrações...
+          {{ t('integrations.loading') }}
         </div>
 
         <div class="flex flex-col gap-4">
@@ -595,9 +595,9 @@ async function handleChatSubmit() {
               <div class="flex min-w-0 gap-2">
                 <component :is="integrationGroupsOpen.fortinet ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
                 <div class="min-w-0">
-                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Fortinet Providers</h3>
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">{{ t('integrations.fortinetTitle') }}</h3>
                   <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                    Real read-only FortiGate access for live firewall telemetry.
+                    {{ t('integrations.fortinetDescription') }}
                   </p>
                 </div>
               </div>
@@ -605,13 +605,13 @@ async function handleChatSubmit() {
                 class="shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium"
                 :class="fortigateIntegrations.length > 0 ? 'border-green-500/30 bg-green-500/20 text-green-400' : 'border-theme-border bg-theme-panel text-theme-text-muted'"
               >
-                {{ fortigateIntegrations.length > 0 ? 'Connected' : 'Not connected' }}
+                {{ fortigateIntegrations.length > 0 ? t('integrations.connected') : t('integrations.notConnected') }}
               </span>
             </button>
 
             <div v-if="integrationGroupsOpen.fortinet" class="mb-3 flex flex-col gap-2">
               <div v-if="!integrationsStore.isLoading && fortigateIntegrations.length === 0" class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted">
-                No Fortinet provider connected.
+                {{ t('integrations.noFortinet') }}
               </div>
 
               <div v-for="intg in fortigateIntegrations" :key="intg.id" class="rounded border border-theme-border bg-theme-panel p-3">
@@ -631,7 +631,7 @@ async function handleChatSubmit() {
                       type="button"
                       class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
                       :disabled="integrationsStore.isDeleting[intg.id]"
-                      title="Remover integração"
+                      :title="t('integrations.remove')"
                       @click="handleRemoveIntegration(intg.id)"
                     >
                       <Trash2 :size="14" />
@@ -649,17 +649,17 @@ async function handleChatSubmit() {
                       class="rounded border border-theme-border p-1 text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:cursor-not-allowed disabled:opacity-50"
                       :disabled="integrationsStore.isIngesting[intg.id]"
                       :data-test="`fortigate-ingest-run-${intg.id}`"
-                      title="Run FortiGate event ingestion now"
+                      :title="t('integrations.runIngestion')"
                       @click="handleRunFortigateIngestion(intg.id)"
                     >
                       <RefreshCcw :size="13" :class="{ 'animate-spin': integrationsStore.isIngesting[intg.id] }" />
                     </button>
                   </div>
                   <div v-if="fortigateIngestionStatus(intg.id)" class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                    <span>{{ fortigateIngestionStatus(intg.id)?.lastRawEventCount ?? 0 }} raw</span>
-                    <span>{{ fortigateIngestionStatus(intg.id)?.lastCreatedCount ?? 0 }} SIEM</span>
+                    <span>{{ t('integrations.rawEvents', { count: fortigateIngestionStatus(intg.id)?.lastRawEventCount ?? 0 }) }}</span>
+                    <span>{{ t('integrations.createdEvents', { count: fortigateIngestionStatus(intg.id)?.lastCreatedCount ?? 0 }) }}</span>
                     <span v-if="fortigateIngestionStatus(intg.id)?.enabled">
-                      every {{ fortigateIngestionStatus(intg.id)?.intervalSeconds }}s
+                      {{ t('integrations.interval', { seconds: fortigateIngestionStatus(intg.id)?.intervalSeconds }) }}
                     </span>
                   </div>
                   <div v-if="fortigateIngestionStatus(intg.id)?.lastError" class="mt-1 text-red-400">
@@ -671,7 +671,7 @@ async function handleChatSubmit() {
                     :data-test="`fortigate-ingest-toggle-${intg.id}`"
                     @click="handleToggleFortigateIngestion(intg.id)"
                   >
-                    {{ fortigateIngestionStatus(intg.id)?.enabled ? 'Disable scheduler' : 'Enable scheduler' }}
+                    {{ fortigateIngestionStatus(intg.id)?.enabled ? t('integrations.disableScheduler') : t('integrations.enableScheduler') }}
                   </button>
                 </div>
               </div>
@@ -679,29 +679,29 @@ async function handleChatSubmit() {
 
             <div v-if="integrationGroupsOpen.fortinet" class="grid grid-cols-2 gap-2">
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">Nome</label>
+                <label class="text-xs text-theme-text">{{ t('integrations.name') }}</label>
                 <input v-model="fgForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
               </div>
 
               <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">Host (URL)</label>
+                <label class="text-xs text-theme-text">{{ t('integrations.host') }}</label>
                 <input v-model="fgForm.host" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
               </div>
 
               <div class="col-span-2 flex flex-col gap-1">
-                <label class="text-xs text-theme-text">API Key</label>
+                <label class="text-xs text-theme-text">{{ t('integrations.apiKey') }}</label>
                 <input v-model="fgForm.apiKey" type="password" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
               </div>
 
               <label class="col-span-2 flex cursor-pointer items-center gap-2">
                 <input v-model="fgForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
-                <span class="text-xs text-theme-text">Verificar TLS/SSL</span>
+                <span class="text-xs text-theme-text">{{ t('integrations.verifyTls') }}</span>
               </label>
 
               <div v-if="fgTestResult" class="col-span-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
-                <div class="mb-1 font-medium text-green-400">Conexão bem-sucedida!</div>
-                <div class="text-theme-text-muted">Hostname: {{ fgTestResult.device?.hostname }}</div>
-                <div class="text-theme-text-muted">Modelo: {{ fgTestResult.device?.model }}</div>
+                <div class="mb-1 font-medium text-green-400">{{ t('integrations.connectionSuccess') }}</div>
+                <div class="text-theme-text-muted">{{ t('integrations.hostname', { hostname: fgTestResult.device?.hostname }) }}</div>
+                <div class="text-theme-text-muted">{{ t('integrations.model', { model: fgTestResult.device?.model }) }}</div>
               </div>
 
               <div v-if="fgTestError" class="col-span-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
@@ -714,20 +714,20 @@ async function handleChatSubmit() {
                   class="flex-1 rounded border border-theme-border px-3 py-1.5 text-sm font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
                   :disabled="integrationsStore.isTesting || !canSubmitFortigate"
                 >
-                  <span v-if="integrationsStore.isTesting">Testando...</span>
-                  <span v-else>Testar Conexão</span>
+                  <span v-if="integrationsStore.isTesting">{{ t('integrations.testing') }}</span>
+                  <span v-else>{{ t('integrations.testConnection') }}</span>
                 </button>
                 <button
                   @click="handleSaveFortigate"
                   class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   :disabled="!canSubmitFortigate"
                 >
-                  Salvar
+                  {{ t('integrations.save') }}
                 </button>
               </div>
             </div>
 
-            <h4 v-if="integrationGroupsOpen.fortinet" class="sr-only">Adicionar FortiGate</h4>
+            <h4 v-if="integrationGroupsOpen.fortinet" class="sr-only">{{ t('integrations.fortinetTitle') }}</h4>
           </section>
 
           <section data-test="integration-group-penguin" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
@@ -741,14 +741,14 @@ async function handleChatSubmit() {
               <div class="flex min-w-0 gap-2">
                 <component :is="integrationGroupsOpen.penguin ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
                 <div class="min-w-0">
-                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Penguin SOC Lite</h3>
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">{{ t('integrations.penguinTitle') }}</h3>
                   <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                    Penguin tools connected through the BFF.
+                    {{ t('integrations.penguinDescription') }}
                   </p>
                 </div>
               </div>
               <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
-                {{ penguinTools.filter(tool => connectedPenguinTool(tool.type)).length }}/{{ penguinTools.length }} connected
+                {{ t('integrations.connectedCount', { count: penguinTools.filter(tool => connectedPenguinTool(tool.type)).length, total: penguinTools.length }) }}
               </span>
             </button>
 
@@ -768,14 +768,14 @@ async function handleChatSubmit() {
                       v-if="connectedPenguinTool(tool.type)"
                       class="rounded border border-green-500/30 bg-green-500/20 px-2 py-0.5 text-[10px] font-medium text-green-400"
                     >
-                      Connected
+                      {{ t('integrations.connected') }}
                     </span>
                     <button
                       v-if="connectedPenguinTool(tool.type)"
                       type="button"
                       class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
                       :disabled="integrationsStore.isDeleting[connectedPenguinTool(tool.type)?.id || '']"
-                      title="Remover integração"
+                      :title="t('integrations.remove')"
                       @click="handleRemoveIntegration(connectedPenguinTool(tool.type)?.id || '')"
                     >
                       <Trash2 :size="13" />
@@ -784,11 +784,11 @@ async function handleChatSubmit() {
                 </div>
 
                 <div v-if="connectedPenguinTool(tool.type)" class="mt-2 text-xs text-theme-text-muted">
-                  Connected as {{ connectedPenguinTool(tool.type)?.name || connectedPenguinTool(tool.type)?.id }}
+                  {{ t('integrations.connectedAs', { name: connectedPenguinTool(tool.type)?.name || connectedPenguinTool(tool.type)?.id }) }}
                 </div>
 
                 <div v-if="penguinTestResults[tool.type] && !connectedPenguinTool(tool.type)" class="mt-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
-                  <div class="font-medium text-green-400">Service reachable</div>
+                  <div class="font-medium text-green-400">{{ t('integrations.serviceReachable') }}</div>
                   <div class="text-theme-text-muted">
                     {{ penguinTestResults[tool.type]?.status || 'connected' }}
                   </div>
@@ -806,7 +806,7 @@ async function handleChatSubmit() {
                     :data-test="`penguin-test-${tool.type}`"
                     @click="handleTestPenguinTool(tool.type)"
                   >
-                    Test
+                    {{ t('integrations.test') }}
                   </button>
                   <button
                     type="button"
@@ -815,7 +815,7 @@ async function handleChatSubmit() {
                     :data-test="`penguin-connect-${tool.type}`"
                     @click="handleAddPenguinTool(tool.type, tool.defaultName)"
                   >
-                    Connect
+                    {{ t('integrations.connect') }}
                   </button>
                 </div>
               </div>
@@ -833,10 +833,10 @@ async function handleChatSubmit() {
             >
               <div class="flex min-w-0 gap-2">
                 <component :is="integrationGroupsOpen.endpoint ? ChevronDown : ChevronRight" :size="15" class="mt-0.5 shrink-0 text-theme-text-muted" />
-                <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">Endpoint Sensor / Future</h3>
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text-muted">{{ t('integrations.endpointTitle') }}</h3>
               </div>
               <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
-                Future onboarding
+                {{ t('integrations.endpointBadge') }}
               </span>
             </button>
 
@@ -844,7 +844,7 @@ async function handleChatSubmit() {
               <div class="min-w-0 pl-6">
                 <div class="mt-2 text-sm font-medium text-theme-text">agent_private</div>
                 <p class="mt-1 text-xs leading-snug text-theme-text-muted">
-                  Lab endpoint sensor for future onboarding into xdr_rico. It is not a dashboard integration yet.
+                  {{ t('integrations.endpointDescription') }}
                 </p>
               </div>
             </div>

@@ -19,6 +19,16 @@ const selected = computed(() => store.playbooks.find((playbook) => playbook.id =
 const selectedRunId = computed(() => selected.value ? store.latestRunByPlaybook[selected.value.id] : null)
 const selectedRun = computed(() => selectedRunId.value ? store.runs[selectedRunId.value] : null)
 const builderPreview = computed(() => ['trigger.incident_created', ...builderSteps.value.map((step) => step.type)].join(' → '))
+const builderNodeTypes = computed(() => store.safeActionNodeTypes.length > 0
+  ? store.safeActionNodeTypes
+  : [
+      { id: 'enrich.ip', label: 'Enrich IP', boundary: 'enrichment_read_only', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'enrichment', configSchema: {} },
+      { id: 'case.note', label: 'Create Case Note', boundary: 'case_note', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
+      { id: 'approval.required', label: 'Require Approval', boundary: 'approval_gate', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'control', configSchema: {} },
+      { id: 'notify.webhook', label: 'Notify Webhook', boundary: 'notification_dry_run', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
+      { id: 'fortigate.recommend_block', label: 'Recommend FortiGate Block', boundary: 'recommendation_only', sensitive: true, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
+      { id: 'webhook.dry_run', label: 'Webhook Dry Run', boundary: 'webhook_dry_run', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
+    ])
 
 function select(playbook: Playbook) {
   selectedId.value = playbook.id
@@ -34,6 +44,35 @@ function hasSensitiveSteps(playbook: Playbook): boolean {
 
 function edgeLabel(edge: { from: string, to: string }): string {
   return `${edge.from} → ${edge.to}`
+}
+
+function nodeDefinition(type: string) {
+  return store.nodeTypeById[type]
+}
+
+function nodeLabel(type: string): string {
+  return nodeDefinition(type)?.label ?? type
+}
+
+function nodeBoundary(type: string): string | null {
+  return nodeDefinition(type)?.boundary ?? null
+}
+
+function nodeExecutionLabel(type: string): string {
+  const definition = nodeDefinition(type)
+  if (!definition) return t('playbooks.dryRunOnly')
+  return definition.liveAvailable ? t('playbooks.liveCapable') : t('playbooks.dryRunOnly')
+}
+
+function boundaryLabel(boundary?: string | null): string {
+  if (!boundary) return t('playbooks.boundaries.unknown')
+  return t(`playbooks.boundaries.${boundary}`)
+}
+
+function stepSafetyClass(type: string, sensitive?: boolean) {
+  if (sensitive || nodeDefinition(type)?.sensitive) return 'border-red-500/30 bg-red-500/10 text-red-100'
+  if (nodeDefinition(type)?.boundary?.includes('dry_run')) return 'border-sky-500/30 bg-sky-500/10 text-sky-100'
+  return 'border-theme-border bg-theme-bg/70 text-theme-text-muted'
 }
 
 function addBuilderStep() {
@@ -132,12 +171,13 @@ onMounted(() => store.refresh())
           data-test="playbook-builder-step-type"
           class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-xs text-theme-text"
         >
-          <option value="enrich.ip">enrich.ip</option>
-          <option value="case.note">case.note</option>
-          <option value="approval.required">approval.required</option>
-          <option value="notify.webhook">notify.webhook</option>
-          <option value="fortigate.recommend_block">fortigate.recommend_block</option>
-          <option value="webhook.dry_run">webhook.dry_run</option>
+          <option
+            v-for="nodeType in builderNodeTypes"
+            :key="nodeType.id"
+            :value="nodeType.id"
+          >
+            {{ nodeType.label }} · {{ boundaryLabel(nodeType.boundary) }}
+          </option>
         </select>
         <input
           v-model="builderStepConfig"
@@ -156,6 +196,9 @@ onMounted(() => store.refresh())
       </div>
       <div data-test="playbook-builder-preview" class="rounded border border-theme-border bg-theme-bg/50 px-2 py-1 text-xs font-mono text-theme-text">
         {{ builderPreview }}
+      </div>
+      <div class="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100">
+        {{ t('playbooks.builderSafetyHint') }}
       </div>
       <button
         type="button"
@@ -230,10 +273,21 @@ onMounted(() => store.refresh())
           <ol class="space-y-2">
             <li v-for="(node, index) in selected.nodes" :key="node.id" class="rounded border border-theme-border bg-theme-panel/50 p-2 text-xs">
               <div class="flex items-center justify-between gap-2">
-                <span class="font-mono text-theme-text">{{ index + 1 }}. {{ node.type }}</span>
-                <ShieldAlert v-if="node.type === 'approval.required' || node.sensitive" :size="13" class="text-amber-300" />
+                <div class="min-w-0">
+                  <span class="font-mono text-theme-text">{{ index + 1 }}. {{ node.type }}</span>
+                  <div class="mt-0.5 text-theme-text-muted">{{ nodeLabel(node.type) }}</div>
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <span class="rounded border px-1.5 py-0.5 text-[10px]" :class="stepSafetyClass(node.type, node.sensitive)">
+                    {{ nodeExecutionLabel(node.type) }}
+                  </span>
+                  <ShieldAlert v-if="node.type === 'approval.required' || node.sensitive || nodeDefinition(node.type)?.sensitive" :size="13" class="text-amber-300" />
+                </div>
               </div>
               <div class="mt-1 text-theme-text-muted font-mono">{{ node.id }}</div>
+              <div v-if="nodeBoundary(node.type)" class="mt-1 text-[11px] text-theme-text-muted">
+                {{ boundaryLabel(nodeBoundary(node.type)) }}
+              </div>
             </li>
           </ol>
         </section>
