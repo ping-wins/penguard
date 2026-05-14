@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw, Boxes } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -19,6 +19,8 @@ import AuditFeed from '../audit/AuditFeed.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
+import MarketplacePanel from '../marketplace/MarketplacePanel.vue'
+import type { AddonManifest } from '../../services/marketplaceClient'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
@@ -32,7 +34,7 @@ const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
 const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints'>('none')
+const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'marketplace'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -126,7 +128,7 @@ async function refreshProviderStatus() {
     providerStatus.value = null
   }
 }
-function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints') {
+function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'marketplace') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -155,6 +157,16 @@ function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'worksp
 
 function refreshAuditTrail() {
   auditStore.fetchEvents({ scope: auditScope.value, limit: 50 })
+}
+
+function onAddonInstall(addon: AddonManifest) {
+  // For MVP the install action just routes the user to the existing
+  // integrations form for the matching provider type. Once a real
+  // install endpoint exists we can wire it from here.
+  if (addon.provider.type === 'fortigate') {
+    integrationGroupsOpen.value.fortinet = true
+  }
+  activeTab.value = 'integrations'
 }
 
 onBeforeUnmount(() => {
@@ -393,6 +405,15 @@ async function handleChatSubmit() {
           :title="t('sidebar.assistant')"
         >
           <MessageSquare :size="20" />
+        </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'marketplace' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('marketplace')"
+          :title="t('sidebar.marketplace')"
+        >
+          <Boxes :size="20" />
         </div>
 
         <div
@@ -854,6 +875,11 @@ async function handleChatSubmit() {
       <!-- Endpoints Tab -->
       <div v-if="activeTab === 'endpoints'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <EndpointsPanel />
+      </div>
+
+      <!-- Marketplace Tab -->
+      <div v-if="activeTab === 'marketplace'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
+        <MarketplacePanel @install="onAddonInstall" />
       </div>
 
       <!-- Audit Tab -->
