@@ -157,6 +157,35 @@ def test_endpoint_events_require_valid_enrollment_token():
     assert test_client.get("/endpoints/end_01").status_code == 404
 
 
+def test_enrollment_token_cannot_report_for_a_different_endpoint_after_first_use():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+
+    first_response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+        },
+    )
+    spoof_response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_02",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:01:00Z",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert spoof_response.status_code == 403
+    assert test_client.get("/endpoints/end_01").status_code == 200
+    assert test_client.get("/endpoints/end_02").status_code == 404
+
+
 def test_missing_endpoint_returns_404_for_detail_and_timeline():
     test_client = client()
 

@@ -48,6 +48,7 @@ class EnrollmentRecord(ApiModel):
     hostname_hint: str | None = Field(default=None, alias="hostnameHint")
     created_at: datetime = Field(alias="createdAt")
     token_hash: str = Field(alias="tokenHash")
+    claimed_endpoint_id: str | None = Field(default=None, alias="claimedEndpointId")
 
 
 class Endpoint(ApiModel):
@@ -167,14 +168,35 @@ def get_endpoint_or_404(endpoint_id: str) -> Endpoint:
     return _load_endpoint(payload)
 
 
-def require_valid_enrollment_token(authorization: str | None) -> None:
+def require_enrollment_token_for_endpoint(
+    authorization: str | None,
+    endpoint_id: str,
+) -> EnrollmentRecord:
     token = bearer_token(authorization)
     hashed_token = token_hash(token)
-    if not get_store().has_enrollment_token_hash(hashed_token):
+    enrollment_payload = get_store().get_enrollment_by_token_hash(hashed_token)
+    if enrollment_payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid endpoint enrollment token required.",
         )
+
+    enrollment = EnrollmentRecord(**enrollment_payload)
+    if enrollment.claimed_endpoint_id is None:
+        claimed_payload = get_store().claim_enrollment_endpoint(enrollment.id, endpoint_id)
+        if claimed_payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid endpoint enrollment token required.",
+            )
+        return EnrollmentRecord(**claimed_payload)
+
+    if enrollment.claimed_endpoint_id != endpoint_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Enrollment token is bound to a different endpoint.",
+        )
+    return enrollment
 
 
 def bearer_token(authorization: str | None) -> str:
@@ -456,7 +478,7 @@ def create_authorized_endpoint_event(
     payload: EndpointEventCreate,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> EndpointEventResponse:
-    require_valid_enrollment_token(authorization)
+    require_enrollment_token_for_endpoint(authorization, payload.endpoint_id)
     return ingest_endpoint_event(payload)
 
 

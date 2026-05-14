@@ -14,6 +14,7 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    update,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
@@ -116,6 +117,36 @@ class XdrStore:
         )
         with self.engine.begin() as connection:
             return connection.execute(statement).first() is not None
+
+    def get_enrollment_by_token_hash(self, hashed_token: str) -> dict[str, Any] | None:
+        statement = select(enrollments_table.c.payload).where(
+            enrollments_table.c.token_hash == hashed_token
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+        if row is None:
+            return None
+        return row.payload
+
+    def claim_enrollment_endpoint(
+        self,
+        enrollment_id: str,
+        endpoint_id: str,
+    ) -> dict[str, Any] | None:
+        statement = select(enrollments_table.c.payload).where(
+            enrollments_table.c.id == enrollment_id
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if row is None:
+                return None
+            payload = {**row.payload, "claimedEndpointId": endpoint_id}
+            connection.execute(
+                update(enrollments_table)
+                .where(enrollments_table.c.id == enrollment_id)
+                .values(payload=payload)
+            )
+        return payload
 
     def upsert_endpoint(
         self,
