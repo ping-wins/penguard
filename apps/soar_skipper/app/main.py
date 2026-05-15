@@ -25,6 +25,7 @@ NodeType = Literal[
     "approval.required",
     "notify.webhook",
     "fortigate.recommend_block",
+    "fortiweb.recommend_block",
     "webhook.dry_run",
 ]
 NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
@@ -42,7 +43,7 @@ NodeBoundary = Literal[
 RunStatus = Literal["completed", "waiting_approval"]
 StepStatus = Literal["completed", "waiting_approval"]
 
-SENSITIVE_NODE_TYPES = {"fortigate.recommend_block"}
+SENSITIVE_NODE_TYPES = {"fortigate.recommend_block", "fortiweb.recommend_block"}
 APPROVAL_NODE_TYPES = {"approval.required"}
 
 
@@ -235,6 +236,25 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
                     "field": {"type": "string"},
                 },
                 "required": ["field"],
+            },
+        ),
+        NodeTypeDefinition(
+            id="fortiweb.recommend_block",
+            label="Recommend FortiWeb Block",
+            category="action",
+            sensitive=True,
+            boundary="recommendation_only",
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "sourceIp": {"type": "string"},
+                    "durationMinutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 60,
+                    },
+                },
+                "required": ["sourceIp"],
             },
         ),
         NodeTypeDefinition(

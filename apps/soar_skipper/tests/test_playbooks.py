@@ -176,3 +176,15 @@ def test_approve_playbook_run_completes_waiting_steps():
     body = approve_response.json()
     assert body["status"] == "completed"
     assert {step["status"] for step in body["steps"]} == {"completed"}
+
+
+def test_fortiweb_recommend_block_node_is_dry_run_only():
+    response = client.get("/node-types")
+    assert response.status_code == 200
+    nodes = {node["id"]: node for node in response.json()["items"]}
+    node = nodes["fortiweb.recommend_block"]
+    assert node["executionMode"] == "dry_run"
+    assert node["liveAvailable"] is False
+    assert node["boundary"] == "recommendation_only"
+    assert node["sensitive"] is True
+    assert node["configSchema"]["required"] == ["sourceIp"]
