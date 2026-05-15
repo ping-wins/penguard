@@ -21,26 +21,52 @@ export type FortiGateIngestionStatus = {
   updatedAt: string
 }
 
-export type FortiGateTrafficPolicyDraftRequest = {
-  name: string
-  sourceInterface: string
-  destinationInterface: string
-  sourceSubnet: string
-  destinationSubnet: string
-  service: string
-  action: 'accept' | 'deny'
+export type FortiGatePolicyIntent = 'lab_allow_log' | 'temporary_block'
+export type FortiGatePolicyScope = 'source_only' | 'source_destination' | 'source_destination_service'
+
+export type FortiGatePolicyPayload = {
+  intent: FortiGatePolicyIntent
+  scope: FortiGatePolicyScope
+  source_interface: string
+  destination_interface: string
+  source_ip: string
+  destination_ip?: string
+  service?: string
+  duration_minutes?: number
+  incident_id?: string
+  playbook_run_id?: string
 }
 
-export type FortiGateTrafficPolicyDraft = {
-  integrationId: string
-  mode: 'recommendation_only'
-  dryRunOnly: true
-  policy: FortiGateTrafficPolicyDraftRequest & {
-    logTraffic: 'all'
-    nat: 'disable'
-  }
-  cliCommands: string[]
+export type FortiGatePolicyChange = {
+  operation: 'create' | 'reuse'
+  object_type: 'firewall.address' | 'firewall.policy'
+  name: string
+  payload: Record<string, unknown>
+}
+
+export type FortiGatePolicyPreflightResponse = {
+  intent: FortiGatePolicyIntent
+  scope: FortiGatePolicyScope
+  integration_id: string
+  existing_policy_count: number
+  owned_policy_count: number
+  proposed_policy_name: string
+  placement: string
   warnings: string[]
+  changes: FortiGatePolicyChange[]
+  review_hash: string
+}
+
+export type FortiGatePolicyReviewResponse = FortiGatePolicyPreflightResponse & {
+  request_id: string
+  status: 'pending_review'
+  expires_at?: string | null
+}
+
+export type FortiGatePolicyApplyResponse = {
+  request_id: string
+  status: 'applied'
+  applied_changes: Array<Record<string, unknown>>
 }
 
 export type FortiGateLogForwardingRequest = {
@@ -364,15 +390,37 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
-  async function draftFortigateTrafficPolicy(
+  async function preflightFortigatePolicy(
     integrationId: string,
-    payload: FortiGateTrafficPolicyDraftRequest,
-  ): Promise<{ success: true, data: FortiGateTrafficPolicyDraft } | { success: false, error: string }> {
+    payload: FortiGatePolicyPayload,
+  ): Promise<{ success: true, data: FortiGatePolicyPreflightResponse } | { success: false, error: string }> {
+    return postFortigatePolicy<FortiGatePolicyPreflightResponse>(integrationId, 'preflight', payload)
+  }
+
+  async function createFortigatePolicyReview(
+    integrationId: string,
+    payload: FortiGatePolicyPayload,
+  ): Promise<{ success: true, data: FortiGatePolicyReviewResponse } | { success: false, error: string }> {
+    return postFortigatePolicy<FortiGatePolicyReviewResponse>(integrationId, 'review', payload)
+  }
+
+  async function applyFortigatePolicy(
+    integrationId: string,
+    payload: { request_id: string, review_hash: string },
+  ): Promise<{ success: true, data: FortiGatePolicyApplyResponse } | { success: false, error: string }> {
+    return postFortigatePolicy<FortiGatePolicyApplyResponse>(integrationId, 'apply', payload)
+  }
+
+  async function postFortigatePolicy<T>(
+    integrationId: string,
+    action: 'preflight' | 'review' | 'apply',
+    payload: Record<string, unknown>,
+  ): Promise<{ success: true, data: T } | { success: false, error: string }> {
     try {
       const authStore = useAuthStore()
       if (!authStore.csrfToken) await authStore.fetchCsrf()
 
-      const res = await fetch(`/api/integrations/fortigate/${encodeURIComponent(integrationId)}/traffic-policy-draft`, {
+      const res = await fetch(`/api/integrations/fortigate/${encodeURIComponent(integrationId)}/policy/${action}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -382,7 +430,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
-        return { success: false, error: await responseErrorMessage(res, 'Failed to draft FortiGate policy') }
+        return { success: false, error: await responseErrorMessage(res, 'Failed to configure FortiGate policy') }
       }
       return { success: true, data: await res.json() }
     } catch (e) {
@@ -469,7 +517,9 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     fetchFortigateIngestionStatus,
     configureFortigateIngestion,
     runFortigateIngestion,
-    draftFortigateTrafficPolicy,
+    preflightFortigatePolicy,
+    createFortigatePolicyReview,
+    applyFortigatePolicy,
     fetchFortigateLogForwardingStatus,
     applyFortigateLogForwarding,
     testFortigateLogForwardingCollector,
