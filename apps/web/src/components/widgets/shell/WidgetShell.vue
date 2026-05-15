@@ -38,6 +38,7 @@ const sourcePill = computed(() => {
     case 'xdr_rico': return { label: 'XDR', tone: 'bg-fuchsia-500/10 text-fuchsia-200 border-fuchsia-400/30' }
     case 'soar_skipper': return { label: 'SOAR', tone: 'bg-amber-500/10 text-amber-200 border-amber-400/30' }
     case 'fortigate': return { label: 'FortiGate', tone: 'bg-emerald-500/10 text-emerald-200 border-emerald-400/30' }
+    case 'fortiweb': return { label: 'FortiWeb', tone: 'bg-orange-500/10 text-orange-200 border-orange-400/30' }
     default: return { label: props.source, tone: 'bg-theme-text/10 text-theme-text-muted border-theme-border' }
   }
 })

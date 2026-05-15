@@ -20,12 +20,19 @@ const buckets = computed<Bucket[]>(() =>
   Array.isArray(props.data?.buckets) ? props.data.buckets : []
 )
 
+const WINDOW_BUCKET_COUNT: Record<string, number> = { '15m': 15, '1h': 60, '6h': 360, '24h': 1440 }
+
+const visibleBuckets = computed<Bucket[]>(() => {
+  const limit = WINDOW_BUCKET_COUNT[selectedWindow.value] ?? buckets.value.length
+  return buckets.value.slice(-limit)
+})
+
 const maxVal = computed(() =>
-  buckets.value.reduce((m, b) => Math.max(m, b.blocked + b.allowed), 0)
+  visibleBuckets.value.reduce((m, b) => Math.max(m, b.blocked + b.allowed), 0)
 )
 
-const totalBlocked = computed(() => buckets.value.reduce((s, b) => s + b.blocked, 0))
-const totalAllowed = computed(() => buckets.value.reduce((s, b) => s + b.allowed, 0))
+const totalBlocked = computed(() => visibleBuckets.value.reduce((s, b) => s + b.blocked, 0))
+const totalAllowed = computed(() => visibleBuckets.value.reduce((s, b) => s + b.allowed, 0))
 const source = computed(() => props.data?.source ?? 'siem')
 
 function barHeightPct(val: number): string {
@@ -49,6 +56,7 @@ function formatTs(ts: string): string {
     subtitle="HTTP flood req/min"
     :icon="Activity"
     source="fortiweb"
+    disable-drill
   >
     <template #glance>
       <div class="mb-2 flex items-center justify-between gap-2">
@@ -69,12 +77,12 @@ function formatTs(ts: string): string {
         <span class="text-[10px] text-theme-text-muted">{{ source }}</span>
       </div>
 
-      <div v-if="buckets.length === 0">
+      <div v-if="visibleBuckets.length === 0">
         <WidgetEmptyState message="No DoS events in window." />
       </div>
       <div v-else class="flex min-h-0 flex-1 items-end gap-px overflow-hidden">
         <div
-          v-for="bucket in buckets"
+          v-for="bucket in visibleBuckets"
           :key="bucket.ts"
           class="group relative flex min-w-0 flex-1 flex-col items-center justify-end"
           :title="`${formatTs(bucket.ts)}\nBlocked: ${bucket.blocked}\nAllowed: ${bucket.allowed}`"
@@ -103,7 +111,7 @@ function formatTs(ts: string): string {
         <div class="text-xs font-semibold uppercase tracking-wide text-theme-text-muted">
           Minute-by-minute breakdown
         </div>
-        <div v-if="buckets.length === 0" class="text-xs text-theme-text-muted">No data.</div>
+        <div v-if="visibleBuckets.length === 0" class="text-xs text-theme-text-muted">No data.</div>
         <div v-else class="max-h-64 overflow-y-auto no-scrollbar">
           <table class="w-full text-xs">
             <thead>
@@ -115,7 +123,7 @@ function formatTs(ts: string): string {
             </thead>
             <tbody>
               <tr
-                v-for="b in buckets"
+                v-for="b in visibleBuckets"
                 :key="b.ts"
                 class="border-t border-theme-border/30"
               >

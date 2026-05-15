@@ -28,7 +28,7 @@ const items = computed<FeedItem[]>(() =>
 const source = computed(() => props.data?.source ?? 'siem')
 
 function severityClass(severity: string): string {
-  switch (severity.toLowerCase()) {
+  switch ((severity ?? '').toLowerCase()) {
     case 'critical': return 'bg-red-500/20 text-red-300 border-red-500/30'
     case 'high': return 'bg-orange-500/20 text-orange-300 border-orange-500/30'
     case 'medium': return 'bg-amber-500/20 text-amber-300 border-amber-500/30'
@@ -53,6 +53,7 @@ function formatTs(ts: string): string {
     subtitle="Live event feed"
     :icon="Waves"
     source="fortiweb"
+    disable-drill
   >
     <template #glance>
       <div class="mb-1 flex items-center justify-between text-[10px] text-theme-text-muted">
@@ -64,8 +65,8 @@ function formatTs(ts: string): string {
       </div>
       <div v-else class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
         <div
-          v-for="item in items.slice(0, 10)"
-          :key="item.id"
+          v-for="(item, idx) in items.slice(0, 10)"
+          :key="item.id ?? String(idx)"
           class="rounded border border-theme-border/30 bg-theme-text/5 px-2 py-1.5 text-xs"
         >
           <div class="flex items-center justify-between gap-2">
@@ -91,8 +92,8 @@ function formatTs(ts: string): string {
         <div v-if="items.length === 0" class="text-xs text-theme-text-muted">No data.</div>
         <div v-else class="max-h-80 overflow-y-auto no-scrollbar space-y-1">
           <div
-            v-for="item in items"
-            :key="item.id"
+            v-for="(item, idx) in items"
+            :key="item.id ?? String(idx)"
             class="rounded border border-theme-border/30 bg-theme-text/5 px-2 py-1.5 text-xs"
           >
             <div class="flex items-center justify-between gap-2">

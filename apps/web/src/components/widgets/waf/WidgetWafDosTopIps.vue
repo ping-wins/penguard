@@ -21,8 +21,9 @@ const maxCount = computed(() => rows.value.reduce((m, r) => Math.max(m, r.count)
 const source = computed(() => props.data?.source ?? 'siem')
 
 function barWidthPct(count: number): string {
-  if (maxCount.value === 0) return '0%'
-  return `${Math.max(4, (count / maxCount.value) * 100)}%`
+  const n = Number(count)
+  if (maxCount.value === 0 || isNaN(n)) return '0%'
+  return `${Math.max(4, (n / maxCount.value) * 100)}%`
 }
 
 function formatTs(ts: string): string {
@@ -42,6 +43,7 @@ function formatTs(ts: string): string {
     subtitle="Highest request count"
     :icon="ShieldAlert"
     source="fortiweb"
+    disable-drill
   >
     <template #glance>
       <div class="mb-1 flex justify-end text-[10px] text-theme-text-muted">{{ source }}</div>
