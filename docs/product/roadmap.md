@@ -23,6 +23,8 @@ Acceptance criteria:
 - [ ] Incident dedupe prevents repeated alerts for the same rule/entity/window.
 - [ ] FortiGate onboarding copy guides operators through traffic path validation
   and `set logtraffic all` without auto-modifying policies.
+- [ ] FortiWeb 8.0.5 trial protects the external landing page and forwards WAF
+  telemetry into SIEM incidents through FortiDashboard.
 
 Links:
 

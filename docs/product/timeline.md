@@ -15,6 +15,7 @@ a sprint log; link to implementation plans for detail.
 | 2026-05-14 | Validated live FortiGate brute-force telemetry through the SOC pipeline. | Proved FortiGate events can create analyst-visible SIEM incidents without `/demo/replay`. | [SOC pipeline progress](../mvp/soc-pipeline-progress-2026-05-14.md), [FortiGate brute-force lab](../mvp/fortigate-brute-force-lab.md) |
 | 2026-05-15 | Added BFF realtime event stream for FortiGate/SIEM tickets and widget snapshots. | Dashboard widgets and tickets can update from provider-triggered events instead of browser polling. | [realtime telemetry flow](../architecture/realtime-telemetry-flow.md), [roadmap](roadmap.md), [feature map](feature-map.md) |
 | 2026-05-15 | Reorganized product documentation into feature map, roadmap, timeline and release notes. | Future plans and shipped state now have one canonical location instead of being scattered across MVP notes. | [product README](README.md), [release notes](release-notes.md) |
+| 2026-05-15 | Planned FortiWeb 8.0.5 WAF marketplace integration for the landing-page demo. | Gives Fortinet evaluators a concrete WAF story while preserving honest integration boundaries. | [FortiWeb WAF plan](../superpowers/plans/2026-05-15-fortiweb-waf-marketplace-landing-lab.md), [FortiWeb lab runbook](../operations/fortiweb-landing-waf-lab.md) |
 
 ## Timeline Rules
 

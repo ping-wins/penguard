@@ -16,6 +16,8 @@ Customer-facing changelog. Internal implementation plans stay in
 - Added audit-to-SIEM forwarding for security-relevant BFF actions.
 - Added product documentation set: feature map, roadmap, timeline and release
   notes.
+- Planned FortiWeb WAF marketplace add-on for the external landing-page demo,
+  with WAF telemetry normalized into SIEM incidents.
 
 ### Changed
 
