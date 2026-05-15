@@ -24,6 +24,7 @@ Current product capability inventory. Status values are defined in
 | Lab Tools | Synthetic SOC replay and simulator helpers | `apps/api` + lab docs | demo-only | no | yes | `apps/api/app/routers/lab_demo.py`, `docs/mvp/` | `cd apps/api && FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=true uv run pytest -q tests/test_mvp_demo_chain.py` |
 | Marketplace | Add-on listing and refresh endpoint | `apps/api` | planned | future | no | `apps/api/app/routers/marketplace.py`, `docs/marketplace-plan.md` | `cd apps/api && uv run pytest -q` |
 | Integrations | FortiWeb WAF marketplace add-on and push telemetry | `apps/api` + `apps/web` + external add-on registry | planned | yes | FortiWeb 8.0.5 trial and external landing lab | `docs/operations/fortiweb-landing-waf-lab.md`, `ping-wins/fortidashboard-addons/fortiweb-waf` | `cd apps/api && uv run pytest -q tests/test_soc_ingest.py && cd ../siem_kowalski && uv run pytest -q tests/test_events_incidents.py` |
+| Widgets | FortiWeb WAF DoS visualization (rate, top IPs, feed) | `apps/api` + `apps/web` | beta | yes | FortiWeb lab + `/api/soc/ingest/fortiweb` push | `apps/api/app/routers/widgets.py`, `apps/web/src/components/widgets/waf/` | `cd apps/api && uv run pytest -q tests/test_waf_dos_widgets.py && cd ../web && pnpm test -- tests/unit/widgetWafDos.test.ts` |
 | Operations | Production readiness: structured logs, metrics, backups and retention | cross-cutting | planned | yes | no | [roadmap.md](roadmap.md), `docs/operations/` | Not yet covered by a single verification command. |
 
 ## Update Checklist
