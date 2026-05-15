@@ -408,6 +408,134 @@ def ingest_fortigate_webhook(
     }
 
 
+def _fortiweb_field(raw: dict[str, Any], *names: str) -> str:
+    for name in names:
+        value = _coerce_str(raw.get(name))
+        if value:
+            return value
+    return ""
+
+
+def _classify_fortiweb_event(raw: dict[str, Any]) -> str:
+    kind = _fortiweb_field(raw, "type", "log_type").lower()
+    subtype = _fortiweb_field(raw, "subtype", "sub_type", "main_type").lower()
+    message = _fortiweb_field(raw, "msg", "message", "attack", "signature").lower()
+    action = _fortiweb_field(raw, "action").lower()
+
+    if "dos" in subtype or "flood" in message or "rate" in message:
+        return "waf.dos"
+    if kind == "attack" or subtype or "attack" in message:
+        return "waf.attack"
+    if action in {"block", "blocked", "deny", "dropped"}:
+        return "waf.blocked_request"
+    return "http.attack"
+
+
+def _normalize_fortiweb_event(
+    raw: dict[str, Any],
+    *,
+    integration_id: str,
+) -> dict[str, Any]:
+    occurred_at = _parse_fortigate_timestamp(
+        raw.get("eventtime") or raw.get("time") or raw.get("date")
+    )
+    source_ip = _fortiweb_field(raw, "src", "srcip", "source", "client_ip")
+    destination_ip = _fortiweb_field(
+        raw, "dst", "dstip", "destination", "server_ip"
+    )
+    host = _fortiweb_field(raw, "host", "http_host", "hostname")
+    method = _fortiweb_field(raw, "method", "http_method").upper()
+    url = _fortiweb_field(raw, "url", "uri", "path", "request")
+    action = _fortiweb_field(raw, "action")
+    policy = _fortiweb_field(raw, "policy", "policy_name", "server_policy")
+    message = _fortiweb_field(raw, "msg", "message", "attack", "signature")
+    severity = _map_severity(raw)
+
+    count_raw = raw.get("count") or raw.get("matches") or raw.get("total")
+    try:
+        count = int(count_raw)
+    except (TypeError, ValueError):
+        count = 1
+
+    return {
+        "eventType": _classify_fortiweb_event(raw),
+        "source": "fortiweb",
+        "severity": severity,
+        "message": message or "FortiWeb WAF event",
+        "occurredAt": occurred_at,
+        "entities": {
+            "sourceIp": source_ip,
+            "destinationIp": destination_ip,
+            "httpHost": host,
+            "integrationId": integration_id,
+        },
+        "attributes": {
+            "action": action,
+            "policy": policy,
+            "method": method,
+            "url": url,
+            "count": count,
+            "rawType": _fortiweb_field(raw, "type", "log_type"),
+            "rawSubtype": _fortiweb_field(raw, "subtype", "sub_type"),
+            "ingestionMode": "push",
+        },
+    }
+
+
+@router.post("/soc/ingest/fortiweb")
+def ingest_fortiweb_event(
+    request: Request,
+    payload: Annotated[Any, Body()],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    integration_header: Annotated[
+        str | None,
+        Header(alias="X-FortiDashboard-Integration-Id"),
+    ] = None,
+) -> dict[str, Any]:
+    _verify_token(authorization)
+    raw_items = payload if isinstance(payload, list) else [payload]
+    integration_id = _coerce_str(integration_header) or "fortiweb"
+    emitted = 0
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        event = _normalize_fortiweb_event(item, integration_id=integration_id)
+        try:
+            siem_client.request("POST", "/events", json=event)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "soc_ingest_fortiweb_forward_failed event_type=%s error=%s",
+                event["eventType"],
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to forward to siem-kowalski: {exc}",
+            ) from exc
+        emitted += 1
+
+    audit_store.record(
+        action="soc.fortiweb_events.ingested",
+        outcome="success",
+        email=None,
+        user_id=None,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "received": len(raw_items),
+            "emitted": emitted,
+            "service": "siem_kowalski",
+        },
+    )
+    return {"received": len(raw_items), "emitted": emitted}
+
+
 @router.get("/soc/ingest/health")
 def ingest_health() -> dict[str, Any]:
     settings = get_settings()

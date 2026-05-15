@@ -252,3 +252,70 @@ def test_health_endpoint_reports_enabled_state():
     body = response.json()
     assert body["enabled"] is True
     assert body["threshold"] == 5
+
+
+def test_fortiweb_attack_log_emits_waf_attack():
+    fake_siem = FakeSiemClient()
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/soc/ingest/fortiweb",
+        headers={
+            "Authorization": "Bearer test-secret-token",
+            "X-FortiDashboard-Integration-Id": "int_fweb_landing",
+        },
+        json={
+            "type": "attack",
+            "subtype": "signature",
+            "src": "203.0.113.50",
+            "dst": "198.51.100.10",
+            "host": "landing.example.test",
+            "method": "GET",
+            "url": "/demo/search?q=' OR 1=1--",
+            "action": "block",
+            "severity": "high",
+            "msg": "SQL Injection Detected",
+            "policy": "landing-waf-policy",
+            "eventtime": "2026-05-15T12:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["emitted"] == 1
+    forwarded = fake_siem.calls[0]["json"]
+    assert forwarded["eventType"] == "waf.attack"
+    assert forwarded["severity"] == "high"
+    assert forwarded["entities"]["sourceIp"] == "203.0.113.50"
+    assert forwarded["entities"]["destinationIp"] == "198.51.100.10"
+    assert forwarded["entities"]["httpHost"] == "landing.example.test"
+    assert forwarded["entities"]["integrationId"] == "int_fweb_landing"
+    assert forwarded["attributes"]["action"] == "block"
+    assert forwarded["attributes"]["policy"] == "landing-waf-policy"
+
+
+def test_fortiweb_dos_log_emits_waf_dos():
+    fake_siem = FakeSiemClient()
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/soc/ingest/fortiweb",
+        headers={"Authorization": "Bearer test-secret-token"},
+        json={
+            "type": "attack",
+            "subtype": "dos",
+            "src": "203.0.113.60",
+            "host": "landing.example.test",
+            "action": "block",
+            "severity": "critical",
+            "msg": "HTTP Flood detected",
+            "count": 250,
+        },
+    )
+
+    assert response.status_code == 200
+    forwarded = fake_siem.calls[0]["json"]
+    assert forwarded["eventType"] == "waf.dos"
+    assert forwarded["severity"] == "critical"
+    assert forwarded["attributes"]["count"] == 250
