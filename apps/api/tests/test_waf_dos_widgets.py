@@ -167,6 +167,20 @@ def test_waf_dos_top_ips_respects_limit():
     assert len(resp.json()["data"]["rows"]) == 5
 
 
+def test_waf_dos_top_ips_window_param_excludes_old_events():
+    old_ts = _ago_iso(7200)  # 2h ago — outside 1h window
+    fake = FakeSiemClient(incidents=[
+        {"id": "inc_old", "ruleId": "fortiweb_dos_activity", "createdAt": old_ts, "severity": "critical", "entities": {"sourceIp": "10.10.10.10"}, "attributes": {}},
+    ])
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-top-ips/data", params={"source": "siem", "window": "1h"})
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["rows"] == []
+
+
 # ── waf-dos-feed ──────────────────────────────────────────────────────────────
 
 def test_waf_dos_feed_siem_source_returns_items_desc():
