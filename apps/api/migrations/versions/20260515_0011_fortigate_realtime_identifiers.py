@@ -1,7 +1,7 @@
 """fortigate realtime identifiers
 
 Revision ID: 20260515_0011
-Revises: 20260513_0010
+Revises: 20260514_0011
 Create Date: 2026-05-15 08:30:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260515_0011"
-down_revision: str | None = "20260513_0010"
+down_revision: str | None = "20260514_0011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
