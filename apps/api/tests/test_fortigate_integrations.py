@@ -2,10 +2,11 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth import dependencies as auth_dependencies
+from app.auth.audit import InMemoryAuthAuditStore
 from app.auth.token_cipher import TokenCipher
 from app.db.base import Base
 from app.db.models import (
@@ -85,6 +86,32 @@ class SyslogCapableFortiGateClient(HealthyFortiGateClient):
         self.filter_updates.append({"slot": slot, **dict(payload)})
         self.filters[slot].update(payload)
         return dict(self.filters[slot])
+
+
+class PolicyCapableFortiGateClient(SyslogCapableFortiGateClient):
+    def __init__(self):
+        super().__init__()
+        self.policies = [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        self.address_objects: list[dict] = []
+        self.created_addresses: list[dict] = []
+        self.created_policies: list[dict] = []
+
+    def get_policies(self):
+        return list(self.policies)
+
+    def get_address_objects(self):
+        return list(self.address_objects)
+
+    def create_address_object(self, *, name: str, subnet: str, comment: str):
+        payload = {"name": name, "subnet": subnet, "comment": comment}
+        self.created_addresses.append(payload)
+        self.address_objects.append(payload)
+        return {"status": "success", "mkey": name}
+
+    def create_firewall_policy(self, payload):
+        self.created_policies.append(dict(payload))
+        self.policies.append(dict(payload))
+        return {"status": "success", "mkey": payload["name"]}
 
 
 def healthy_client_factory(*, host: str, api_key: str, verify_tls: bool):
@@ -1221,24 +1248,37 @@ def test_fortigate_log_forwarding_collector_test_endpoint_sends_synthetic_syslog
 
 
 
-def test_fortigate_traffic_policy_draft_endpoint_returns_cli_only_recommendation():
+def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request():
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    fake_client = PolicyCapableFortiGateClient()
     service = FortiGateIntegrationService(
         store=SqlAlchemyFortiGateIntegrationStore(
             engine=engine,
             secret_cipher=TokenCipher.from_secret("test-secret"),
-            id_factory=lambda: "int_fgt_policy_draft",
+            id_factory=lambda: "int_fgt_policy_apply",
         ),
-        client_factory=healthy_client_factory,
+        client_factory=lambda **_: fake_client,
     )
+    audit_store = InMemoryAuthAuditStore()
+
+    def override_policy_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
     app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
         service
     )
+    app.dependency_overrides[integrations_router.get_policy_db] = override_policy_db
+    app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "usr_owner",
         "email": "owner@example.com",
@@ -1256,19 +1296,55 @@ def test_fortigate_traffic_policy_draft_endpoint_returns_cli_only_recommendation
                 "host": "https://fortigate.local",
                 "apiKey": "fg_api_key_from_user",
                 "verifyTls": False,
+                "collectorHost": "127.0.0.1",
             },
         )
-        response = client.post(
-            "/api/integrations/fortigate/int_fgt_policy_draft/traffic-policy-draft",
+        preflight_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_apply/policy/preflight",
             headers=csrf_headers(client),
             json={
-                "name": "TEMP_SOC_LAN_to_DMZ_allow_log",
-                "sourceInterface": "port2",
-                "destinationInterface": "port3",
-                "sourceSubnet": "10.10.10.0/24",
-                "destinationSubnet": "10.10.20.0/24",
-                "service": "ALL",
-                "action": "accept",
+                "intent": "temporary_block",
+                "scope": "source_destination",
+                "source_interface": "port2",
+                "destination_interface": "port3",
+                "source_ip": "192.0.2.50",
+                "destination_ip": "198.51.100.10",
+                "duration_minutes": 30,
+                "incident_id": "inc_123",
+                "playbook_run_id": "run_123",
+            },
+        )
+        assert preflight_response.status_code == 200
+        assert fake_client.created_addresses == []
+        assert fake_client.created_policies == []
+
+        review_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_apply/policy/review",
+            headers=csrf_headers(client),
+            json={
+                "intent": "temporary_block",
+                "scope": "source_destination",
+                "source_interface": "port2",
+                "destination_interface": "port3",
+                "source_ip": "192.0.2.50",
+                "destination_ip": "198.51.100.10",
+                "duration_minutes": 30,
+                "incident_id": "inc_123",
+                "playbook_run_id": "run_123",
+            },
+        )
+        review_payload = review_response.json()
+        mismatch_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_apply/policy/apply",
+            headers=csrf_headers(client),
+            json={"request_id": review_payload["request_id"], "review_hash": "bad-hash"},
+        )
+        apply_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_apply/policy/apply",
+            headers=csrf_headers(client),
+            json={
+                "request_id": review_payload["request_id"],
+                "review_hash": review_payload["review_hash"],
             },
         )
     finally:
@@ -1276,15 +1352,64 @@ def test_fortigate_traffic_policy_draft_endpoint_returns_cli_only_recommendation
             integrations_router.get_fortigate_integration_service,
             None,
         )
+        app.dependency_overrides.pop(integrations_router.get_policy_db, None)
+        app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["mode"] == "recommendation_only"
-    assert payload["dryRunOnly"] is True
-    assert payload["integrationId"] == "int_fgt_policy_draft"
-    assert payload["policy"]["sourceInterface"] == "port2"
-    assert payload["policy"]["destinationInterface"] == "port3"
-    assert "set action accept" in "\n".join(payload["cliCommands"])
-    assert "set logtraffic all" in "\n".join(payload["cliCommands"])
-    assert any("does not apply this policy" in warning for warning in payload["warnings"])
+    assert preflight_response.status_code == 200
+    preflight_payload = preflight_response.json()
+    assert preflight_payload["proposed_policy_name"] == (
+        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10"
+    )
+    assert preflight_payload["placement"] == (
+        "before first FortiDashboard-owned lab allow/log policy"
+    )
+
+    assert review_response.status_code == 200
+    assert review_payload["status"] == "pending_review"
+    assert review_payload["request_id"].startswith("fgpcr_")
+    assert review_payload["review_hash"] == preflight_payload["review_hash"]
+
+    assert mismatch_response.status_code == 409
+    assert mismatch_response.json() == {"detail": "Policy review hash mismatch"}
+
+    assert apply_response.status_code == 200
+    apply_payload = apply_response.json()
+    assert apply_payload["status"] == "applied"
+    assert [item["name"] for item in apply_payload["applied_changes"]] == [
+        "FD_ADDR_192_0_2_50",
+        "FD_ADDR_198_51_100_10",
+        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10",
+    ]
+    assert len(fake_client.created_addresses) == 2
+    assert fake_client.created_policies[0]["action"] == "deny"
+    assert [event.action for event in audit_store.events][-3:] == [
+        "integration.fortigate.policy_preflight",
+        "integration.fortigate.policy_review_created",
+        "integration.fortigate.policy_applied",
+    ]
+
+
+def test_fortigate_traffic_policy_draft_endpoint_is_deprecated():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/integrations/fortigate/int_fgt_policy_draft/traffic-policy-draft",
+        headers=csrf_headers(client),
+        json={
+            "name": "TEMP_SOC_LAN_to_DMZ_allow_log",
+            "sourceInterface": "port2",
+            "destinationInterface": "port3",
+            "sourceSubnet": "192.0.2.0/24",
+            "destinationSubnet": "198.51.100.0/24",
+            "service": "ALL",
+            "action": "accept",
+        },
+    )
+
+    assert response.status_code == 410
+    assert response.json() == {
+        "detail": (
+            "Traffic policy drafts were replaced by governed FortiGate policy review endpoints."
+        )
+    }

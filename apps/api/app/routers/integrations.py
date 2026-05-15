@@ -6,12 +6,27 @@ from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from sqlalchemy.orm import Session
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user, require_admin_user
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
+from app.db.session import SessionLocal
+from app.integrations.fortigate.policy_models import (
+    FortiGatePolicyApplyRequest,
+    FortiGatePolicyApplyResponse,
+    FortiGatePolicyPreflightRequest,
+    FortiGatePolicyPreflightResponse,
+    FortiGatePolicyReviewRequest,
+    FortiGatePolicyReviewResponse,
+)
+from app.integrations.fortigate.policy_workflow import (
+    apply_policy_review_for_user,
+    create_policy_review_for_user,
+    preflight_policy_for_user,
+)
 from app.integrations.fortigate.service import (
     FortiGateConnectionFailed,
     FortiGateIntegrationService,
@@ -181,6 +196,11 @@ def get_fortigate_ingestion_store() -> FortiGateIngestionStore:
         ),
         default_ingestion_interval_seconds=settings.fortigate_ingestion_default_interval_seconds,
     )
+
+
+def get_policy_db():
+    with SessionLocal() as db:
+        yield db
 
 
 @lru_cache
@@ -608,42 +628,31 @@ async def test_fortigate_log_forwarding_collector(
     }
 
 
-@router.post("/integrations/fortigate/{integration_id}/traffic-policy-draft")
-def draft_fortigate_traffic_policy(
+@router.post(
+    "/integrations/fortigate/{integration_id}/policy/preflight",
+    response_model=FortiGatePolicyPreflightResponse,
+)
+def preflight_fortigate_policy(
     integration_id: str,
-    payload: FortiGateTrafficPolicyDraftRequest,
+    payload: FortiGatePolicyPreflightRequest,
     request: Request,
     service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
-) -> dict[str, Any]:
+) -> FortiGatePolicyPreflightResponse:
     owner_user_id = str(current_user["id"])
-    if not any(
-        item.get("id") == integration_id
-        for item in service.list(owner_user_id=owner_user_id).get("items", [])
-    ):
-        audit_store.record(
-            action="integration.fortigate.policy_drafted",
-            outcome="failure",
-            email=current_user.get("email"),
-            user_id=owner_user_id,
-            client_ip=_client_ip(request),
-            user_agent=request.headers.get("user-agent"),
-            details={"integrationId": integration_id, "error": "Integration not found"},
-        )
-        raise HTTPException(status_code=404, detail="Integration not found")
-
     try:
-        draft = _build_fortigate_traffic_policy_draft(
+        preflight = preflight_policy_for_user(
             integration_id=integration_id,
+            owner_user_id=owner_user_id,
+            service=service,
             payload=payload,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
     audit_store.record(
-        action="integration.fortigate.policy_drafted",
+        action="integration.fortigate.policy_preflight",
         outcome="success",
         email=current_user.get("email"),
         user_id=owner_user_id,
@@ -651,14 +660,109 @@ def draft_fortigate_traffic_policy(
         user_agent=request.headers.get("user-agent"),
         details={
             "integrationId": integration_id,
-            "mode": draft["mode"],
-            "dryRunOnly": draft["dryRunOnly"],
-            "action": draft["policy"]["action"],
-            "sourceInterface": draft["policy"]["sourceInterface"],
-            "destinationInterface": draft["policy"]["destinationInterface"],
+            "intent": payload.intent,
+            "scope": payload.scope,
+            "changeCount": len(preflight.changes),
         },
     )
-    return draft
+    return preflight
+
+
+@router.post(
+    "/integrations/fortigate/{integration_id}/policy/review",
+    response_model=FortiGatePolicyReviewResponse,
+)
+def review_fortigate_policy(
+    integration_id: str,
+    payload: FortiGatePolicyReviewRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> FortiGatePolicyReviewResponse:
+    owner_user_id = str(current_user["id"])
+    try:
+        review = create_policy_review_for_user(
+            db=db,
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+            service=service,
+            payload=payload,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    audit_store.record(
+        action="integration.fortigate.policy_review_created",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "requestId": review.request_id,
+            "reviewHash": review.review_hash,
+            "intent": payload.intent,
+            "scope": payload.scope,
+        },
+    )
+    return review
+
+
+@router.post(
+    "/integrations/fortigate/{integration_id}/policy/apply",
+    response_model=FortiGatePolicyApplyResponse,
+)
+def apply_fortigate_policy(
+    integration_id: str,
+    payload: FortiGatePolicyApplyRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> FortiGatePolicyApplyResponse:
+    owner_user_id = str(current_user["id"])
+    try:
+        applied = apply_policy_review_for_user(
+            db=db,
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+            service=service,
+            payload=payload,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    audit_store.record(
+        action="integration.fortigate.policy_applied",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "requestId": applied.request_id,
+            "changeCount": len(applied.applied_changes),
+        },
+    )
+    return applied
+
+
+@router.post("/integrations/fortigate/{integration_id}/traffic-policy-draft")
+def draft_fortigate_traffic_policy(
+    integration_id: str,
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    _ = integration_id
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Traffic policy drafts were replaced by governed FortiGate policy review endpoints.",
+    )
 
 
 @router.get("/integrations/fortigate/{integration_id}/health-checks")
