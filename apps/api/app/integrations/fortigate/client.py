@@ -1,3 +1,4 @@
+import json as jsonlib
 from typing import Any
 
 import httpx
@@ -11,6 +12,27 @@ def _syslog_table(slot: int) -> str:
     if slot < 1 or slot > 4:
         raise ValueError("FortiGate syslog slot must be between 1 and 4")
     return "log.syslogd" if slot == 1 else f"log.syslogd{slot}"
+
+
+def _response_error_excerpt(response: httpx.Response, *, max_length: int = 240) -> str:
+    text = response.text.strip()
+    if not text:
+        return ""
+    try:
+        payload = response.json()
+    except ValueError:
+        excerpt = text
+    else:
+        excerpt = jsonlib.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return excerpt[:max_length]
+
+
+def _http_status_error_message(response: httpx.Response) -> str:
+    message = f"FortiGate API request failed with HTTP {response.status_code}"
+    detail = _response_error_excerpt(response)
+    if detail:
+        return f"{message}: {detail}"
+    return message
 
 
 class FortiGateApiClient:
@@ -67,6 +89,30 @@ class FortiGateApiClient:
 
     def get_policies(self) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/cmdb/firewall/policy")
+
+    def get_address_objects(self) -> list[dict[str, Any]]:
+        return self._get_list("/api/v2/cmdb/firewall/address")
+
+    def create_address_object(
+        self,
+        *,
+        name: str,
+        subnet: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        results = self._post(
+            "/api/v2/cmdb/firewall/address",
+            json={"name": name, "subnet": subnet, "comment": comment},
+        )
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate address object create response was not an object")
+        return results
+
+    def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        results = self._post("/api/v2/cmdb/firewall/policy", json=payload)
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate firewall policy create response was not an object")
+        return results
 
     def get_threat_logs(self, *, limit: int = 25) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/log/memory/ips", params={"count": limit})
@@ -152,9 +198,7 @@ class FortiGateApiClient:
                     "FortiGate API endpoint not found "
                     f"({path}); check host URL and firmware version"
                 ) from exc
-            raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {status_code}"
-            ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
 
@@ -193,9 +237,44 @@ class FortiGateApiClient:
                     "FortiGate API endpoint not found "
                     f"({path}); check host URL and firmware version"
                 ) from exc
-            raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {status_code}"
-            ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
+        except httpx.RequestError as exc:
+            raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
+
+        payload = self._decode_json(response)
+        if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
+            raise FortiGateApiError("FortiGate API returned error status")
+        if isinstance(payload, dict) and "results" in payload:
+            return payload["results"]
+        return payload
+
+    def _post(self, path: str, *, json: dict[str, Any]) -> Any:
+        try:
+            with httpx.Client(
+                base_url=self.host,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                verify=self.verify_tls,
+                timeout=self.timeout_seconds,
+                transport=self.transport,
+            ) as client:
+                response = client.post(path, json=json)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in (401, 403):
+                raise FortiGateApiError(
+                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                ) from exc
+            if status_code == 404:
+                raise FortiGateApiError(
+                    "FortiGate API endpoint not found "
+                    f"({path}); check host URL and firmware version"
+                ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
 

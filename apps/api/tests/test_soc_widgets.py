@@ -107,6 +107,7 @@ def test_soc_widget_catalog_returns_soc_widgets():
         "soc-top-entities",
         "xdr-endpoint-health",
         "soar-active-playbook-runs",
+        "soar-playbook-run-history",
     }
 
 
@@ -197,6 +198,77 @@ def test_soar_active_playbook_runs_widget_filters_completed_runs():
     assert response.json()["data"] == {
         "runs": [{"id": "run_01", "status": "waiting_approval"}],
         "count": 1,
+    }
+
+
+def test_soar_playbook_run_history_widget_returns_all_runs_and_summary():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "/playbook-runs": {
+                "items": [
+                    {
+                        "id": "run_01",
+                        "incidentId": "inc_01",
+                        "playbookId": "pb_block",
+                        "status": "waiting_approval",
+                    },
+                    {
+                        "id": "run_02",
+                        "incidentId": "inc_01",
+                        "playbookId": "pb_notes",
+                        "status": "completed",
+                    },
+                    {
+                        "id": "run_03",
+                        "incidentId": "inc_02",
+                        "playbookId": "pb_notify",
+                        "status": "failed",
+                    },
+                ]
+            }
+        }
+    )
+    app.dependency_overrides[widgets_router.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("soar_skipper")
+    )
+
+    response = client.get(
+        "/api/widgets/soar-playbook-run-history/data",
+        params={"integrationId": "int_penguin_01"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "runs": [
+            {
+                "id": "run_01",
+                "incidentId": "inc_01",
+                "playbookId": "pb_block",
+                "status": "waiting_approval",
+            },
+            {
+                "id": "run_02",
+                "incidentId": "inc_01",
+                "playbookId": "pb_notes",
+                "status": "completed",
+            },
+            {
+                "id": "run_03",
+                "incidentId": "inc_02",
+                "playbookId": "pb_notify",
+                "status": "failed",
+            },
+        ],
+        "count": 3,
+        "summary": {
+            "active": 1,
+            "completed": 1,
+            "failed": 1,
+            "running": 0,
+            "waitingApproval": 1,
+        },
     }
 
 

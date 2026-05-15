@@ -1,8 +1,10 @@
 from functools import lru_cache
 from secrets import token_urlsafe
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from app.ai import (
     AIConfigurationError,
@@ -17,8 +19,25 @@ from app.auth.dependencies import (
     get_current_api_user,
     require_admin_user,
 )
+from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
+from app.db.session import SessionLocal
+from app.integrations.fortigate.policy_models import (
+    FortiGatePolicyApplyRequest,
+    FortiGatePolicyIntent,
+    FortiGatePolicyReviewRequest,
+)
+from app.integrations.fortigate.policy_workflow import (
+    apply_policy_review_for_user,
+    create_policy_review_for_user,
+)
+from app.integrations.fortigate.service import (
+    FortiGateIntegrationService,
+    MockFortiGateIntegrationService,
+)
+from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
 from app.soc.client import SocServiceClient
+from app.soc.triage import build_triage_context
 
 router = APIRouter(tags=["soc"])
 
@@ -52,6 +71,27 @@ class AuditStore(Protocol):
         pass
 
 
+class PlaybookRunPolicyReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    integration_id: str = Field(alias="integrationId")
+    scope: Literal["source_only", "source_destination", "source_destination_service"]
+    source_ip: str = Field(alias="sourceIp")
+    destination_ip: str | None = Field(default=None, alias="destinationIp")
+    service: str | None = None
+    source_interface: str = Field(alias="sourceInterface")
+    destination_interface: str = Field(alias="destinationInterface")
+    duration_minutes: int = Field(default=30, alias="durationMinutes", ge=5, le=1440)
+
+
+class PlaybookRunPolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    integration_id: str = Field(alias="integrationId")
+    request_id: str = Field(alias="requestId")
+    review_hash: str = Field(alias="reviewHash")
+
+
 @lru_cache
 def get_siem_client() -> SocServiceClient:
     settings = get_settings()
@@ -80,6 +120,26 @@ def get_xdr_client() -> SocServiceClient:
         service_name="xdr_rico",
         timeout_seconds=settings.internal_service_timeout_seconds,
     )
+
+
+@lru_cache
+def get_fortigate_policy_service() -> FortiGateIntegrationService | MockFortiGateIntegrationService:
+    settings = get_settings()
+    if settings.mock_mode:
+        return MockFortiGateIntegrationService()
+    return FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            database_url=settings.database_url,
+            secret_cipher=TokenCipher.from_secret(
+                settings.token_encryption_key or settings.secret_key
+            ),
+        )
+    )
+
+
+def get_policy_db():
+    with SessionLocal() as db:
+        yield db
 
 
 def _build_incident_context(incident: dict[str, Any]) -> IncidentContext:
@@ -125,9 +185,10 @@ def _analysis_to_dict(
 
 
 _SOAR_NODE_MAPPING = {
-    "firewall.block_ip": ("fortigate.recommend_block", True),
-    "fortigate.block_ip": ("fortigate.recommend_block", True),
-    "fortigate.recommend_block": ("fortigate.recommend_block", True),
+    "firewall.block_ip": ("fortigate.temporary_block", True),
+    "fortigate.block_ip": ("fortigate.temporary_block", True),
+    "fortigate.recommend_block": ("fortigate.temporary_block", True),
+    "fortigate.temporary_block": ("fortigate.temporary_block", True),
     "notify.slack": ("notify.webhook", False),
     "notify.email": ("notify.webhook", False),
     "notify.teams": ("notify.webhook", False),
@@ -169,6 +230,213 @@ def _containment_to_dict(
         ],
         "playbookDraftId": suggestion.playbook_draft_id,
     }
+
+
+def _incident_value(incident: dict[str, Any], key: str) -> str:
+    attributes = incident.get("attributes") if isinstance(incident.get("attributes"), dict) else {}
+    entities = incident.get("entities") if isinstance(incident.get("entities"), dict) else {}
+    for payload in (attributes, entities):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            return str(value)
+    return ""
+
+
+def _append_node(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, str]],
+    previous_id: str,
+    node: dict[str, Any],
+) -> str:
+    nodes.append(node)
+    edges.append({"from": previous_id, "to": str(node["id"])})
+    return str(node["id"])
+
+
+def _mitre_technique_summary(triage_context) -> str:
+    techniques = ", ".join(
+        mapping.technique_id for mapping in triage_context.mitre_mappings
+    )
+    return techniques or "no MITRE mapping"
+
+
+def _recommended_template_playbook(
+    incident: dict[str, Any],
+    template_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    triage_context = build_triage_context(incident)
+    template = next(
+        (
+            item
+            for item in triage_context.playbook_templates
+            if item.template_id == template_id
+        ),
+        None,
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Playbook recommendation is not eligible")
+
+    source_ip = _incident_value(incident, "sourceIp")
+    destination_ip = _incident_value(incident, "destinationIp")
+    integration_id = _incident_value(incident, "integrationId")
+    title = str(incident.get("title") or triage_context.attack_type or "incident")[:80]
+    playbook_id = f"pb_tpl_{token_urlsafe(6)}"
+    nodes: list[dict[str, Any]] = [{"id": "trigger", "type": "trigger.incident_created"}]
+    edges: list[dict[str, str]] = []
+    steps: list[dict[str, Any]] = []
+    previous_id = "trigger"
+
+    previous_id = _append_node(
+        nodes,
+        edges,
+        previous_id,
+        {
+            "id": "triage_note",
+            "type": "case.note",
+            "config": {
+                "template": (
+                    f"{triage_context.alert_family} mapped to "
+                    f"{_mitre_technique_summary(triage_context)}."
+                )
+            },
+        },
+    )
+    steps.append(
+        {
+            "title": "Record triage context",
+            "description": template.reason,
+            "playbookNodeType": "case.note",
+            "severity": "low",
+            "requiresApproval": False,
+        }
+    )
+
+    if source_ip:
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "enrich_source_ip",
+                "type": "enrich.ip",
+                "config": {"field": "entities.sourceIp", "value": source_ip},
+            },
+        )
+        steps.append(
+            {
+                "title": "Enrich source IP",
+                "description": f"Collect context for source IP {source_ip}.",
+                "playbookNodeType": "enrich.ip",
+                "severity": "low",
+                "requiresApproval": False,
+            }
+        )
+
+    needs_fortigate_block = template_id in {
+        "pb_network_scan_triage",
+        "pb_fortigate_temp_block",
+        "pb_auth_bruteforce_triage",
+    } and bool(source_ip and integration_id)
+    if needs_fortigate_block:
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {"id": "approval", "type": "approval.required", "config": {"role": "admin"}},
+        )
+        scope = "source_destination" if destination_ip else "source_only"
+        block_config: dict[str, Any] = {
+            "scope": scope,
+            "durationMinutes": 30,
+            "sourceField": "entities.sourceIp",
+            "integrationId": integration_id,
+            "sourceIp": source_ip,
+        }
+        if destination_ip:
+            block_config["destinationField"] = "entities.destinationIp"
+            block_config["destinationIp"] = destination_ip
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "temporary_block",
+                "type": "fortigate.temporary_block",
+                "config": block_config,
+            },
+        )
+        steps.append(
+            {
+                "title": "Prepare FortiGate temporary block",
+                "description": "Create a governed FortiDashboard policy review after approval.",
+                "playbookNodeType": "fortigate.temporary_block",
+                "severity": "high",
+                "requiresApproval": True,
+            }
+        )
+
+    if template_id == "pb_auth_bruteforce_triage":
+        username = _incident_value(incident, "username")
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "identity_review_note",
+                "type": "case.note",
+                "config": {"template": f"Review account activity for {username or 'the user'}."},
+            },
+        )
+        steps.append(
+            {
+                "title": "Review account activity",
+                "description": (
+                    "Identity lockout remains unavailable until an identity "
+                    "connector exists."
+                ),
+                "playbookNodeType": "case.note",
+                "severity": "medium",
+                "requiresApproval": False,
+            }
+        )
+
+    _append_node(
+        nodes,
+        edges,
+        previous_id,
+        {
+            "id": "final_note",
+            "type": "case.note",
+            "config": {"template": "Append outcome and approval status to the ticket timeline."},
+        },
+    )
+    steps.append(
+        {
+            "title": "Record response outcome",
+            "description": "Append the execution outcome to the ticket.",
+            "playbookNodeType": "case.note",
+            "severity": "low",
+            "requiresApproval": False,
+        }
+    )
+
+    playbook = {
+        "id": playbook_id,
+        "name": f"{template.label} — {title}",
+        "enabled": False,
+        "nodes": nodes,
+        "edges": edges,
+    }
+    suggestion = {
+        "incidentId": triage_context.incident_id,
+        "provider": "deterministic",
+        "summary": template.reason,
+        "steps": steps,
+        "playbookDraftId": playbook_id,
+    }
+    return playbook, suggestion
 
 
 def _request_locale(request: Request) -> str:
@@ -374,6 +642,75 @@ def draft_containment_playbook(
         "playbook": created_playbook,
         "simulation": simulation,
         "suggestion": _containment_to_dict(suggestion, provider_name=provider.name),
+    }
+
+
+@router.post(
+    "/soc/incidents/{incident_id}/playbook-recommendations/{template_id}/instantiate",
+    status_code=status.HTTP_201_CREATED,
+)
+def instantiate_recommended_playbook(
+    incident_id: str,
+    template_id: str,
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    incident = siem_client.request("GET", f"/incidents/{incident_id}")
+    playbook_payload, suggestion = _recommended_template_playbook(incident, template_id)
+
+    try:
+        created_playbook = soar_client.request("POST", "/playbooks", json=playbook_payload)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.playbook_drafted",
+            outcome="failure",
+            details={
+                "ticketId": incident_id,
+                "templateId": template_id,
+                "stage": "create_playbook",
+                "provider": "deterministic",
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to create recommended playbook: {exc}",
+        ) from exc
+
+    try:
+        simulation = soar_client.request(
+            "POST",
+            f"/playbooks/{playbook_payload['id']}/simulate",
+        )
+    except Exception as exc:  # noqa: BLE001
+        simulation = {"dryRun": True, "valid": False, "steps": [], "error": str(exc)[:200]}
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.ticket.playbook_drafted",
+        details={
+            "ticketId": incident_id,
+            "playbookId": playbook_payload["id"],
+            "templateId": template_id,
+            "provider": "deterministic",
+            "stepCount": len(suggestion["steps"]),
+            "sensitive": any(step["requiresApproval"] for step in suggestion["steps"]),
+        },
+    )
+    return {
+        "ticketId": incident_id,
+        "playbook": created_playbook,
+        "simulation": simulation,
+        "suggestion": suggestion,
     }
 
 
@@ -670,6 +1007,16 @@ def get_incident(
     return client.request("GET", f"/incidents/{incident_id}")
 
 
+@router.get("/soc/incidents/{incident_id}/triage-context")
+def get_incident_triage_context(
+    incident_id: str,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    incident = client.request("GET", f"/incidents/{incident_id}")
+    return build_triage_context(incident).model_dump(by_alias=True, mode="json")
+
+
 @router.get("/soc/incidents/{incident_id}/endpoint-context")
 def get_incident_endpoint_context(
     incident_id: str,
@@ -838,6 +1185,14 @@ def run_playbook(
     return response
 
 
+@router.get("/soc/playbook-runs")
+def list_playbook_runs(
+    client: Annotated[SocClient, Depends(get_soar_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", "/playbook-runs")
+
+
 @router.get("/soc/playbook-runs/{run_id}")
 def get_playbook_run(
     run_id: str,
@@ -845,6 +1200,144 @@ def get_playbook_run(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     return client.request("GET", f"/playbook-runs/{run_id}")
+
+
+@router.post("/soc/playbook-runs/{run_id}/policy-review")
+def create_playbook_run_policy_review(
+    run_id: str,
+    payload: PlaybookRunPolicyReviewRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    fortigate_service: Annotated[Any, Depends(get_fortigate_policy_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    run = soar_client.request("GET", f"/playbook-runs/{run_id}")
+    _ensure_fortigate_policy_run(run)
+    incident_id = str(run.get("incidentId") or "")
+    owner_user_id = str(current_user["id"])
+    review_request = FortiGatePolicyReviewRequest(
+        intent=FortiGatePolicyIntent.TEMPORARY_BLOCK,
+        scope=payload.scope,
+        source_interface=payload.source_interface,
+        destination_interface=payload.destination_interface,
+        source_ip=payload.source_ip,
+        destination_ip=payload.destination_ip,
+        service=payload.service,
+        duration_minutes=payload.duration_minutes,
+        incident_id=incident_id or None,
+        playbook_run_id=run_id,
+    )
+    review = create_policy_review_for_user(
+        db=db,
+        integration_id=payload.integration_id,
+        owner_user_id=owner_user_id,
+        service=fortigate_service,
+        payload=review_request,
+    )
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.policy_review_created",
+        details={
+            "runId": run_id,
+            "incidentId": incident_id,
+            "integrationId": payload.integration_id,
+            "requestId": review.request_id,
+        },
+    )
+    return {
+        **review.model_dump(mode="json"),
+        "runId": run_id,
+        "incidentId": incident_id,
+    }
+
+
+@router.post("/soc/playbook-runs/{run_id}/policy-apply")
+def apply_playbook_run_policy(
+    run_id: str,
+    payload: PlaybookRunPolicyApplyRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    fortigate_service: Annotated[Any, Depends(get_fortigate_policy_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    run = soar_client.request("GET", f"/playbook-runs/{run_id}")
+    _ensure_fortigate_policy_run(run)
+    incident_id = str(run.get("incidentId") or "")
+    owner_user_id = str(current_user["id"])
+    policy = apply_policy_review_for_user(
+        db=db,
+        integration_id=payload.integration_id,
+        owner_user_id=owner_user_id,
+        service=fortigate_service,
+        payload=FortiGatePolicyApplyRequest(
+            request_id=payload.request_id,
+            review_hash=payload.review_hash,
+        ),
+    )
+    ticket_update: dict[str, Any] | None = None
+    if incident_id:
+        ticket = siem_client.request(
+            "PATCH",
+            f"/incidents/{incident_id}/triage",
+            json={
+                "ticketStatus": "contained",
+                "note": (
+                    f"FortiGate policy request {payload.request_id} applied "
+                    f"from playbook run {run_id}."
+                ),
+            },
+        )
+        ticket_update = {
+            "status": "contained",
+            "incidentId": incident_id,
+            "ticket": ticket,
+        }
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.policy_applied",
+        details={
+            "runId": run_id,
+            "incidentId": incident_id,
+            "integrationId": payload.integration_id,
+            "requestId": policy.request_id,
+            "ticketUpdate": ticket_update,
+        },
+    )
+    return {
+        "runId": run_id,
+        "incidentId": incident_id,
+        "policy": policy.model_dump(mode="json"),
+        "ticketUpdate": ticket_update,
+    }
+
+
+def _ensure_fortigate_policy_run(run: dict[str, Any]) -> None:
+    if not _run_has_fortigate_policy_step(run):
+        raise HTTPException(
+            status_code=409,
+            detail="Playbook run does not contain a FortiGate temporary block step",
+        )
+
+
+def _run_has_fortigate_policy_step(run: dict[str, Any]) -> bool:
+    steps = run.get("steps")
+    if not isinstance(steps, list):
+        return False
+    return any(
+        isinstance(step, dict) and step.get("nodeType") == "fortigate.temporary_block"
+        for step in steps
+    )
 
 
 @router.post("/soc/playbook-runs/{run_id}/approve")
@@ -860,7 +1353,14 @@ def approve_playbook_run(
     response = client.request("POST", f"/playbook-runs/{run_id}/approve", json={})
     ticket_update: dict[str, Any] | None = None
     outcome = "success"
-    if response.get("status") == "completed" and response.get("incidentId"):
+    policy_review_required = _run_has_fortigate_policy_step(response)
+    if policy_review_required:
+        response["policyReviewRequired"] = True
+    if (
+        response.get("status") == "completed"
+        and response.get("incidentId")
+        and not policy_review_required
+    ):
         incident_id = str(response["incidentId"])
         try:
             ticket = siem_client.request(

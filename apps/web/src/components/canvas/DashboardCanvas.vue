@@ -52,6 +52,7 @@ import WidgetSocRecentIncidents from '../widgets/soc/WidgetSocRecentIncidents.vu
 import WidgetSocTopEntities from '../widgets/soc/WidgetSocTopEntities.vue'
 import WidgetXdrEndpointHealth from '../widgets/soc/WidgetXdrEndpointHealth.vue'
 import WidgetSoarPlaybookRuns from '../widgets/soc/WidgetSoarPlaybookRuns.vue'
+import WidgetSoarPlaybookRunHistory from '../widgets/soc/WidgetSoarPlaybookRunHistory.vue'
 import WidgetSocSlaBreach from '../widgets/soc/WidgetSocSlaBreach.vue'
 import WidgetSocMttdMttr from '../widgets/soc/WidgetSocMttdMttr.vue'
 import WidgetFortigateTopSourceIps from '../widgets/fortigate/WidgetFortigateTopSourceIps.vue'
@@ -494,6 +495,7 @@ const widgetMap: Record<string, any> = {
   'soc-top-entities': WidgetSocTopEntities,
   'xdr-endpoint-health': WidgetXdrEndpointHealth,
   'soar-active-playbook-runs': WidgetSoarPlaybookRuns,
+  'soar-playbook-run-history': WidgetSoarPlaybookRunHistory,
   'soc-sla-breach': WidgetSocSlaBreach,
   'soc-mttd-mttr': WidgetSocMttdMttr,
   'fortigate-top-source-ips': WidgetFortigateTopSourceIps,

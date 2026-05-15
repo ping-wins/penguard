@@ -28,7 +28,23 @@ def test_lists_playbook_node_types_for_visual_builder():
         "approval.required",
         "notify.webhook",
         "fortigate.recommend_block",
+        "fortigate.temporary_block",
     }
+    temporary_block = next(
+        item for item in body["items"] if item["id"] == "fortigate.temporary_block"
+    )
+    assert temporary_block["category"] == "action"
+    assert temporary_block["sensitive"] is True
+    assert temporary_block["dryRunOnly"] is False
+    assert temporary_block["executionMode"] == "approval_required"
+    assert temporary_block["liveAvailable"] is True
+    assert temporary_block["boundary"] == "fortigate_policy_orchestration"
+    assert temporary_block["configSchema"]["required"] == [
+        "scope",
+        "durationMinutes",
+        "sourceField",
+    ]
+
     recommend_block = next(
         item for item in body["items"] if item["id"] == "fortigate.recommend_block"
     )
@@ -103,6 +119,7 @@ def test_simulate_returns_dry_run_valid_ordered_step_preview():
     ]
     assert body["steps"][-1]["sensitive"] is True
     assert body["steps"][-1]["status"] == "waiting_approval"
+    assert body["steps"][-1]["nodeType"] == "fortigate.temporary_block"
 
 
 def test_run_creates_dry_run_history_and_waits_for_sensitive_approval():

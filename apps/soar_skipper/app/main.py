@@ -26,10 +26,11 @@ NodeType = Literal[
     "notify.webhook",
     "fortigate.recommend_block",
     "fortiweb.recommend_block",
+    "fortigate.temporary_block",
     "webhook.dry_run",
 ]
 NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
-ExecutionMode = Literal["dry_run", "live"]
+ExecutionMode = Literal["dry_run", "live", "approval_required"]
 NodeBoundary = Literal[
     "trigger_only",
     "decision_only",
@@ -38,12 +39,17 @@ NodeBoundary = Literal[
     "approval_gate",
     "notification_dry_run",
     "recommendation_only",
+    "fortigate_policy_orchestration",
     "webhook_dry_run",
 ]
 RunStatus = Literal["completed", "waiting_approval"]
 StepStatus = Literal["completed", "waiting_approval"]
 
-SENSITIVE_NODE_TYPES = {"fortigate.recommend_block", "fortiweb.recommend_block"}
+SENSITIVE_NODE_TYPES = {
+    "fortigate.recommend_block",
+    "fortigate.temporary_block",
+    "fortiweb.recommend_block",
+}
 APPROVAL_NODE_TYPES = {"approval.required"}
 
 
@@ -258,6 +264,38 @@ def _node_type_definitions() -> list[NodeTypeDefinition]:
             },
         ),
         NodeTypeDefinition(
+            id="fortigate.temporary_block",
+            label="FortiGate Temporary Block",
+            category="action",
+            sensitive=True,
+            dryRunOnly=False,
+            executionMode="approval_required",
+            liveAvailable=True,
+            boundary="fortigate_policy_orchestration",
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "source_only",
+                            "source_destination",
+                            "source_destination_service",
+                        ],
+                    },
+                    "durationMinutes": {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 1440,
+                    },
+                    "sourceField": {"type": "string"},
+                    "destinationField": {"type": "string"},
+                    "serviceField": {"type": "string"},
+                },
+                "required": ["scope", "durationMinutes", "sourceField"],
+            },
+        ),
+        NodeTypeDefinition(
             id="webhook.dry_run",
             label="Webhook Dry Run",
             category="action",
@@ -294,8 +332,12 @@ def _default_playbooks() -> list[Playbook]:
                 PlaybookNode(id="approval", type="approval.required", config={"role": "admin"}),
                 PlaybookNode(
                     id="recommend_block",
-                    type="fortigate.recommend_block",
-                    config={"mode": "dry_run", "field": "entities.sourceIp"},
+                    type="fortigate.temporary_block",
+                    config={
+                        "scope": "source_only",
+                        "durationMinutes": 30,
+                        "sourceField": "entities.sourceIp",
+                    },
                 ),
             ],
             edges=[

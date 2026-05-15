@@ -48,6 +48,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     source.addEventListener('fortigate.syslog.event', handleMessage)
     source.addEventListener('fortigate.ingestion.events', handleMessage)
     source.addEventListener('audit.siem.event', handleMessage)
+    source.addEventListener('soc.incidents.reset', handleMessage)
     source.onerror = () => {
       connectionState.value = 'error'
       lastErrorAt.value = new Date().toISOString()

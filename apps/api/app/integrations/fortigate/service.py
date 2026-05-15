@@ -100,6 +100,24 @@ class FortiGateClient(Protocol):
     def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
         pass
 
+    def get_policies(self) -> list[dict[str, Any]]:
+        pass
+
+    def get_address_objects(self) -> list[dict[str, Any]]:
+        pass
+
+    def create_address_object(
+        self,
+        *,
+        name: str,
+        subnet: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        pass
+
+    def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
     def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
         pass
 
@@ -256,6 +274,56 @@ class MockFortiGateIntegrationService:
             severity=severity,
             current={"setting": {}, "filter": {}},
         )
+
+    def get_policy_client(self, *, integration_id: str, owner_user_id: str) -> FortiGateClient:
+        _ = (integration_id, owner_user_id)
+        return _MockFortiGatePolicyClient()
+
+
+class _MockFortiGatePolicyClient:
+    def get_system_status(self) -> dict[str, Any]:
+        return load_fixture("fortigate_connection_test")["device"]
+
+    def get_performance_status(self) -> dict[str, Any]:
+        return {}
+
+    def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
+        _ = resource
+        return {}
+
+    def get_policies(self) -> list[dict[str, Any]]:
+        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+
+    def get_address_objects(self) -> list[dict[str, Any]]:
+        return []
+
+    def create_address_object(
+        self,
+        *,
+        name: str,
+        subnet: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        return {"status": "success", "mkey": name, "subnet": subnet, "comment": comment}
+
+    def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"status": "success", "mkey": payload.get("name"), "payload": dict(payload)}
+
+    def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
+        _ = slot
+        return {}
+
+    def get_syslog_filter(self, *, slot: int = 1) -> dict[str, Any]:
+        _ = slot
+        return {}
+
+    def update_syslog_setting(self, payload: dict[str, Any], *, slot: int = 1) -> dict[str, Any]:
+        _ = slot
+        return dict(payload)
+
+    def update_syslog_filter(self, payload: dict[str, Any], *, slot: int = 1) -> dict[str, Any]:
+        _ = slot
+        return dict(payload)
 
 
 class FortiGateIntegrationService:
@@ -445,6 +513,12 @@ class FortiGateIntegrationService:
             "desired": payload["desired"],
             "warnings": payload["warnings"],
         }
+
+    def get_policy_client(self, *, integration_id: str, owner_user_id: str) -> FortiGateClient:
+        return self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
 
     def _ensure_log_forwarding(
         self,

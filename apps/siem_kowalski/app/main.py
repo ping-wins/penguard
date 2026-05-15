@@ -15,6 +15,18 @@ TicketStatus = Literal["new", "investigating", "contained", "closed"]
 RuleOperator = Literal["equals", "gte", "exists", "contains"]
 RuleMatch = Literal["all", "any"]
 logger = logging.getLogger("uvicorn.error")
+ALLOWED_SCAN_WINDOW_SECONDS = 60
+ALLOWED_SCAN_MIN_UNIQUE_PORTS = 20
+ALLOWED_SCAN_EVENT_LIMIT = 250
+FORWARDED_SCAN_ACTIONS = {
+    "accept",
+    "allow",
+    "allowed",
+    "close",
+    "client-rst",
+    "server-rst",
+    "timeout",
+}
 
 
 def _triage_from_severity(severity: str) -> TriageLevel:
@@ -287,6 +299,16 @@ def _incident_attributes(event: SecurityEvent, rule: DetectionRule) -> dict[str,
         "rawType",
         "rawSubtype",
         "ingestionMode",
+        "integrationId",
+        "sourceIp",
+        "destinationIp",
+        "destinationPort",
+        "destinationPorts",
+        "uniqueDestinationPortCount",
+        "scanWindowSeconds",
+        "policyId",
+        "service",
+        "relatedEventIds",
     ):
         value = event.attributes.get(key)
         if value is not None and value != "":
@@ -360,6 +382,13 @@ def _coerce_number(value: Any) -> float:
     return float("-inf")
 
 
+def _coerce_int(value: Any) -> int | None:
+    numeric = _coerce_number(value)
+    if numeric == float("-inf"):
+        return None
+    return int(numeric)
+
+
 def _enrich_failed_login_burst(event: SecurityEvent) -> SecurityEvent:
     if event.event_type != "auth.failed_login":
         return event
@@ -426,6 +455,114 @@ def _failed_login_severity(event: SecurityEvent, count: int) -> str:
     return "high" if count >= 3 else event.severity
 
 
+def _enrich_allowed_port_scan(event: SecurityEvent) -> SecurityEvent:
+    if event.event_type != "network.event":
+        return event
+
+    if not _is_forwarded_scan_action(event):
+        return event
+
+    integration_id = event.attributes.get("integrationId") or event.entities.get("integrationId")
+    source_ip = event.attributes.get("sourceIp") or event.entities.get("sourceIp")
+    destination_ip = event.attributes.get("destinationIp") or event.entities.get("destinationIp")
+    destination_port = _coerce_int(event.attributes.get("destinationPort"))
+    if not integration_id or not source_ip or not destination_ip or destination_port is None:
+        return event
+
+    window_start = event.occurred_at - timedelta(seconds=ALLOWED_SCAN_WINDOW_SECONDS)
+    if _has_recent_allowed_scan_event(
+        integration_id=integration_id,
+        source_ip=source_ip,
+        destination_ip=destination_ip,
+        window_start=window_start,
+        occurred_at=event.occurred_at,
+    ):
+        return event
+
+    ports: set[int] = {destination_port}
+    related_event_ids: list[str] = [event.id] if event.id else []
+    for payload in store.list_recent_events(
+        event_type="network.event",
+        limit=ALLOWED_SCAN_EVENT_LIMIT,
+    ):
+        previous = _load_event(payload)
+        if previous.id == event.id:
+            continue
+        if previous.occurred_at < window_start or previous.occurred_at > event.occurred_at:
+            continue
+        if not _same_network_flow(event, previous):
+            continue
+        if not _is_forwarded_scan_action(previous):
+            continue
+
+        port = _coerce_int(previous.attributes.get("destinationPort"))
+        if port is None:
+            continue
+        ports.add(port)
+        if previous.id:
+            related_event_ids.append(previous.id)
+
+    if len(ports) < ALLOWED_SCAN_MIN_UNIQUE_PORTS:
+        return event
+
+    attributes = {
+        **event.attributes,
+        "integrationId": integration_id,
+        "sourceIp": source_ip,
+        "destinationIp": destination_ip,
+        "attackType": "allowed_port_scan",
+        "destinationPorts": sorted(ports),
+        "uniqueDestinationPortCount": len(ports),
+        "scanWindowSeconds": ALLOWED_SCAN_WINDOW_SECONDS,
+        "relatedEventIds": related_event_ids,
+    }
+    return event.model_copy(
+        update={
+            "event_type": "network.scan",
+            "severity": "high",
+            "attributes": attributes,
+        }
+    )
+
+
+def _is_forwarded_scan_action(event: SecurityEvent) -> bool:
+    return str(event.attributes.get("action", "")).lower() in FORWARDED_SCAN_ACTIONS
+
+
+def _same_network_flow(left: SecurityEvent, right: SecurityEvent) -> bool:
+    for key in ("integrationId", "sourceIp", "destinationIp"):
+        left_value = left.attributes.get(key) or left.entities.get(key)
+        right_value = right.attributes.get(key) or right.entities.get(key)
+        if left_value != right_value:
+            return False
+    return True
+
+
+def _has_recent_allowed_scan_event(
+    *,
+    integration_id: Any,
+    source_ip: Any,
+    destination_ip: Any,
+    window_start: datetime,
+    occurred_at: datetime,
+) -> bool:
+    for payload in store.list_recent_events(event_type="network.scan", limit=50):
+        previous = _load_event(payload)
+        if previous.occurred_at < window_start or previous.occurred_at > occurred_at:
+            continue
+        attributes = previous.attributes
+        if attributes.get("attackType") != "allowed_port_scan":
+            continue
+        if attributes.get("integrationId") != integration_id:
+            continue
+        if attributes.get("sourceIp") != source_ip:
+            continue
+        if attributes.get("destinationIp") != destination_ip:
+            continue
+        return True
+    return False
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
@@ -452,6 +589,7 @@ def ingest_event(event: SecurityEvent) -> EventIngestResult:
 def _ingest_event(event: SecurityEvent) -> tuple[SecurityEvent, Incident | None]:
     stored_event = event.model_copy(update={"id": event.id or _new_id("evt")})
     stored_event = _enrich_failed_login_burst(stored_event)
+    stored_event = _enrich_allowed_port_scan(stored_event)
     store.add_event(
         _dump(stored_event),
         event_type=stored_event.event_type,

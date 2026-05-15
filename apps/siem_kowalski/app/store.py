@@ -89,6 +89,19 @@ class SiemStore:
         with self.engine.begin() as connection:
             return [row.payload for row in connection.execute(statement)]
 
+    def list_recent_events(
+        self,
+        *,
+        event_type: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        events = self.list_events(limit=limit, event_type=event_type)
+        return sorted(
+            events,
+            key=lambda event: event.get("occurredAt") or event.get("createdAt") or "",
+            reverse=True,
+        )
+
     def count_events(self) -> int:
         statement = select(func.count()).select_from(events_table)
         with self.engine.begin() as connection:

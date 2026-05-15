@@ -219,6 +219,77 @@ describe('DraggableWidget', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('reloads SIEM incident widgets when incidents are reset through realtime', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        widgetId: 'soc-recent-incidents',
+        integrationId: 'int_kowalski_01',
+        refreshedAt: '2026-05-15T12:00:00.000Z',
+        status: 'ready',
+        data: {
+          incidents: [{ id: 'inc_stale_01', title: 'Stale incident' }],
+          count: 1,
+        },
+        meta: { source: 'siem_kowalski', cacheTtlSeconds: 5, refreshIntervalSeconds: 5 },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        widgetId: 'soc-recent-incidents',
+        integrationId: 'int_kowalski_01',
+        refreshedAt: '2026-05-15T12:01:00.000Z',
+        status: 'ready',
+        data: { incidents: [], count: 0 },
+        meta: { source: 'siem_kowalski', cacheTtlSeconds: 5, refreshIntervalSeconds: 5 },
+      }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'soc-recent-incidents',
+      title: 'Recent Incidents',
+      kind: 'feed',
+      source: 'siem_kowalski',
+      requiredCapabilities: ['incidents'],
+      defaultSize: { w: 4, h: 3 },
+      dataEndpoint: '/api/widgets/soc-recent-incidents/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_recent_incidents',
+        catalogId: 'soc-recent-incidents',
+        integrationId: 'int_kowalski_01',
+        layout: { x: 0, y: 0, w: 360, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `Count: ${widgetData?.count ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('Count: 1')
+
+    FakeEventSource.instances[0].emit('soc.incidents.reset', {
+      type: 'soc.incidents.reset',
+      refresh: ['tickets', 'widgets'],
+      eventsDeleted: 5,
+      incidentsDeleted: 1,
+    })
+    await vi.advanceTimersByTimeAsync(450)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Count: 0')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it('applies realtime widget snapshots to FortiGate widgets without refetching', async () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     const fetcher = vi.fn()

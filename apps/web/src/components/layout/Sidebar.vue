@@ -20,8 +20,9 @@ import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
 import PlaybooksPanel from '../playbooks/PlaybooksPanel.vue'
+import LabPolicyWizard from '../integrations/LabPolicyWizard.vue'
 import { useRouter } from 'vue-router'
-import type { FortiGateTrafficPolicyDraft, PenguinToolType } from '../../stores/useIntegrationsStore'
+import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
 const { t } = useI18n()
 const emit = defineEmits<{ 'open-settings': [] }>()
@@ -43,7 +44,6 @@ const fgForm = ref({
 })
 const fgTestResult = ref<any>(null)
 const fgTestError = ref<string | null>(null)
-const fgPolicyDraftById = ref<Record<string, FortiGateTrafficPolicyDraft>>({})
 const penguinTestResults = ref<Record<PenguinToolType, any | null>>({
   siem_kowalski: null,
   xdr_rico: null,
@@ -213,28 +213,6 @@ async function handleToggleFortigateIngestion(integrationId: string) {
   if (!res.success) {
     fgTestError.value = res.error ?? 'Failed to configure FortiGate ingestion'
   }
-}
-
-async function handleDraftFortigateTrafficPolicy(integrationId: string) {
-  fgTestError.value = null
-  const res = await integrationsStore.draftFortigateTrafficPolicy(integrationId, {
-    name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
-    sourceInterface: 'port2',
-    destinationInterface: 'port3',
-    sourceSubnet: '10.10.10.0/24',
-    destinationSubnet: '10.10.20.0/24',
-    service: 'ALL',
-    action: 'accept',
-  })
-  if (res.success) {
-    fgPolicyDraftById.value[integrationId] = res.data
-  } else {
-    fgTestError.value = res.error ?? 'Failed to draft FortiGate policy'
-  }
-}
-
-function fortigatePolicyDraft(integrationId: string) {
-  return fgPolicyDraftById.value[integrationId]
 }
 
 function fortigateIngestionStatus(integrationId: string) {
@@ -697,32 +675,7 @@ async function handleChatSubmit() {
                     {{ fortigateIngestionStatus(intg.id)?.enabled ? t('integrations.disableScheduler') : t('integrations.enableScheduler') }}
                   </button>
                 </div>
-                <div class="mt-2 rounded border border-amber-400/20 bg-amber-500/10 p-2 text-xs text-theme-text-muted">
-                  <div class="flex items-center justify-between gap-2">
-                    <div>
-                      <div class="font-medium text-amber-200">Traffic policy helper</div>
-                      <p class="mt-0.5 leading-snug">Draft an allow+log policy for port2 → port3. Recommendation only; FortiDashboard does not push FortiGate config.</p>
-                    </div>
-                    <button
-                      type="button"
-                      class="shrink-0 rounded border border-amber-400/30 px-2 py-1 text-[11px] font-medium text-amber-100 transition-colors hover:bg-amber-400/10"
-                      :data-test="`fortigate-policy-draft-${intg.id}`"
-                      @click="handleDraftFortigateTrafficPolicy(intg.id)"
-                    >
-                      Draft CLI
-                    </button>
-                  </div>
-                  <div v-if="fortigatePolicyDraft(intg.id)" class="mt-2 rounded border border-theme-border bg-theme-bg/80 p-2">
-                    <div class="mb-1 flex items-center justify-between gap-2">
-                      <span class="rounded border border-amber-400/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">Recommendation only</span>
-                      <span class="text-[10px] text-theme-text-muted">{{ fortigatePolicyDraft(intg.id)?.policy.sourceInterface }} → {{ fortigatePolicyDraft(intg.id)?.policy.destinationInterface }}</span>
-                    </div>
-                    <pre class="max-h-52 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-2 font-mono text-[10px] leading-relaxed text-theme-text">{{ fortigatePolicyDraft(intg.id)?.cliCommands.join('\n') }}</pre>
-                    <ul class="mt-2 list-disc space-y-1 pl-4 text-[11px]">
-                      <li v-for="warning in fortigatePolicyDraft(intg.id)?.warnings" :key="warning">{{ warning }}</li>
-                    </ul>
-                  </div>
-                </div>
+                <LabPolicyWizard :integration-id="intg.id" />
               </div>
             </div>
 

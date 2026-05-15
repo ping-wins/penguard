@@ -40,8 +40,11 @@ Safety boundary:
 
 - The demo attack must target only lab-owned infrastructure.
 - DoS validation must be rate-limited and time-boxed.
-- Live blocking/policy writes require explicit approval in FortiDashboard and an ADR before implementation.
-- Until that ADR lands, FortiGate/FortiWeb response steps remain recommendation-only or dry-run.
+- FortiGate policy writes are allowed only through the accepted governed
+  FortiDashboard policy orchestration boundary: admin RBAC, preflight,
+  diff/summary, explicit approval and audit.
+- FortiWeb policy writes still need their own accepted write contract before
+  implementation.
 
 ## File Structure
 
@@ -956,7 +959,7 @@ git commit -m "feat(web): install marketplace add-ons from UI"
 
 ---
 
-### Task 6: Add Response Boundary ADR
+### Task 6: Add FortiWeb Response Boundary ADR
 
 **Files:**
 - Create: `docs/architecture/decisions/ADR-2026-05-15-fortiweb-response-boundary.md`
@@ -966,7 +969,7 @@ git commit -m "feat(web): install marketplace add-ons from UI"
 Create `docs/architecture/decisions/ADR-2026-05-15-fortiweb-response-boundary.md`:
 
 ```markdown
-# ADR 2026-05-15: FortiWeb And FortiGate Response Boundary
+# ADR 2026-05-15: FortiWeb Response Boundary
 
 ## Status
 
@@ -974,26 +977,28 @@ Proposed
 
 ## Context
 
-FortiDashboard will ingest FortiWeb WAF telemetry from a FortiWeb trial protecting
-the external landing page. SIEM incidents may require response suggestions such
-as blocking an abusive source IP, increasing WAF enforcement, or asking
-FortiGate to block traffic upstream.
+FortiDashboard will ingest FortiWeb WAF telemetry from a FortiWeb trial
+protecting the external landing page. SIEM incidents may require response
+actions such as blocking an abusive source IP or increasing WAF enforcement.
+FortiGate upstream blocking is governed separately by the accepted FortiGate
+policy orchestration ADR.
 
 ## Decision
 
-All response actions must be initiated from FortiDashboard, require an
+All FortiWeb response actions must be initiated from FortiDashboard, require an
 authenticated admin session, require explicit approval, and write audit events
 before and after the action.
 
-For the first FortiWeb WAF MVP, live response actions are not auto-applied.
-`soar_skipper` may create recommendation-only or dry-run actions:
+For the first FortiWeb WAF MVP, FortiWeb live writes are not implemented until
+this ADR is accepted with exact FortiWeb API paths. `soar_skipper` may create
+FortiWeb recommendation-only or dry-run actions:
 
 - Recommend FortiWeb block rule.
-- Recommend FortiGate upstream block.
 - Draft CLI/API payload for operator review.
 
-Live FortiWeb/FortiGate writes require a follow-up ADR that names exact API
-paths, preflight reads, rollback behavior, audit fields, and permission checks.
+Live FortiWeb writes require accepted API paths, preflight reads, rollback
+behavior, audit fields, and permission checks. FortiGate writes must use the
+accepted FortiGate policy orchestration boundary instead of this FortiWeb ADR.
 
 ## Consequences
 
@@ -1242,14 +1247,15 @@ Recommended order:
 3. Task 3: API FortiWeb ingest.
 4. Task 4: SIEM detections.
 5. Task 5: marketplace install UX.
-6. Task 6: response boundary ADR.
+6. Task 6: FortiWeb response boundary ADR.
 7. Task 7: SOAR recommendation node.
 8. Task 8: product docs.
 9. Task 9: end-to-end lab validation.
 
-Do not implement live FortiGate/FortiWeb writes until the ADR from Task 6 is
-approved and amended with exact API paths, preflight checks, rollback behavior,
-RBAC, and audit payloads.
+Do not implement live FortiWeb writes until the ADR from Task 6 is accepted with
+exact API paths, preflight checks, rollback behavior, RBAC, and audit payloads.
+FortiGate writes are governed by
+`docs/architecture/decisions/ADR-2026-05-15-fortigate-policy-orchestration.md`.
 
 ## Self-Review
 

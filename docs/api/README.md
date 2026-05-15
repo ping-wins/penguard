@@ -33,7 +33,7 @@ Integration responses must never include `apiKey`.
 
 In live mode, FortiGate integrations are scoped to the authenticated API session. `fortigate_integrations.owner_user_id` stores the owner, `GET /api/integrations` only returns the current user's integrations, and widget data lookups reject integrations owned by another user by returning `404`.
 
-The live FortiGate client is read-only and currently targets:
+The live FortiGate client currently targets these read endpoints:
 
 - `GET /api/v2/monitor/system/status`
 - `GET /api/v2/monitor/system/performance/status`
@@ -43,6 +43,26 @@ The live FortiGate client is read-only and currently targets:
 - `GET /api/v2/log/memory/utm/ips`
 
 Normalized responses cover system status, interfaces, policies, and threat logs. If a lab token returns `401`, verify the FortiGate `api-user` token, `accprofile`, `vdom`, and `trusthost` before changing backend code.
+
+FortiGate policy orchestration is no longer a draft/mock-only contract. The
+current product path uses FortiDashboard-owned policy APIs that perform
+preflight reads, show a diff/summary, require admin confirmation, apply only
+approved FortiDashboard-owned policy changes and persist audit records. AI,
+SIEM detections and background jobs must not apply policy changes without this
+human approval path.
+
+Governed policy endpoints:
+
+```txt
+POST /api/integrations/fortigate/{integrationId}/policy/preflight
+POST /api/integrations/fortigate/{integrationId}/policy/review
+POST /api/integrations/fortigate/{integrationId}/policy/apply
+POST /api/soc/playbook-runs/{runId}/policy-review
+POST /api/soc/playbook-runs/{runId}/policy-apply
+```
+
+The legacy `traffic-policy-draft` route is compatibility-only and returns
+`410 Gone`.
 
 Live widget data in non-mock mode now supports:
 

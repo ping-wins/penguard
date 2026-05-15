@@ -21,8 +21,9 @@ Acceptance criteria:
 - [ ] Realtime event payloads expose enough metadata for an operator-facing
   "last telemetry source" indicator.
 - [ ] Incident dedupe prevents repeated alerts for the same rule/entity/window.
-- [ ] FortiGate onboarding copy guides operators through traffic path validation
-  and `set logtraffic all` without auto-modifying policies.
+- [x] FortiGate onboarding includes governed policy orchestration for
+  log-enabled lab/customer traffic paths, including preflight, diff/summary,
+  approval and audit.
 - [ ] FortiWeb 8.0.5 trial protects the external landing page and forwards WAF
   telemetry into SIEM incidents through FortiDashboard.
 
@@ -72,8 +73,9 @@ Acceptance criteria:
   playbooks and workspace tools.
 - [ ] Additional live connectors follow the same integration, RBAC, audit and
   source-labeling contract as FortiGate and Penguin tools.
-- [ ] Sensitive response actions require RBAC, explicit approval, audit and a
-  product-approved FortiGate write-boundary update.
+- [ ] Sensitive response actions use the accepted FortiGate policy orchestration
+  boundary: RBAC, explicit approval, preflight, diff/summary, audit and rollback
+  guidance.
 
 Links:
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { AlertCircle, CheckCircle2, Clock, Loader2, Play, RefreshCcw, ShieldAlert, Workflow } from 'lucide-vue-next'
+import { AlertCircle, CheckCircle2, Clock, History, Loader2, Play, RefreshCcw, ShieldAlert, Workflow } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { usePlaybooksStore } from '../../stores/usePlaybooksStore'
-import type { Playbook, PlaybookNode } from '../../services/playbooksClient'
+import type { Playbook, PlaybookNode, PlaybookRun } from '../../services/playbooksClient'
 
 const { t } = useI18n()
 const store = usePlaybooksStore()
@@ -18,6 +18,7 @@ const builderSteps = ref<Array<Pick<PlaybookNode, 'type' | 'config'>>>([])
 const selected = computed(() => store.playbooks.find((playbook) => playbook.id === selectedId.value) ?? store.playbooks[0] ?? null)
 const selectedRunId = computed(() => selected.value ? store.latestRunByPlaybook[selected.value.id] : null)
 const selectedRun = computed(() => selectedRunId.value ? store.runs[selectedRunId.value] : null)
+const visibleRunHistory = computed(() => store.runHistory.slice(0, 8))
 const builderPreview = computed(() => ['trigger.incident_created', ...builderSteps.value.map((step) => step.type)].join(' → '))
 const builderNodeTypes = computed(() => store.safeActionNodeTypes.length > 0
   ? store.safeActionNodeTypes
@@ -73,6 +74,22 @@ function stepSafetyClass(type: string, sensitive?: boolean) {
   if (sensitive || nodeDefinition(type)?.sensitive) return 'border-red-500/30 bg-red-500/10 text-red-100'
   if (nodeDefinition(type)?.boundary?.includes('dry_run')) return 'border-sky-500/30 bg-sky-500/10 text-sky-100'
   return 'border-theme-border bg-theme-bg/70 text-theme-text-muted'
+}
+
+function runStatusClass(status: unknown) {
+  const s = String(status ?? '').toLowerCase()
+  if (s === 'completed' || s === 'succeeded') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+  if (s === 'waiting_approval' || s === 'pending_approval') return 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+  if (s === 'failed' || s === 'error') return 'border-red-500/30 bg-red-500/10 text-red-100'
+  return 'border-theme-border bg-theme-bg/70 text-theme-text-muted'
+}
+
+function canApproveRun(run: PlaybookRun) {
+  return ['waiting_approval', 'pending_approval'].includes(String(run.status ?? '').toLowerCase())
+}
+
+async function approveHistoryRun(run: PlaybookRun) {
+  await store.approve(run.id).catch(() => undefined)
 }
 
 function addBuilderStep() {
@@ -209,6 +226,54 @@ onMounted(() => store.refresh())
       >
         {{ store.isCreating ? t('playbooks.saving') : t('playbooks.saveDraft') }}
       </button>
+    </section>
+
+    <section data-test="playbook-run-history" class="mx-3 mb-3 rounded-lg border border-theme-border bg-theme-panel/40 p-3">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div>
+          <h3 class="flex items-center gap-1.5 text-sm font-semibold text-theme-text">
+            <History :size="15" />
+            {{ t('playbooks.runHistoryTitle') }}
+          </h3>
+          <p class="mt-0.5 text-xs text-theme-text-muted">{{ t('playbooks.runHistorySubtitle') }}</p>
+        </div>
+        <span class="rounded border border-theme-border bg-theme-bg/70 px-2 py-0.5 text-[10px] text-theme-text-muted">
+          {{ t('playbooks.runHistoryCount', { count: store.runHistory.length }) }}
+        </span>
+      </div>
+      <div v-if="visibleRunHistory.length" class="max-h-52 space-y-1 overflow-y-auto pr-1">
+        <div
+          v-for="run in visibleRunHistory"
+          :key="run.id"
+          class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded border border-theme-border/60 bg-theme-bg/40 p-2 text-xs"
+        >
+          <div class="min-w-0">
+            <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span class="font-mono font-semibold text-theme-text">{{ run.id }}</span>
+              <span class="rounded border px-1.5 py-0.5 text-[10px] uppercase" :class="runStatusClass(run.status)">
+                {{ run.status }}
+              </span>
+            </div>
+            <div class="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-theme-text-muted">
+              <span class="truncate"><b>{{ t('playbooks.playbookId') }}</b> {{ run.playbookId || '--' }}</span>
+              <span class="truncate"><b>{{ t('playbooks.incidentId') }}</b> {{ run.incidentId || '--' }}</span>
+            </div>
+          </div>
+          <button
+            v-if="canApproveRun(run)"
+            type="button"
+            :data-test="`playbook-run-history-approve-${run.id}`"
+            class="self-start rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50"
+            :disabled="store.isApproving[run.id]"
+            @click="approveHistoryRun(run)"
+          >
+            {{ store.isApproving[run.id] ? t('playbooks.approving') : t('playbooks.approve') }}
+          </button>
+        </div>
+      </div>
+      <div v-else class="rounded border border-dashed border-theme-border p-3 text-xs text-theme-text-muted">
+        {{ t('playbooks.runHistoryEmpty') }}
+      </div>
     </section>
 
     <div v-if="store.isLoading" class="px-4 py-6 text-sm text-theme-text-muted flex items-center gap-2">

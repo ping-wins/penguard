@@ -62,16 +62,20 @@ product need is explicit.
 - Every state-changing SOC action must write audit events: auth, integrations,
   workspace, incidents, playbooks, playbook runs, endpoint enrollment, admin
   views and approvals.
-- `soar_skipper` actions default to `dry_run`. Sensitive or destructive future
-  actions require RBAC, explicit approval and audit.
+- `soar_skipper` actions default to `dry_run`. Sensitive FortiGate/FortiWeb
+  actions may become live only through FortiDashboard-owned APIs with RBAC,
+  explicit approval, preflight, diff/summary, rollback guidance and audit.
 - AI-generated playbooks and widgets are drafts until a permitted human reviews
   and applies them.
-- AI must not reveal secrets, execute arbitrary code, modify FortiGate policies,
-  approve sensitive actions or run destructive operations.
+- AI must not reveal secrets, execute arbitrary code, directly apply FortiGate
+  policies, approve sensitive actions or run destructive operations.
 
-### FortiGate write boundary
+### FortiGate policy orchestration boundary
 
-FortiGate integration must stay non-destructive.
+FortiDashboard is a SOC orchestrator. FortiGate integrations are allowed to
+perform real, audited FortiGate policy orchestration for customer/lab traffic
+validation and approved response workflows. Do not replace this with mock,
+draft-only or out-of-band CLI guidance as the product path.
 
 Allowed for the MVP:
 
@@ -80,16 +84,28 @@ Allowed for the MVP:
   preflight has read the current FortiGate state, the user explicitly confirms,
   existing customer configuration is not silently overwritten, and before/after
   details are audited with secrets redacted.
+- Safe/additive firewall traffic-policy orchestration only when all of these are
+  true: preflight has read interfaces, address objects, services and current
+  policy order; the requested change is shown as a diff/summary; an `admin`
+  explicitly confirms; FortiDashboard creates or updates only FortiDashboard-
+  owned objects/policies; existing customer policies are not silently
+  overwritten; the action, target entities, before/after summary, FortiGate
+  response and rollback guidance are audited with secrets redacted.
+- Temporary or lab-only policies should support expiry/cleanup metadata when
+  possible, especially for scan-validation or containment rules.
 
-Not allowed without a new architecture decision and product approval:
+Not allowed:
 
-- Creating/modifying firewall traffic policies automatically.
+- Silent or automatic policy changes triggered only by AI, SIEM detections,
+  background jobs or browser state.
 - Blocking IPs, changing routes/interfaces, changing auth/admin/global settings
-  or disabling FortiGate features.
+  or disabling FortiGate features without a separate accepted architecture
+  decision and product approval.
 - Any destructive or stealthy response action.
 
-Traffic-policy helpers may generate diagnostic guidance or CLI snippets for an
-operator. They must not auto-apply policy changes.
+Traffic-policy helpers should apply real FortiGate changes through the governed
+BFF orchestration path. Documentation-only CLI snippets are acceptable in
+operations runbooks, but they are not the product implementation.
 
 ## Project Structure
 
@@ -212,8 +228,10 @@ Product setup direction:
 3. Show required log-forwarding/syslog settings and the current state.
 4. Apply safe/additive log forwarding only with explicit confirmation.
 5. Verify receipt of logs.
-6. If no incidents appear, guide the operator to verify traffic path and
-   `set logtraffic all`; do not auto-create traffic policies.
+6. If no incidents appear, guide the operator through FortiDashboard policy
+   orchestration to create or verify a log-enabled traffic path such as a
+   lab deny/log or allow/log policy. Do not require out-of-band FortiGate UI
+   changes for the normal validation flow.
 
 Lab topology caveats and real-scan checklists belong in `docs/operations/`, not
 in this file.
@@ -264,6 +282,8 @@ Current capabilities:
 - Audit create, update, simulate, run and approve actions through the BFF.
 - Completed approved runs can update the linked SIEM ticket to `contained`; if
   SIEM patching fails, the response is partial and audited.
+- FortiGate response nodes may request FortiDashboard-owned policy orchestration
+  after approval. They must not bypass the BFF, RBAC, preflight or audit path.
 
 Gateway API:
 
@@ -511,13 +531,16 @@ Allowed:
 - Summarize widget data, incidents, endpoint timelines and playbook runs.
 - Suggest safe actions and draft playbooks.
 - Draft custom widgets using the workspace data model.
+- Suggest FortiGate/FortiWeb response actions for a permitted human to approve
+  in FortiDashboard.
 
 Forbidden:
 
 - Activate playbooks or approve sensitive steps.
 - Run destructive actions.
-- Modify FortiGate policies/config except the explicit syslog forwarding setup
-  path described above, and never through the AI assistant.
+- Directly apply or approve FortiGate/FortiWeb policy/config changes. Live
+  policy changes must be initiated by a permitted human through FortiDashboard's
+  governed orchestration UI/API.
 - Reveal secrets.
 - Execute arbitrary Python, shell, SQL, HTTP or browser code.
 - Persist widgets or playbooks as active without user confirmation.

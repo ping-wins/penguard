@@ -41,6 +41,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     if (unsubscribeRealtime !== null) return
     unsubscribeRealtime = useRealtimeStore().subscribe((event) => {
       if (event.ticket) upsertTicket(event.ticket)
+      else if (event.refresh?.includes('tickets')) void refresh()
     })
   }
 

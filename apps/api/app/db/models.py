@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -130,6 +131,39 @@ class FortiGateIngestionStatusModel(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
+    )
+
+
+class FortiGatePolicyChangeRequestModel(Base):
+    __tablename__ = "fortigate_policy_change_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    integration_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    incident_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    playbook_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="pending_review",
+        index=True,
+    )
+    intent_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    preflight_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    proposed_changes_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    review_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    applied_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
 

@@ -141,7 +141,7 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('1 SIEM')
   })
 
-  it('renders a FortiGate traffic policy draft action without applying it', async () => {
+  it('renders the FortiGate lab policy wizard instead of the old CLI draft helper', async () => {
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'
     const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -157,27 +157,6 @@ describe('Sidebar integrations panel', () => {
               status: 'connected',
             },
           ],
-        }))
-      }
-      if (url.endsWith('/traffic-policy-draft')) {
-        expect(init?.method).toBe('POST')
-        return Promise.resolve(jsonResponse({
-          integrationId: 'int_fgt_01',
-          mode: 'recommendation_only',
-          dryRunOnly: true,
-          policy: {
-            name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
-            sourceInterface: 'port2',
-            destinationInterface: 'port3',
-            sourceSubnet: '10.10.10.0/24',
-            destinationSubnet: '10.10.20.0/24',
-            service: 'ALL',
-            action: 'accept',
-            logTraffic: 'all',
-            nat: 'disable',
-          },
-          cliCommands: ['config firewall policy', 'set action accept', 'set logtraffic all', 'end'],
-          warnings: ['FortiDashboard does not apply this policy automatically.'],
         }))
       }
       return Promise.resolve(jsonResponse({
@@ -202,15 +181,12 @@ describe('Sidebar integrations panel', () => {
 
     await wrapper.get('[title="Integrações SOC"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="fortigate-policy-draft-int_fgt_01"]').trigger('click')
-    await flushPromises()
 
-    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/traffic-policy-draft', expect.objectContaining({
-      method: 'POST',
-    }))
-    expect(wrapper.text()).toContain('Recommendation only')
-    expect(wrapper.text()).toContain('set logtraffic all')
-    expect(wrapper.text()).toContain('does not apply')
+    expect(wrapper.find('[data-test="fortigate-policy-draft-int_fgt_01"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Traffic policy helper')
+    expect(wrapper.text()).not.toContain('Draft CLI')
+    expect(wrapper.text()).toContain('Lab policy wizard')
+    expect(wrapper.find('[data-test="fortigate-lab-policy-wizard-int_fgt_01"]').exists()).toBe(true)
   })
 
   it('opens the SOAR playbooks drawer from the sidebar', async () => {

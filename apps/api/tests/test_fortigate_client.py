@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -153,6 +155,101 @@ def test_fortigate_client_first_cut_only_uses_read_only_get_requests():
         ("GET", "/api/v2/cmdb/firewall/policy"),
         ("GET", "/api/v2/log/memory/ips"),
     ]
+
+
+def test_fortigate_client_creates_owned_address_object():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST" and request.url.path == "/api/v2/cmdb/firewall/address":
+            body = json.loads(request.content.decode())
+            assert body == {
+                "name": "FD_ADDR_192_0_2_50",
+                "subnet": "192.0.2.50 255.255.255.255",
+                "comment": "FortiDashboard owned temporary block object",
+            }
+            return httpx.Response(
+                200,
+                json={"status": "success", "mkey": "FD_ADDR_192_0_2_50"},
+            )
+        return httpx.Response(404, json={"status": "error"})
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.create_address_object(
+        name="FD_ADDR_192_0_2_50",
+        subnet="192.0.2.50 255.255.255.255",
+        comment="FortiDashboard owned temporary block object",
+    )
+
+    assert result["status"] == "success"
+    assert requests[0].headers["authorization"] == "Bearer secret-token"
+
+
+def test_fortigate_client_creates_firewall_policy():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/api/v2/cmdb/firewall/policy":
+            body = json.loads(request.content.decode())
+            assert body["name"] == "FD_TMP_BLOCK_192_0_2_50"
+            assert body["action"] == "deny"
+            assert body["logtraffic"] == "all"
+            assert body["srcaddr"] == [{"name": "FD_ADDR_192_0_2_50"}]
+            return httpx.Response(200, json={"status": "success", "mkey": 42})
+        return httpx.Response(404, json={"status": "error"})
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = client.create_firewall_policy(
+        {
+            "name": "FD_TMP_BLOCK_192_0_2_50",
+            "action": "deny",
+            "logtraffic": "all",
+            "srcaddr": [{"name": "FD_ADDR_192_0_2_50"}],
+            "dstaddr": [{"name": "all"}],
+            "service": [{"name": "ALL"}],
+            "schedule": "always",
+            "srcintf": [{"name": "port2"}],
+            "dstintf": [{"name": "port3"}],
+            "status": "enable",
+            "comments": "FortiDashboard owned temporary block",
+        }
+    )
+
+    assert result["mkey"] == 42
+
+
+def test_fortigate_client_includes_response_excerpt_for_http_errors():
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                500,
+                json={"status": "error", "error": -3, "message": "name size[35] exceeded"},
+            )
+        ),
+    )
+
+    with pytest.raises(FortiGateApiError, match=r"HTTP 500.*name size\[35\] exceeded"):
+        client.create_firewall_policy(
+            {
+                "name": "FD_LAB_ALLOW_NAME_THAT_IS_TOO_LONG_FOR_FORTIOS",
+                "action": "accept",
+                "logtraffic": "all",
+            }
+        )
 
 
 def test_fortigate_client_raises_for_fortios_error_status():
@@ -321,7 +418,21 @@ def test_normalize_interfaces_policies_and_threat_logs():
                 "dstintf": [{"name": "wan"}],
                 "service": [{"name": "HTTPS"}],
                 "schedule": "always",
-            }
+            },
+            {
+                "policyid": 42,
+                "name": "FD_TMP_BLOCK_32FD0707AD9A",
+                "status": "enable",
+                "action": "deny",
+                "srcintf": [{"name": "port2"}],
+                "dstintf": [{"name": "port3"}],
+                "srcaddr": [{"name": "FD_ADDR_10_10_10_10"}],
+                "dstaddr": [{"name": "FD_ADDR_10_10_20_10"}],
+                "service": [{"name": "ALL"}],
+                "schedule": "always",
+                "logtraffic": "all",
+                "comments": "FortiDashboard owned temporary block policy",
+            },
         ]
     ) == [
         {
@@ -333,6 +444,30 @@ def test_normalize_interfaces_policies_and_threat_logs():
             "destinationInterfaces": ["wan"],
             "services": ["HTTPS"],
             "schedule": "always",
+            "sourceAddresses": [],
+            "destinationAddresses": [],
+            "logging": "",
+            "comments": "",
+            "isBlocking": False,
+            "isFortiDashboardOwned": False,
+            "policyKind": "standard",
+        },
+        {
+            "id": "42",
+            "name": "FD_TMP_BLOCK_32FD0707AD9A",
+            "status": "enabled",
+            "action": "deny",
+            "sourceInterfaces": ["port2"],
+            "destinationInterfaces": ["port3"],
+            "services": ["ALL"],
+            "schedule": "always",
+            "sourceAddresses": ["FD_ADDR_10_10_10_10"],
+            "destinationAddresses": ["FD_ADDR_10_10_20_10"],
+            "logging": "all",
+            "comments": "FortiDashboard owned temporary block policy",
+            "isBlocking": True,
+            "isFortiDashboardOwned": True,
+            "policyKind": "temporary_block",
         }
     ]
 

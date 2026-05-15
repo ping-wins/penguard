@@ -354,56 +354,84 @@ describe('useIntegrationsStore', () => {
     })
   })
 
-  it('requests a FortiGate traffic policy draft as recommendation-only CLI', async () => {
+  it('requests FortiGate policy preflight, review and apply with CSRF credentials', async () => {
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'
-    const responseBody = {
-      integrationId: 'int_fgt_01',
-      mode: 'recommendation_only',
-      dryRunOnly: true,
-      policy: {
-        name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
-        sourceInterface: 'port2',
-        destinationInterface: 'port3',
-        sourceSubnet: '10.10.10.0/24',
-        destinationSubnet: '10.10.20.0/24',
-        service: 'ALL',
-        action: 'accept',
-      },
-      cliCommands: ['config firewall policy', 'set logtraffic all', 'end'],
-      warnings: ['FortiDashboard does not apply this policy automatically.'],
+    const preflightBody = {
+      integration_id: 'int_fgt_01',
+      proposed_policy_name: 'FD_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL',
+      review_hash: 'hash_01',
+      changes: [],
     }
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse(responseBody))
+    const reviewBody = {
+      ...preflightBody,
+      request_id: 'fgpcr_01',
+      status: 'pending_review',
+    }
+    const applyBody = {
+      request_id: 'fgpcr_01',
+      status: 'applied',
+      applied_changes: [{ name: 'FD_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL' }],
+    }
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/policy/preflight')) return Promise.resolve(jsonResponse(preflightBody))
+      if (url.endsWith('/policy/review')) return Promise.resolve(jsonResponse(reviewBody))
+      if (url.endsWith('/policy/apply')) return Promise.resolve(jsonResponse(applyBody))
+      return Promise.resolve(jsonResponse({}))
+    })
     vi.stubGlobal('fetch', fetcher)
 
     const store = useIntegrationsStore()
 
-    await expect(store.draftFortigateTrafficPolicy('int_fgt_01', {
-      name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
-      sourceInterface: 'port2',
-      destinationInterface: 'port3',
-      sourceSubnet: '10.10.10.0/24',
-      destinationSubnet: '10.10.20.0/24',
+    const payload = {
+      intent: 'lab_allow_log' as const,
+      scope: 'source_destination_service' as const,
+      source_interface: 'port2',
+      destination_interface: 'port3',
+      source_ip: '192.0.2.50',
+      destination_ip: '198.51.100.10',
       service: 'ALL',
-      action: 'accept',
-    })).resolves.toEqual({ success: true, data: responseBody })
+    }
+    await expect(store.preflightFortigatePolicy('int_fgt_01', payload)).resolves.toEqual({
+      success: true,
+      data: preflightBody,
+    })
+    await expect(store.createFortigatePolicyReview('int_fgt_01', payload)).resolves.toEqual({
+      success: true,
+      data: reviewBody,
+    })
+    await expect(store.applyFortigatePolicy('int_fgt_01', {
+      request_id: 'fgpcr_01',
+      review_hash: 'hash_01',
+    })).resolves.toEqual({ success: true, data: applyBody })
 
-    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/traffic-policy-draft', {
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/policy/preflight', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': 'csrf_01',
       },
       credentials: 'include',
-      body: JSON.stringify({
-        name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
-        sourceInterface: 'port2',
-        destinationInterface: 'port3',
-        sourceSubnet: '10.10.10.0/24',
-        destinationSubnet: '10.10.20.0/24',
-        service: 'ALL',
-        action: 'accept',
-      }),
+      body: JSON.stringify(payload),
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/policy/review', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/policy/apply', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ request_id: 'fgpcr_01', review_hash: 'hash_01' }),
     })
   })
 })

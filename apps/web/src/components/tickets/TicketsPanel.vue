@@ -22,15 +22,23 @@ import {
   analyzeIncident,
   approvePlaybookRun,
   applyContainmentPlaybook,
+  applyPlaybookRunPolicy,
+  createPlaybookRunPolicyReview,
   draftContainmentPlaybook,
+  getIncidentTriageContext,
+  instantiateRecommendedPlaybook,
   resetIncidentStore,
   suggestContainment,
   type ApplyContainmentResponse,
   type ContainmentSuggestion,
+  type FortiGatePolicyScope,
   type IncidentAnalysis,
+  type PlaybookRunPolicyApplyResponse,
   type PlaybookDraftResponse,
+  type PlaybookRunPolicyReviewResponse,
   type Ticket,
   type TicketStatus,
+  type TriageContext,
   type TriageLevel,
 } from '../../services/ticketsClient'
 import { Trash2 } from 'lucide-vue-next'
@@ -67,15 +75,33 @@ const isSavingPatch = ref(false)
 const patchError = ref<string | null>(null)
 const aiAnalysis = ref<IncidentAnalysis | null>(null)
 const aiContainment = ref<ContainmentSuggestion | null>(null)
+const triageContext = ref<TriageContext | null>(null)
+const isLoadingTriageContext = ref(false)
+const triageContextError = ref<string | null>(null)
 const isAnalyzing = ref(false)
 const isContaining = ref(false)
 const aiError = ref<string | null>(null)
 const playbookDraft = ref<PlaybookDraftResponse | null>(null)
 const applyResult = ref<ApplyContainmentResponse | null>(null)
 const isDrafting = ref(false)
+const instantiatingTemplateId = ref<string | null>(null)
 const isApplying = ref(false)
 const isApprovingRun = ref(false)
 const playbookError = ref<string | null>(null)
+const policyReview = ref<PlaybookRunPolicyReviewResponse | null>(null)
+const policyApplyResult = ref<PlaybookRunPolicyApplyResponse | null>(null)
+const isCreatingPolicyReview = ref(false)
+const isApplyingPolicyReview = ref(false)
+const policyForm = ref({
+  integrationId: '',
+  scope: 'source_destination' as FortiGatePolicyScope,
+  sourceInterface: 'port2',
+  destinationInterface: 'port3',
+  sourceIp: '',
+  destinationIp: '',
+  service: 'ALL',
+  durationMinutes: 30,
+})
 
 const tickets = computed(() => store.tickets)
 const aiAnalysisBadge = computed(() => aiAnalysis.value ? sourceBadgeFor(aiAnalysis.value) : null)
@@ -83,6 +109,33 @@ const selectedDetection = computed(() => {
   const detection = selected.value?.attributes?.detection
   return detection && typeof detection === 'object' ? detection as Record<string, any> : null
 })
+const visibleTriageContext = computed(() => {
+  return triageContext.value?.incidentId ? triageContext.value : null
+})
+
+function formatTriageValue(value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ')
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined && item !== null && item !== '')
+      .map(([key, item]) => `${key}: ${String(item)}`)
+      .join(' · ')
+  }
+  if (value === undefined || value === null || value === '') return '—'
+  return String(value)
+}
+
+function confidenceClass(confidence: string | undefined): string {
+  if (confidence === 'high') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+  if (confidence === 'medium') return 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+  return 'border-sky-500/40 bg-sky-500/10 text-sky-200'
+}
+
+function candidateClass(available: boolean): string {
+  return available
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+    : 'border-theme-border bg-theme-bg/50 text-theme-text-muted'
+}
 
 function thresholdLabel(threshold: any): string {
   if (!threshold || typeof threshold !== 'object') return ''
@@ -120,6 +173,11 @@ const statusOptions = computed<{ value: TicketStatus; label: string }[]>(() => [
 ])
 
 const triageOptions: TriageLevel[] = ['T1', 'T2', 'T3']
+const policyScopeOptions: { value: FortiGatePolicyScope; labelKey: string }[] = [
+  { value: 'source_only', labelKey: 'tickets.policy.scopeSourceOnly' },
+  { value: 'source_destination', labelKey: 'tickets.policy.scopeSourceDestination' },
+  { value: 'source_destination_service', labelKey: 'tickets.policy.scopeSourceDestinationService' },
+]
 
 const filteredByLane = computed<Record<TriageLevel, Ticket[]>>(() => {
   const result: Record<TriageLevel, Ticket[]> = { T1: [], T2: [], T3: [] }
@@ -145,6 +203,19 @@ const statusBadgeClass = (status: TicketStatus) => {
   }
 }
 
+const policyReviewRequired = computed(() => Boolean(applyResult.value?.run?.policyReviewRequired))
+const canCreatePolicyReview = computed(() => {
+  return Boolean(
+    applyResult.value?.run?.id
+      && policyForm.value.integrationId.trim()
+      && policyForm.value.sourceInterface.trim()
+      && policyForm.value.destinationInterface.trim()
+      && policyForm.value.sourceIp.trim()
+      && (policyForm.value.scope === 'source_only' || policyForm.value.destinationIp.trim()),
+  )
+})
+const canApplyPolicyReview = computed(() => Boolean(policyReview.value && !policyApplyResult.value))
+
 async function applyPatch(
   ticket: Ticket,
   patch: { triageLevel?: TriageLevel; ticketStatus?: TicketStatus },
@@ -160,6 +231,28 @@ async function applyPatch(
     patchError.value = e?.message ?? 'Failed to update ticket'
   } finally {
     isSavingPatch.value = false
+  }
+}
+
+let triageContextRequestId = 0
+async function loadTriageContext(ticketId: string) {
+  const requestId = ++triageContextRequestId
+  triageContext.value = null
+  triageContextError.value = null
+  isLoadingTriageContext.value = true
+  try {
+    const context = await getIncidentTriageContext(ticketId)
+    if (requestId === triageContextRequestId) {
+      triageContext.value = context?.incidentId ? context : null
+    }
+  } catch (e: any) {
+    if (requestId === triageContextRequestId) {
+      triageContextError.value = e?.message ?? t('tickets.drawer.triageContextError')
+    }
+  } finally {
+    if (requestId === triageContextRequestId) {
+      isLoadingTriageContext.value = false
+    }
   }
 }
 
@@ -202,6 +295,10 @@ function resetAiState() {
   playbookDraft.value = null
   applyResult.value = null
   playbookError.value = null
+  policyReview.value = null
+  policyApplyResult.value = null
+  isCreatingPolicyReview.value = false
+  isApplyingPolicyReview.value = false
 }
 
 async function runDraftPlaybook(ticket: Ticket) {
@@ -213,6 +310,19 @@ async function runDraftPlaybook(ticket: Ticket) {
     playbookError.value = e?.message ?? 'Failed to draft playbook'
   } finally {
     isDrafting.value = false
+  }
+}
+
+async function runInstantiateTemplate(ticket: Ticket, templateId: string) {
+  playbookError.value = null
+  instantiatingTemplateId.value = templateId
+  try {
+    playbookDraft.value = await instantiateRecommendedPlaybook(ticket.id, templateId)
+    aiContainment.value = playbookDraft.value.suggestion
+  } catch (e: any) {
+    playbookError.value = e?.message ?? t('tickets.ai.instantiateTemplateError')
+  } finally {
+    instantiatingTemplateId.value = null
   }
 }
 
@@ -267,11 +377,114 @@ async function runApprovePlaybook(ticket: Ticket) {
           ? 'contained'
           : applyResult.value.ticketStatus,
       }
+      if (approved.policyReviewRequired) {
+        primePolicyReviewForm(ticket)
+      }
     }
   } catch (e: any) {
     playbookError.value = e?.message ?? 'Failed to approve playbook run'
   } finally {
     isApprovingRun.value = false
+  }
+}
+
+function stringValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+function primePolicyReviewForm(ticket: Ticket) {
+  const attributes = ticket.attributes ?? {}
+  const entities = ticket.entities ?? {}
+  const sourceIp = stringValue(
+    attributes.sourceIp,
+    attributes.source_ip,
+    attributes.srcip,
+    entities.sourceIp,
+    entities.source_ip,
+    entities.srcip,
+  )
+  const destinationIp = stringValue(
+    attributes.destinationIp,
+    attributes.destination_ip,
+    attributes.dstip,
+    entities.destinationIp,
+    entities.destination_ip,
+    entities.dstip,
+  )
+  policyReview.value = null
+  policyApplyResult.value = null
+  policyForm.value = {
+    ...policyForm.value,
+    integrationId: stringValue(attributes.integrationId, attributes.integration_id, entities.integrationId),
+    scope: destinationIp ? 'source_destination' : 'source_only',
+    sourceIp,
+    destinationIp,
+    service: stringValue(attributes.service, attributes.destinationService, entities.service) || 'ALL',
+  }
+}
+
+async function runCreatePolicyReview() {
+  const runId = applyResult.value?.run?.id
+  if (!runId) return
+  playbookError.value = null
+  isCreatingPolicyReview.value = true
+  policyApplyResult.value = null
+  try {
+    policyReview.value = await createPlaybookRunPolicyReview(runId, {
+      integrationId: policyForm.value.integrationId.trim(),
+      scope: policyForm.value.scope,
+      sourceIp: policyForm.value.sourceIp.trim(),
+      destinationIp: policyForm.value.destinationIp.trim() || undefined,
+      service: policyForm.value.service.trim() || 'ALL',
+      sourceInterface: policyForm.value.sourceInterface.trim(),
+      destinationInterface: policyForm.value.destinationInterface.trim(),
+      durationMinutes: Number(policyForm.value.durationMinutes) || 30,
+    })
+  } catch (e: any) {
+    playbookError.value = e?.message ?? t('tickets.policy.reviewError')
+  } finally {
+    isCreatingPolicyReview.value = false
+  }
+}
+
+async function runApplyPolicyReview(ticket: Ticket) {
+  const runId = applyResult.value?.run?.id
+  if (!runId || !policyReview.value) return
+  playbookError.value = null
+  isApplyingPolicyReview.value = true
+  try {
+    const result = await applyPlaybookRunPolicy(runId, {
+      integrationId: policyForm.value.integrationId.trim(),
+      requestId: policyReview.value.request_id,
+      reviewHash: policyReview.value.review_hash,
+    })
+    policyApplyResult.value = result
+    const ticketUpdate = result.ticketUpdate
+    const updatedTicket = ticketUpdate?.ticket
+    if (updatedTicket) {
+      const idx = store.tickets.findIndex((t) => t.id === ticket.id)
+      if (idx >= 0) store.tickets[idx] = updatedTicket
+      selected.value = updatedTicket
+    } else if (ticketUpdate?.status === 'contained') {
+      await store.refresh()
+    } else if (ticketUpdate?.status === 'failed') {
+      playbookError.value = ticketUpdate.error || t('tickets.policy.ticketUpdateFailed')
+    }
+    if (applyResult.value && ticketUpdate?.status === 'contained') {
+      applyResult.value = {
+        ...applyResult.value,
+        ticket: updatedTicket ?? applyResult.value.ticket,
+        ticketStatus: 'contained',
+      }
+    }
+  } catch (e: any) {
+    playbookError.value = e?.message ?? t('tickets.policy.applyError')
+  } finally {
+    isApplyingPolicyReview.value = false
   }
 }
 
@@ -299,8 +512,11 @@ function formatTime(value: string | null | undefined) {
 
 watch(
   () => selected.value?.id,
-  () => {
+  (ticketId) => {
     resetAiState()
+    triageContext.value = null
+    triageContextError.value = null
+    if (ticketId) void loadTriageContext(ticketId)
   },
 )
 
@@ -521,6 +737,151 @@ async function resetIncidents() {
             >
               {{ thresholdLabel(threshold) }}
             </span>
+          </div>
+        </div>
+
+        <div
+          v-if="isLoadingTriageContext || triageContextError || visibleTriageContext"
+          data-test="ticket-triage-context"
+          class="px-4 py-3 border-b border-theme-border bg-emerald-500/5 space-y-3"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs uppercase tracking-wider text-emerald-300 flex items-center gap-1">
+              <Shield :size="13" />
+              {{ t('tickets.drawer.triageContext') }}
+            </h4>
+            <span
+              v-if="visibleTriageContext"
+              class="rounded border px-1.5 py-0.5 text-[10px] uppercase"
+              :class="confidenceClass(visibleTriageContext.confidence)"
+            >
+              {{ visibleTriageContext.confidence }}
+            </span>
+          </div>
+          <div v-if="isLoadingTriageContext" class="text-xs text-theme-text-muted flex items-center gap-1">
+            <Loader2 :size="12" class="animate-spin" />
+            {{ t('tickets.drawer.loadingTriageContext') }}
+          </div>
+          <div v-else-if="triageContextError" class="text-xs text-red-300 flex items-start gap-1">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ triageContextError }}
+          </div>
+          <div v-else-if="visibleTriageContext" class="space-y-3">
+            <dl class="grid grid-cols-3 gap-x-2 gap-y-1 text-xs">
+              <dt class="text-theme-text-muted">{{ t('tickets.drawer.alertFamily') }}</dt>
+              <dd class="col-span-2 font-mono text-theme-text break-all">{{ visibleTriageContext.alertFamily }}</dd>
+              <dt class="text-theme-text-muted">{{ t('tickets.drawer.attackType') }}</dt>
+              <dd class="col-span-2 font-mono text-theme-text break-all">{{ visibleTriageContext.attackType }}</dd>
+              <dt class="text-theme-text-muted">{{ t('tickets.drawer.recommended') }}</dt>
+              <dd class="col-span-2 text-theme-text">
+                {{ visibleTriageContext.recommendedTriageLevel }} · {{ t('tickets.status.' + visibleTriageContext.recommendedTicketStatus) }}
+              </dd>
+            </dl>
+
+            <div v-if="visibleTriageContext.mitreMappings?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.drawer.mitreMappings') }}</div>
+              <div class="mt-1 space-y-1">
+                <div
+                  v-for="mapping in visibleTriageContext.mitreMappings"
+                  :key="`${mapping.tacticId}-${mapping.techniqueId}`"
+                  class="rounded border border-emerald-500/30 bg-emerald-950/20 p-2 text-xs"
+                >
+                  <div class="flex flex-wrap items-center gap-1">
+                    <span class="font-mono text-emerald-200">{{ mapping.techniqueId }}</span>
+                    <span class="text-theme-text">{{ mapping.techniqueName }}</span>
+                    <span class="text-theme-text-muted">·</span>
+                    <span class="font-mono text-theme-text-muted">{{ mapping.tacticId }}</span>
+                    <span class="text-theme-text-muted">{{ mapping.tacticName }}</span>
+                  </div>
+                  <p class="mt-1 text-[11px] text-theme-text-muted leading-relaxed">{{ mapping.reason }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="visibleTriageContext.evidence?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.drawer.evidence') }}</div>
+              <ul class="mt-1 space-y-1">
+                <li
+                  v-for="item in visibleTriageContext.evidence"
+                  :key="item.id"
+                  class="rounded border border-theme-border/70 bg-theme-bg/40 p-2 text-xs"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-semibold text-theme-text">{{ item.label }}</span>
+                    <span class="font-mono text-[10px] text-theme-text-muted">{{ item.source }}</span>
+                  </div>
+                  <div class="mt-1 font-mono text-theme-text break-all">{{ formatTriageValue(item.value) }}</div>
+                  <div v-if="item.threshold" class="mt-1 text-[10px] text-theme-text-muted">
+                    {{ t('tickets.drawer.threshold') }}: {{ formatTriageValue(item.threshold) }}
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="visibleTriageContext.responseCandidates?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.drawer.recommendedResponse') }}</div>
+              <div class="mt-1 space-y-1">
+                <div
+                  v-for="candidate in visibleTriageContext.responseCandidates"
+                  :key="candidate.id"
+                  class="rounded border p-2 text-xs"
+                  :class="candidateClass(candidate.availableNow)"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-semibold">{{ candidate.label }}</span>
+                    <span class="font-mono text-[10px]">{{ candidate.id }}</span>
+                  </div>
+                  <p class="mt-1 leading-relaxed opacity-80">{{ candidate.reason }}</p>
+                  <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
+                    <span class="rounded border border-current/30 px-1.5 py-0.5">
+                      {{ candidate.availableNow ? t('tickets.drawer.available') : t('tickets.drawer.unavailable') }}
+                    </span>
+                    <span v-if="candidate.requiresApproval" class="rounded border border-current/30 px-1.5 py-0.5">
+                      {{ t('tickets.ai.requiresApproval') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="visibleTriageContext.playbookTemplates?.length">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.drawer.playbookTemplates') }}</div>
+              <div class="mt-1 space-y-1">
+                <div
+                  v-for="template in visibleTriageContext.playbookTemplates"
+                  :key="template.templateId"
+                  class="rounded border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs text-emerald-100"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="font-semibold text-theme-text">{{ template.label }}</div>
+                      <div class="font-mono text-[10px] text-theme-text-muted break-all">{{ template.templateId }}</div>
+                      <p class="mt-1 text-[11px] text-theme-text-muted leading-relaxed">{{ template.reason }}</p>
+                    </div>
+                    <button
+                      type="button"
+                      :data-test="`ticket-instantiate-template-${template.templateId}`"
+                      :disabled="instantiatingTemplateId === template.templateId"
+                      @click="runInstantiateTemplate(selected!, template.templateId)"
+                      class="shrink-0 inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+                    >
+                      <Loader2 v-if="instantiatingTemplateId === template.templateId" :size="11" class="animate-spin" />
+                      <Workflow v-else :size="11" />
+                      {{ t('tickets.drawer.instantiateTemplate') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="visibleTriageContext.missingData?.length" class="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
+              <div class="font-semibold">{{ t('tickets.drawer.missingData') }}</div>
+              <ul class="mt-1 space-y-1">
+                <li v-for="item in visibleTriageContext.missingData" :key="item.id">
+                  {{ item.label }}: {{ item.reason }}
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -772,7 +1133,7 @@ async function resetIncidents() {
             {{ playbookError }}
           </div>
 
-          <div v-if="playbookDraft" class="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/40 space-y-2">
+          <div v-if="playbookDraft" data-test="ticket-draft-playbook-result" class="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-950/40 space-y-2">
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-semibold text-emerald-100 flex items-center gap-1">
                 <Workflow :size="13" />
@@ -840,6 +1201,139 @@ async function resetIncidents() {
               <CheckCircle2 v-else :size="12" />
               {{ t('tickets.ai.approveRun') }}
             </button>
+          </div>
+
+          <div
+            v-if="policyReviewRequired"
+            data-test="ticket-policy-review"
+            class="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 text-xs"
+          >
+            <div class="font-semibold text-sky-100 flex items-center gap-1">
+              <Shield :size="13" />
+              {{ t('tickets.policy.title') }}
+            </div>
+            <p class="mt-1 text-theme-text-muted leading-relaxed">
+              {{ t('tickets.policy.subtitle') }}
+            </p>
+
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <label class="col-span-2 flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.integrationId') }}</span>
+                <input
+                  v-model="policyForm.integrationId"
+                  data-test="ticket-policy-integration"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.sourceInterface') }}</span>
+                <input
+                  v-model="policyForm.sourceInterface"
+                  data-test="ticket-policy-source-interface"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.destinationInterface') }}</span>
+                <input
+                  v-model="policyForm.destinationInterface"
+                  data-test="ticket-policy-destination-interface"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.sourceIp') }}</span>
+                <input
+                  v-model="policyForm.sourceIp"
+                  data-test="ticket-policy-source-ip"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.destinationIp') }}</span>
+                <input
+                  v-model="policyForm.destinationIp"
+                  data-test="ticket-policy-destination-ip"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="col-span-2 flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.scope') }}</span>
+                <select
+                  v-model="policyForm.scope"
+                  data-test="ticket-policy-scope"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+                  <option v-for="option in policyScopeOptions" :key="option.value" :value="option.value">
+                    {{ t(option.labelKey) }}
+                  </option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.service') }}</span>
+                <input
+                  v-model="policyForm.service"
+                  data-test="ticket-policy-service"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.durationMinutes') }}</span>
+                <input
+                  v-model.number="policyForm.durationMinutes"
+                  data-test="ticket-policy-duration"
+                  min="1"
+                  type="number"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+            </div>
+
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-test="ticket-create-policy-review"
+                :disabled="!canCreatePolicyReview || isCreatingPolicyReview"
+                @click="runCreatePolicyReview"
+                class="inline-flex items-center gap-1 rounded border border-sky-500/50 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50"
+              >
+                <Loader2 v-if="isCreatingPolicyReview" :size="12" class="animate-spin" />
+                <CheckCircle2 v-else :size="12" />
+                {{ t('tickets.policy.createReview') }}
+              </button>
+              <button
+                type="button"
+                data-test="ticket-apply-policy-review"
+                :disabled="!canApplyPolicyReview || isApplyingPolicyReview"
+                @click="runApplyPolicyReview(selected!)"
+                class="inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+              >
+                <Loader2 v-if="isApplyingPolicyReview" :size="12" class="animate-spin" />
+                <Play v-else :size="12" />
+                {{ t('tickets.policy.apply') }}
+              </button>
+            </div>
+
+            <div v-if="policyReview" class="mt-3 rounded border border-theme-border bg-theme-bg/60 p-2">
+              <div class="font-semibold text-theme-text">
+                {{ t('tickets.policy.proposedPolicy') }}: {{ policyReview.proposed_policy_name }}
+              </div>
+              <div class="mt-1 text-theme-text-muted">
+                {{ t('tickets.policy.placement') }}: {{ policyReview.placement }}
+              </div>
+              <ul class="mt-2 space-y-1 text-theme-text">
+                <li v-for="change in policyReview.changes" :key="`${change.object_type}-${change.name}`">
+                  {{ change.operation }} · {{ change.object_type }} · {{ change.name }}
+                </li>
+              </ul>
+              <div v-if="policyReview.warnings.length" class="mt-2 text-amber-300">
+                {{ policyReview.warnings.join(' ') }}
+              </div>
+            </div>
+
+            <div v-if="policyApplyResult" class="mt-2 font-semibold text-emerald-200">
+              {{ t('tickets.policy.applied') }}
+            </div>
           </div>
 
           <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">

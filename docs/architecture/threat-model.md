@@ -85,7 +85,9 @@ Controls:
 - Audit successful admin reads and all SOC state changes.
 - Keep playbooks disabled or draft until authorized validation.
 - Require explicit approval for sensitive steps.
-- Keep destructive FortiGate actions out of the MVP.
+- Limit FortiGate writes to governed policy orchestration: admin RBAC, preflight,
+  diff/summary, explicit approval, FortiDashboard-owned objects/policies and
+  audit. Destructive FortiGate changes remain out of scope.
 
 Review checks:
 
@@ -107,13 +109,14 @@ Controls:
 - Keep workflow loops out until guardrails exist.
 - Default actions to `dry_run`.
 - Treat AI-generated playbooks as drafts and require human validation.
-- Require approval and RBAC before any future sensitive step.
+- Require approval and RBAC before any sensitive live FortiGate/FortiWeb step.
 
 Review checks:
 
 - Node types come from the allowed SOC catalog.
 - Unknown node types fail validation.
-- `fortigate.recommend_block` remains recommendation/dry-run only.
+- FortiGate policy/block nodes cannot execute from AI or a background job alone;
+  they must go through the BFF policy orchestration path with approval and audit.
 - Draft playbooks cannot run as active automation.
 
 ### Endpoint Spoofing
@@ -164,7 +167,7 @@ Review checks:
 
 - [ ] Each listed threat has at least one prevention or detection control.
 - [ ] No control claims internal service auth is already implemented.
-- [ ] FortiGate write actions remain out of scope.
+- [ ] FortiGate writes are scoped to governed policy orchestration and audited.
 - [ ] AI-generated widgets and playbooks remain draft-only until confirmed.
 - [ ] Endpoint enrollment tokens are protected from replay and disclosure.
 - [ ] Audit requirements cover auth, integrations, incidents, playbooks, endpoint enrollment and admin views.

@@ -132,6 +132,25 @@ const SAMPLERS: Record<string, SamplerFn> = {
       waitingApproval,
     }
   },
+  'soar-playbook-run-history': (data) => {
+    const runs = items(data, 'runs')
+    let completed = 0
+    let failed = 0
+    let waitingApproval = 0
+    for (const run of runs) {
+      if (!run || typeof run !== 'object') continue
+      const status = String((run as Record<string, unknown>).status ?? '').toLowerCase()
+      if (status === 'completed' || status === 'succeeded') completed += 1
+      else if (status === 'failed' || status === 'error') failed += 1
+      else if (status === 'waiting_approval' || status === 'pending_approval') waitingApproval += 1
+    }
+    return {
+      count: num((data as Record<string, unknown> | null)?.count) || runs.length,
+      completed,
+      failed,
+      waitingApproval,
+    }
+  },
 }
 
 export function extractSeriesSample(widgetId: string, data: unknown): SeriesSample | null {
