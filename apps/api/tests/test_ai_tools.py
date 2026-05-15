@@ -1,12 +1,27 @@
 from fastapi.testclient import TestClient
 
+from app.ai import get_ai_provider
 from app.auth import dependencies as auth_dependencies
+from app.core.config import get_settings
 from app.main import app
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
     response = client.get("/api/auth/csrf")
     return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
+def enable_lab_scripted_ai(monkeypatch) -> None:
+    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "scripted")
+    get_settings.cache_clear()
+    get_ai_provider.cache_clear()
+
+
+def teardown_function():
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+    get_ai_provider.cache_clear()
 
 
 def test_ai_tool_registry_lists_safe_dashboard_tools():
@@ -34,7 +49,20 @@ def test_ai_tool_registry_lists_safe_dashboard_tools():
     assert all(item["destructive"] is False for item in payload["items"])
 
 
-def test_ai_status_reports_pydantic_ai_cockpit_runtime():
+def test_ai_status_reports_unconfigured_provider_by_default():
+    client = TestClient(app)
+
+    response = client.get("/api/ai/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == ""
+    assert payload["runtime"] == "pydantic_ai"
+    assert payload["ready"] is False
+
+
+def test_ai_status_reports_pydantic_ai_cockpit_runtime(monkeypatch):
+    enable_lab_scripted_ai(monkeypatch)
     client = TestClient(app)
 
     response = client.get("/api/ai/status")
@@ -46,7 +74,8 @@ def test_ai_status_reports_pydantic_ai_cockpit_runtime():
     assert payload["ready"] is True
 
 
-def test_ai_chat_uses_cockpit_agent_and_audits_available_tools():
+def test_ai_chat_uses_cockpit_agent_and_audits_available_tools(monkeypatch):
+    enable_lab_scripted_ai(monkeypatch)
     client = TestClient(app)
 
     response = client.post(
@@ -65,7 +94,8 @@ def test_ai_chat_uses_cockpit_agent_and_audits_available_tools():
     assert audit["items"][0]["details"]["toolCount"] >= 5
 
 
-def test_ai_chat_can_draft_widget_with_internal_tool():
+def test_ai_chat_can_draft_widget_with_internal_tool(monkeypatch):
+    enable_lab_scripted_ai(monkeypatch)
     client = TestClient(app)
 
     response = client.post(

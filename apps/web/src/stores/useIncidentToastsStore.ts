@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { listTickets, type Ticket } from '../services/ticketsClient'
+import { useRealtimeStore } from './useRealtimeStore'
 
 export type IncidentToast = {
   id: string
@@ -13,19 +14,19 @@ export type IncidentToast = {
 }
 
 const TOAST_TTL_MS = 12_000
-const POLL_INTERVAL_MS = 5_000
 
 export const useIncidentToastsStore = defineStore('incidentToasts', () => {
   const toasts = ref<IncidentToast[]>([])
   const knownTicketIds = ref<Set<string>>(new Set())
   const hasBootstrapped = ref(false)
-  let pollHandle: ReturnType<typeof setInterval> | null = null
+  let expiryHandle: ReturnType<typeof setInterval> | null = null
+  let unsubscribeRealtime: (() => void) | null = null
 
-  async function poll() {
+  async function refreshTickets() {
     try {
       const tickets = await listTickets()
       if (!hasBootstrapped.value) {
-        // First poll just records the known set; nothing pops up so users
+        // First realtime hydration records the known set so users
         // don't get spammed when they log in with a backlog.
         for (const ticket of tickets) {
           knownTicketIds.value.add(ticket.id)
@@ -40,8 +41,19 @@ export const useIncidentToastsStore = defineStore('incidentToasts', () => {
       }
       pruneExpired()
     } catch (e) {
-      console.error('Failed to poll tickets for toasts', e)
+      console.error('Failed to refresh tickets for toasts', e)
     }
+  }
+
+  function ingestTicket(ticket: Ticket) {
+    if (!hasBootstrapped.value) {
+      knownTicketIds.value.add(ticket.id)
+      return
+    }
+    if (knownTicketIds.value.has(ticket.id)) return
+    knownTicketIds.value.add(ticket.id)
+    pushToast(ticket)
+    pruneExpired()
   }
 
   function pushToast(ticket: Ticket) {
@@ -70,27 +82,29 @@ export const useIncidentToastsStore = defineStore('incidentToasts', () => {
     toasts.value = toasts.value.filter((t) => t.id !== toastId)
   }
 
-  function startPolling() {
-    if (pollHandle !== null) return
-    poll()
-    pollHandle = setInterval(() => {
-      poll()
-      pruneExpired()
-    }, POLL_INTERVAL_MS)
+  function startRealtime() {
+    if (unsubscribeRealtime !== null) return
+    refreshTickets()
+    unsubscribeRealtime = useRealtimeStore().subscribe((event) => {
+      if (event.ticket) ingestTicket(event.ticket)
+    })
+    expiryHandle = setInterval(pruneExpired, 1000)
   }
 
-  function stopPolling() {
-    if (pollHandle !== null) {
-      clearInterval(pollHandle)
-      pollHandle = null
+  function stopRealtime() {
+    if (expiryHandle !== null) {
+      clearInterval(expiryHandle)
+      expiryHandle = null
     }
+    unsubscribeRealtime?.()
+    unsubscribeRealtime = null
   }
 
   return {
     toasts,
     hasBootstrapped,
-    startPolling,
-    stopPolling,
+    startRealtime,
+    stopRealtime,
     dismiss,
   }
 })

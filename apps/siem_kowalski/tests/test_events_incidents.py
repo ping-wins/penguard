@@ -57,7 +57,7 @@ def test_post_events_stores_event_with_generated_id_and_detects_network_scan():
 
 def test_detection_thresholds_create_expected_incidents():
     deny = client.post("/events", json=_event_payload("network.deny", count=20)).json()
-    login = client.post("/events", json=_event_payload("auth.failed_login", count=5)).json()
+    login = client.post("/events", json=_event_payload("auth.failed_login", count=3)).json()
     suspicious = client.post(
         "/events",
         json=_event_payload("endpoint.suspicious_connection", source_ip="192.0.2.88"),
@@ -71,7 +71,8 @@ def test_detection_thresholds_create_expected_incidents():
         for incident in incidents
     )
     assert any(
-        incident["title"] == "Repeated failed login" and login["id"] in incident["eventIds"]
+        incident["title"] == "Possible authentication brute force"
+        and login["id"] in incident["eventIds"]
         for incident in incidents
     )
     assert any(
@@ -81,6 +82,66 @@ def test_detection_thresholds_create_expected_incidents():
         for incident in incidents
     )
     assert not any(below_threshold["id"] in incident["eventIds"] for incident in incidents)
+
+
+def test_failed_login_requires_three_attempts_for_bruteforce_incident():
+    below_threshold = client.post(
+        "/events",
+        json=_event_payload("auth.failed_login", count=2, source_ip="198.51.100.21"),
+    ).json()
+    threshold = client.post(
+        "/events",
+        json=_event_payload("auth.failed_login", count=3, source_ip="198.51.100.22"),
+    ).json()
+
+    incidents = client.get("/incidents").json()
+
+    assert not any(below_threshold["id"] in incident["eventIds"] for incident in incidents)
+    brute_force_incidents = [
+        incident
+        for incident in incidents
+        if incident["ruleId"] == "repeated_failed_login" and threshold["id"] in incident["eventIds"]
+    ]
+    assert brute_force_incidents
+    assert brute_force_incidents[0]["attributes"]["detection"]["thresholds"] == [
+        {"path": "attributes.count", "operator": "gte", "value": 3}
+    ]
+
+
+def test_failed_login_burst_aggregates_three_individual_attempts_for_same_subject():
+    client.post("/admin/reset")
+    payload = _event_payload("auth.failed_login", count=1, source_ip="203.0.113.45")
+    payload["entities"] = {
+        "sourceIp": "203.0.113.45",
+        "user": "admin",
+        "integrationId": "int_fgt_live",
+    }
+
+    first = client.post(
+        "/events",
+        json={**payload, "occurredAt": "2026-05-14T22:00:00.000Z"},
+    ).json()
+    second = client.post(
+        "/events",
+        json={**payload, "occurredAt": "2026-05-14T22:00:20.000Z"},
+    ).json()
+    third = client.post(
+        "/events",
+        json={**payload, "occurredAt": "2026-05-14T22:00:40.000Z"},
+    ).json()
+
+    incidents = client.get("/incidents").json()
+
+    assert not any(first["id"] in incident["eventIds"] for incident in incidents)
+    assert not any(second["id"] in incident["eventIds"] for incident in incidents)
+    brute_force = next(
+        incident for incident in incidents
+        if incident["ruleId"] == "repeated_failed_login" and third["id"] in incident["eventIds"]
+    )
+    assert brute_force["severity"] == "high"
+    assert brute_force["attributes"]["attackType"] == "brute_force"
+    assert brute_force["attributes"]["count"] == 3
+    assert brute_force["attributes"]["detection"]["observedCount"] == 3
 
 
 def test_incidents_preserve_event_provenance_for_demo_badges():

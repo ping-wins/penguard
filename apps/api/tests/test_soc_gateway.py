@@ -4,9 +4,10 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.auth import dependencies as auth_dependencies
+from app.auth.csrf_dependency import require_csrf
 from app.core.config import get_settings
 from app.main import app
-from app.routers import soc
+from app.routers import lab_demo, soc
 from app.soc import client as soc_client_module
 from app.soc.client import SocServiceClient
 
@@ -92,16 +93,24 @@ def test_demo_replay_is_not_available_by_default():
     assert fake_siem.calls == []
 
 
+def test_lab_demo_router_can_be_mounted_explicitly_for_lab_runs(monkeypatch):
+    _enable_lab_demo_tools(monkeypatch)
+    fake_siem = FakeSocClient({"id": "evt_01"})
+    client = TestClient(_lab_demo_test_app(fake_siem, _user_with_roles("admin")))
+
+    response = client.post("/api/soc/demo/replay")
+
+    assert response.status_code == 200
+    assert response.json()["eventCount"] == 3
+    assert [call["path"] for call in fake_siem.calls] == ["/events", "/events", "/events"]
+
+
 def test_demo_replay_rejects_non_admin_analysts(monkeypatch):
     _enable_lab_demo_tools(monkeypatch)
-    client = TestClient(app)
     fake_siem = FakeSocClient({"id": "evt_01"})
-    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
-    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
-        "analyst"
-    )
+    client = TestClient(_lab_demo_test_app(fake_siem, _user_with_roles("analyst")))
 
-    response = client.post("/api/soc/demo/replay", headers=csrf_headers(client))
+    response = client.post("/api/soc/demo/replay")
 
     assert response.status_code == 403
     assert fake_siem.calls == []
@@ -109,17 +118,24 @@ def test_demo_replay_rejects_non_admin_analysts(monkeypatch):
 
 def test_demo_replay_allows_admin_users(monkeypatch):
     _enable_lab_demo_tools(monkeypatch)
-    client = TestClient(app)
     fake_siem = FakeSocClient({"id": "evt_01"})
-    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
-    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
-        "admin"
-    )
+    client = TestClient(_lab_demo_test_app(fake_siem, _user_with_roles("admin")))
 
-    response = client.post("/api/soc/demo/replay", headers=csrf_headers(client))
+    response = client.post("/api/soc/demo/replay")
 
     assert response.status_code == 200
     assert [call["path"] for call in fake_siem.calls] == ["/events", "/events", "/events"]
+
+
+def _lab_demo_test_app(fake_siem: FakeSocClient, user: dict):
+    from fastapi import FastAPI
+
+    lab_app = FastAPI()
+    lab_app.include_router(lab_demo.router, prefix="/api")
+    lab_app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    lab_app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: user
+    lab_app.dependency_overrides[require_csrf] = lambda: None
+    return lab_app
 
 
 def test_siem_event_gateway_forwards_payload_and_audits():

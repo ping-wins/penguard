@@ -304,8 +304,8 @@ watch(
   },
 )
 
-onMounted(() => store.startPolling(8000))
-onBeforeUnmount(() => store.stopPolling())
+onMounted(() => store.startRealtime())
+onBeforeUnmount(() => store.stopRealtime())
 
 const isResetting = ref(false)
 const resetMessage = ref<string | null>(null)

@@ -282,7 +282,7 @@ export default {
   },
   tickets: {
     title: 'Tickets SOC',
-    subtitle: 'Triagem T1/T2/T3 sobre incidentes do Kowalski SIEM. Atualiza a cada 8s.',
+    subtitle: 'Triagem T1/T2/T3 sobre incidentes do Kowalski SIEM. Atualiza ao vivo pela telemetria FortiGate.',
     total: 'Total: {count}',
     refreshTooltip: 'Atualizar agora',
     resetLabel: 'Resetar incidentes',

@@ -8,6 +8,7 @@ to know which backend is configured.
 """
 
 from app.ai.provider import (
+    AIConfigurationError,
     AIProvider,
     ChatMessage,
     ContainmentStep,
@@ -19,6 +20,7 @@ from app.ai.provider import (
 )
 
 __all__ = [
+    "AIConfigurationError",
     "AIProvider",
     "ChatMessage",
     "ContainmentStep",

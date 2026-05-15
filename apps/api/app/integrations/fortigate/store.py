@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from sqlalchemy import Engine, create_engine, delete, select
@@ -14,6 +15,46 @@ from app.db.models import (
 )
 
 FORTIGATE_CAPABILITIES = ["system", "interfaces", "policies", "threat_logs"]
+
+
+def _normalize_host_for_match(host: str) -> str:
+    parsed = urlparse(host if "://" in host else f"https://{host}")
+    return (parsed.hostname or host).strip().lower()
+
+
+def _normalize_identifier(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip().lower()
+    return normalized or None
+
+
+def _device_identifiers(device: dict[str, Any] | None) -> list[str]:
+    if not device:
+        return []
+    identifiers = {
+        normalized
+        for normalized in (
+            _normalize_identifier(device.get("serial")),
+            _normalize_identifier(device.get("serialNumber")),
+            _normalize_identifier(device.get("hostname")),
+        )
+        if normalized
+    }
+    return sorted(identifiers)
+
+
+def _syslog_identifier_candidates(fields: dict[str, str]) -> set[str]:
+    return {
+        normalized
+        for normalized in (
+            _normalize_identifier(fields.get("devid")),
+            _normalize_identifier(fields.get("devname")),
+            _normalize_identifier(fields.get("serial")),
+            _normalize_identifier(fields.get("integrationid")),
+        )
+        if normalized
+    }
 
 
 class SqlAlchemyFortiGateIntegrationStore:
@@ -53,6 +94,7 @@ class SqlAlchemyFortiGateIntegrationStore:
         host: str,
         api_key: str,
         verify_tls: bool,
+        device: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         checked_at = datetime.now(UTC)
         model = FortiGateIntegrationModel(
@@ -64,6 +106,7 @@ class SqlAlchemyFortiGateIntegrationStore:
             api_key_blob=self.secret_cipher.encrypt({"api_key": api_key}),
             status="connected",
             capabilities=FORTIGATE_CAPABILITIES,
+            device_identifiers=_device_identifiers(device),
             last_checked_at=checked_at,
             created_at=checked_at,
             updated_at=checked_at,
@@ -101,6 +144,34 @@ class SqlAlchemyFortiGateIntegrationStore:
                 "api_key": str(self.secret_cipher.decrypt(model.api_key_blob)["api_key"]),
                 "verify_tls": model.verify_tls,
             }
+
+    def find_public_by_host(self, source_host: str) -> dict[str, Any] | None:
+        normalized_source = _normalize_host_for_match(source_host)
+        with self.session_factory() as db:
+            rows = db.execute(select(FortiGateIntegrationModel)).scalars()
+            for row in rows:
+                if _normalize_host_for_match(row.host) == normalized_source:
+                    return self._list_item(row)
+        return None
+
+    def find_syslog_source(
+        self,
+        source_host: str,
+        fields: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        normalized_source = _normalize_host_for_match(source_host)
+        candidates = _syslog_identifier_candidates(fields or {})
+        with self.session_factory() as db:
+            rows = list(db.execute(select(FortiGateIntegrationModel)).scalars())
+            if candidates:
+                for row in rows:
+                    identifiers = set(row.device_identifiers or [])
+                    if identifiers.intersection(candidates):
+                        return {"integrationId": row.id, "ownerUserId": row.owner_user_id}
+            for row in rows:
+                if _normalize_host_for_match(row.host) == normalized_source:
+                    return {"integrationId": row.id, "ownerUserId": row.owner_user_id}
+        return None
 
     def delete(self, *, owner_user_id: str, integration_id: str) -> bool:
         with self.session_factory() as db:
@@ -143,6 +214,9 @@ class SqlAlchemyFortiGateIntegrationStore:
             integration.status = status
             integration.last_checked_at = checked_at
             integration.updated_at = checked_at
+            identifiers = _device_identifiers(device)
+            if identifiers:
+                integration.device_identifiers = identifiers
             model = FortiGateHealthCheckModel(
                 id=self.health_id_factory(),
                 integration_id=integration_id,
@@ -294,6 +368,71 @@ class SqlAlchemyFortiGateIntegrationStore:
             if ok:
                 model.last_success_at = finished_at
             model.updated_at = finished_at
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def mark_syslog_forwarding_configured(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        configured_at: datetime,
+    ) -> dict[str, Any]:
+        configured_at = self._as_utc(configured_at)
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=configured_at,
+            )
+            model.enabled = False
+            model.status = "waiting_syslog"
+            model.last_error = None
+            model.last_run_trigger = "syslog"
+            model.updated_at = configured_at
+            db.commit()
+            db.refresh(model)
+            return self._ingestion_status_payload(model)
+
+    def record_syslog_event(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        event_id: str | None,
+        received_at: datetime,
+    ) -> dict[str, Any]:
+        received_at = self._as_utc(received_at)
+        with self.session_factory() as db:
+            integration = self._owned_integration(
+                db,
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+            )
+            model = self._get_or_create_ingestion_status(
+                db,
+                integration=integration,
+                now=received_at,
+            )
+            event_ids = list(model.last_event_ids or [])
+            if event_id:
+                event_ids.append(event_id)
+            model.enabled = False
+            model.status = "streaming"
+            model.last_finished_at = received_at
+            model.last_success_at = received_at
+            model.last_raw_event_count = int(model.last_raw_event_count or 0) + 1
+            model.last_created_count = int(model.last_created_count or 0) + 1
+            model.last_event_ids = event_ids[-20:]
+            model.last_error = None
+            model.last_run_trigger = "syslog"
+            model.updated_at = received_at
             db.commit()
             db.refresh(model)
             return self._ingestion_status_payload(model)
@@ -531,6 +670,47 @@ class InMemoryFortiGateIngestionStore:
         status["lastError"] = error
         if ok:
             status["lastSuccessAt"] = formatted
+        status["updatedAt"] = formatted
+        return dict(status)
+
+    def mark_syslog_forwarding_configured(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        configured_at: datetime,
+    ) -> dict[str, Any]:
+        status = self._get_or_create(owner_user_id, integration_id)
+        formatted = self._format_datetime(configured_at)
+        status["enabled"] = False
+        status["status"] = "waiting_syslog"
+        status["lastError"] = None
+        status["lastRunTrigger"] = "syslog"
+        status["updatedAt"] = formatted
+        return dict(status)
+
+    def record_syslog_event(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        event_id: str | None,
+        received_at: datetime,
+    ) -> dict[str, Any]:
+        status = self._get_or_create(owner_user_id, integration_id)
+        formatted = self._format_datetime(received_at)
+        event_ids = list(status["lastEventIds"])
+        if event_id:
+            event_ids.append(event_id)
+        status["enabled"] = False
+        status["status"] = "streaming"
+        status["lastFinishedAt"] = formatted
+        status["lastSuccessAt"] = formatted
+        status["lastRawEventCount"] += 1
+        status["lastCreatedCount"] += 1
+        status["lastEventIds"] = event_ids[-20:]
+        status["lastError"] = None
+        status["lastRunTrigger"] = "syslog"
         status["updatedAt"] = formatted
         return dict(status)
 

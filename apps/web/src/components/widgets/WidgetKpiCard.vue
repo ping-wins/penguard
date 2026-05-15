@@ -39,7 +39,7 @@ const delta = computed(() => {
           :class="delta > 0 ? 'text-amber-300 bg-amber-400/10' : delta < 0 ? 'text-emerald-300 bg-emerald-400/10' : 'text-theme-text-muted bg-theme-text/5'"
         >
           <span class="tabular-nums">{{ delta > 0 ? '+' : '' }}{{ delta }}</span>
-          <span>vs last poll</span>
+          <span>vs last update</span>
         </div>
       </div>
     </template>

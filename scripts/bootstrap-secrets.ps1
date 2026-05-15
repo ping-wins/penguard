@@ -54,6 +54,35 @@ $KeycloakClientSecret     = New-UrlSafeSecret -ByteLength 32
 $KcBootstrapAdminPassword = New-UrlSafeSecret -ByteLength 24
 $PostgresPassword         = New-UrlSafeSecret -ByteLength 24
 
+function Get-FortiGateSyslogPublicHost {
+    try {
+        $defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop |
+            Sort-Object RouteMetric, InterfaceMetric |
+            Select-Object -First 1
+        if ($defaultRoute) {
+            $ip = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $defaultRoute.InterfaceIndex -ErrorAction Stop |
+                Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '0.*' } |
+                Select-Object -First 1 -ExpandProperty IPAddress
+            if ($ip) { return $ip }
+        }
+    } catch {
+        # Fall through to the generic adapter scan below.
+    }
+
+    try {
+        $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '0.*' } |
+            Select-Object -First 1 -ExpandProperty IPAddress
+        if ($ip) { return $ip }
+    } catch {
+        # Keep bootstrap portable; operator can fill the value manually.
+    }
+
+    return ''
+}
+
+$FortiGateSyslogPublicHost = Get-FortiGateSyslogPublicHost
+
 $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
 $content = @"
@@ -82,6 +111,8 @@ FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY=$TokenEncryptionKey
 FORTIDASHBOARD_MOCK_MODE=false
 FORTIDASHBOARD_SESSION_COOKIE_NAME=fortidashboard_session
 FORTIDASHBOARD_SESSION_COOKIE_SECURE=false
+FORTIDASHBOARD_SESSION_COOKIE_SAMESITE=lax
+FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY=true
 FORTIDASHBOARD_CSRF_COOKIE_NAME=fortidashboard_csrf
 FORTIDASHBOARD_CSRF_HEADER_NAME=X-CSRF-Token
 FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
@@ -91,14 +122,36 @@ FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 KC_BOOTSTRAP_ADMIN_USERNAME=admin
 KC_BOOTSTRAP_ADMIN_PASSWORD=$KcBootstrapAdminPassword
 FORTIDASHBOARD_KEYCLOAK_BASE_URL=http://localhost:8080
+FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL=http://localhost:8080
 FORTIDASHBOARD_KEYCLOAK_REALM=fortidashboard
 FORTIDASHBOARD_KEYCLOAK_CLIENT_ID=fortidashboard-bff
 FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET=$KeycloakClientSecret
+FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL=false
+FORTIDASHBOARD_KEYTAB_PATH=./infra/keycloak/empty-keytab.placeholder
+
+# --- Browser-facing SSO URLs ---
+FORTIDASHBOARD_OIDC_ISSUER=http://localhost:8080/realms/fortidashboard
+FORTIDASHBOARD_SSO_REDIRECT_URI=http://localhost:8000/api/auth/sso/kerberos/callback
+FORTIDASHBOARD_SSO_POST_LOGIN_URL=http://localhost:5173/
+FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL=http://localhost:5173/login
 
 # --- SOC-lite services ---
 FORTIDASHBOARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
 FORTIDASHBOARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
 FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
+FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=false
+FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=10
+FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=30
+FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=10
+FORTIDASHBOARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS=3600
+# UDP syslog collector binds inside the API container. PUBLIC_HOST is the
+# FortiGate-reachable host/IP. Bootstrap detects a best-effort local LAN IP;
+# override it in .env when using NAT, a reverse proxy, or another network.
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST=0.0.0.0
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST=$FortiGateSyslogPublicHost
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT=5514
+FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=false
 SIEM_KOWALSKI_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
 SOAR_SKIPPER_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
 XDR_RICO_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard

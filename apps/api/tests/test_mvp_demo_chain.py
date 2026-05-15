@@ -9,11 +9,13 @@ adapter (the default in `Settings`) so the chain is reproducible.
 
 from typing import Any
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import dependencies as auth_dependencies
+from app.auth.csrf_dependency import require_csrf
 from app.core.config import get_settings
-from app.main import app
+from app.routers import lab_demo
 from app.routers import soc as soc_router
 
 
@@ -212,21 +214,30 @@ def _stub_user() -> dict[str, Any]:
     }
 
 
-def _csrf(client: TestClient) -> dict[str, str]:
-    return {"X-CSRF-Token": client.get("/api/auth/csrf").json()["csrfToken"]}
+def _csrf(_client: TestClient) -> dict[str, str]:
+    return {"X-CSRF-Token": "test-csrf"}
+
+
+def _lab_chain_app(siem: FakeSiem, soar: FakeSoar) -> FastAPI:
+    lab_app = FastAPI()
+    lab_app.include_router(soc_router.router, prefix="/api")
+    lab_app.include_router(lab_demo.router, prefix="/api")
+    lab_app.dependency_overrides[soc_router.get_siem_client] = lambda: siem
+    lab_app.dependency_overrides[soc_router.get_soar_client] = lambda: soar
+    lab_app.dependency_overrides[auth_dependencies.get_current_api_user] = _stub_user
+    lab_app.dependency_overrides[auth_dependencies.require_admin_user] = _stub_user
+    lab_app.dependency_overrides[require_csrf] = lambda: None
+    return lab_app
 
 
 def test_mvp_demo_chain_runs_end_to_end(monkeypatch):
     siem = FakeSiem()
     soar = FakeSoar()
     monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "scripted")
     get_settings.cache_clear()
     soc_router.get_ai_provider.cache_clear()
-    app.dependency_overrides[soc_router.get_siem_client] = lambda: siem
-    app.dependency_overrides[soc_router.get_soar_client] = lambda: soar
-    app.dependency_overrides[auth_dependencies.get_current_api_user] = _stub_user
-    app.dependency_overrides[auth_dependencies.require_admin_user] = _stub_user
-    client = TestClient(app)
+    client = TestClient(_lab_chain_app(siem, soar))
     audit = auth_dependencies.get_auth_audit_store()
 
     try:
@@ -323,9 +334,5 @@ def test_mvp_demo_chain_runs_end_to_end(monkeypatch):
             assert required in actions, f"missing audit action {required}"
         assert "soc.ticket.contained" in actions or "soc.ticket.containment_paused" in actions
     finally:
-        app.dependency_overrides.pop(soc_router.get_siem_client, None)
-        app.dependency_overrides.pop(soc_router.get_soar_client, None)
-        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
-        app.dependency_overrides.pop(auth_dependencies.require_admin_user, None)
         get_settings.cache_clear()
         soc_router.get_ai_provider.cache_clear()

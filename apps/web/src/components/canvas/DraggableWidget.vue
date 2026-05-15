@@ -2,7 +2,10 @@
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { useRealtimeStore } from '../../stores/useRealtimeStore'
 import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
+import { useWidgetRealtimeStore } from '../../stores/useWidgetRealtimeStore'
+import type { RealtimeWidgetSnapshot } from '../../stores/useRealtimeStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff, Plug, ChevronDown, Check } from 'lucide-vue-next'
 import WidgetSkeleton from '../widgets/shell/WidgetSkeleton.vue'
 import { fetchWidgetData } from '../../services/widgetDataClient'
@@ -25,7 +28,9 @@ const emit = defineEmits<{
 
 const store = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
+const realtimeStore = useRealtimeStore()
 const widgetSeriesStore = useWidgetSeriesStore()
+const widgetRealtimeStore = useWidgetRealtimeStore()
 
 const isDragging = ref(false)
 const zoom = computed(() => store.zoom)
@@ -40,6 +45,7 @@ const fetchErrorKind = ref<WidgetDataErrorKind | null>(null)
 const widgetData = ref<any>(null)
 const widgetResponse = ref<WidgetDataResponse | null>(null)
 const catalogItem = computed(() => store.catalogItems.find(c => c.id === props.catalogId))
+const sharedWidgetSnapshot = computed(() => widgetRealtimeStore.getSnapshot(props.catalogId, props.integrationId))
 const visualTemplate = computed(() => visualTemplatesById[props.catalogId])
 const isVisualTemplate = computed(() => Boolean(visualTemplate.value))
 const widgetTitle = computed(() => catalogItem.value?.title ?? visualTemplate.value?.title ?? props.catalogId)
@@ -51,6 +57,8 @@ const rendererOwnsEmptyState = computed(() => {
 let currentController: AbortController | null = null
 let requestId = 0
 let refreshTimeout: ReturnType<typeof setTimeout> | null = null
+let realtimeRefreshTimeout: ReturnType<typeof setTimeout> | null = null
+let unsubscribeRealtime: (() => void) | null = null
 
 function clearRefreshTimeout() {
   if (refreshTimeout) {
@@ -59,14 +67,103 @@ function clearRefreshTimeout() {
   }
 }
 
-function scheduleRefresh(response?: { meta?: { refreshIntervalSeconds?: number } }) {
+function scheduleRefresh(_response?: { meta?: { refreshIntervalSeconds?: number } }) {
   clearRefreshTimeout()
-  const refreshIntervalSeconds = response?.meta?.refreshIntervalSeconds
-  if (!refreshIntervalSeconds || refreshIntervalSeconds <= 0) return
+  // Do not run hidden per-widget polling loops. FortiGate security telemetry is
+  // pushed into the backend through UDP syslog, and workspace widgets hydrate on
+  // mount/rebind/navigation instead of hammering /api/widgets/*/data.
+}
 
-  refreshTimeout = setTimeout(() => {
+function scheduleRealtimeReload() {
+  if (realtimeRefreshTimeout) return
+  realtimeRefreshTimeout = setTimeout(() => {
+    realtimeRefreshTimeout = null
     loadWidgetData({ showLoading: false })
-  }, refreshIntervalSeconds * 1000)
+  }, 400)
+}
+
+function applyRealtimeTicket(ticket: any) {
+  if (!ticket || typeof ticket !== 'object') return false
+  if (props.catalogId === 'soc-recent-incidents') {
+    const current = widgetData.value && typeof widgetData.value === 'object' ? widgetData.value : {}
+    const incidents = Array.isArray(current.incidents) ? current.incidents : []
+    const alreadyPresent = incidents.some((incident: any) => incident?.id === ticket.id)
+    const nextIncidents = alreadyPresent
+      ? incidents.map((incident: any) => incident?.id === ticket.id ? ticket : incident)
+      : [ticket, ...incidents]
+    const nextData = {
+      ...current,
+      incidents: nextIncidents.slice(0, 10),
+      count: (Number(current.count) || incidents.length) + (alreadyPresent ? 0 : 1),
+    }
+    applyRealtimeWidgetData(nextData)
+    return true
+  }
+  if (props.catalogId === 'soc-incidents-by-severity') {
+    const current = widgetData.value && typeof widgetData.value === 'object' ? widgetData.value : {}
+    const severity = String(ticket.severity || 'informational').toLowerCase()
+    const items = Array.isArray(current.items) ? [...current.items] : []
+    const idx = items.findIndex((item: any) => String(item?.severity || '').toLowerCase() === severity)
+    if (idx >= 0) {
+      items[idx] = { ...items[idx], count: (Number(items[idx].count) || 0) + 1 }
+    } else {
+      items.push({ severity, count: 1 })
+    }
+    const nextData = {
+      ...current,
+      items,
+      total: (Number(current.total) || 0) + 1,
+    }
+    applyRealtimeWidgetData(nextData)
+    return true
+  }
+  return false
+}
+
+function applyRealtimeWidgetSnapshot(snapshot: RealtimeWidgetSnapshot) {
+  if (!snapshot || snapshot.widgetId !== props.catalogId) return false
+  if (snapshot.integrationId && snapshot.integrationId !== props.integrationId) return false
+  if (!snapshot.data || typeof snapshot.data !== 'object') return false
+  if (
+    widgetResponse.value?.widgetId === snapshot.widgetId
+    && widgetResponse.value?.integrationId === snapshot.integrationId
+    && widgetResponse.value?.refreshedAt === snapshot.refreshedAt
+  ) {
+    return true
+  }
+  applyRealtimeWidgetData(snapshot.data, snapshot)
+  return true
+}
+
+function applyRealtimeWidgetData(nextData: any, snapshot?: RealtimeWidgetSnapshot) {
+  const status = snapshot?.status === 'error' ? 'error' : 'ready'
+  const refreshedAt = snapshot?.refreshedAt || new Date().toISOString()
+  widgetData.value = nextData
+  widgetResponse.value = {
+    widgetId: snapshot?.widgetId || props.catalogId,
+    integrationId: snapshot?.integrationId || props.integrationId,
+    status,
+    data: nextData,
+    refreshedAt,
+    meta: snapshot?.meta || {
+      source: catalogItem.value?.source ?? 'siem_kowalski',
+      cacheTtlSeconds: 0,
+      refreshIntervalSeconds: 0,
+    },
+  }
+  fetchError.value = status === 'error'
+    ? snapshot?.meta?.error?.message || 'Widget error occurred'
+    : null
+  fetchErrorKind.value = status === 'error' ? 'widget_error' : null
+  isLoading.value = false
+  isRefreshing.value = false
+  widgetSeriesStore.recordSample(props.instanceId, props.catalogId, nextData, props.integrationId)
+}
+
+function applySharedWidgetSnapshot() {
+  const snapshot = sharedWidgetSnapshot.value
+  if (!snapshot) return false
+  return applyRealtimeWidgetSnapshot(snapshot)
 }
 
 const hasWidgetData = computed(() => widgetData.value !== null && widgetData.value !== undefined)
@@ -113,8 +210,25 @@ const lastUpdatedLabel = computed(() => {
 const ageTick = ref(Date.now())
 let ageInterval: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
+  widgetRealtimeStore.startRealtime()
   ageInterval = setInterval(() => { ageTick.value = Date.now() }, 1000)
+  unsubscribeRealtime = realtimeStore.subscribe((event) => {
+    if (event.ticket && applyRealtimeTicket(event.ticket)) return
+    if (!event.refresh?.includes('widgets')) return
+    // A FortiGate syslog event updates SIEM-backed SOC widgets too. Do not
+    // filter by the event integrationId here: workspace SOC widgets are often
+    // bound to the siem_kowalski integration, while the realtime event carries
+    // the originating FortiGate integration id.
+    scheduleRealtimeReload()
+  })
 })
+
+watch(
+  sharedWidgetSnapshot,
+  (snapshot) => {
+    if (snapshot) applyRealtimeWidgetSnapshot(snapshot)
+  },
+)
 
 const lastUpdatedAge = computed(() => {
   const refreshedAt = widgetResponse.value?.refreshedAt
@@ -172,6 +286,8 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
     return
   }
 
+  if (showLoading && applySharedWidgetSnapshot()) return
+
   const controller = new AbortController()
   currentController = controller
   if (showLoading) {
@@ -190,6 +306,7 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
     if (result.state === 'ready') {
       widgetData.value = result.data
       widgetResponse.value = result.response
+      widgetRealtimeStore.upsertSnapshot(result.response)
       widgetSeriesStore.recordSample(props.instanceId, props.catalogId, result.data, props.integrationId)
     } else {
       fetchError.value = result.errorMessage
@@ -233,6 +350,12 @@ watch(
 onBeforeUnmount(() => {
   requestId += 1
   clearRefreshTimeout()
+  if (realtimeRefreshTimeout) {
+    clearTimeout(realtimeRefreshTimeout)
+    realtimeRefreshTimeout = null
+  }
+  unsubscribeRealtime?.()
+  unsubscribeRealtime = null
   currentController?.abort()
   widgetSeriesStore.clearInstance(props.instanceId)
   if (ageInterval) clearInterval(ageInterval)

@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
+from ipaddress import ip_network
 from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -8,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
-from app.auth.dependencies import get_auth_audit_store, get_current_api_user
+from app.auth.dependencies import get_auth_audit_store, get_current_api_user, require_admin_user
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.integrations.fortigate.service import (
@@ -20,6 +21,7 @@ from app.integrations.fortigate.store import (
     InMemoryFortiGateIngestionStore,
     SqlAlchemyFortiGateIntegrationStore,
 )
+from app.integrations.fortigate.syslog import send_fortigate_syslog_probe
 from app.integrations.penguin_tools import (
     MockPenguinToolIntegrationService,
     PenguinToolConnectionFailed,
@@ -27,6 +29,7 @@ from app.integrations.penguin_tools import (
     SqlAlchemyPenguinToolIntegrationStore,
     build_penguin_tool_clients,
 )
+from app.realtime import realtime_broker
 from app.routers.soc import get_siem_client
 from app.routers.widgets import (
     FortiGateWidgetService,
@@ -62,6 +65,14 @@ class FortiGateIntegrationCreate(BaseModel):
     host: HttpUrl
     api_key: str = Field(alias="apiKey", min_length=16)
     verify_tls: bool = Field(alias="verifyTls", default=True)
+    collector_host: str | None = Field(
+        alias="collectorHost",
+        default=None,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    )
+    collector_port: int = Field(alias="collectorPort", default=5514, ge=1, le=65535)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -86,6 +97,55 @@ class PenguinToolConnectionTest(BaseModel):
 class FortiGateIngestionStatusUpdate(BaseModel):
     enabled: bool
     interval_seconds: int = Field(alias="intervalSeconds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiGateTrafficPolicyDraftRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_. -]+$")
+    source_interface: str = Field(
+        alias="sourceInterface",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
+    destination_interface: str = Field(
+        alias="destinationInterface",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
+    source_subnet: str = Field(alias="sourceSubnet")
+    destination_subnet: str = Field(alias="destinationSubnet")
+    service: str = Field(default="ALL", min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
+    action: Literal["accept", "deny"] = "accept"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiGateLogForwardingRequest(BaseModel):
+    collector_host: str = Field(
+        alias="collectorHost",
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    )
+    port: int = Field(default=5514, ge=1, le=65535)
+    mode: Literal["udp", "legacy-reliable", "reliable"] = "udp"
+    facility: str = Field(
+        default="local7",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
+    format: Literal["default", "csv", "cef", "rfc5424"] = "default"
+    severity: str = Field(
+        default="information",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
+    confirmed: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -139,6 +199,15 @@ def get_penguin_tool_integration_service() -> PenguinToolService:
     )
 
 
+def _default_collector_host(request: Request) -> str:
+    settings = get_settings()
+    if settings.fortigate_syslog_collector_public_host:
+        return settings.fortigate_syslog_collector_public_host.strip()
+    forwarded_host = request.headers.get("x-forwarded-host")
+    host = (forwarded_host or request.url.hostname or "127.0.0.1").split(",", 1)[0]
+    return host.split(":", 1)[0].strip() or "127.0.0.1"
+
+
 @router.post(
     "/integrations/fortigate",
     status_code=status.HTTP_201_CREATED,
@@ -158,6 +227,8 @@ def create_fortigate_integration(
             host=str(payload.host),
             api_key=payload.api_key,
             verify_tls=payload.verify_tls,
+            collector_host=payload.collector_host or _default_collector_host(request),
+            collector_port=payload.collector_port,
         )
     except FortiGateConnectionFailed as exc:
         logger.warning(
@@ -191,6 +262,8 @@ def create_fortigate_integration(
             "integrationId": created["id"],
             "host": str(payload.host),
             "verifyTls": payload.verify_tls,
+            "logForwardingConfigured": (created.get("logForwarding") or {}).get("configured"),
+            "logForwardingChanged": (created.get("logForwarding") or {}).get("changed"),
         },
     )
     return created
@@ -393,6 +466,201 @@ def run_fortigate_health_check(
     return result
 
 
+@router.get("/integrations/fortigate/{integration_id}/log-forwarding/status")
+def get_fortigate_log_forwarding_status(
+    integration_id: str,
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict[str, Any]:
+    try:
+        return service.get_log_forwarding_status(
+            integration_id=integration_id,
+            owner_user_id=str(current_user["id"]),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    except FortiGateConnectionFailed as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/integrations/fortigate/{integration_id}/log-forwarding/apply")
+def apply_fortigate_log_forwarding(
+    integration_id: str,
+    payload: FortiGateLogForwardingRequest,
+    request: Request,
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(require_admin_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    try:
+        applied = service.apply_log_forwarding(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+            collector_host=payload.collector_host,
+            port=payload.port,
+            mode=payload.mode,
+            facility=payload.facility,
+            format=payload.format,
+            severity=payload.severity,
+            confirmed=payload.confirmed,
+        )
+    except PermissionError as exc:
+        audit_store.record(
+            action="integration.fortigate.log_forwarding_applied",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    except FortiGateConnectionFailed as exc:
+        audit_store.record(
+            action="integration.fortigate.log_forwarding_applied",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortigate.log_forwarding_applied",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "collectorHost": payload.collector_host,
+            "port": payload.port,
+            "mode": payload.mode,
+            "configured": applied.get("configured"),
+        },
+    )
+    return applied
+
+
+@router.post("/integrations/fortigate/{integration_id}/log-forwarding/test-collector")
+async def test_fortigate_log_forwarding_collector(
+    integration_id: str,
+    payload: FortiGateLogForwardingRequest,
+    request: Request,
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    try:
+        status_before = service.get_log_forwarding_status(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        probe = await send_fortigate_syslog_probe(
+            host=payload.collector_host,
+            port=payload.port,
+            integration_id=integration_id,
+        )
+        status_after = service.get_log_forwarding_status(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    except (FortiGateConnectionFailed, OSError) as exc:
+        audit_store.record(
+            action="integration.fortigate.log_forwarding_collector_tested",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortigate.log_forwarding_collector_tested",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "collectorHost": payload.collector_host,
+            "port": payload.port,
+        },
+    )
+    return {
+        **probe,
+        "receiveStatus": status_after.get(
+            "receiveStatus",
+            status_before.get("receiveStatus", {}),
+        ),
+    }
+
+
+@router.post("/integrations/fortigate/{integration_id}/traffic-policy-draft")
+def draft_fortigate_traffic_policy(
+    integration_id: str,
+    payload: FortiGateTrafficPolicyDraftRequest,
+    request: Request,
+    service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    if not any(
+        item.get("id") == integration_id
+        for item in service.list(owner_user_id=owner_user_id).get("items", [])
+    ):
+        audit_store.record(
+            action="integration.fortigate.policy_drafted",
+            outcome="failure",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": "Integration not found"},
+        )
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    try:
+        draft = _build_fortigate_traffic_policy_draft(
+            integration_id=integration_id,
+            payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    audit_store.record(
+        action="integration.fortigate.policy_drafted",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "mode": draft["mode"],
+            "dryRunOnly": draft["dryRunOnly"],
+            "action": draft["policy"]["action"],
+            "sourceInterface": draft["policy"]["sourceInterface"],
+            "destinationInterface": draft["policy"]["destinationInterface"],
+        },
+    )
+    return draft
+
+
 @router.get("/integrations/fortigate/{integration_id}/health-checks")
 def list_fortigate_health_checks(
     integration_id: str,
@@ -417,13 +685,29 @@ def get_fortigate_ingestion_status(
         FortiGateIngestionStore,
         Depends(get_fortigate_ingestion_store),
     ],
+    fortigate_service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
+    owner_user_id = str(current_user["id"])
     try:
-        return ingestion_store.get_ingestion_status(
-            owner_user_id=str(current_user["id"]),
+        status_payload = ingestion_store.get_ingestion_status(
+            owner_user_id=owner_user_id,
             integration_id=integration_id,
         )
+        try:
+            log_forwarding = fortigate_service.get_log_forwarding_status(
+                integration_id=integration_id,
+                owner_user_id=owner_user_id,
+            )
+        except (FortiGateConnectionFailed, KeyError):
+            return status_payload
+        if log_forwarding.get("configured") and status_payload.get("lastRunTrigger") != "syslog":
+            return ingestion_store.mark_syslog_forwarding_configured(
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+                configured_at=datetime.now(UTC),
+            )
+        return status_payload
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Integration not found") from exc
 
@@ -652,6 +936,78 @@ def reset_incidents_store(
     }
 
 
+def _build_fortigate_traffic_policy_draft(
+    *,
+    integration_id: str,
+    payload: FortiGateTrafficPolicyDraftRequest,
+) -> dict[str, Any]:
+    try:
+        source_network = ip_network(payload.source_subnet, strict=False)
+        destination_network = ip_network(payload.destination_subnet, strict=False)
+    except ValueError as exc:
+        raise ValueError("sourceSubnet and destinationSubnet must be valid CIDR ranges") from exc
+
+    source_name = _address_object_name("FD_SRC", source_network)
+    destination_name = _address_object_name("FD_DST", destination_network)
+    policy = {
+        "name": payload.name,
+        "sourceInterface": payload.source_interface,
+        "destinationInterface": payload.destination_interface,
+        "sourceSubnet": str(source_network),
+        "destinationSubnet": str(destination_network),
+        "service": payload.service.upper(),
+        "action": payload.action,
+        "logTraffic": "all",
+        "nat": "disable",
+    }
+    cli_commands = [
+        "config firewall address",
+        f'    edit "{source_name}"',
+        f"        set subnet {source_network.network_address} {source_network.netmask}",
+        "    next",
+        f'    edit "{destination_name}"',
+        f"        set subnet {destination_network.network_address} {destination_network.netmask}",
+        "    next",
+        "end",
+        "config firewall policy",
+        "    edit 0",
+        f'        set name "{payload.name}"',
+        f'        set srcintf "{payload.source_interface}"',
+        f'        set dstintf "{payload.destination_interface}"',
+        f'        set srcaddr "{source_name}"',
+        f'        set dstaddr "{destination_name}"',
+        f"        set action {payload.action}",
+        '        set schedule "always"',
+        f'        set service "{payload.service.upper()}"',
+        "        set logtraffic all",
+        "        set nat disable",
+        "    next",
+        "end",
+    ]
+    return {
+        "integrationId": integration_id,
+        "mode": "recommendation_only",
+        "dryRunOnly": True,
+        "policy": policy,
+        "cliCommands": cli_commands,
+        "warnings": [
+            "FortiDashboard does not apply this policy automatically.",
+            (
+                "Paste the CLI on the FortiGate only after reviewing interface names, "
+                "address ranges and policy order."
+            ),
+            (
+                "FortiGate remains read-only from the platform in this MVP; this draft "
+                "only helps generate logged traffic for the lab."
+            ),
+        ],
+    }
+
+
+def _address_object_name(prefix: str, network: Any) -> str:
+    return f"{prefix}_{str(network).replace('/', '_')}"
+
+
 def _run_fortigate_event_ingestion(
     *,
     integration_id: str,
@@ -707,6 +1063,21 @@ def _run_fortigate_event_ingestion(
             error=None,
             finished_at=datetime.now(UTC),
         )
+        if event_ids:
+            realtime_broker.publish(
+                {
+                    "type": "fortigate.ingestion.events",
+                    "ownerUserId": owner_user_id,
+                    "integrationId": integration_id,
+                    "eventIds": event_ids,
+                    "receivedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
+                        "+00:00",
+                        "Z",
+                    ),
+                    "refresh": ["widgets", "tickets"],
+                    "trigger": trigger,
+                }
+            )
         return {
             "integrationId": integration_id,
             "rawEventCount": raw_event_count,

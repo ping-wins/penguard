@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Activity, Clock, Cpu, Network, Plus, RefreshCw, Server, Shield, Trash2, User } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useEndpointsStore } from '../../stores/useEndpointsStore'
@@ -16,8 +16,7 @@ const isCreatingEnrollment = ref(false)
 const endpointDeleteError = ref<string | null>(null)
 const deletingEndpointId = ref<string | null>(null)
 
-onMounted(() => store.startPolling(10000))
-onBeforeUnmount(() => store.stopPolling())
+onMounted(() => store.refresh())
 
 const selectedObservedSourceIp = computed(() => observedSourceIp(store.selectedEndpoint))
 const selectedReportedIps = computed(() => reportedIps(store.selectedEndpoint))

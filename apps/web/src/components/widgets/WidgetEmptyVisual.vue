@@ -168,12 +168,11 @@ function clearRefreshTimer() {
   }
 }
 
-function scheduleRefresh(intervalSeconds: number | null) {
+function scheduleRefresh(_intervalSeconds: number | null) {
   clearRefreshTimer()
-  if (!intervalSeconds || intervalSeconds <= 0) return
-  refreshTimer = setTimeout(() => {
-    loadLiveData({ showLoading: false })
-  }, intervalSeconds * 1000)
+  // Custom visuals also hydrate once from their bound provider fields. Avoid a
+  // hidden per-visual polling loop; live SOC updates arrive through the backend
+  // ingestion path and user/navigation refreshes rehydrate the visual.
 }
 
 async function loadLiveData(options: { showLoading?: boolean } = {}) {

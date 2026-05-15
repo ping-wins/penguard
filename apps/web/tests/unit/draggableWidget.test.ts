@@ -5,6 +5,33 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import DraggableWidget from '../../src/components/canvas/DraggableWidget.vue'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
 
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  listeners: Record<string, Array<(message: MessageEvent) => void>> = {}
+  onmessage: ((message: MessageEvent) => void) | null = null
+  url: string
+
+  constructor(url: string) {
+    this.url = url
+    FakeEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    const callback = typeof listener === 'function'
+      ? listener as (message: MessageEvent) => void
+      : (message: MessageEvent) => listener.handleEvent(message)
+    this.listeners[type] = [...(this.listeners[type] || []), callback]
+  }
+
+  emit(type: string, payload: unknown) {
+    const message = new MessageEvent(type, { data: JSON.stringify(payload) })
+    if (type === 'message') this.onmessage?.(message)
+    for (const listener of this.listeners[type] || []) listener(message)
+  }
+
+  close() {}
+}
+
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -15,6 +42,8 @@ function jsonResponse(body: unknown) {
 describe('DraggableWidget', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
+    FakeEventSource.instances = []
   })
 
   it('waits for the catalog before fetching persisted widget data', async () => {
@@ -74,23 +103,15 @@ describe('DraggableWidget', () => {
     expect(wrapper.text()).toContain('Sessions: 3812')
   })
 
-  it('refreshes widget data using the backend refresh interval', async () => {
+  it('does not start a hidden per-widget polling loop from refresh interval metadata', async () => {
     vi.useFakeTimers()
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({
+      .mockResolvedValue(jsonResponse({
         widgetId: 'fortigate-kpi-sessions',
         integrationId: 'int_fgt_01',
         refreshedAt: '2026-04-26T23:45:00.000Z',
         status: 'ready',
         data: { sessions: 23 },
-        meta: { source: 'fortigate', cacheTtlSeconds: 1, refreshIntervalSeconds: 1 },
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        widgetId: 'fortigate-kpi-sessions',
-        integrationId: 'int_fgt_01',
-        refreshedAt: '2026-04-26T23:45:01.000Z',
-        status: 'ready',
-        data: { sessions: 28 },
         meta: { source: 'fortigate', cacheTtlSeconds: 1, refreshIntervalSeconds: 1 },
       }))
     vi.stubGlobal('fetch', fetcher)
@@ -128,15 +149,228 @@ describe('DraggableWidget', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Sessions: 23')
 
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(5000)
     await flushPromises()
 
-    expect(fetcher).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Sessions: 28')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Sessions: 23')
   })
 
-  it('keeps the last good payload visible when a background refresh fails', async () => {
-    vi.useFakeTimers()
+  it('applies realtime ticket payloads to SIEM incident widgets without refetching', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const fetcher = vi.fn()
+      .mockResolvedValue(jsonResponse({
+        widgetId: 'soc-recent-incidents',
+        integrationId: 'int_kowalski_01',
+        refreshedAt: '2026-05-15T12:00:00.000Z',
+        status: 'ready',
+        data: { incidents: [], count: 0 },
+        meta: { source: 'siem_kowalski', cacheTtlSeconds: 5, refreshIntervalSeconds: 5 },
+      }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'soc-recent-incidents',
+      title: 'Recent Incidents',
+      kind: 'feed',
+      source: 'siem_kowalski',
+      requiredCapabilities: ['incidents'],
+      defaultSize: { w: 4, h: 3 },
+      dataEndpoint: '/api/widgets/soc-recent-incidents/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_recent_incidents',
+        catalogId: 'soc-recent-incidents',
+        integrationId: 'int_kowalski_01',
+        layout: { x: 0, y: 0, w: 360, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `Count: ${widgetData?.count ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('Count: 0')
+
+    FakeEventSource.instances[0].emit('audit.siem.event', {
+      type: 'audit.siem.event',
+      ticket: {
+        id: 'inc_audit_01',
+        title: 'Repeated failed FortiDashboard logins',
+        severity: 'medium',
+        triageLevel: 'T2',
+        ticketStatus: 'new',
+        createdAt: '2026-05-15T12:05:00.000Z',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Count: 1')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies realtime widget snapshots to FortiGate widgets without refetching', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const fetcher = vi.fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({
+        widgetId: 'fortigate-system-status',
+        integrationId: 'int_fgt_01',
+        refreshedAt: '2026-05-15T12:00:00.000Z',
+        status: 'ready',
+        data: { cpu: 4, memory: 49, sessions: 12, uptimeSeconds: 25080 },
+        meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
+      })))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'fortigate-system-status',
+      title: 'System Status',
+      kind: 'health',
+      source: 'fortigate',
+      requiredCapabilities: ['system'],
+      defaultSize: { w: 4, h: 3 },
+      dataEndpoint: '/api/widgets/fortigate-system-status/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_system_status',
+        catalogId: 'fortigate-system-status',
+        integrationId: 'int_fgt_01',
+        layout: { x: 0, y: 0, w: 360, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `CPU: ${widgetData?.cpu ?? ''} Sessions: ${widgetData?.sessions ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('CPU: 4 Sessions: 12')
+
+    FakeEventSource.instances[0].emit('fortigate.syslog.event', {
+      type: 'fortigate.syslog.event',
+      integrationId: 'int_fgt_01',
+      widgets: [
+        {
+          widgetId: 'fortigate-system-status',
+          integrationId: 'int_fgt_01',
+          refreshedAt: '2026-05-15T12:00:05.000Z',
+          status: 'ready',
+          data: { cpu: 7, memory: 52, sessions: 18, uptimeSeconds: 25085 },
+          meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
+        },
+      ],
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('CPU: 7 Sessions: 18')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('hydrates duplicate FortiGate widgets from the latest shared realtime snapshot', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const fetcher = vi.fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({
+        widgetId: 'fortigate-system-status',
+        integrationId: 'int_fgt_01',
+        refreshedAt: '2026-05-15T12:00:00.000Z',
+        status: 'ready',
+        data: { cpu: 4, memory: 49, sessions: 12, uptimeSeconds: 25080 },
+        meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
+      })))
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDashboardStore()
+    store.catalogItems = [{
+      id: 'fortigate-system-status',
+      title: 'System Status',
+      kind: 'health',
+      source: 'fortigate',
+      requiredCapabilities: ['system'],
+      defaultSize: { w: 4, h: 3 },
+      dataEndpoint: '/api/widgets/fortigate-system-status/data',
+    }]
+    store.isCatalogLoaded = true
+
+    const first = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_system_status_first',
+        catalogId: 'fortigate-system-status',
+        integrationId: 'int_fgt_01',
+        layout: { x: 0, y: 0, w: 360, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `CPU: ${widgetData?.cpu ?? ''} Sessions: ${widgetData?.sessions ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+    expect(first.text()).toContain('CPU: 4 Sessions: 12')
+
+    FakeEventSource.instances[0].emit('fortigate.syslog.event', {
+      type: 'fortigate.syslog.event',
+      integrationId: 'int_fgt_01',
+      widgets: [
+        {
+          widgetId: 'fortigate-system-status',
+          integrationId: 'int_fgt_01',
+          refreshedAt: '2026-05-15T12:00:05.000Z',
+          status: 'ready',
+          data: { cpu: 7, memory: 52, sessions: 18, uptimeSeconds: 25085 },
+          meta: { source: 'fortigate', cacheTtlSeconds: 2, refreshIntervalSeconds: 2 },
+        },
+      ],
+    })
+    await flushPromises()
+    expect(first.text()).toContain('CPU: 7 Sessions: 18')
+
+    const second = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_system_status_second',
+        catalogId: 'fortigate-system-status',
+        integrationId: 'int_fgt_01',
+        layout: { x: 380, y: 0, w: 360, h: 260, z: 10 },
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: ({ widgetData }: any) => h('div', { class: 'payload' }, `CPU: ${widgetData?.cpu ?? ''} Sessions: ${widgetData?.sessions ?? ''}`),
+      },
+    })
+
+    await flushPromises()
+
+    expect(second.text()).toContain('CPU: 7 Sessions: 18')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a blocking error when an explicit reload fails after rebinding', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
         widgetId: 'fortigate-kpi-sessions',
@@ -148,7 +382,7 @@ describe('DraggableWidget', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         widgetId: 'fortigate-kpi-sessions',
-        integrationId: 'int_fgt_01',
+        integrationId: 'int_fgt_02',
         refreshedAt: '2026-04-26T23:45:01.000Z',
         status: 'error',
         data: {},
@@ -194,10 +428,11 @@ describe('DraggableWidget', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Sessions: 23')
 
-    await vi.advanceTimersByTimeAsync(1000)
+    await wrapper.setProps({ integrationId: 'int_fgt_02' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Sessions: 23')
+    expect(wrapper.text()).not.toContain('Sessions: 23')
+    expect(wrapper.text()).toContain('Widget unavailable')
     expect(wrapper.text()).toContain('FortiGate API request failed with HTTP 404')
   })
 

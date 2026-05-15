@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
@@ -73,6 +73,11 @@ class Incident(BaseModel):
     ai_analysis_id: str | None = Field(default=None, alias="aiAnalysisId")
 
 
+class EventIngestResult(BaseModel):
+    event: SecurityEvent
+    incident: Incident | None = None
+
+
 class IncidentStatusPatch(BaseModel):
     status: IncidentStatus
 
@@ -122,10 +127,10 @@ DETECTION_RULES: list[DetectionRule] = [
     ),
     DetectionRule(
         id="repeated_failed_login",
-        title="Repeated failed login",
-        summary="Failed authentication attempts exceeded the configured threshold.",
+        title="Possible authentication brute force",
+        summary="Failed authentication attempts reached the brute-force threshold.",
         eventTypes=["auth.failed_login"],
-        conditions=[RuleCondition(path="attributes.count", operator="gte", value=5)],
+        conditions=[RuleCondition(path="attributes.count", operator="gte", value=3)],
     ),
     DetectionRule(
         id="privileged_logon_unusual_host",
@@ -327,6 +332,72 @@ def _coerce_number(value: Any) -> float:
     return float("-inf")
 
 
+def _enrich_failed_login_burst(event: SecurityEvent) -> SecurityEvent:
+    if event.event_type != "auth.failed_login":
+        return event
+    current_count = _failed_login_event_count(event)
+    if current_count >= 3:
+        return _mark_brute_force(event, current_count, [])
+
+    window_start = event.occurred_at - timedelta(minutes=5)
+    matched_event_ids: list[str] = []
+    total_count = current_count
+    for payload in store.list_events(limit=50, event_type="auth.failed_login"):
+        previous = _load_event(payload)
+        if previous.occurred_at < window_start or previous.occurred_at > event.occurred_at:
+            continue
+        if not _same_auth_subject(event, previous):
+            continue
+        previous_count = _failed_login_event_count(previous)
+        total_count += previous_count
+        if previous.id:
+            matched_event_ids.append(previous.id)
+        if total_count >= 3:
+            break
+    if total_count < 3:
+        return event
+    return _mark_brute_force(event, total_count, matched_event_ids)
+
+
+def _same_auth_subject(left: SecurityEvent, right: SecurityEvent) -> bool:
+    for key in ("integrationId", "sourceIp", "user", "deviceName"):
+        left_value = left.entities.get(key) or left.attributes.get(key)
+        right_value = right.entities.get(key) or right.attributes.get(key)
+        if left_value and right_value and left_value != right_value:
+            return False
+    return True
+
+
+def _failed_login_event_count(event: SecurityEvent) -> int:
+    numeric = _coerce_number(event.attributes.get("count"))
+    if numeric == float("-inf") or numeric < 1:
+        return 1
+    return int(numeric)
+
+
+def _mark_brute_force(
+    event: SecurityEvent,
+    count: int,
+    previous_event_ids: list[str],
+) -> SecurityEvent:
+    attributes = {
+        **event.attributes,
+        "count": count,
+        "attackType": event.attributes.get("attackType") or "brute_force",
+    }
+    if previous_event_ids:
+        attributes["aggregatedEventIds"] = [*previous_event_ids, event.id]
+    return event.model_copy(
+        update={"attributes": attributes, "severity": _failed_login_severity(event, count)}
+    )
+
+
+def _failed_login_severity(event: SecurityEvent, count: int) -> str:
+    if event.severity in {"critical", "high"}:
+        return event.severity
+    return "high" if count >= 3 else event.severity
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
@@ -340,7 +411,19 @@ def list_rules(enabled: bool | None = None) -> list[DetectionRule]:
 
 @app.post("/events", response_model=SecurityEvent)
 def create_event(event: SecurityEvent) -> SecurityEvent:
+    stored_event, _incident = _ingest_event(event)
+    return stored_event
+
+
+@app.post("/events/ingest", response_model=EventIngestResult)
+def ingest_event(event: SecurityEvent) -> EventIngestResult:
+    stored_event, incident = _ingest_event(event)
+    return EventIngestResult(event=stored_event, incident=incident)
+
+
+def _ingest_event(event: SecurityEvent) -> tuple[SecurityEvent, Incident | None]:
     stored_event = event.model_copy(update={"id": event.id or _new_id("evt")})
+    stored_event = _enrich_failed_login_burst(stored_event)
     store.add_event(
         _dump(stored_event),
         event_type=stored_event.event_type,
@@ -368,7 +451,7 @@ def create_event(event: SecurityEvent) -> SecurityEvent:
         store.count_events(),
         store.count_incidents(),
     )
-    return stored_event
+    return stored_event, incident
 
 
 @app.post("/admin/reset")

@@ -7,6 +7,12 @@ class FortiGateApiError(RuntimeError):
     pass
 
 
+def _syslog_table(slot: int) -> str:
+    if slot < 1 or slot > 4:
+        raise ValueError("FortiGate syslog slot must be between 1 and 4")
+    return "log.syslogd" if slot == 1 else f"log.syslogd{slot}"
+
+
 class FortiGateApiClient:
     def __init__(
         self,
@@ -75,6 +81,30 @@ class FortiGateApiClient:
             ],
         )
 
+    def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
+        results = self._get(f"/api/v2/cmdb/{_syslog_table(slot)}/setting")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate syslog setting response was not an object")
+        return results
+
+    def get_syslog_filter(self, *, slot: int = 1) -> dict[str, Any]:
+        results = self._get(f"/api/v2/cmdb/{_syslog_table(slot)}/filter")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate syslog filter response was not an object")
+        return results
+
+    def update_syslog_setting(self, payload: dict[str, Any], *, slot: int = 1) -> dict[str, Any]:
+        results = self._put(f"/api/v2/cmdb/{_syslog_table(slot)}/setting", json=payload)
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate syslog setting update response was not an object")
+        return results
+
+    def update_syslog_filter(self, payload: dict[str, Any], *, slot: int = 1) -> dict[str, Any]:
+        results = self._put(f"/api/v2/cmdb/{_syslog_table(slot)}/filter", json=payload)
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate syslog filter update response was not an object")
+        return results
+
     def _get_list(
         self,
         path: str,
@@ -133,6 +163,45 @@ class FortiGateApiClient:
             raise FortiGateApiError("FortiGate API returned error status")
         if isinstance(payload, dict) and "results" in payload and include_metadata:
             return self._merge_envelope_metadata(payload)
+        if isinstance(payload, dict) and "results" in payload:
+            return payload["results"]
+        return payload
+
+    def _put(self, path: str, *, json: dict[str, Any]) -> Any:
+        try:
+            with httpx.Client(
+                base_url=self.host,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                verify=self.verify_tls,
+                timeout=self.timeout_seconds,
+                transport=self.transport,
+            ) as client:
+                response = client.put(path, json=json)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in (401, 403):
+                raise FortiGateApiError(
+                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                ) from exc
+            if status_code == 404:
+                raise FortiGateApiError(
+                    "FortiGate API endpoint not found "
+                    f"({path}); check host URL and firmware version"
+                ) from exc
+            raise FortiGateApiError(
+                f"FortiGate API request failed with HTTP {status_code}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
+
+        payload = self._decode_json(response)
+        if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
+            raise FortiGateApiError("FortiGate API returned error status")
         if isinstance(payload, dict) and "results" in payload:
             return payload["results"]
         return payload

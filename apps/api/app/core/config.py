@@ -73,8 +73,11 @@ class Settings(BaseSettings):
     fortigate_ingestion_default_interval_seconds: int = 30
     fortigate_ingestion_min_interval_seconds: int = 10
     fortigate_ingestion_max_interval_seconds: int = 3600
+    fortigate_syslog_collector_host: str = "0.0.0.0"
+    fortigate_syslog_collector_public_host: str | None = None
+    fortigate_syslog_collector_port: int = 5514
     enable_lab_demo_tools: bool = False
-    ai_provider: str = "scripted"
+    ai_provider: str = ""
     ai_api_key: str = ""
     ai_model: str = ""
     ai_base_url: str = ""

@@ -54,6 +54,7 @@ class FortiGateIntegrationModel(Base):
     api_key_blob: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="connected", index=True)
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    device_identifiers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
     last_checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

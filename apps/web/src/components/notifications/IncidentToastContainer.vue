@@ -32,12 +32,12 @@ function triageColor(level: string) {
 
 onMounted(() => {
   if (authStore.isAuthenticated) {
-    toastsStore.startPolling()
+    toastsStore.startRealtime()
   }
 })
 
 onBeforeUnmount(() => {
-  toastsStore.stopPolling()
+  toastsStore.stopRealtime()
 })
 </script>
 

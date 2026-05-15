@@ -21,6 +21,71 @@ export type FortiGateIngestionStatus = {
   updatedAt: string
 }
 
+export type FortiGateTrafficPolicyDraftRequest = {
+  name: string
+  sourceInterface: string
+  destinationInterface: string
+  sourceSubnet: string
+  destinationSubnet: string
+  service: string
+  action: 'accept' | 'deny'
+}
+
+export type FortiGateTrafficPolicyDraft = {
+  integrationId: string
+  mode: 'recommendation_only'
+  dryRunOnly: true
+  policy: FortiGateTrafficPolicyDraftRequest & {
+    logTraffic: 'all'
+    nat: 'disable'
+  }
+  cliCommands: string[]
+  warnings: string[]
+}
+
+export type FortiGateLogForwardingRequest = {
+  collectorHost: string
+  port?: number
+  mode?: 'udp' | 'legacy-reliable' | 'reliable'
+  facility?: string
+  format?: 'default' | 'csv' | 'cef' | 'rfc5424'
+  severity?: string
+  confirmed?: boolean
+}
+
+export type FortiGateLogReceiveStatus = {
+  mode: 'syslog' | 'polling' | string
+  pollingEnabled: boolean
+  status: string | null
+  lastReceivedAt: string | null
+  lastEventIds: string[]
+  lastError: string | null
+  rawEventCount: number
+  createdCount: number
+}
+
+export type FortiGateLogForwardingResponse = {
+  integrationId?: string
+  mode?: 'syslog_forwarding'
+  configured: boolean
+  current?: Record<string, any>
+  desired?: Record<string, any>
+  receiveStatus?: FortiGateLogReceiveStatus
+  cliCommands?: string[]
+  warnings?: string[]
+  applied?: boolean
+}
+
+export type FortiGateCollectorTestResponse = {
+  sent: boolean
+  collectorHost: string
+  collectorPort: number
+  integrationId: string
+  sentAt: string
+  sample: string
+  receiveStatus?: FortiGateLogReceiveStatus
+}
+
 export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
@@ -107,6 +172,9 @@ export const useIntegrationsStore = defineStore('integrations', () => {
       const authStore = useAuthStore()
       if (!authStore.csrfToken) await authStore.fetchCsrf()
 
+      const collectorHost = window.location.hostname && window.location.hostname !== 'localhost'
+        ? window.location.hostname
+        : undefined
       const res = await fetch('/api/integrations/fortigate', {
         method: 'POST',
         headers: {
@@ -114,7 +182,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
           'X-CSRF-Token': authStore.csrfToken
         },
         credentials: 'include',
-        body: JSON.stringify({ name, host, apiKey, verifyTls })
+        body: JSON.stringify({ name, host, apiKey, verifyTls, collectorHost })
       })
 
       if (res.ok) {
@@ -296,6 +364,91 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
+  async function draftFortigateTrafficPolicy(
+    integrationId: string,
+    payload: FortiGateTrafficPolicyDraftRequest,
+  ): Promise<{ success: true, data: FortiGateTrafficPolicyDraft } | { success: false, error: string }> {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/integrations/fortigate/${encodeURIComponent(integrationId)}/traffic-policy-draft`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken,
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to draft FortiGate policy') }
+      }
+      return { success: true, data: await res.json() }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function fetchFortigateLogForwardingStatus(
+    integrationId: string,
+  ): Promise<{ success: true, data: FortiGateLogForwardingResponse } | { success: false, error: string }> {
+    try {
+      const res = await fetch(`/api/integrations/fortigate/${encodeURIComponent(integrationId)}/log-forwarding/status`, {
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to load FortiGate log forwarding status') }
+      }
+      return { success: true, data: await res.json() }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function applyFortigateLogForwarding(
+    integrationId: string,
+    payload: FortiGateLogForwardingRequest & { confirmed: true },
+  ): Promise<{ success: true, data: FortiGateLogForwardingResponse } | { success: false, error: string }> {
+    return postFortigateLogForwarding(integrationId, 'apply', payload)
+  }
+
+  async function testFortigateLogForwardingCollector(
+    integrationId: string,
+    payload: Pick<FortiGateLogForwardingRequest, 'collectorHost' | 'port'>,
+  ): Promise<{ success: true, data: FortiGateCollectorTestResponse } | { success: false, error: string }> {
+    return postFortigateLogForwarding(integrationId, 'test-collector', payload) as Promise<
+      { success: true, data: FortiGateCollectorTestResponse } | { success: false, error: string }
+    >
+  }
+
+  async function postFortigateLogForwarding(
+    integrationId: string,
+    action: 'apply' | 'test-collector',
+    payload: FortiGateLogForwardingRequest | Pick<FortiGateLogForwardingRequest, 'collectorHost' | 'port'>,
+  ): Promise<{ success: true, data: FortiGateLogForwardingResponse } | { success: false, error: string }> {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/integrations/fortigate/${encodeURIComponent(integrationId)}/log-forwarding/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken,
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to configure FortiGate log forwarding') }
+      }
+      return { success: true, data: await res.json() }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
   return {
     integrations,
     isLoading,
@@ -316,6 +469,10 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     fetchFortigateIngestionStatus,
     configureFortigateIngestion,
     runFortigateIngestion,
+    draftFortigateTrafficPolicy,
+    fetchFortigateLogForwardingStatus,
+    applyFortigateLogForwarding,
+    testFortigateLogForwardingCollector,
   }
 })
 

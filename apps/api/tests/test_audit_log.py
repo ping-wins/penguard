@@ -3,7 +3,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.auth import dependencies as auth_dependencies
-from app.auth.audit import InMemoryAuthAuditStore, sanitize_audit_details
+from app.auth.audit import (
+    AuditSiemForwarder,
+    ForwardingAuthAuditStore,
+    InMemoryAuthAuditStore,
+    sanitize_audit_details,
+)
 from app.auth.token_cipher import TokenCipher
 from app.db.base import Base
 from app.integrations.fortigate.client import FortiGateApiError
@@ -29,12 +34,74 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
     return {"X-CSRF-Token": response.json()["csrfToken"]}
 
 
+class FakeSiemClient:
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json=None,
+        params=None,
+        headers=None,
+        pass_through_statuses=None,
+    ) -> dict:
+        event = {"id": "evt_audit_01", **(json or {})}
+        self.calls.append(
+            {
+                "method": method,
+                "path": path,
+                "json": json,
+                "params": params,
+                "headers": headers,
+                "pass_through_statuses": pass_through_statuses,
+            }
+        )
+        if path == "/events/ingest":
+            return {
+                "event": event,
+                "incident": {
+                    "id": "inc_audit_01",
+                    "title": "Repeated failed FortiDashboard logins",
+                    "severity": "medium",
+                    "triageLevel": "T2",
+                    "ticketStatus": "new",
+                    "createdAt": "2026-05-15T12:05:00.000Z",
+                },
+            }
+        return event
+
+
+class FailingSiemClient:
+    def request(self, *args, **kwargs) -> dict:
+        raise RuntimeError("siem unavailable")
+
+
 class HealthyFortiGateClient:
+    def __init__(self):
+        self.syslog_setting = {
+            "status": "disable",
+            "server": "",
+            "port": 514,
+            "mode": "udp",
+            "facility": "local7",
+            "format": "default",
+        }
+        self.syslog_filter = {
+            "severity": "information",
+            "forward-traffic": "disable",
+            "local-traffic": "disable",
+            "multicast-traffic": "disable",
+        }
+
     def get_system_status(self):
         return {
             "hostname": "FGT-VM",
             "model_name": "FortiGate-VM64",
             "version": "v7.4.3",
+            "serial": "FGVMTEST",
         }
 
     def get_performance_status(self):
@@ -43,6 +110,20 @@ class HealthyFortiGateClient:
     def get_resource_usage(self, resource: str | None = None):
         assert resource == "session"
         return {"session": [{"current": 15}]}
+
+    def get_syslog_setting(self, *, slot: int = 1):
+        return dict(self.syslog_setting)
+
+    def get_syslog_filter(self, *, slot: int = 1):
+        return dict(self.syslog_filter)
+
+    def update_syslog_setting(self, payload, *, slot: int = 1):
+        self.syslog_setting.update(payload)
+        return dict(payload)
+
+    def update_syslog_filter(self, payload, *, slot: int = 1):
+        self.syslog_filter.update(payload)
+        return dict(payload)
 
 
 def healthy_client_factory(*, host: str, api_key: str, verify_tls: bool):
@@ -77,6 +158,134 @@ def test_audit_details_redact_secret_fields_recursively():
     }
     assert "fg-secret" not in repr(details)
     assert "kc-secret" not in repr(details)
+
+
+def test_audit_store_forwards_sanitized_platform_events_to_siem():
+    primary = InMemoryAuthAuditStore()
+    siem = FakeSiemClient()
+    realtime_events: list[dict] = []
+    store = ForwardingAuthAuditStore(
+        primary=primary,
+        forwarder=AuditSiemForwarder(
+            siem_client=siem,
+            realtime_publisher=realtime_events.append,
+        ),
+    )
+
+    store.record(
+        action="integration.fortigate.log_forwarding_applied",
+        outcome="success",
+        email="owner@example.com",
+        user_id="usr_owner",
+        client_ip="203.0.113.10",
+        user_agent="pytest",
+        details={
+            "integrationId": "int_fgt_01",
+            "apiKey": "fg-secret-token",
+            "collectorHost": "192.0.2.50",
+        },
+    )
+
+    assert primary.events[0].details["apiKey"] == "[REDACTED]"
+    assert siem.calls == [
+        {
+            "method": "POST",
+            "path": "/events/ingest",
+            "json": {
+                "source": "fortidashboard.audit",
+                "eventType": "platform.audit_action",
+                "severity": "medium",
+                "occurredAt": primary.events[0].created_at.isoformat(
+                    timespec="milliseconds"
+                ).replace("+00:00", "Z"),
+                "entities": {
+                    "actorUserId": "usr_owner",
+                    "sourceIp": "203.0.113.10",
+                    "user": "owner@example.com",
+                },
+                "attributes": {
+                    "originKind": "fortidashboard.audit",
+                    "action": "integration.fortigate.log_forwarding_applied",
+                    "outcome": "success",
+                    "userAgent": "pytest",
+                    "details": {
+                        "integrationId": "int_fgt_01",
+                        "apiKey": "[REDACTED]",
+                        "collectorHost": "192.0.2.50",
+                    },
+                    "count": 1,
+                },
+            },
+            "params": None,
+            "headers": None,
+            "pass_through_statuses": None,
+        }
+    ]
+    assert realtime_events == [
+        {
+            "type": "audit.siem.event",
+            "ownerUserId": "usr_owner",
+            "eventId": "evt_audit_01",
+            "receivedAt": primary.events[0].created_at.isoformat(
+                timespec="milliseconds"
+            ).replace("+00:00", "Z"),
+            "ticket": {
+                "id": "inc_audit_01",
+                "title": "Repeated failed FortiDashboard logins",
+                "severity": "medium",
+                "triageLevel": "T2",
+                "ticketStatus": "new",
+                "createdAt": "2026-05-15T12:05:00.000Z",
+            },
+        }
+    ]
+    assert "fg-secret-token" not in repr(siem.calls)
+
+
+def test_audit_store_maps_failed_login_to_siem_failed_login_event():
+    primary = InMemoryAuthAuditStore()
+    siem = FakeSiemClient()
+    store = ForwardingAuthAuditStore(
+        primary=primary,
+        forwarder=AuditSiemForwarder(siem_client=siem),
+    )
+
+    store.record(
+        action="login",
+        outcome="invalid_credentials",
+        email="analyst@example.com",
+        client_ip="198.51.100.20",
+        user_agent="pytest",
+    )
+
+    forwarded = siem.calls[0]["json"]
+    assert forwarded["source"] == "fortidashboard.audit"
+    assert forwarded["eventType"] == "auth.failed_login"
+    assert forwarded["severity"] == "medium"
+    assert forwarded["entities"] == {
+        "sourceIp": "198.51.100.20",
+        "user": "analyst@example.com",
+    }
+    assert forwarded["attributes"]["action"] == "login"
+    assert forwarded["attributes"]["outcome"] == "invalid_credentials"
+    assert forwarded["attributes"]["count"] == 1
+
+
+def test_audit_siem_forwarding_failure_does_not_drop_primary_audit_record():
+    primary = InMemoryAuthAuditStore()
+    store = ForwardingAuthAuditStore(
+        primary=primary,
+        forwarder=AuditSiemForwarder(siem_client=FailingSiemClient()),
+    )
+
+    store.record(
+        action="workspace.updated",
+        outcome="success",
+        user_id="usr_owner",
+        details={"workspaceId": "ws_01"},
+    )
+
+    assert primary.list_events()["items"][0]["action"] == "workspace.updated"
 
 
 def test_integration_create_records_sanitized_audit_event():
@@ -127,6 +336,8 @@ def test_integration_create_records_sanitized_audit_event():
         "integrationId": "int_fgt_audit",
         "host": "https://fortigate.local/",
         "verifyTls": False,
+        "logForwardingConfigured": True,
+        "logForwardingChanged": True,
     }
     assert "fg-secret-token-123" not in repr(audit_store.events)
 

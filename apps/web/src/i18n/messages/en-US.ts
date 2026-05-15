@@ -282,7 +282,7 @@ export default {
   },
   tickets: {
     title: 'SOC Tickets',
-    subtitle: 'T1/T2/T3 triage over Kowalski SIEM incidents. Refreshes every 8s.',
+    subtitle: 'T1/T2/T3 triage over Kowalski SIEM incidents. Updates live from FortiGate telemetry.',
     total: 'Total: {count}',
     refreshTooltip: 'Refresh now',
     resetLabel: 'Reset incidents',

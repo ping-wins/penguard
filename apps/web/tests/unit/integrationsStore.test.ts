@@ -243,4 +243,167 @@ describe('useIntegrationsStore', () => {
       lastEventIds: ['evt_01'],
     })
   })
+
+  it('requests FortiGate log forwarding status, apply and collector test without draft flow', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const applyBody = {
+      integrationId: 'int_fgt_01',
+      mode: 'syslog_forwarding',
+      configured: true,
+      current: { setting: { status: 'enable', server: '10.10.10.50', port: 5514 }, filter: { severity: 'information' } },
+      desired: { setting: { server: '10.10.10.50', port: 5514 }, filter: { severity: 'information' } },
+      applied: true,
+      warnings: [],
+    }
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/status')) return Promise.resolve(jsonResponse({
+        configured: true,
+        receiveStatus: {
+          mode: 'syslog',
+          pollingEnabled: false,
+          status: 'streaming',
+          lastReceivedAt: '2026-05-14T22:55:00.000Z',
+          lastEventIds: ['evt_syslog_01'],
+          lastError: null,
+          rawEventCount: 12,
+          createdCount: 12,
+        },
+      }))
+      if (url.endsWith('/apply')) return Promise.resolve(jsonResponse(applyBody))
+      if (url.endsWith('/test-collector')) return Promise.resolve(jsonResponse({
+        sent: true,
+        collectorHost: '127.0.0.1',
+        collectorPort: 5514,
+        integrationId: 'int_fgt_01',
+        sentAt: '2026-05-14T23:10:00.000Z',
+        sample: 'date=2026-05-14 probe=true',
+        receiveStatus: {
+          mode: 'polling',
+          pollingEnabled: true,
+          status: 'idle',
+          lastReceivedAt: null,
+          lastEventIds: [],
+          lastError: null,
+          rawEventCount: 0,
+          createdCount: 0,
+        },
+      }))
+      return Promise.resolve(jsonResponse({}))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useIntegrationsStore()
+
+    await expect(store.fetchFortigateLogForwardingStatus('int_fgt_01')).resolves.toEqual({
+      success: true,
+      data: {
+        configured: true,
+        receiveStatus: {
+          mode: 'syslog',
+          pollingEnabled: false,
+          status: 'streaming',
+          lastReceivedAt: '2026-05-14T22:55:00.000Z',
+          lastEventIds: ['evt_syslog_01'],
+          lastError: null,
+          rawEventCount: 12,
+          createdCount: 12,
+        },
+      },
+    })
+    await expect(store.applyFortigateLogForwarding('int_fgt_01', {
+      collectorHost: '10.10.10.50',
+      port: 5514,
+      confirmed: true,
+    })).resolves.toEqual({ success: true, data: applyBody })
+    await expect(store.testFortigateLogForwardingCollector('int_fgt_01', {
+      collectorHost: '127.0.0.1',
+      port: 5514,
+    })).resolves.toEqual({
+      success: true,
+      data: expect.objectContaining({
+        sent: true,
+        collectorHost: '127.0.0.1',
+        collectorPort: 5514,
+        integrationId: 'int_fgt_01',
+      }),
+    })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/log-forwarding/status', {
+      credentials: 'include',
+    })
+    expect(fetcher).not.toHaveBeenCalledWith(expect.stringContaining('/log-forwarding/draft'), expect.anything())
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/log-forwarding/apply', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ collectorHost: '10.10.10.50', port: 5514, confirmed: true }),
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/log-forwarding/test-collector', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ collectorHost: '127.0.0.1', port: 5514 }),
+    })
+  })
+
+  it('requests a FortiGate traffic policy draft as recommendation-only CLI', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const responseBody = {
+      integrationId: 'int_fgt_01',
+      mode: 'recommendation_only',
+      dryRunOnly: true,
+      policy: {
+        name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
+        sourceInterface: 'port2',
+        destinationInterface: 'port3',
+        sourceSubnet: '10.10.10.0/24',
+        destinationSubnet: '10.10.20.0/24',
+        service: 'ALL',
+        action: 'accept',
+      },
+      cliCommands: ['config firewall policy', 'set logtraffic all', 'end'],
+      warnings: ['FortiDashboard does not apply this policy automatically.'],
+    }
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(responseBody))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useIntegrationsStore()
+
+    await expect(store.draftFortigateTrafficPolicy('int_fgt_01', {
+      name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
+      sourceInterface: 'port2',
+      destinationInterface: 'port3',
+      sourceSubnet: '10.10.10.0/24',
+      destinationSubnet: '10.10.20.0/24',
+      service: 'ALL',
+      action: 'accept',
+    })).resolves.toEqual({ success: true, data: responseBody })
+
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/traffic-policy-draft', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': 'csrf_01',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
+        sourceInterface: 'port2',
+        destinationInterface: 'port3',
+        sourceSubnet: '10.10.10.0/24',
+        destinationSubnet: '10.10.20.0/24',
+        service: 'ALL',
+        action: 'accept',
+      }),
+    })
+  })
 })

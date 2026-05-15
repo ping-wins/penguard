@@ -3,7 +3,12 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
+from app.auth.audit import (
+    AuditSiemForwarder,
+    ForwardingAuthAuditStore,
+    InMemoryAuthAuditStore,
+    SqlAlchemyAuthAuditStore,
+)
 from app.auth.csrf import CsrfGuard
 from app.auth.keycloak import KeycloakClient
 from app.auth.rate_limit import InMemoryRateLimiter
@@ -12,6 +17,8 @@ from app.auth.session_store import InMemorySessionStore, SqlAlchemySessionStore
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.core.fixtures import load_fixture
+from app.realtime import realtime_broker
+from app.soc.client import SocServiceClient
 
 
 @lru_cache
@@ -29,11 +36,25 @@ def get_auth_rate_limiter() -> InMemoryRateLimiter:
 
 
 @lru_cache
-def get_auth_audit_store() -> InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore:
+def get_auth_audit_store() -> (
+    InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore | ForwardingAuthAuditStore
+):
     settings = get_settings()
     if settings.mock_mode:
         return InMemoryAuthAuditStore()
-    return SqlAlchemyAuthAuditStore(database_url=settings.database_url)
+    primary = SqlAlchemyAuthAuditStore(database_url=settings.database_url)
+    siem_client = SocServiceClient(
+        base_url=settings.siem_kowalski_url,
+        service_name="siem_kowalski",
+        timeout_seconds=settings.internal_service_timeout_seconds,
+    )
+    return ForwardingAuthAuditStore(
+        primary=primary,
+        forwarder=AuditSiemForwarder(
+            siem_client=siem_client,
+            realtime_publisher=realtime_broker.publish_all,
+        ),
+    )
 
 
 @lru_cache

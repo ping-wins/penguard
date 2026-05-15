@@ -54,7 +54,8 @@ def seed_demo_data(
     soar_url: str,
     xdr_url: str,
     dry_run: bool = False,
-    client: httpx.Client | None = None,
+    allow_demo_data: bool = False,
+    client: Any | None = None,
 ) -> dict[str, Any]:
     if dry_run:
         return {
@@ -63,6 +64,11 @@ def seed_demo_data(
             "xdrEndpointEvent": DEMO_ENDPOINT_EVENT,
             "soarDefaults": ["pb_port_scan_triage", "pb_suspicious_endpoint_triage"],
         }
+    if not allow_demo_data:
+        raise RuntimeError(
+            "Refusing to write demo data without explicit acknowledgement. "
+            "Pass --i-understand-this-is-demo-data for isolated lab runs."
+        )
 
     owns_client = client is None
     http_client = client or httpx.Client(timeout=5.0)
@@ -82,7 +88,6 @@ def seed_demo_data(
             DEMO_ENDPOINT_EVENT,
             headers={"Authorization": f"Bearer {enrollment['token']}"},
         )
-        simulator = _post_json(http_client, f"{xdr_url.rstrip('/')}/simulator/events", {})
         playbooks = _get_json(http_client, f"{soar_url.rstrip('/')}/playbooks")
     finally:
         if owns_client:
@@ -92,7 +97,6 @@ def seed_demo_data(
         "dryRun": False,
         "createdEventIds": [event["id"] for event in created_events],
         "endpointId": endpoint_event["endpoint"]["id"],
-        "simulatorCreatedEvents": simulator["createdEvents"],
         "playbookIds": [playbook["id"] for playbook in playbooks],
     }
 
@@ -116,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the demo payloads without sending HTTP requests.",
     )
+    parser.add_argument(
+        "--i-understand-this-is-demo-data",
+        action="store_true",
+        dest="allow_demo_data",
+        help="Required for HTTP writes; labels this as an isolated lab/demo data operation.",
+    )
     return parser
 
 
@@ -126,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         soar_url=args.soar_url,
         xdr_url=args.xdr_url,
         dry_run=args.dry_run,
+        allow_demo_data=args.allow_demo_data,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

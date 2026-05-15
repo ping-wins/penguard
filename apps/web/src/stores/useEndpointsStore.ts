@@ -63,7 +63,6 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const isLoadingRelatedIncidents = ref(false)
   const error = ref<string | null>(null)
   const relatedIncidentsError = ref<string | null>(null)
-  let pollHandle: ReturnType<typeof setInterval> | null = null
 
   const selectedEndpoint = computed(() => {
     if (!selectedEndpointId.value) return null
@@ -176,19 +175,6 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     await loadTimeline(endpointId)
   }
 
-  function startPolling(intervalMs = 10000) {
-    stopPolling()
-    refresh()
-    pollHandle = setInterval(refresh, intervalMs)
-  }
-
-  function stopPolling() {
-    if (pollHandle !== null) {
-      clearInterval(pollHandle)
-      pollHandle = null
-    }
-  }
-
   return {
     endpoints,
     pendingEnrollments,
@@ -209,7 +195,5 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     dismissPendingEnrollment,
     removeEndpoint,
     selectEndpoint,
-    startPolling,
-    stopPolling,
   }
 })

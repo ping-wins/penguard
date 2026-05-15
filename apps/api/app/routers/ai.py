@@ -146,13 +146,22 @@ def ai_status(
     Anthropic / Gemini / scripted switch took effect after a `.env` edit.
     """
     settings = get_settings()
-    provider_name = (settings.ai_provider or "scripted").lower()
+    provider_name = (settings.ai_provider or "").lower().strip()
     model = settings.ai_model or ""
     if provider_name == "anthropic":
         model = model or "claude-3-5-haiku-latest"
     elif provider_name in {"openai", "openai_compat", "openai-compatible"}:
         model = model or "gpt-4o-mini"
-    ready = provider_name == "scripted" or bool(settings.ai_api_key)
+    elif provider_name == "scripted" and settings.enable_lab_demo_tools:
+        model = model or "scripted-cockpit"
+    remote_provider_ready = (
+        provider_name in {"anthropic", "openai", "openai_compat", "openai-compatible"}
+        and settings.ai_api_key
+    )
+    ready = bool(
+        (provider_name == "scripted" and settings.enable_lab_demo_tools)
+        or remote_provider_ready
+    )
     return AIStatusResponse(
         provider=provider_name,
         model=model,

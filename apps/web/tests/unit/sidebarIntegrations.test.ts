@@ -141,6 +141,78 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('1 SIEM')
   })
 
+  it('renders a FortiGate traffic policy draft action without applying it', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/integrations') {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'int_fgt_01',
+              type: 'fortigate',
+              name: 'FortiGate Lab',
+              host: 'https://192.0.2.118',
+              status: 'connected',
+            },
+          ],
+        }))
+      }
+      if (url.endsWith('/traffic-policy-draft')) {
+        expect(init?.method).toBe('POST')
+        return Promise.resolve(jsonResponse({
+          integrationId: 'int_fgt_01',
+          mode: 'recommendation_only',
+          dryRunOnly: true,
+          policy: {
+            name: 'TEMP_SOC_LAN_to_DMZ_allow_log',
+            sourceInterface: 'port2',
+            destinationInterface: 'port3',
+            sourceSubnet: '10.10.10.0/24',
+            destinationSubnet: '10.10.20.0/24',
+            service: 'ALL',
+            action: 'accept',
+            logTraffic: 'all',
+            nat: 'disable',
+          },
+          cliCommands: ['config firewall policy', 'set action accept', 'set logtraffic all', 'end'],
+          warnings: ['FortiDashboard does not apply this policy automatically.'],
+        }))
+      }
+      return Promise.resolve(jsonResponse({
+        integrationId: 'int_fgt_01',
+        enabled: false,
+        intervalSeconds: 30,
+        status: 'idle',
+        lastStartedAt: null,
+        lastFinishedAt: null,
+        lastSuccessAt: null,
+        lastError: null,
+        lastRawEventCount: 0,
+        lastCreatedCount: 0,
+        lastEventIds: [],
+        lastRunTrigger: null,
+        updatedAt: '2026-05-13T18:00:00.000Z',
+      }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mountSidebar()
+
+    await wrapper.get('[title="Integrações SOC"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="fortigate-policy-draft-int_fgt_01"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/integrations/fortigate/int_fgt_01/traffic-policy-draft', expect.objectContaining({
+      method: 'POST',
+    }))
+    expect(wrapper.text()).toContain('Recommendation only')
+    expect(wrapper.text()).toContain('set logtraffic all')
+    expect(wrapper.text()).toContain('does not apply')
+  })
+
   it('opens the SOAR playbooks drawer from the sidebar', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

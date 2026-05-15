@@ -1,5 +1,10 @@
 # Análise de Maturidade — MVP → Produto Real
 
+> Historical analysis. For the current source of truth, use
+> `docs/product/feature-map.md`, `docs/product/roadmap.md`,
+> `docs/product/timeline.md` and `docs/product/release-notes.md`.
+> This file is kept as rationale/context and may mention older MVP framing.
+
 > Snapshot em 2026-05-13 da postura do FortiDashboard frente ao que um cliente
 > real precisaria para rodar em produção. Tudo aqui está aterrissado em
 > arquivos existentes do repo; nenhuma sugestão sem evidência.

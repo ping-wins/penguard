@@ -14,6 +14,14 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class AIConfigurationError(RuntimeError):
+    """Raised when no production-safe AI provider is configured."""
+
+
+class AIProviderResponseError(RuntimeError):
+    """Raised when a configured AI provider returns unusable structured output."""
+
+
 @dataclass(frozen=True)
 class IncidentContext:
     """Sanitized incident snapshot fed to the AI provider.
@@ -822,8 +830,7 @@ def _parse_analysis(
 ) -> IncidentAnalysis:
     data = _extract_json(raw)
     if not isinstance(data, dict):
-        logger.warning("AI analyze response was not a JSON object; falling back to scripted")
-        return ScriptedAIProvider().analyze_incident(context, locale=locale)
+        raise AIProviderResponseError("AI analyze response was not a JSON object")
     cvss_score = _clamp_float(data.get("cvss_score"), low=0.0, high=10.0)
     cvss_vector = str(data.get("cvss_vector") or "").strip()[:200]
     if cvss_vector and not cvss_vector.upper().startswith("CVSS:3"):
@@ -914,8 +921,7 @@ def _parse_containment(
 ) -> ContainmentSuggestion:
     data = _extract_json(raw)
     if not isinstance(data, dict):
-        logger.warning("AI containment response was not a JSON object; falling back to scripted")
-        return ScriptedAIProvider().suggest_containment(context, locale=locale)
+        raise AIProviderResponseError("AI containment response was not a JSON object")
     raw_steps = data.get("steps") or []
     steps: list[ContainmentStep] = []
     for step in raw_steps:
@@ -931,7 +937,7 @@ def _parse_containment(
             )
         )
     if not steps:
-        return ScriptedAIProvider().suggest_containment(context, locale=locale)
+        raise AIProviderResponseError("AI containment response did not include any steps")
     return ContainmentSuggestion(
         incident_id=context.incident_id,
         summary=str(data.get("summary") or "")[:1000],
@@ -1003,15 +1009,31 @@ def _string_list(value: Any) -> list[str]:
 @lru_cache
 def get_ai_provider() -> AIProvider:
     settings = get_settings()
-    provider_name = (getattr(settings, "ai_provider", None) or "scripted").lower()
+    provider_name = (getattr(settings, "ai_provider", None) or "").lower().strip()
     api_key = getattr(settings, "ai_api_key", "") or ""
     model = getattr(settings, "ai_model", "") or ""
     base_url = getattr(settings, "ai_base_url", "") or ""
 
+    if not provider_name:
+        raise AIConfigurationError(
+            "AI provider is not configured. Set FORTIDASHBOARD_AI_PROVIDER to "
+            "anthropic or openai-compatible and provide FORTIDASHBOARD_AI_API_KEY."
+        )
+
+    if provider_name == "scripted":
+        if getattr(settings, "enable_lab_demo_tools", False):
+            return ScriptedAIProvider()
+        raise AIConfigurationError(
+            "The scripted AI provider is lab-only. Set "
+            "FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=true for isolated lab runs, "
+            "or configure a real AI provider."
+        )
+
     if provider_name == "anthropic":
         if not api_key:
-            logger.warning("Anthropic AI provider selected without ai_api_key; using scripted")
-            return ScriptedAIProvider()
+            raise AIConfigurationError(
+                "FORTIDASHBOARD_AI_API_KEY is required when FORTIDASHBOARD_AI_PROVIDER=anthropic."
+            )
         return AnthropicAIProvider(
             api_key=api_key,
             model=model or "claude-3-5-haiku-latest",
@@ -1019,11 +1041,15 @@ def get_ai_provider() -> AIProvider:
         )
     if provider_name in {"openai", "openai_compat", "openai-compatible"}:
         if not api_key:
-            logger.warning("OpenAI-compatible provider selected without ai_api_key; using scripted")
-            return ScriptedAIProvider()
+            raise AIConfigurationError(
+                "FORTIDASHBOARD_AI_API_KEY is required when "
+                "FORTIDASHBOARD_AI_PROVIDER is OpenAI-compatible."
+            )
         return OpenAICompatibleAIProvider(
             api_key=api_key,
             model=model or "gpt-4o-mini",
             base_url=base_url or "https://api.openai.com/v1",
         )
-    return ScriptedAIProvider()
+    raise AIConfigurationError(
+        f"Unsupported AI provider '{provider_name}'. Configure anthropic or openai-compatible."
+    )

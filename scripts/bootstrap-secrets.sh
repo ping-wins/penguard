@@ -53,6 +53,27 @@ KEYCLOAK_CLIENT_SECRET="$(rand_urlsafe 32)"
 KC_BOOTSTRAP_ADMIN_PASSWORD="$(rand_urlsafe 24)"
 POSTGRES_PASSWORD="$(rand_urlsafe 24)"
 
+prefer_non_loopback_ip() {
+  while IFS= read -r candidate; do
+    case "${candidate}" in
+      ""|127.*|169.254.*|0.*) continue ;;
+      *) printf '%s' "${candidate}"; return 0 ;;
+    esac
+  done
+}
+
+# Best-effort FortiGate-reachable host/IP for syslog forwarding. Operators can
+# still override it in .env when the dashboard is behind NAT, a reverse proxy,
+# or a different management network.
+FORTIGATE_SYSLOG_PUBLIC_HOST="$(
+  {
+    if command -v ip >/dev/null 2>&1; then
+      ip route get 1.1.1.1 2>/dev/null | tr ' ' '\n' | awk 'prev == "src" { print; exit } { prev = $0 }'
+    fi
+    hostname -I 2>/dev/null | tr ' ' '\n'
+  } | prefer_non_loopback_ip
+)"
+
 umask 077  # ensure the file is created mode 600
 
 cat > "${ENV_FILE}" <<EOF
@@ -81,6 +102,8 @@ FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
 FORTIDASHBOARD_MOCK_MODE=false
 FORTIDASHBOARD_SESSION_COOKIE_NAME=fortidashboard_session
 FORTIDASHBOARD_SESSION_COOKIE_SECURE=false
+FORTIDASHBOARD_SESSION_COOKIE_SAMESITE=lax
+FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY=true
 FORTIDASHBOARD_CSRF_COOKIE_NAME=fortidashboard_csrf
 FORTIDASHBOARD_CSRF_HEADER_NAME=X-CSRF-Token
 FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
@@ -90,14 +113,36 @@ FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 KC_BOOTSTRAP_ADMIN_USERNAME=admin
 KC_BOOTSTRAP_ADMIN_PASSWORD=${KC_BOOTSTRAP_ADMIN_PASSWORD}
 FORTIDASHBOARD_KEYCLOAK_BASE_URL=http://localhost:8080
+FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL=http://localhost:8080
 FORTIDASHBOARD_KEYCLOAK_REALM=fortidashboard
 FORTIDASHBOARD_KEYCLOAK_CLIENT_ID=fortidashboard-bff
 FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL=false
+FORTIDASHBOARD_KEYTAB_PATH=./infra/keycloak/empty-keytab.placeholder
+
+# --- Browser-facing SSO URLs ---
+FORTIDASHBOARD_OIDC_ISSUER=http://localhost:8080/realms/fortidashboard
+FORTIDASHBOARD_SSO_REDIRECT_URI=http://localhost:8000/api/auth/sso/kerberos/callback
+FORTIDASHBOARD_SSO_POST_LOGIN_URL=http://localhost:5173/
+FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL=http://localhost:5173/login
 
 # --- SOC-lite services ---
 FORTIDASHBOARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
 FORTIDASHBOARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
 FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
+FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=false
+FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=10
+FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=30
+FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=10
+FORTIDASHBOARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS=3600
+# UDP syslog collector binds inside the API container. PUBLIC_HOST is the
+# FortiGate-reachable host/IP. Bootstrap detects a best-effort local LAN IP;
+# override it in .env when using NAT, a reverse proxy, or another network.
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST=0.0.0.0
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST=${FORTIGATE_SYSLOG_PUBLIC_HOST}
+FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT=5514
+FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=false
 SIEM_KOWALSKI_DATABASE_URL=postgresql+psycopg://fortidashboard:${POSTGRES_PASSWORD}@db:5432/fortidashboard
 SOAR_SKIPPER_DATABASE_URL=postgresql+psycopg://fortidashboard:${POSTGRES_PASSWORD}@db:5432/fortidashboard
 XDR_RICO_DATABASE_URL=postgresql+psycopg://fortidashboard:${POSTGRES_PASSWORD}@db:5432/fortidashboard
