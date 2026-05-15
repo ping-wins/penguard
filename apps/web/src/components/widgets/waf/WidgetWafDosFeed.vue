@@ -61,7 +61,7 @@ function formatTs(ts: string): string {
         <span>{{ source }}</span>
       </div>
       <div v-if="items.length === 0">
-        <WidgetEmptyState message="No DoS events." />
+        <WidgetEmptyState title="No DoS events." />
       </div>
       <div v-else class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
         <div

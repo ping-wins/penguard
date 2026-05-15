@@ -134,8 +134,7 @@ describe('WidgetWafDosTopIps', () => {
     const wrapper = mount(WidgetWafDosTopIps, {
       props: { ...DEFAULT_PROPS, data: { rows: [] } },
     })
-    // WidgetEmptyState falls back to 'No data' when no title prop is provided
-    expect(wrapper.text()).toContain('No data')
+    expect(wrapper.text()).toContain('No attacking IPs')
     wrapper.unmount()
   })
 })
@@ -196,8 +195,7 @@ describe('WidgetWafDosFeed', () => {
     const wrapper = mount(WidgetWafDosFeed, {
       props: { ...DEFAULT_PROPS, data: { items: [] } },
     })
-    // WidgetEmptyState falls back to 'No data' when no title prop is provided
-    expect(wrapper.text()).toContain('No data')
+    expect(wrapper.text()).toContain('No DoS events')
     wrapper.unmount()
   })
 })

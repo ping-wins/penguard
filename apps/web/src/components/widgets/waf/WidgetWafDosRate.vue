@@ -78,7 +78,7 @@ function formatTs(ts: string): string {
       </div>
 
       <div v-if="visibleBuckets.length === 0">
-        <WidgetEmptyState message="No DoS events in window." />
+        <WidgetEmptyState title="No DoS events in window." />
       </div>
       <div v-else class="flex min-h-0 flex-1 items-end gap-px overflow-hidden">
         <div

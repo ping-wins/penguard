@@ -48,7 +48,7 @@ function formatTs(ts: string): string {
     <template #glance>
       <div class="mb-1 flex justify-end text-[10px] text-theme-text-muted">{{ source }}</div>
       <div v-if="rows.length === 0">
-        <WidgetEmptyState message="No attacking IPs detected." />
+        <WidgetEmptyState title="No attacking IPs detected." />
       </div>
       <div v-else class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto no-scrollbar">
         <div
