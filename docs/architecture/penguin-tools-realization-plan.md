@@ -45,8 +45,8 @@ which real SOC use cases should drive the next Penguin tools implementation.
    process snapshot, connection snapshot and Windows event collection.
 4. Persist `soar_skipper` playbooks and run history in SQL tables.
 5. Add real but safe SOAR connector steps: case note, audit note, webhook
-   dry-run, email/Teams notification dry-run and FortiGate block
-   recommendation. Keep FortiGate writes disabled.
+   dry-run, email/Teams notification dry-run and FortiGate policy
+   orchestration through FortiDashboard approval gates.
 6. Add scheduled/manual FortiGate event ingestion with aggregation, not only
    one-off manual forwarding.
 7. Add UI labels that distinguish live provider data, seeded demo data and
@@ -134,15 +134,17 @@ Flow:
 FortiGate traffic logs -> apps/api FortiGate ingest
 apps/api aggregation by source/destination -> siem_kowalski network.deny
 denied_traffic_burst rule -> ticket T1
-soar_skipper creates FortiGate block recommendation only
+soar_skipper requests approved FortiDashboard policy orchestration
 ```
 
 Required work:
 
-- Keep FortiGate read-only.
+- Add FortiGate policy orchestration with RBAC, preflight, diff/summary,
+  explicit approval and audit.
 - Add repeatable manual and scheduled ingestion controls.
 - Surface the source integration and log window in the ticket timeline.
-- Show a clear "recommendation only" SOAR result.
+- Show the approved FortiGate action and FortiGate response in the incident
+  timeline.
 
 ### Use Case 3: Suspicious Endpoint Process And Connection
 

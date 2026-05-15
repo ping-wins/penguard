@@ -20,7 +20,7 @@ Browser
   -> apps/api
        -> Keycloak for identity
        -> Postgres for sessions, FortiGate integrations, workspace and audit state
-       -> FortiGate provider for read-only live telemetry
+       -> FortiGate provider for live telemetry and governed policy orchestration
        -> siem_kowalski for SOC events and incidents
        -> soar_skipper for playbooks, simulation and dry-run runs
        -> xdr_rico for endpoint inventory and endpoint timelines
@@ -48,7 +48,7 @@ redis://redis:6379/0
 - Product RBAC and admin checks.
 - Audit logging for sensitive reads and all state-changing actions.
 - Secret handling and encrypted storage.
-- FortiGate read-only provider calls.
+- FortiGate telemetry reads and governed policy orchestration calls.
 - Mapping user-facing API errors from internal service errors.
 
 `siem_kowalski` owns:
@@ -86,7 +86,7 @@ redis://redis:6379/0
 
 ```txt
 Browser -> GET /api/widgets/{widgetId}/data
-apps/api -> FortiGate read-only monitor/log endpoints
+apps/api -> FortiGate monitor/log endpoints and approved policy orchestration
 apps/api -> normalized widget response
 
 Current first-cut SOC flow:
@@ -147,8 +147,9 @@ GET  /api/soc/playbook-runs/{runId}
 dry-run-only status and config schema metadata for the future n8n-like builder.
 
 All playbooks start disabled or draft until validated and activated by an
-authorized human. Destructive FortiGate changes are out of scope for the MVP;
-recommend/block nodes produce dry-run recommendations only.
+authorized human. Sensitive FortiGate response nodes may become live only after
+approval and must call FortiDashboard-owned policy orchestration APIs. They must
+not bypass the BFF, RBAC, preflight, diff/summary or audit path.
 
 ### Endpoint Telemetry
 
@@ -182,7 +183,8 @@ be correlated back to endpoint context.
 
 - [ ] Browser calls only `apps/api`, never direct Penguin service URLs.
 - [ ] Internal service failures are mapped to stable `/api/...` errors.
-- [ ] FortiGate access remains read-only.
+- [ ] FortiGate writes are limited to governed policy orchestration through
+  `apps/api`.
 - [ ] Secrets, API keys and enrollment tokens are not present in SOC payloads.
 - [ ] Mutating SOC APIs write audit events.
 - [ ] Endpoint examples use documentation-safe IP ranges and no personal identifiers.

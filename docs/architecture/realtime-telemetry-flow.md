@@ -189,9 +189,9 @@ This means:
 - Browser auth stays BFF-based through HTTP-only session cookies.
 - FortiGate API keys are encrypted at rest and are never sent through SSE.
 - Audit details are sanitized before SIEM forwarding.
-- FortiGate writes remain limited to the approved safe/additive
-  log-forwarding path. SSE does not authorize or execute FortiGate policy
-  changes.
+- SSE does not authorize or execute FortiGate policy changes. Live FortiGate
+  writes must use separate CSRF-protected, admin-gated policy orchestration APIs
+  with preflight, diff/summary, explicit approval and audit.
 
 ## Operational Notes
 

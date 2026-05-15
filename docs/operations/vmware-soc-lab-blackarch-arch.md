@@ -259,7 +259,7 @@ In the cockpit:
 
 1. Open FortiDashboard in the host browser.
 2. Connect FortiGate using `https://<FORTIGATE_PORT1_MGMT_IP>` or the configured management URL.
-3. Confirm the read-only FortiGate health check passes.
+3. Confirm the FortiGate health check passes.
 4. Keep the FortiGate integration card open for ingestion status.
 
 ## First validation flow
@@ -408,7 +408,8 @@ Root cause is likely FortiGate integration/event fetch.
 Check:
 
 - Host can reach `https://10.10.99.1`.
-- FortiGate API key/user is valid and read-only.
+- FortiGate API key/user is valid and has the permissions required by the
+  connector contract.
 - FortiGate integration health check passes.
 - The logs are recent enough for the widget/event fetch.
 
@@ -432,5 +433,6 @@ Expected until `agent_private` is running on the Arch victim and the endpoint ha
 - Keep this lab isolated from production networks.
 - Scan only the Arch victim IP/range assigned to this lab.
 - Do not run broad scans against the physical LAN or internet.
-- Keep FortiGate access read-only from FortiDashboard.
+- Apply FortiGate policy changes only through FortiDashboard's governed policy
+  orchestration path or through clearly documented operator runbook steps.
 - SOAR actions remain dry-run for MVP validation.

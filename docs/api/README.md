@@ -33,7 +33,7 @@ Integration responses must never include `apiKey`.
 
 In live mode, FortiGate integrations are scoped to the authenticated API session. `fortigate_integrations.owner_user_id` stores the owner, `GET /api/integrations` only returns the current user's integrations, and widget data lookups reject integrations owned by another user by returning `404`.
 
-The live FortiGate client is read-only and currently targets:
+The live FortiGate client currently targets these read endpoints:
 
 - `GET /api/v2/monitor/system/status`
 - `GET /api/v2/monitor/system/performance/status`
@@ -43,6 +43,14 @@ The live FortiGate client is read-only and currently targets:
 - `GET /api/v2/log/memory/utm/ips`
 
 Normalized responses cover system status, interfaces, policies, and threat logs. If a lab token returns `401`, verify the FortiGate `api-user` token, `accprofile`, `vdom`, and `trusthost` before changing backend code.
+
+FortiGate policy orchestration is no longer a draft/mock-only contract. The
+implementation must replace the current policy-draft helper with real
+FortiDashboard-owned policy APIs that perform preflight reads, show a
+diff/summary, require admin confirmation, apply only approved FortiDashboard-
+owned policy changes, persist audit records and return the FortiGate response
+plus rollback guidance. AI, SIEM detections and background jobs must not apply
+policy changes without this human approval path.
 
 Live widget data in non-mock mode now supports:
 

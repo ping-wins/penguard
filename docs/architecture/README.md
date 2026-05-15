@@ -13,6 +13,12 @@ status in `docs/product/`.
 | [penguin-tools-realization-plan.md](penguin-tools-realization-plan.md) | Implementation direction for replacing fake Fortinet surfaces with honest SOC-lite providers. |
 | [threat-model.md](threat-model.md) | Current trust boundaries, security controls and high-risk areas. |
 
+## Accepted Decisions
+
+| Decision | Covers |
+| --- | --- |
+| [ADR-2026-05-15-fortigate-policy-orchestration.md](decisions/ADR-2026-05-15-fortigate-policy-orchestration.md) | FortiGate traffic-policy writes as governed FortiDashboard orchestration instead of draft/mock-only guidance. |
+
 ## Update Rules
 
 - Add a document here when a change alters service boundaries, data flow,

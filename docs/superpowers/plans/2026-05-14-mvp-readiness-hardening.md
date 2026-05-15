@@ -4,7 +4,7 @@
 
 **Goal:** Close the highest-risk gaps found in the 2026-05-14 codebase review so FortiDashboard moves from demo-only toward a trustworthy MVP.
 
-**Architecture:** Treat this as a hardening sprint, not a rewrite. Fix server-side trust boundaries first, then persistence/error handling, contracts, CI and UX truthfulness. Keep safety defaults: FortiGate remains read-only, SOAR remains dry-run, AI output remains draft/confirmed.
+**Architecture:** Treat this as a hardening sprint, not a rewrite. Fix server-side trust boundaries first, then persistence/error handling, contracts, CI and UX truthfulness. Keep safety defaults: FortiGate policy writes go through governed orchestration, SOAR starts dry-run until approval, AI output remains draft/confirmed.
 
 **Tech Stack:** Python 3.12/FastAPI/Pydantic/SQLAlchemy/Pytest/Ruff, Vue 3/Pinia/Vitest/vue-tsc/Vite, Docker Compose, GitHub Actions.
 

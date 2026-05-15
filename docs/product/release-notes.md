@@ -27,6 +27,8 @@ Customer-facing changelog. Internal implementation plans stay in
   lab/demo enablement.
 - The cockpit keeps SOC and FortiGate widget data source labels visible so
   analysts can distinguish live, simulator, seeded demo and scripted AI output.
+- FortiGate policy changes are now documented as governed orchestration work
+  rather than draft/mock-only guidance.
 
 ### Fixed
 
@@ -39,9 +41,9 @@ Customer-facing changelog. Internal implementation plans stay in
 
 ### Security
 
-- FortiGate write boundary remains non-destructive: only safe/additive
-  log-forwarding setup is allowed, and customer policy changes are not
-  auto-applied.
+- FortiGate policy orchestration must be admin-gated, explicit, audited and
+  based on preflight plus diff/summary. AI, SIEM detections and background jobs
+  cannot apply policy changes by themselves.
 - API keys remain encrypted at rest and are not returned to the browser.
 - Lab/demo tools are separated from normal runtime paths and must remain
   clearly labeled.
