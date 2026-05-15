@@ -8,7 +8,10 @@ from typing import Any
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.addons.bootstrap import bootstrap_installed_addons
+from app.addons.dependencies import get_connector_registry, get_loader
 from app.core.config import get_settings
+from app.db.session import SessionLocal
 from app.integrations.fortigate.syslog import (
     FortiGateSyslogForwarder,
     start_fortigate_syslog_udp_collector,
@@ -25,6 +28,7 @@ from app.routers import (
     providers,
     realtime,
     soc,
+    soc_ingest,
     widget_catalog,
     widgets,
     workspaces,
@@ -38,6 +42,16 @@ _fortigate_realtime_widget_last_sent: dict[tuple[str, str], datetime] = {}
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    try:
+        with SessionLocal() as session:
+            bootstrap_installed_addons(
+                session=session,
+                loader=get_loader(),
+                registry=get_connector_registry(),
+            )
+    except Exception:
+        logger.exception("addon_bootstrap_unhandled")
+
     scheduler_task: asyncio.Task | None = None
     syslog_transport: asyncio.DatagramTransport | None = None
     if _settings.fortigate_ingestion_scheduler_enabled:
@@ -192,6 +206,7 @@ app.include_router(integrations.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(realtime.router, prefix="/api")
 app.include_router(soc.router, prefix="/api")
+app.include_router(soc_ingest.router, prefix="/api")
 if _settings.enable_lab_demo_tools:
     app.include_router(lab_demo.router, prefix="/api")
 app.include_router(widget_catalog.router, prefix="/api")

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -81,6 +82,10 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     ai_base_url: str = ""
+    soc_ingest_token: str = ""
+    marketplace_gh_token: str | None = None
+    marketplace_registry_repo: str = "ping-wins/fortidashboard-addons"
+    addons_storage_dir: Path = Path("/app/data/addons")
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -209,3 +209,6 @@ class WorkspaceTemplateModel(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+
+from app.addons.installed_store import InstalledAddonModel  # noqa: E402,F401
