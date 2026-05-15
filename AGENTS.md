@@ -6,6 +6,50 @@ Keep this file in English. It is the shared contributor and agent guide for the
 FortiDashboard monorepo. Keep it concise, current, and action-oriented. Detailed
 design notes belong in `docs/`, not in this file.
 
+## Session Resume Notes (2026-05-15)
+
+Use this section as the "you were doing X" anchor when picking up mid-stream.
+Update it whenever the active branch focus or open uncommitted scope changes.
+Delete entries that are merged or abandoned.
+
+- **Active branch:** `feature/marketplace-addon-packages-backend` — Plan A
+  backend infrastructure **delivered** (Tasks 1–12 from
+  `docs/superpowers/plans/2026-05-14-marketplace-addon-packages-plan-a-backend-infra.md`).
+  31 add-on tests green in `apps/api`. New modules under
+  `apps/api/app/addons/`: `contracts.py` (Protocols + typed errors),
+  `installed_store.py` (`InstalledAddonModel` + repo, migration
+  `20260514_0011`), `loader.py` (`importlib` namespaced loader at
+  `fortidashboard_addons.<id>`, path-traversal guard), `catalog_fetcher.py`
+  (GitHub `catalog.json` w/ 5-min TTL cache), `install_service.py` (fetch
+  tarball-by-tag → sha256 → extract → validate → atomic move → DB upsert
+  → loader.load, with previous-version eviction into `.trash`),
+  `registry_runtime.py` (`ConnectorRegistry` singleton with per-(addon,
+  integration) instance cache), `dependencies.py` (FastAPI DI),
+  `bootstrap.py` (wired into `main.py` lifespan).
+  Routes on `/api/marketplace`: `GET /addons` (merges bundled + remote
+  catalog + installed flag), `GET /addons/{id}`, `POST /addons/refresh`
+  (admin), `POST /addons/{id}/install` (admin, body `{version}`), `DELETE
+  /addons/{id}` (admin). Docker volume `addons_data` mounts at
+  `/app/data/addons`; env passes through `FORTIDASHBOARD_MARKETPLACE_GH_TOKEN`
+  sourced from host `MARKETPLACE_GH_TOKEN`.
+  Next: Plan B (extract FortiGate code into a real package in the registry
+  repo, tag `fortigate-core-v7.6.0`, wire one-time auto-install on boot,
+  delete monorepo vendor code under `apps/api/app/integrations/fortigate/`)
+  — plan not yet written. Plan C (frontend install button + installed
+  badge in `MarketplacePanel.vue`) also pending and independent of Plan B.
+- **Uncommitted parallel work (NOT marketplace scope):** FortiGate push
+  ingestion via Automation Stitch webhook. Router/test/script still
+  untracked: `apps/api/app/routers/soc_ingest.py`,
+  `apps/api/tests/test_soc_ingest.py`,
+  `scripts/setup_fortigate_webhook.ps1`. Note: the `soc_ingest_token`
+  Settings field + `.env.example` webhook recipe + `docker-compose.yml`
+  env wiring already rode along inside the Plan A commits (catalog fetcher
+  `2b17a0a` for the setting, docker-volume `6373cf7` for the env block) —
+  effectively orphaned config until the router file lands on a branch.
+  Decide whether to spin those untracked files into their own branch or a
+  follow-up commit on this branch.
+
+
 FortiDashboard is a modular NG-SOC cockpit. FortiGate remains the first real
 read-only Fortinet provider. The unavailable FortiSIEM, FortiSOAR, FortiEDR and
 FortiXDR capabilities are represented by internal SOC-lite services, not by fake
@@ -409,6 +453,16 @@ Rules for contributors and agents:
   overview. Architecture details live in the spec at
   `docs/superpowers/specs/2026-05-14-marketplace-addon-packages-design.md`.
   Implementation is phased — see plans under `docs/superpowers/plans/`.
+- **Schema status (apps/api/app/addons/manifest.py):** `AddonManifest`
+  carries `id`, `version`, `name`, `vendor`, `category`, `description`,
+  optional `icon`, optional `minDashboardVersion`, `provider`
+  (`type` + `auth.kind` + `auth.fields[]`), optional `compatibility`
+  (`minProviderVersion` + `testedVersions[]` + `notes`), `routes[]`
+  (each with optional per-route `minProviderVersion`), `widgets[]`,
+  `siemEventTypes[]`, `entrypoint` (default `"connector"`, non-empty), and
+  `requirements[]`. Plan A loader will consume `entrypoint` +
+  `compatibility` at install time; do not add fields without dual-writing
+  the registry-repo packages first.
 - **Read before writing:** the spec lists decisions that are locked
   (Python-code packages, tarball-by-tag fetch, importlib loader, one active
   version per add-on, duck-typed Protocol contract, frontend widgets stay
