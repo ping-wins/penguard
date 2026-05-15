@@ -100,6 +100,24 @@ class FortiGateClient(Protocol):
     def get_resource_usage(self, *, resource: str | None = None) -> dict[str, Any]:
         pass
 
+    def get_policies(self) -> list[dict[str, Any]]:
+        pass
+
+    def get_address_objects(self) -> list[dict[str, Any]]:
+        pass
+
+    def create_address_object(
+        self,
+        *,
+        name: str,
+        subnet: str,
+        comment: str,
+    ) -> dict[str, Any]:
+        pass
+
+    def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
     def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
         pass
 
