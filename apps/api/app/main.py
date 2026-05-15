@@ -6,7 +6,10 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.addons.bootstrap import bootstrap_installed_addons
+from app.addons.dependencies import get_connector_registry, get_loader
 from app.core.config import get_settings
+from app.db.session import SessionLocal
 from app.routers import (
     ai,
     audit,
@@ -16,6 +19,7 @@ from app.routers import (
     marketplace,
     providers,
     soc,
+    soc_ingest,
     widget_catalog,
     widgets,
     workspaces,
@@ -27,6 +31,16 @@ _settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    try:
+        with SessionLocal() as session:
+            bootstrap_installed_addons(
+                session=session,
+                loader=get_loader(),
+                registry=get_connector_registry(),
+            )
+    except Exception:
+        logger.exception("addon_bootstrap_unhandled")
+
     task: asyncio.Task | None = None
     if _settings.fortigate_ingestion_scheduler_enabled:
         task = asyncio.create_task(_fortigate_ingestion_scheduler_loop())
@@ -77,6 +91,7 @@ app.include_router(ai.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(soc.router, prefix="/api")
+app.include_router(soc_ingest.router, prefix="/api")
 app.include_router(widget_catalog.router, prefix="/api")
 app.include_router(widgets.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
