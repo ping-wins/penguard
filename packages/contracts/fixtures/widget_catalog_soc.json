@@ -114,6 +114,50 @@
       "fieldBindings": {
         "items": "incident.items"
       }
+    },
+    {
+      "id": "waf-dos-rate",
+      "title": "WAF DoS Rate",
+      "kind": "line",
+      "source": "fortiweb",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 6, "h": 4 },
+      "dataEndpoint": "/api/widgets/waf-dos-rate/data",
+      "template": "line-chart",
+      "dataGroup": "waf",
+      "fieldBindings": {
+        "series": "buckets",
+        "x": "ts",
+        "y": ["blocked", "allowed"]
+      }
+    },
+    {
+      "id": "waf-dos-top-ips",
+      "title": "WAF Top Attacking IPs",
+      "kind": "table",
+      "source": "fortiweb",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/waf-dos-top-ips/data",
+      "template": "entity-table",
+      "dataGroup": "waf",
+      "fieldBindings": {
+        "rows": "rows"
+      }
+    },
+    {
+      "id": "waf-dos-feed",
+      "title": "WAF DoS Events",
+      "kind": "feed",
+      "source": "fortiweb",
+      "requiredCapabilities": ["incidents"],
+      "defaultSize": { "w": 5, "h": 4 },
+      "dataEndpoint": "/api/widgets/waf-dos-feed/data",
+      "template": "incident-feed",
+      "dataGroup": "waf",
+      "fieldBindings": {
+        "items": "items"
+      }
     }
   ]
 }
