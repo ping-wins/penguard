@@ -25,8 +25,13 @@ const filtered = computed<AddonManifest[]>(() => {
   })
 })
 
-function installAddon(addon: AddonManifest) {
-  emit('install', addon)
+async function installAddon(addon: AddonManifest) {
+  try {
+    await store.install(addon)
+    emit('install', addon)
+  } catch {
+    // store.error already set; swallow to keep UI responsive
+  }
 }
 
 onMounted(() => {
@@ -94,6 +99,10 @@ onMounted(() => {
                 <span class="text-sm font-semibold text-theme-text truncate">{{ addon.name }}</span>
                 <span class="rounded border border-theme-border/70 bg-theme-text/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-text-muted">{{ addon.category }}</span>
                 <span class="text-[10px] font-mono text-theme-text-muted">v{{ addon.version }}</span>
+                <span
+                  v-if="addon.installed"
+                  class="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase text-emerald-200"
+                >{{ t('marketplace.installed') }}</span>
               </div>
               <p class="text-[11px] text-theme-text-muted mt-0.5">{{ addon.vendor }}</p>
               <p class="text-xs text-theme-text mt-1 line-clamp-2">{{ addon.description }}</p>
@@ -108,11 +117,12 @@ onMounted(() => {
             <div class="flex shrink-0 flex-col gap-1">
               <button
                 type="button"
-                class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20"
+                class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="addon.installed || store.installingId === addon.id"
                 @click="installAddon(addon)"
               >
                 <Plug :size="12" />
-                {{ t('marketplace.install') }}
+                {{ addon.installed ? t('marketplace.installed') : t('marketplace.install') }}
               </button>
               <button
                 type="button"
@@ -207,11 +217,12 @@ onMounted(() => {
             >{{ t('marketplace.close') }}</button>
             <button
               type="button"
-              class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-3 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20"
+              class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-3 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="selected.installed || store.installingId === selected.id"
               @click="installAddon(selected); selected = null"
             >
               <Plug :size="12" />
-              {{ t('marketplace.install') }}
+              {{ selected.installed ? t('marketplace.installed') : t('marketplace.install') }}
             </button>
           </footer>
         </div>

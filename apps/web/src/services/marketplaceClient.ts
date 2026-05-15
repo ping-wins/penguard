@@ -33,9 +33,11 @@ export type AddonManifest = {
   routes: AddonRoute[]
   widgets: string[]
   siemEventTypes: string[]
+  installed?: boolean
+  installedVersion?: string | null
 }
 
-type ListResponse = { items: AddonManifest[], count: number }
+type ListResponse = { items: AddonManifest[], count: number, catalogError?: string | null }
 
 export async function listMarketplaceAddons(): Promise<AddonManifest[]> {
   const response = await fetch('/api/marketplace/addons', { credentials: 'include' })
@@ -50,4 +52,23 @@ export async function getMarketplaceAddon(addonId: string): Promise<AddonManifes
   })
   if (!response.ok) throw new Error('Failed to load add-on detail')
   return (await response.json()) as AddonManifest
+}
+
+export async function installMarketplaceAddon(
+  addonId: string,
+  version: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/marketplace/addons/${encodeURIComponent(addonId)}/install`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version }),
+    },
+  )
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.detail ?? 'Failed to install add-on')
+  }
 }

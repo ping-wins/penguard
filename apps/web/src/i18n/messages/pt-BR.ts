@@ -86,6 +86,7 @@ export default {
     empty: 'Nenhum add-on disponível.',
     noMatches: 'Nenhum add-on bate com o filtro atual.',
     install: 'Instalar',
+    installed: 'Instalado',
     details: 'Detalhes',
     close: 'Fechar',
     routesLabel: '{count} rotas',

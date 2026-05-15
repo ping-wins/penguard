@@ -86,6 +86,7 @@ export default {
     empty: 'No add-ons available yet.',
     noMatches: 'No add-ons match the current filter.',
     install: 'Install',
+    installed: 'Installed',
     details: 'Details',
     close: 'Close',
     routesLabel: '{count} routes',
