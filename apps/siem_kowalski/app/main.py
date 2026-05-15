@@ -170,6 +170,28 @@ DETECTION_RULES: list[DetectionRule] = [
             RuleCondition(path="attributes.memoryPercent", operator="gte", value=90),
         ],
     ),
+    DetectionRule(
+        id="fortiweb_waf_attack",
+        title="FortiWeb WAF attack blocked",
+        severity="high",
+        summary="FortiWeb blocked a web attack against a protected application.",
+        eventTypes=["waf.attack", "http.attack"],
+        conditions=[RuleCondition(path="attributes.action", operator="exists")],
+    ),
+    DetectionRule(
+        id="fortiweb_dos_activity",
+        title="FortiWeb DoS activity detected",
+        severity="critical",
+        summary="FortiWeb reported DoS activity against a protected application.",
+        eventTypes=["waf.dos"],
+    ),
+    DetectionRule(
+        id="fortiweb_blocked_request",
+        title="FortiWeb blocked suspicious request",
+        severity="medium",
+        summary="FortiWeb blocked a suspicious request against a protected application.",
+        eventTypes=["waf.blocked_request"],
+    ),
 ]
 
 
@@ -259,6 +281,12 @@ def _incident_attributes(event: SecurityEvent, rule: DetectionRule) -> dict[str,
         "message",
         "action",
         "subtype",
+        "policy",
+        "method",
+        "url",
+        "rawType",
+        "rawSubtype",
+        "ingestionMode",
     ):
         value = event.attributes.get(key)
         if value is not None and value != "":

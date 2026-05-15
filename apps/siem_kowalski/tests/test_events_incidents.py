@@ -460,3 +460,67 @@ def test_incident_status_update_survives_legacy_memory_clear():
     assert detail.status_code == 200
     assert detail.json()["status"] == "triaged"
     assert detail.json()["timeline"][-1]["status"] == "triaged"
+
+
+def test_waf_attack_creates_incident():
+    client.post("/admin/reset")
+    response = client.post(
+        "/events/ingest",
+        json={
+            "eventType": "waf.attack",
+            "source": "fortiweb",
+            "severity": "high",
+            "message": "SQL Injection Detected",
+            "occurredAt": "2026-05-15T12:00:00Z",
+            "entities": {
+                "sourceIp": "203.0.113.50",
+                "destinationIp": "198.51.100.10",
+                "httpHost": "landing.example.test",
+                "integrationId": "int_fweb_landing",
+            },
+            "attributes": {
+                "action": "block",
+                "policy": "landing-waf-policy",
+                "method": "GET",
+                "url": "/demo/search?q=' OR 1=1--",
+                "count": 1,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    incident = response.json()["incident"]
+    assert incident["title"] == "FortiWeb WAF attack blocked"
+    assert incident["severity"] == "high"
+    assert incident["triageLevel"] == "T1"
+    assert incident["entities"]["sourceIp"] == "203.0.113.50"
+    assert incident["entities"]["httpHost"] == "landing.example.test"
+    assert incident["attributes"]["policy"] == "landing-waf-policy"
+
+
+def test_waf_dos_creates_critical_incident():
+    client.post("/admin/reset")
+    response = client.post(
+        "/events/ingest",
+        json={
+            "eventType": "waf.dos",
+            "source": "fortiweb",
+            "severity": "critical",
+            "message": "HTTP Flood detected",
+            "occurredAt": "2026-05-15T12:00:00Z",
+            "entities": {
+                "sourceIp": "203.0.113.60",
+                "httpHost": "landing.example.test",
+            },
+            "attributes": {
+                "action": "block",
+                "count": 250,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    incident = response.json()["incident"]
+    assert incident["title"] == "FortiWeb DoS activity detected"
+    assert incident["severity"] == "critical"
+    assert incident["triageLevel"] == "T1"
