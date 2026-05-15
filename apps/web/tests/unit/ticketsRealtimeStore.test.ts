@@ -115,4 +115,40 @@ describe('tickets realtime store', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(useRealtimeStore().lastEvent?.type).toBe('audit.siem.event')
   })
+
+  it('refreshes tickets when the incident reset event is received', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        items: [{
+          id: 'inc_stale_01',
+          title: 'Stale incident',
+          severity: 'high',
+          triageLevel: 'T1',
+          ticketStatus: 'new',
+          createdAt: '2026-05-15T12:00:00.000Z',
+        }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ items: [] }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const ticketsStore = useTicketsStore()
+    ticketsStore.startRealtime()
+
+    await vi.waitFor(() => {
+      expect(ticketsStore.tickets.map((ticket) => ticket.id)).toEqual(['inc_stale_01'])
+    })
+
+    FakeEventSource.instances[0].emit('soc.incidents.reset', {
+      type: 'soc.incidents.reset',
+      refresh: ['tickets', 'widgets'],
+      eventsDeleted: 4,
+      incidentsDeleted: 1,
+    })
+
+    await vi.waitFor(() => {
+      expect(ticketsStore.tickets).toEqual([])
+    })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(useRealtimeStore().lastEvent?.type).toBe('soc.incidents.reset')
+  })
 })

@@ -16,7 +16,10 @@ from app.db.models import (
 )
 from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.service import FortiGateIntegrationService
-from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
+from app.integrations.fortigate.store import (
+    InMemoryFortiGateIngestionStore,
+    SqlAlchemyFortiGateIntegrationStore,
+)
 from app.main import app
 from app.routers import integrations as integrations_router
 
@@ -927,6 +930,54 @@ def test_fortigate_integration_endpoint_can_use_persistent_service():
             "lastCheckedAt": create_response.json()["lastCheckedAt"],
         }
     ]
+
+
+def test_incident_reset_publishes_realtime_ticket_and_widget_refresh(monkeypatch):
+    class ResetSiemClient:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def request(self, method: str, path: str, **kwargs):
+            self.calls.append({"method": method, "path": path, "kwargs": kwargs})
+            return {"events": 7, "incidents": 3}
+
+    siem = ResetSiemClient()
+    published: list[dict] = []
+    ingestion_store = InMemoryFortiGateIngestionStore()
+    monkeypatch.setattr(
+        integrations_router.realtime_broker,
+        "publish",
+        lambda event: published.append(event),
+    )
+    app.dependency_overrides[integrations_router.get_siem_client] = lambda: siem
+    app.dependency_overrides[integrations_router.get_fortigate_ingestion_store] = lambda: (
+        ingestion_store
+    )
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/soc/incidents/reset",
+            headers=csrf_headers(client),
+        )
+    finally:
+        app.dependency_overrides.pop(integrations_router.get_siem_client, None)
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_ingestion_store,
+            None,
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"eventsDeleted": 7, "incidentsDeleted": 3}
+    assert siem.calls == [{"method": "POST", "path": "/admin/reset", "kwargs": {}}]
+    assert len(published) == 1
+    event = published[0]
+    assert event["type"] == "soc.incidents.reset"
+    assert event["ownerUserId"] == "usr_01"
+    assert event["refresh"] == ["tickets", "widgets"]
+    assert event["eventsDeleted"] == 7
+    assert event["incidentsDeleted"] == 3
+    assert isinstance(event["receivedAt"], str)
 
 
 def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():

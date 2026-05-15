@@ -1022,6 +1022,7 @@ def reset_incidents_store(
     """Lab-only: wipe SIEM events and incidents, reset ingestion cursors."""
     deleted = siem_client.request("POST", "/admin/reset")
     ingestion_store.reset_ingestion_cursors()
+    received_at = datetime.now(UTC)
     audit_store.record(
         action="soc.incidents.reset",
         outcome="success",
@@ -1033,6 +1034,19 @@ def reset_incidents_store(
             "eventsDeleted": deleted.get("events", 0),
             "incidentsDeleted": deleted.get("incidents", 0),
         },
+    )
+    realtime_broker.publish(
+        {
+            "type": "soc.incidents.reset",
+            "ownerUserId": str(current_user["id"]),
+            "receivedAt": received_at.isoformat(timespec="milliseconds").replace(
+                "+00:00",
+                "Z",
+            ),
+            "eventsDeleted": deleted.get("events", 0),
+            "incidentsDeleted": deleted.get("incidents", 0),
+            "refresh": ["tickets", "widgets"],
+        }
     )
     return {
         "eventsDeleted": deleted.get("events", 0),
