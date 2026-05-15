@@ -193,6 +193,7 @@ export type ApplyContainmentResponse = {
     status: string
     steps: Array<{ nodeId: string; nodeType: string; status: string; sensitive: boolean }>
     createdAt: string
+    policyReviewRequired?: boolean
   }
   ticket: Ticket | null
   ticketStatus: 'contained' | 'investigating'
@@ -205,12 +206,67 @@ export type ApprovePlaybookRunResponse = {
   dryRun?: boolean
   status: string
   steps?: Array<{ nodeId: string; nodeType: string; status: string; sensitive: boolean }>
+  policyReviewRequired?: boolean
   ticketUpdate?: {
     status: 'contained' | 'failed'
     incidentId: string
     ticket?: Ticket
     error?: string
   }
+}
+
+export type FortiGatePolicyScope = 'source_only' | 'source_destination' | 'source_destination_service'
+
+export type FortiGatePolicyChange = {
+  operation: 'create' | 'reuse'
+  object_type: 'firewall.address' | 'firewall.policy'
+  name: string
+  payload: Record<string, unknown>
+}
+
+export type PlaybookRunPolicyReviewRequest = {
+  integrationId: string
+  scope: FortiGatePolicyScope
+  sourceIp: string
+  destinationIp?: string
+  service?: string
+  sourceInterface: string
+  destinationInterface: string
+  durationMinutes: number
+}
+
+export type PlaybookRunPolicyReviewResponse = {
+  request_id: string
+  status: 'pending_review'
+  intent: 'temporary_block'
+  scope: FortiGatePolicyScope
+  integration_id: string
+  existing_policy_count: number
+  owned_policy_count: number
+  proposed_policy_name: string
+  placement: string
+  warnings: string[]
+  changes: FortiGatePolicyChange[]
+  review_hash: string
+  expires_at?: string | null
+  runId: string
+  incidentId: string
+}
+
+export type PlaybookRunPolicyApplyResponse = {
+  runId: string
+  incidentId: string
+  policy: {
+    request_id: string
+    status: 'applied'
+    applied_changes: Array<Record<string, unknown>>
+  }
+  ticketUpdate?: {
+    status: 'contained' | 'failed'
+    incidentId: string
+    ticket?: Ticket
+    error?: string
+  } | null
 }
 
 export async function draftContainmentPlaybook(ticketId: string): Promise<PlaybookDraftResponse> {
@@ -251,6 +307,34 @@ export async function approvePlaybookRun(runId: string): Promise<ApprovePlaybook
     headers,
   })
   return parseOrThrow<ApprovePlaybookRunResponse>(response, 'Failed to approve playbook run')
+}
+
+export async function createPlaybookRunPolicyReview(
+  runId: string,
+  payload: PlaybookRunPolicyReviewRequest,
+): Promise<PlaybookRunPolicyReviewResponse> {
+  const headers = await csrfHeaders()
+  const response = await fetch(`/api/soc/playbook-runs/${encodeURIComponent(runId)}/policy-review`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parseOrThrow<PlaybookRunPolicyReviewResponse>(response, 'Failed to create FortiGate policy review')
+}
+
+export async function applyPlaybookRunPolicy(
+  runId: string,
+  payload: { integrationId: string, requestId: string, reviewHash: string },
+): Promise<PlaybookRunPolicyApplyResponse> {
+  const headers = await csrfHeaders()
+  const response = await fetch(`/api/soc/playbook-runs/${encodeURIComponent(runId)}/policy-apply`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parseOrThrow<PlaybookRunPolicyApplyResponse>(response, 'Failed to apply FortiGate policy')
 }
 
 export async function suggestContainment(incidentId: string): Promise<ContainmentSuggestion> {

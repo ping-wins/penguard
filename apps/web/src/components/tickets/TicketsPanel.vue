@@ -22,13 +22,18 @@ import {
   analyzeIncident,
   approvePlaybookRun,
   applyContainmentPlaybook,
+  applyPlaybookRunPolicy,
+  createPlaybookRunPolicyReview,
   draftContainmentPlaybook,
   resetIncidentStore,
   suggestContainment,
   type ApplyContainmentResponse,
   type ContainmentSuggestion,
+  type FortiGatePolicyScope,
   type IncidentAnalysis,
+  type PlaybookRunPolicyApplyResponse,
   type PlaybookDraftResponse,
+  type PlaybookRunPolicyReviewResponse,
   type Ticket,
   type TicketStatus,
   type TriageLevel,
@@ -76,6 +81,20 @@ const isDrafting = ref(false)
 const isApplying = ref(false)
 const isApprovingRun = ref(false)
 const playbookError = ref<string | null>(null)
+const policyReview = ref<PlaybookRunPolicyReviewResponse | null>(null)
+const policyApplyResult = ref<PlaybookRunPolicyApplyResponse | null>(null)
+const isCreatingPolicyReview = ref(false)
+const isApplyingPolicyReview = ref(false)
+const policyForm = ref({
+  integrationId: '',
+  scope: 'source_destination' as FortiGatePolicyScope,
+  sourceInterface: 'port2',
+  destinationInterface: 'port3',
+  sourceIp: '',
+  destinationIp: '',
+  service: 'ALL',
+  durationMinutes: 30,
+})
 
 const tickets = computed(() => store.tickets)
 const aiAnalysisBadge = computed(() => aiAnalysis.value ? sourceBadgeFor(aiAnalysis.value) : null)
@@ -120,6 +139,11 @@ const statusOptions = computed<{ value: TicketStatus; label: string }[]>(() => [
 ])
 
 const triageOptions: TriageLevel[] = ['T1', 'T2', 'T3']
+const policyScopeOptions: { value: FortiGatePolicyScope; labelKey: string }[] = [
+  { value: 'source_only', labelKey: 'tickets.policy.scopeSourceOnly' },
+  { value: 'source_destination', labelKey: 'tickets.policy.scopeSourceDestination' },
+  { value: 'source_destination_service', labelKey: 'tickets.policy.scopeSourceDestinationService' },
+]
 
 const filteredByLane = computed<Record<TriageLevel, Ticket[]>>(() => {
   const result: Record<TriageLevel, Ticket[]> = { T1: [], T2: [], T3: [] }
@@ -144,6 +168,19 @@ const statusBadgeClass = (status: TicketStatus) => {
       return 'border-theme-border bg-theme-bg/40 text-theme-text-muted'
   }
 }
+
+const policyReviewRequired = computed(() => Boolean(applyResult.value?.run?.policyReviewRequired))
+const canCreatePolicyReview = computed(() => {
+  return Boolean(
+    applyResult.value?.run?.id
+      && policyForm.value.integrationId.trim()
+      && policyForm.value.sourceInterface.trim()
+      && policyForm.value.destinationInterface.trim()
+      && policyForm.value.sourceIp.trim()
+      && (policyForm.value.scope === 'source_only' || policyForm.value.destinationIp.trim()),
+  )
+})
+const canApplyPolicyReview = computed(() => Boolean(policyReview.value && !policyApplyResult.value))
 
 async function applyPatch(
   ticket: Ticket,
@@ -202,6 +239,10 @@ function resetAiState() {
   playbookDraft.value = null
   applyResult.value = null
   playbookError.value = null
+  policyReview.value = null
+  policyApplyResult.value = null
+  isCreatingPolicyReview.value = false
+  isApplyingPolicyReview.value = false
 }
 
 async function runDraftPlaybook(ticket: Ticket) {
@@ -267,11 +308,114 @@ async function runApprovePlaybook(ticket: Ticket) {
           ? 'contained'
           : applyResult.value.ticketStatus,
       }
+      if (approved.policyReviewRequired) {
+        primePolicyReviewForm(ticket)
+      }
     }
   } catch (e: any) {
     playbookError.value = e?.message ?? 'Failed to approve playbook run'
   } finally {
     isApprovingRun.value = false
+  }
+}
+
+function stringValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+function primePolicyReviewForm(ticket: Ticket) {
+  const attributes = ticket.attributes ?? {}
+  const entities = ticket.entities ?? {}
+  const sourceIp = stringValue(
+    attributes.sourceIp,
+    attributes.source_ip,
+    attributes.srcip,
+    entities.sourceIp,
+    entities.source_ip,
+    entities.srcip,
+  )
+  const destinationIp = stringValue(
+    attributes.destinationIp,
+    attributes.destination_ip,
+    attributes.dstip,
+    entities.destinationIp,
+    entities.destination_ip,
+    entities.dstip,
+  )
+  policyReview.value = null
+  policyApplyResult.value = null
+  policyForm.value = {
+    ...policyForm.value,
+    integrationId: stringValue(attributes.integrationId, attributes.integration_id, entities.integrationId),
+    scope: destinationIp ? 'source_destination' : 'source_only',
+    sourceIp,
+    destinationIp,
+    service: stringValue(attributes.service, attributes.destinationService, entities.service) || 'ALL',
+  }
+}
+
+async function runCreatePolicyReview() {
+  const runId = applyResult.value?.run?.id
+  if (!runId) return
+  playbookError.value = null
+  isCreatingPolicyReview.value = true
+  policyApplyResult.value = null
+  try {
+    policyReview.value = await createPlaybookRunPolicyReview(runId, {
+      integrationId: policyForm.value.integrationId.trim(),
+      scope: policyForm.value.scope,
+      sourceIp: policyForm.value.sourceIp.trim(),
+      destinationIp: policyForm.value.destinationIp.trim() || undefined,
+      service: policyForm.value.service.trim() || 'ALL',
+      sourceInterface: policyForm.value.sourceInterface.trim(),
+      destinationInterface: policyForm.value.destinationInterface.trim(),
+      durationMinutes: Number(policyForm.value.durationMinutes) || 30,
+    })
+  } catch (e: any) {
+    playbookError.value = e?.message ?? t('tickets.policy.reviewError')
+  } finally {
+    isCreatingPolicyReview.value = false
+  }
+}
+
+async function runApplyPolicyReview(ticket: Ticket) {
+  const runId = applyResult.value?.run?.id
+  if (!runId || !policyReview.value) return
+  playbookError.value = null
+  isApplyingPolicyReview.value = true
+  try {
+    const result = await applyPlaybookRunPolicy(runId, {
+      integrationId: policyForm.value.integrationId.trim(),
+      requestId: policyReview.value.request_id,
+      reviewHash: policyReview.value.review_hash,
+    })
+    policyApplyResult.value = result
+    const ticketUpdate = result.ticketUpdate
+    const updatedTicket = ticketUpdate?.ticket
+    if (updatedTicket) {
+      const idx = store.tickets.findIndex((t) => t.id === ticket.id)
+      if (idx >= 0) store.tickets[idx] = updatedTicket
+      selected.value = updatedTicket
+    } else if (ticketUpdate?.status === 'contained') {
+      await store.refresh()
+    } else if (ticketUpdate?.status === 'failed') {
+      playbookError.value = ticketUpdate.error || t('tickets.policy.ticketUpdateFailed')
+    }
+    if (applyResult.value && ticketUpdate?.status === 'contained') {
+      applyResult.value = {
+        ...applyResult.value,
+        ticket: updatedTicket ?? applyResult.value.ticket,
+        ticketStatus: 'contained',
+      }
+    }
+  } catch (e: any) {
+    playbookError.value = e?.message ?? t('tickets.policy.applyError')
+  } finally {
+    isApplyingPolicyReview.value = false
   }
 }
 
@@ -840,6 +984,139 @@ async function resetIncidents() {
               <CheckCircle2 v-else :size="12" />
               {{ t('tickets.ai.approveRun') }}
             </button>
+          </div>
+
+          <div
+            v-if="policyReviewRequired"
+            data-test="ticket-policy-review"
+            class="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 text-xs"
+          >
+            <div class="font-semibold text-sky-100 flex items-center gap-1">
+              <Shield :size="13" />
+              {{ t('tickets.policy.title') }}
+            </div>
+            <p class="mt-1 text-theme-text-muted leading-relaxed">
+              {{ t('tickets.policy.subtitle') }}
+            </p>
+
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <label class="col-span-2 flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.integrationId') }}</span>
+                <input
+                  v-model="policyForm.integrationId"
+                  data-test="ticket-policy-integration"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.sourceInterface') }}</span>
+                <input
+                  v-model="policyForm.sourceInterface"
+                  data-test="ticket-policy-source-interface"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.destinationInterface') }}</span>
+                <input
+                  v-model="policyForm.destinationInterface"
+                  data-test="ticket-policy-destination-interface"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.sourceIp') }}</span>
+                <input
+                  v-model="policyForm.sourceIp"
+                  data-test="ticket-policy-source-ip"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.destinationIp') }}</span>
+                <input
+                  v-model="policyForm.destinationIp"
+                  data-test="ticket-policy-destination-ip"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="col-span-2 flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.scope') }}</span>
+                <select
+                  v-model="policyForm.scope"
+                  data-test="ticket-policy-scope"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+                  <option v-for="option in policyScopeOptions" :key="option.value" :value="option.value">
+                    {{ t(option.labelKey) }}
+                  </option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.service') }}</span>
+                <input
+                  v-model="policyForm.service"
+                  data-test="ticket-policy-service"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-theme-text-muted">{{ t('tickets.policy.durationMinutes') }}</span>
+                <input
+                  v-model.number="policyForm.durationMinutes"
+                  data-test="ticket-policy-duration"
+                  min="1"
+                  type="number"
+                  class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-sky-400"
+                >
+              </label>
+            </div>
+
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-test="ticket-create-policy-review"
+                :disabled="!canCreatePolicyReview || isCreatingPolicyReview"
+                @click="runCreatePolicyReview"
+                class="inline-flex items-center gap-1 rounded border border-sky-500/50 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/25 disabled:opacity-50"
+              >
+                <Loader2 v-if="isCreatingPolicyReview" :size="12" class="animate-spin" />
+                <CheckCircle2 v-else :size="12" />
+                {{ t('tickets.policy.createReview') }}
+              </button>
+              <button
+                type="button"
+                data-test="ticket-apply-policy-review"
+                :disabled="!canApplyPolicyReview || isApplyingPolicyReview"
+                @click="runApplyPolicyReview(selected!)"
+                class="inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+              >
+                <Loader2 v-if="isApplyingPolicyReview" :size="12" class="animate-spin" />
+                <Play v-else :size="12" />
+                {{ t('tickets.policy.apply') }}
+              </button>
+            </div>
+
+            <div v-if="policyReview" class="mt-3 rounded border border-theme-border bg-theme-bg/60 p-2">
+              <div class="font-semibold text-theme-text">
+                {{ t('tickets.policy.proposedPolicy') }}: {{ policyReview.proposed_policy_name }}
+              </div>
+              <div class="mt-1 text-theme-text-muted">
+                {{ t('tickets.policy.placement') }}: {{ policyReview.placement }}
+              </div>
+              <ul class="mt-2 space-y-1 text-theme-text">
+                <li v-for="change in policyReview.changes" :key="`${change.object_type}-${change.name}`">
+                  {{ change.operation }} · {{ change.object_type }} · {{ change.name }}
+                </li>
+              </ul>
+              <div v-if="policyReview.warnings.length" class="mt-2 text-amber-300">
+                {{ policyReview.warnings.join(' ') }}
+              </div>
+            </div>
+
+            <div v-if="policyApplyResult" class="mt-2 font-semibold text-emerald-200">
+              {{ t('tickets.policy.applied') }}
+            </div>
           </div>
 
           <p v-if="!aiAnalysis && !aiContainment && !aiError && !isAnalyzing && !isContaining" class="text-xs text-theme-text-muted italic">

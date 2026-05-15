@@ -429,6 +429,193 @@ describe('FortiGate widget renderers', () => {
     wrapper.unmount()
   })
 
+  it('links a FortiGate policy review to a ticket containment run', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const containedTicket = {
+      id: 'inc_01',
+      ruleId: 'port_scan',
+      title: 'Possible allowed port scan',
+      severity: 'high',
+      status: 'open',
+      source: 'kowalski',
+      attributes: {
+        integrationId: 'int_fgt_lab',
+        sourceIp: '192.0.2.50',
+        destinationIp: '198.51.100.10',
+        service: 'ALL',
+      },
+      entities: {},
+      summary: 'Multiple accepted connections',
+      createdAt: '2026-05-12T10:00:00Z',
+      timeline: [],
+      eventIds: [],
+      triageLevel: 'T1',
+      ticketStatus: 'contained',
+      assigneeUserId: null,
+      aiAnalysisId: null,
+    }
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/soc/tickets') {
+        return jsonResponse({
+          items: [{
+            ...containedTicket,
+            ticketStatus: 'investigating',
+          }],
+        })
+      }
+      if (url === '/api/soc/incidents/inc_01/containment-suggestions') {
+        return jsonResponse({
+          incidentId: 'inc_01',
+          summary: 'Block the scanner temporarily through FortiGate.',
+          playbookDraftId: null,
+          steps: [{
+            title: 'Temporary FortiGate block',
+            description: 'Create a governed FortiGate policy request.',
+            playbookNodeType: 'fortigate.temporary_block',
+            severity: 'high',
+            requiresApproval: true,
+          }],
+        })
+      }
+      if (url === '/api/soc/tickets/inc_01/draft-playbook') {
+        return jsonResponse({
+          ticketId: 'inc_01',
+          playbook: {
+            id: 'pb_01',
+            name: 'AI containment draft',
+            enabled: false,
+            nodes: [],
+            edges: [],
+          },
+          simulation: {
+            dryRun: true,
+            valid: true,
+            steps: [{ nodeId: 'block', nodeType: 'fortigate.temporary_block', status: 'waiting', sensitive: true }],
+          },
+          suggestion: {
+            incidentId: 'inc_01',
+            summary: 'Block the scanner temporarily through FortiGate.',
+            playbookDraftId: null,
+            steps: [],
+          },
+        })
+      }
+      if (url === '/api/soc/tickets/inc_01/apply-containment') {
+        return jsonResponse({
+          ticketId: 'inc_01',
+          playbookId: 'pb_01',
+          ticket: null,
+          ticketStatus: 'investigating',
+          run: {
+            id: 'run_01',
+            incidentId: 'inc_01',
+            playbookId: 'pb_01',
+            dryRun: true,
+            status: 'waiting_approval',
+            steps: [{ nodeId: 'block', nodeType: 'fortigate.temporary_block', status: 'waiting', sensitive: true }],
+            createdAt: '2026-05-12T10:00:00Z',
+          },
+        })
+      }
+      if (url === '/api/soc/playbook-runs/run_01/approve') {
+        return jsonResponse({
+          id: 'run_01',
+          incidentId: 'inc_01',
+          playbookId: 'pb_01',
+          dryRun: true,
+          status: 'completed',
+          policyReviewRequired: true,
+          steps: [{ nodeId: 'block', nodeType: 'fortigate.temporary_block', status: 'completed', sensitive: true }],
+        })
+      }
+      if (url === '/api/soc/playbook-runs/run_01/policy-review') {
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          integrationId: 'int_fgt_lab',
+          sourceIp: '192.0.2.50',
+          destinationIp: '198.51.100.10',
+          sourceInterface: 'port2',
+          destinationInterface: 'port3',
+          scope: 'source_destination',
+          durationMinutes: 30,
+        })
+        return jsonResponse({
+          request_id: 'fgpcr_01',
+          status: 'pending_review',
+          intent: 'temporary_block',
+          scope: 'source_destination',
+          integration_id: 'int_fgt_lab',
+          existing_policy_count: 3,
+          owned_policy_count: 1,
+          proposed_policy_name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10',
+          placement: 'before first FortiDashboard-owned lab allow/log policy',
+          warnings: [],
+          changes: [
+            { operation: 'create', object_type: 'firewall.address', name: 'FD_ADDR_192_0_2_50', payload: {} },
+            { operation: 'create', object_type: 'firewall.policy', name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10', payload: {} },
+          ],
+          review_hash: 'hash_01',
+          runId: 'run_01',
+          incidentId: 'inc_01',
+        })
+      }
+      if (url === '/api/soc/playbook-runs/run_01/policy-apply') {
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          integrationId: 'int_fgt_lab',
+          requestId: 'fgpcr_01',
+          reviewHash: 'hash_01',
+        })
+        return jsonResponse({
+          runId: 'run_01',
+          incidentId: 'inc_01',
+          policy: {
+            request_id: 'fgpcr_01',
+            status: 'applied',
+            applied_changes: [{ name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10' }],
+          },
+          ticketUpdate: {
+            status: 'contained',
+            incidentId: 'inc_01',
+            ticket: containedTicket,
+          },
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(TicketsPanel, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-card-inc_01"]').trigger('click')
+    await wrapper.get('[data-test="ticket-ai-containment"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-draft-playbook"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-apply-playbook"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-approve-playbook"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="ticket-policy-review"]').text()).toContain('FortiGate policy review')
+
+    await wrapper.get('[data-test="ticket-create-policy-review"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ticket-policy-review"]').text()).toContain('FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10')
+
+    await wrapper.get('[data-test="ticket-apply-policy-review"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ticket-policy-review"]').text()).toContain('FortiGate policy applied')
+    wrapper.unmount()
+  })
+
   it('explains empty SOC preset states with first-setup next actions', () => {
     const incidents = mount(WidgetGenericData, {
       props: {
