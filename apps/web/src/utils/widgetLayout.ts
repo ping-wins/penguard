@@ -38,6 +38,9 @@ const WIDGET_SIZE_CONSTRAINTS: Record<string, WidgetSizeConstraints> = {
   'fortigate-anomaly-highlights': { minW: 420, minH: 320, maxW: 840, maxH: 680 },
   'soar-active-playbook-runs': { minW: 440, minH: 320, maxW: 900, maxH: 700 },
   'soar-playbook-run-history': { minW: 520, minH: 380, maxW: 980, maxH: 760 },
+  'waf-dos-rate': { minW: 480, minH: 300, maxW: 980, maxH: 680 },
+  'waf-dos-top-ips': { minW: 420, minH: 300, maxW: 880, maxH: 700 },
+  'waf-dos-feed': { minW: 400, minH: 320, maxW: 840, maxH: 700 },
 }
 
 type CreateWidgetInstanceOptions = {

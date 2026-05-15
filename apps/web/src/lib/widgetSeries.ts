@@ -151,6 +151,25 @@ const SAMPLERS: Record<string, SamplerFn> = {
       waitingApproval,
     }
   },
+  'waf-dos-rate': (data) => {
+    const buckets = items(data, 'buckets')
+    const blocked = buckets.reduce((s, b) => {
+      if (!b || typeof b !== 'object') return s
+      return s + num((b as Record<string, unknown>).blocked)
+    }, 0)
+    const allowed = buckets.reduce((s, b) => {
+      if (!b || typeof b !== 'object') return s
+      return s + num((b as Record<string, unknown>).allowed)
+    }, 0)
+    return { blocked, allowed, total: blocked + allowed }
+  },
+  'waf-dos-top-ips': (data) => ({
+    topCount: num((data as any)?.rows?.[0]?.count ?? 0),
+    uniqueIps: items(data, 'rows').length,
+  }),
+  'waf-dos-feed': (data) => ({
+    events: items(data, 'items').length,
+  }),
 }
 
 export function extractSeriesSample(widgetId: string, data: unknown): SeriesSample | null {

@@ -56,6 +56,9 @@ import WidgetSoarPlaybookRunHistory from '../widgets/soc/WidgetSoarPlaybookRunHi
 import WidgetSocSlaBreach from '../widgets/soc/WidgetSocSlaBreach.vue'
 import WidgetSocMttdMttr from '../widgets/soc/WidgetSocMttdMttr.vue'
 import WidgetFortigateTopSourceIps from '../widgets/fortigate/WidgetFortigateTopSourceIps.vue'
+import WidgetWafDosRate from '../widgets/waf/WidgetWafDosRate.vue'
+import WidgetWafDosTopIps from '../widgets/waf/WidgetWafDosTopIps.vue'
+import WidgetWafDosFeed from '../widgets/waf/WidgetWafDosFeed.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
 import type { WidgetFieldBinding } from '../../types/dashboard'
@@ -499,6 +502,9 @@ const widgetMap: Record<string, any> = {
   'soc-sla-breach': WidgetSocSlaBreach,
   'soc-mttd-mttr': WidgetSocMttdMttr,
   'fortigate-top-source-ips': WidgetFortigateTopSourceIps,
+  'waf-dos-rate': WidgetWafDosRate,
+  'waf-dos-top-ips': WidgetWafDosTopIps,
+  'waf-dos-feed': WidgetWafDosFeed,
 }
 
 void WidgetGenericData
