@@ -33,6 +33,11 @@ SOC_WIDGET_IDS = {
     "soar-active-playbook-runs",
     "soar-playbook-run-history",
 }
+WAF_WIDGET_IDS = {
+    "waf-dos-rate",
+    "waf-dos-top-ips",
+    "waf-dos-feed",
+}
 
 
 class SocWidgetClient(Protocol):
@@ -90,7 +95,18 @@ def get_widget_data(
     soar_client: Annotated[SocWidgetClient, Depends(get_soar_client)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     integration_id: Annotated[str | None, Query(alias="integrationId")] = None,
+    source: Annotated[str, Query()] = "siem",
+    window: Annotated[str, Query()] = "1h",
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
+    if widget_id in WAF_WIDGET_IDS:
+        return _waf_widget_data(
+            widget_id,
+            source=source,
+            window=window,
+            limit=limit,
+            siem_client=siem_client,
+        )
     if widget_id in SOC_WIDGET_IDS:
         if integration_id is None:
             raise HTTPException(status_code=422, detail="integrationId is required")
@@ -315,4 +331,204 @@ def _endpoint_health(endpoints: list[dict[str, Any]]) -> dict[str, Any]:
         "endpoints": endpoints,
         "summary": summary,
         "total": len(endpoints),
+    }
+
+
+def _window_seconds(window: str) -> int:
+    return {"15m": 900, "1h": 3600, "6h": 21600, "24h": 86400}.get(window, 3600)
+
+
+def _parse_dt(value: Any) -> "datetime":
+    from datetime import UTC, datetime as _datetime
+    if isinstance(value, _datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    try:
+        dt = _datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except (TypeError, ValueError):
+        return _datetime.min.replace(tzinfo=UTC)
+
+
+def _waf_dos_incidents(siem_client: SocWidgetClient, *, since: "datetime") -> list[dict[str, Any]]:
+    raw = _items(siem_client.request("GET", "/incidents", params={"limit": 500}))
+    return [
+        inc for inc in raw
+        if inc.get("ruleId") == "fortiweb_dos_activity"
+        and _parse_dt(inc.get("createdAt")) >= since
+    ]
+
+
+def _waf_dos_events(siem_client: SocWidgetClient, *, since: "datetime", limit: int) -> list[dict[str, Any]]:
+    raw = _items(
+        siem_client.request(
+            "GET",
+            "/events",
+            params={"eventType": "waf.dos", "limit": limit},
+        )
+    )
+    return [e for e in raw if _parse_dt(e.get("occurredAt")) >= since]
+
+
+def _waf_dos_rate(
+    source: str,
+    *,
+    window: str,
+    siem_client: SocWidgetClient,
+) -> dict[str, Any]:
+    from datetime import UTC, datetime, timedelta
+    seconds = _window_seconds(window)
+    since = datetime.now(UTC) - timedelta(seconds=seconds)
+
+    if source == "raw":
+        records = _waf_dos_events(siem_client, since=since, limit=500)
+        ts_key = "occurredAt"
+        def is_blocked(r: dict[str, Any]) -> bool:
+            attrs = r.get("attributes") or {}
+            return str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+    else:
+        records = _waf_dos_incidents(siem_client, since=since)
+        ts_key = "createdAt"
+        def is_blocked(r: dict[str, Any]) -> bool:  # noqa: E301
+            return True
+
+    buckets: dict[str, dict[str, int]] = {}
+    for record in records:
+        dt = _parse_dt(record.get(ts_key))
+        bucket_key = dt.strftime("%Y-%m-%dT%H:%M:00Z")
+        if bucket_key not in buckets:
+            buckets[bucket_key] = {"blocked": 0, "allowed": 0}
+        if is_blocked(record):
+            buckets[bucket_key]["blocked"] += 1
+        else:
+            buckets[bucket_key]["allowed"] += 1
+
+    sorted_buckets = [
+        {"ts": k, "blocked": v["blocked"], "allowed": v["allowed"]}
+        for k, v in sorted(buckets.items())
+    ]
+    return {"buckets": sorted_buckets, "window": window, "source": source}
+
+
+def _waf_dos_top_ips(
+    source: str,
+    *,
+    window: str,
+    limit: int,
+    siem_client: SocWidgetClient,
+) -> dict[str, Any]:
+    from datetime import UTC, datetime, timedelta
+    seconds = _window_seconds(window)
+    since = datetime.now(UTC) - timedelta(seconds=seconds)
+
+    if source == "raw":
+        records = _waf_dos_events(siem_client, since=since, limit=500)
+        def get_ip(r: dict[str, Any]) -> str:
+            return str(r.get("entities", {}).get("sourceIp") or "")
+        def get_ts(r: dict[str, Any]) -> str:
+            return str(r.get("occurredAt") or "")
+        def get_blocked(r: dict[str, Any]) -> bool:
+            attrs = r.get("attributes") or {}
+            return str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+    else:
+        records = _waf_dos_incidents(siem_client, since=since)
+        def get_ip(r: dict[str, Any]) -> str:  # noqa: E301
+            return str(r.get("entities", {}).get("sourceIp") or "")
+        def get_ts(r: dict[str, Any]) -> str:  # noqa: E301
+            return str(r.get("createdAt") or "")
+        def get_blocked(_r: dict[str, Any]) -> bool:  # noqa: E301
+            return True
+
+    ip_data: dict[str, dict[str, Any]] = {}
+    for record in records:
+        ip = get_ip(record)
+        if not ip:
+            continue
+        if ip not in ip_data:
+            ip_data[ip] = {"count": 0, "lastSeen": "", "blocked": get_blocked(record)}
+        ip_data[ip]["count"] += 1
+        ts = get_ts(record)
+        if ts > ip_data[ip]["lastSeen"]:
+            ip_data[ip]["lastSeen"] = ts
+
+    rows = [
+        {"ip": ip, "count": v["count"], "lastSeen": v["lastSeen"], "blocked": v["blocked"]}
+        for ip, v in ip_data.items()
+    ]
+    rows.sort(key=lambda r: r["count"], reverse=True)
+    return {"rows": rows[:limit], "source": source}
+
+
+def _waf_dos_feed(
+    source: str,
+    *,
+    limit: int,
+    siem_client: SocWidgetClient,
+) -> dict[str, Any]:
+    from datetime import UTC, datetime, timedelta
+    since = datetime.now(UTC) - timedelta(hours=24)
+
+    if source == "raw":
+        records = _waf_dos_events(siem_client, since=since, limit=500)
+        items_out = [
+            {
+                "id": r.get("id") or "",
+                "ts": r.get("occurredAt") or "",
+                "sourceIp": r.get("entities", {}).get("sourceIp") or "",
+                "action": r.get("attributes", {}).get("action") or "",
+                "severity": r.get("severity") or "medium",
+                "message": r.get("message") or "DoS event",
+                "policy": r.get("attributes", {}).get("policy") or "",
+            }
+            for r in records
+        ][:limit]
+    else:
+        records = _waf_dos_incidents(siem_client, since=since)
+        records.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+        items_out = [
+            {
+                "id": r.get("id") or "",
+                "ts": r.get("createdAt") or "",
+                "sourceIp": r.get("entities", {}).get("sourceIp") or "",
+                "action": "block",
+                "severity": r.get("severity") or "critical",
+                "message": r.get("summary") or r.get("title") or "DoS activity detected",
+                "policy": r.get("attributes", {}).get("policy") or "",
+            }
+            for r in records[:limit]
+        ]
+    return {"items": items_out, "source": source}
+
+
+def _waf_widget_data(
+    widget_id: str,
+    *,
+    source: str,
+    window: str,
+    limit: int,
+    siem_client: SocWidgetClient,
+) -> dict[str, Any]:
+    normalized_source = source if source in {"siem", "raw"} else "siem"
+    match widget_id:
+        case "waf-dos-rate":
+            data = _waf_dos_rate(normalized_source, window=window, siem_client=siem_client)
+        case "waf-dos-top-ips":
+            data = _waf_dos_top_ips(normalized_source, window=window, limit=limit, siem_client=siem_client)
+        case "waf-dos-feed":
+            data = _waf_dos_feed(normalized_source, limit=limit, siem_client=siem_client)
+        case _:
+            raise HTTPException(status_code=404, detail="Widget data not found")
+    logger.info(
+        "waf_widget_data_ready widget_id=%s source=%s",
+        widget_id,
+        normalized_source,
+    )
+    return {
+        "widgetId": widget_id,
+        "status": "ready",
+        "data": data,
+        "meta": {
+            "source": normalized_source,
+            "cacheTtlSeconds": 5,
+            "refreshIntervalSeconds": 5,
+        },
     }
