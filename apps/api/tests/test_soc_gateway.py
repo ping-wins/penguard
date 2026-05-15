@@ -2,10 +2,14 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx import Response
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.auth import dependencies as auth_dependencies
 from app.auth.csrf_dependency import require_csrf
 from app.core.config import get_settings
+from app.db.base import Base
 from app.main import app
 from app.routers import lab_demo, soc
 from app.soc import client as soc_client_module
@@ -52,6 +56,36 @@ class FailingSocClient:
         pass_through_statuses=None,
     ) -> dict:
         raise HTTPException(status_code=503, detail="service unavailable")
+
+
+class FakeFortiGatePolicyClient:
+    def __init__(self) -> None:
+        self.created_addresses: list[dict] = []
+        self.created_policies: list[dict] = []
+
+    def get_policies(self) -> list[dict]:
+        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+
+    def get_address_objects(self) -> list[dict]:
+        return []
+
+    def create_address_object(self, *, name: str, subnet: str, comment: str) -> dict:
+        payload = {"name": name, "subnet": subnet, "comment": comment}
+        self.created_addresses.append(payload)
+        return {"status": "success", "mkey": name}
+
+    def create_firewall_policy(self, payload: dict) -> dict:
+        self.created_policies.append(dict(payload))
+        return {"status": "success", "mkey": payload["name"]}
+
+
+class FakeFortiGatePolicyService:
+    def __init__(self, client: FakeFortiGatePolicyClient) -> None:
+        self.client = client
+
+    def get_policy_client(self, *, integration_id: str, owner_user_id: str):
+        _ = (integration_id, owner_user_id)
+        return self.client
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
@@ -583,6 +617,162 @@ def test_soar_playbook_run_approve_waiting_approval_keeps_current_behavior():
     assert fake_siem.calls == []
     audit = auth_dependencies.get_auth_audit_store().list_events(action="soc.playbook_run.approved")
     assert audit["items"][0]["outcome"] == "success"
+
+
+def test_soar_playbook_run_approve_with_fortigate_policy_step_requires_policy_review():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "pbr_policy",
+            "incidentId": "inc_policy",
+            "playbookId": "pb_policy",
+            "status": "completed",
+            "steps": [
+                {
+                    "nodeId": "block",
+                    "nodeType": "fortigate.temporary_block",
+                    "status": "completed",
+                    "sensitive": True,
+                }
+            ],
+        }
+    )
+    fake_siem = FakeSocClient({"id": "inc_policy", "ticketStatus": "contained"})
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.require_admin_user] = lambda: {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+        "roles": ["admin"],
+    }
+
+    response = client.post(
+        "/api/soc/playbook-runs/pbr_policy/approve",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["policyReviewRequired"] is True
+    assert fake_siem.calls == []
+
+
+def test_playbook_run_policy_review_and_apply_link_ticket_to_fortigate_policy():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    fgt_client = FakeFortiGatePolicyClient()
+    run = {
+        "id": "run_123",
+        "incidentId": "inc_123",
+        "playbookId": "pb_123",
+        "status": "completed",
+        "steps": [
+            {
+                "id": "step_1",
+                "nodeId": "block",
+                "nodeType": "fortigate.temporary_block",
+                "status": "completed",
+                "sensitive": True,
+            }
+        ],
+    }
+    fake_soar = FakeSocClient(run)
+    fake_siem = FakeSocClient({"id": "inc_123", "ticketStatus": "contained"})
+
+    def override_policy_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    client = TestClient(app)
+    app.dependency_overrides[soc.get_policy_db] = override_policy_db
+    app.dependency_overrides[soc.get_fortigate_policy_service] = lambda: (
+        FakeFortiGatePolicyService(fgt_client)
+    )
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: _user_with_roles(
+        "admin"
+    )
+
+    review_response = client.post(
+        "/api/soc/playbook-runs/run_123/policy-review",
+        headers=csrf_headers(client),
+        json={
+            "integrationId": "int_fgt_lab",
+            "scope": "source_destination",
+            "sourceIp": "192.0.2.50",
+            "destinationIp": "198.51.100.10",
+            "sourceInterface": "port2",
+            "destinationInterface": "port3",
+            "durationMinutes": 30,
+        },
+    )
+    review = review_response.json()
+    assert review_response.status_code == 200
+    assert review["runId"] == "run_123"
+    assert review["incidentId"] == "inc_123"
+    assert fgt_client.created_policies == []
+
+    apply_response = client.post(
+        "/api/soc/playbook-runs/run_123/policy-apply",
+        headers=csrf_headers(client),
+        json={
+            "integrationId": "int_fgt_lab",
+            "requestId": review["request_id"],
+            "reviewHash": review["review_hash"],
+        },
+    )
+
+    assert apply_response.status_code == 200
+    assert apply_response.json()["policy"]["status"] == "applied"
+    assert apply_response.json()["ticketUpdate"] == {
+        "status": "contained",
+        "incidentId": "inc_123",
+        "ticket": {"id": "inc_123", "ticketStatus": "contained"},
+    }
+    assert fgt_client.created_policies[0]["name"] == (
+        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10"
+    )
+    assert fake_siem.calls[-1]["path"] == "/incidents/inc_123/triage"
+
+
+def test_playbook_run_policy_review_rejects_runs_without_fortigate_policy_step():
+    client = TestClient(app)
+    fake_soar = FakeSocClient(
+        {
+            "id": "run_note",
+            "incidentId": "inc_note",
+            "playbookId": "pb_note",
+            "status": "completed",
+            "steps": [{"nodeType": "case.note", "status": "completed"}],
+        }
+    )
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+
+    response = client.post(
+        "/api/soc/playbook-runs/run_note/policy-review",
+        headers=csrf_headers(client),
+        json={
+            "integrationId": "int_fgt_lab",
+            "scope": "source_only",
+            "sourceIp": "192.0.2.50",
+            "sourceInterface": "port2",
+            "destinationInterface": "port3",
+            "durationMinutes": 30,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Playbook run does not contain a FortiGate temporary block step"
+    }
 
 
 def test_xdr_enrollment_gateway_does_not_log_token():

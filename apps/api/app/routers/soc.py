@@ -1,8 +1,10 @@
 from functools import lru_cache
 from secrets import token_urlsafe
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from app.ai import (
     AIConfigurationError,
@@ -17,7 +19,23 @@ from app.auth.dependencies import (
     get_current_api_user,
     require_admin_user,
 )
+from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
+from app.db.session import SessionLocal
+from app.integrations.fortigate.policy_models import (
+    FortiGatePolicyApplyRequest,
+    FortiGatePolicyIntent,
+    FortiGatePolicyReviewRequest,
+)
+from app.integrations.fortigate.policy_workflow import (
+    apply_policy_review_for_user,
+    create_policy_review_for_user,
+)
+from app.integrations.fortigate.service import (
+    FortiGateIntegrationService,
+    MockFortiGateIntegrationService,
+)
+from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
 from app.soc.client import SocServiceClient
 
 router = APIRouter(tags=["soc"])
@@ -52,6 +70,27 @@ class AuditStore(Protocol):
         pass
 
 
+class PlaybookRunPolicyReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    integration_id: str = Field(alias="integrationId")
+    scope: Literal["source_only", "source_destination", "source_destination_service"]
+    source_ip: str = Field(alias="sourceIp")
+    destination_ip: str | None = Field(default=None, alias="destinationIp")
+    service: str | None = None
+    source_interface: str = Field(alias="sourceInterface")
+    destination_interface: str = Field(alias="destinationInterface")
+    duration_minutes: int = Field(default=30, alias="durationMinutes", ge=5, le=1440)
+
+
+class PlaybookRunPolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    integration_id: str = Field(alias="integrationId")
+    request_id: str = Field(alias="requestId")
+    review_hash: str = Field(alias="reviewHash")
+
+
 @lru_cache
 def get_siem_client() -> SocServiceClient:
     settings = get_settings()
@@ -80,6 +119,26 @@ def get_xdr_client() -> SocServiceClient:
         service_name="xdr_rico",
         timeout_seconds=settings.internal_service_timeout_seconds,
     )
+
+
+@lru_cache
+def get_fortigate_policy_service() -> FortiGateIntegrationService | MockFortiGateIntegrationService:
+    settings = get_settings()
+    if settings.mock_mode:
+        return MockFortiGateIntegrationService()
+    return FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            database_url=settings.database_url,
+            secret_cipher=TokenCipher.from_secret(
+                settings.token_encryption_key or settings.secret_key
+            ),
+        )
+    )
+
+
+def get_policy_db():
+    with SessionLocal() as db:
+        yield db
 
 
 def _build_incident_context(incident: dict[str, Any]) -> IncidentContext:
@@ -848,6 +907,144 @@ def get_playbook_run(
     return client.request("GET", f"/playbook-runs/{run_id}")
 
 
+@router.post("/soc/playbook-runs/{run_id}/policy-review")
+def create_playbook_run_policy_review(
+    run_id: str,
+    payload: PlaybookRunPolicyReviewRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    fortigate_service: Annotated[Any, Depends(get_fortigate_policy_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    run = soar_client.request("GET", f"/playbook-runs/{run_id}")
+    _ensure_fortigate_policy_run(run)
+    incident_id = str(run.get("incidentId") or "")
+    owner_user_id = str(current_user["id"])
+    review_request = FortiGatePolicyReviewRequest(
+        intent=FortiGatePolicyIntent.TEMPORARY_BLOCK,
+        scope=payload.scope,
+        source_interface=payload.source_interface,
+        destination_interface=payload.destination_interface,
+        source_ip=payload.source_ip,
+        destination_ip=payload.destination_ip,
+        service=payload.service,
+        duration_minutes=payload.duration_minutes,
+        incident_id=incident_id or None,
+        playbook_run_id=run_id,
+    )
+    review = create_policy_review_for_user(
+        db=db,
+        integration_id=payload.integration_id,
+        owner_user_id=owner_user_id,
+        service=fortigate_service,
+        payload=review_request,
+    )
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.policy_review_created",
+        details={
+            "runId": run_id,
+            "incidentId": incident_id,
+            "integrationId": payload.integration_id,
+            "requestId": review.request_id,
+        },
+    )
+    return {
+        **review.model_dump(mode="json"),
+        "runId": run_id,
+        "incidentId": incident_id,
+    }
+
+
+@router.post("/soc/playbook-runs/{run_id}/policy-apply")
+def apply_playbook_run_policy(
+    run_id: str,
+    payload: PlaybookRunPolicyApplyRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_policy_db)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    fortigate_service: Annotated[Any, Depends(get_fortigate_policy_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    run = soar_client.request("GET", f"/playbook-runs/{run_id}")
+    _ensure_fortigate_policy_run(run)
+    incident_id = str(run.get("incidentId") or "")
+    owner_user_id = str(current_user["id"])
+    policy = apply_policy_review_for_user(
+        db=db,
+        integration_id=payload.integration_id,
+        owner_user_id=owner_user_id,
+        service=fortigate_service,
+        payload=FortiGatePolicyApplyRequest(
+            request_id=payload.request_id,
+            review_hash=payload.review_hash,
+        ),
+    )
+    ticket_update: dict[str, Any] | None = None
+    if incident_id:
+        ticket = siem_client.request(
+            "PATCH",
+            f"/incidents/{incident_id}/triage",
+            json={
+                "ticketStatus": "contained",
+                "note": (
+                    f"FortiGate policy request {payload.request_id} applied "
+                    f"from playbook run {run_id}."
+                ),
+            },
+        )
+        ticket_update = {
+            "status": "contained",
+            "incidentId": incident_id,
+            "ticket": ticket,
+        }
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.policy_applied",
+        details={
+            "runId": run_id,
+            "incidentId": incident_id,
+            "integrationId": payload.integration_id,
+            "requestId": policy.request_id,
+            "ticketUpdate": ticket_update,
+        },
+    )
+    return {
+        "runId": run_id,
+        "incidentId": incident_id,
+        "policy": policy.model_dump(mode="json"),
+        "ticketUpdate": ticket_update,
+    }
+
+
+def _ensure_fortigate_policy_run(run: dict[str, Any]) -> None:
+    if not _run_has_fortigate_policy_step(run):
+        raise HTTPException(
+            status_code=409,
+            detail="Playbook run does not contain a FortiGate temporary block step",
+        )
+
+
+def _run_has_fortigate_policy_step(run: dict[str, Any]) -> bool:
+    steps = run.get("steps")
+    if not isinstance(steps, list):
+        return False
+    return any(
+        isinstance(step, dict) and step.get("nodeType") == "fortigate.temporary_block"
+        for step in steps
+    )
+
+
 @router.post("/soc/playbook-runs/{run_id}/approve")
 def approve_playbook_run(
     run_id: str,
@@ -861,7 +1058,14 @@ def approve_playbook_run(
     response = client.request("POST", f"/playbook-runs/{run_id}/approve", json={})
     ticket_update: dict[str, Any] | None = None
     outcome = "success"
-    if response.get("status") == "completed" and response.get("incidentId"):
+    policy_review_required = _run_has_fortigate_policy_step(response)
+    if policy_review_required:
+        response["policyReviewRequired"] = True
+    if (
+        response.get("status") == "completed"
+        and response.get("incidentId")
+        and not policy_review_required
+    ):
         incident_id = str(response["incidentId"])
         try:
             ticket = siem_client.request(
