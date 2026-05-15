@@ -32,6 +32,73 @@ export type Ticket = {
   aiAnalysisId: string | null
 }
 
+export type TriageEvidenceItem = {
+  id: string
+  type: string
+  label: string
+  value: string | number | string[] | Record<string, any>
+  threshold?: string | number | Record<string, any> | null
+  severity: string
+  source: string
+}
+
+export type TriageMitreMapping = {
+  tacticId: string
+  tacticName: string
+  techniqueId: string
+  techniqueName: string
+  subtechniqueId?: string | null
+  subtechniqueName?: string | null
+  confidence: 'low' | 'medium' | 'high'
+  reason: string
+  evidenceIds: string[]
+}
+
+export type TriageResponseCandidate = {
+  id: string
+  type: string
+  label: string
+  description: string
+  riskLevel: 'low' | 'medium' | 'high'
+  requiresApproval: boolean
+  availableNow: boolean
+  providerRequired?: string | null
+  reason: string
+  parameters: Record<string, any>
+  mappedMitreTechniqueIds: string[]
+  playbookTemplateIds: string[]
+}
+
+export type TriagePlaybookTemplate = {
+  templateId: string
+  label: string
+  reason: string
+  confidence: 'low' | 'medium' | 'high'
+  requiredCandidateIds: string[]
+  parameters: Record<string, any>
+  requiresApproval: boolean
+}
+
+export type TriageContext = {
+  incidentId: string
+  ruleId: string | null
+  alertFamily: string
+  attackType: string
+  severity: string
+  confidence: 'low' | 'medium' | 'high'
+  recommendedTriageLevel: TriageLevel
+  recommendedTicketStatus: TicketStatus
+  summary: string
+  evidence: TriageEvidenceItem[]
+  entities: Array<Record<string, any>>
+  impactedAssets: Array<Record<string, any>>
+  mitreMappings: TriageMitreMapping[]
+  responseCandidates: TriageResponseCandidate[]
+  playbookTemplates: TriagePlaybookTemplate[]
+  missingData: Array<{ id: string; label: string; reason: string }>
+  generatedAt: string
+}
+
 type TicketsResponse = { items: Ticket[] }
 
 async function csrfHeaders(): Promise<Record<string, string>> {
@@ -90,6 +157,13 @@ export async function getTicket(ticketId: string): Promise<Ticket> {
     credentials: 'include',
   })
   return parseOrThrow<Ticket>(response, 'Failed to load ticket')
+}
+
+export async function getIncidentTriageContext(incidentId: string): Promise<TriageContext> {
+  const response = await fetch(`/api/soc/incidents/${encodeURIComponent(incidentId)}/triage-context`, {
+    credentials: 'include',
+  })
+  return parseOrThrow<TriageContext>(response, 'Failed to load triage context')
 }
 
 export type MitreTechnique = {
@@ -280,6 +354,22 @@ export async function draftContainmentPlaybook(ticketId: string): Promise<Playbo
     },
   )
   return parseOrThrow<PlaybookDraftResponse>(response, 'Failed to draft containment playbook')
+}
+
+export async function instantiateRecommendedPlaybook(
+  incidentId: string,
+  templateId: string,
+): Promise<PlaybookDraftResponse> {
+  const headers = { ...(await csrfHeaders()), ...localeHeaders() }
+  const response = await fetch(
+    `/api/soc/incidents/${encodeURIComponent(incidentId)}/playbook-recommendations/${encodeURIComponent(templateId)}/instantiate`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+    },
+  )
+  return parseOrThrow<PlaybookDraftResponse>(response, 'Failed to instantiate recommended playbook')
 }
 
 export async function applyContainmentPlaybook(

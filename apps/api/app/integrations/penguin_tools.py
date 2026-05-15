@@ -316,7 +316,7 @@ def expected_tool_type_for_widget(widget_id: str) -> str | None:
         return "siem_kowalski"
     if widget_id == "xdr-endpoint-health":
         return "xdr_rico"
-    if widget_id == "soar-active-playbook-runs":
+    if widget_id in {"soar-active-playbook-runs", "soar-playbook-run-history"}:
         return "soar_skipper"
     return None
 

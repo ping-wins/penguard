@@ -54,16 +54,26 @@ def normalize_interfaces(
 def normalize_policies(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = []
     for item in raw:
+        name = _string(item, "name", default="") or ""
+        action = (_string(item, "action", default="unknown") or "unknown").lower()
+        comments = _string(item, "comments", "comment", default="") or ""
         normalized.append(
             {
                 "id": str(item.get("policyid", item.get("id", ""))),
-                "name": _string(item, "name", default=""),
+                "name": name,
                 "status": _policy_status(item.get("status")),
-                "action": _string(item, "action", default="unknown"),
+                "action": action,
                 "sourceInterfaces": _named_list(item.get("srcintf")),
                 "destinationInterfaces": _named_list(item.get("dstintf")),
                 "services": _named_list(item.get("service")),
                 "schedule": _string(item, "schedule", default=""),
+                "sourceAddresses": _named_list(item.get("srcaddr")),
+                "destinationAddresses": _named_list(item.get("dstaddr")),
+                "logging": _string(item, "logtraffic", "logTraffic", default="") or "",
+                "comments": comments,
+                "isBlocking": _policy_is_blocking(action),
+                "isFortiDashboardOwned": _policy_is_fortidashboard_owned(name, comments),
+                "policyKind": _policy_kind(name),
             }
         )
     return normalized
@@ -345,6 +355,24 @@ def _policy_status(value: Any) -> str:
     if value:
         return str(value)
     return "unknown"
+
+
+def _policy_is_blocking(action: str) -> bool:
+    return action.lower() in {"deny", "block", "blocked", "reject"}
+
+
+def _policy_is_fortidashboard_owned(name: str, comments: str) -> bool:
+    return name.startswith("FD_") or "fortidashboard owned" in comments.lower()
+
+
+def _policy_kind(name: str) -> str:
+    if name.startswith("FD_TMP_BLOCK_"):
+        return "temporary_block"
+    if name.startswith("FD_LAB_ALLOW_"):
+        return "lab_allow_log"
+    if name.startswith("FD_"):
+        return "fortidashboard"
+    return "standard"
 
 
 def _timestamp(value: int) -> str:

@@ -191,6 +191,48 @@ def test_allowed_fortigate_traffic_burst_creates_port_scan_incident():
     assert 2219 in incident["attributes"]["destinationPorts"]
 
 
+def test_fortigate_timeout_traffic_burst_creates_allowed_port_scan_incident():
+    client.post("/admin/reset")
+
+    for port in range(120, 140):
+        payload = _event_payload(
+            "network.event",
+            severity="medium",
+            source_ip="192.0.2.60",
+        )
+        payload["entities"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "192.0.2.60",
+            "destinationIp": "198.51.100.60",
+        }
+        payload["attributes"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "192.0.2.60",
+            "destinationIp": "198.51.100.60",
+            "destinationPort": port,
+            "service": f"tcp/{port}",
+            "action": "timeout",
+            "policyId": "1",
+            "policyName": "FD_LAB_ALLOW_32FD0707AD9A",
+            "subtype": "forward",
+        }
+        response = client.post("/events", json=payload)
+        assert response.status_code == 200
+
+    incidents = client.get("/incidents").json()
+    matching = [
+        incident
+        for incident in incidents
+        if incident["ruleId"] == "network_scan"
+        and incident["attributes"].get("sourceIp") == "192.0.2.60"
+        and incident["attributes"].get("destinationIp") == "198.51.100.60"
+    ]
+
+    assert len(matching) == 1
+    assert matching[0]["attributes"]["attackType"] == "allowed_port_scan"
+    assert matching[0]["attributes"]["uniqueDestinationPortCount"] == 20
+
+
 def test_incidents_preserve_event_provenance_for_demo_badges():
     event = client.post(
         "/events",

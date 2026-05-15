@@ -14,6 +14,7 @@ from app.auth.dependencies import get_auth_audit_store, get_current_api_user, re
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.policy_models import (
     FortiGatePolicyApplyRequest,
     FortiGatePolicyApplyResponse,
@@ -736,6 +737,21 @@ def apply_fortigate_policy(
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Integration not found") from exc
+    except FortiGateApiError as exc:
+        audit_store.record(
+            action="integration.fortigate.policy_apply_failed",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "integrationId": integration_id,
+                "requestId": payload.request_id,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     audit_store.record(
         action="integration.fortigate.policy_applied",
         outcome="success",

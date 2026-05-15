@@ -1,3 +1,4 @@
+import json as jsonlib
 from typing import Any
 
 import httpx
@@ -11,6 +12,27 @@ def _syslog_table(slot: int) -> str:
     if slot < 1 or slot > 4:
         raise ValueError("FortiGate syslog slot must be between 1 and 4")
     return "log.syslogd" if slot == 1 else f"log.syslogd{slot}"
+
+
+def _response_error_excerpt(response: httpx.Response, *, max_length: int = 240) -> str:
+    text = response.text.strip()
+    if not text:
+        return ""
+    try:
+        payload = response.json()
+    except ValueError:
+        excerpt = text
+    else:
+        excerpt = jsonlib.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return excerpt[:max_length]
+
+
+def _http_status_error_message(response: httpx.Response) -> str:
+    message = f"FortiGate API request failed with HTTP {response.status_code}"
+    detail = _response_error_excerpt(response)
+    if detail:
+        return f"{message}: {detail}"
+    return message
 
 
 class FortiGateApiClient:
@@ -176,9 +198,7 @@ class FortiGateApiClient:
                     "FortiGate API endpoint not found "
                     f"({path}); check host URL and firmware version"
                 ) from exc
-            raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {status_code}"
-            ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
 
@@ -217,9 +237,7 @@ class FortiGateApiClient:
                     "FortiGate API endpoint not found "
                     f"({path}); check host URL and firmware version"
                 ) from exc
-            raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {status_code}"
-            ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
 
@@ -256,9 +274,7 @@ class FortiGateApiClient:
                     "FortiGate API endpoint not found "
                     f"({path}); check host URL and firmware version"
                 ) from exc
-            raise FortiGateApiError(
-                f"FortiGate API request failed with HTTP {status_code}"
-            ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
         except httpx.RequestError as exc:
             raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
 

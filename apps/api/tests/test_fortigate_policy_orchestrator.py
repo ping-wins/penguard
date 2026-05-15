@@ -61,6 +61,7 @@ def test_policy_orchestrator_plans_lab_allow_log_policy():
 
     assert preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
     assert preflight.integration_id == "int_fgt_lab"
+    assert len(preflight.proposed_policy_name) <= 35
     assert preflight.existing_policy_count == 0
     assert preflight.owned_policy_count == 0
     assert [change.object_type for change in preflight.changes] == [
@@ -69,7 +70,8 @@ def test_policy_orchestrator_plans_lab_allow_log_policy():
         "firewall.policy",
     ]
     policy = preflight.changes[-1].payload
-    assert policy["name"] == "FD_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_TCP_443"
+    assert policy["name"] == preflight.proposed_policy_name
+    assert len(policy["name"]) <= 35
     assert policy["action"] == "accept"
     assert policy["logtraffic"] == "all"
     assert policy["srcintf"] == [{"name": "port2"}]
@@ -99,7 +101,8 @@ def test_policy_orchestrator_plans_source_only_temporary_block():
         )
     )
 
-    assert preflight.proposed_policy_name == "FD_TMP_BLOCK_192_0_2_50"
+    assert preflight.proposed_policy_name.startswith("FD_TMP_BLOCK_")
+    assert len(preflight.proposed_policy_name) <= 35
     assert preflight.owned_policy_count == 1
     assert preflight.changes[0].operation == "reuse"
     policy = preflight.changes[-1].payload
@@ -108,6 +111,40 @@ def test_policy_orchestrator_plans_source_only_temporary_block():
     assert policy["service"] == [{"name": "ALL"}]
     assert policy["logtraffic"] == "all"
     assert preflight.placement == "before first FortiDashboard-owned lab allow/log policy"
+
+
+def test_policy_orchestrator_generates_short_distinct_policy_names():
+    client = FakePolicyClient()
+    orchestrator = FortiGatePolicyOrchestrator(client, integration_id="int_fgt_lab")
+
+    https_preflight = orchestrator.preflight(
+        FortiGatePolicyPreflightRequest(
+            intent=FortiGatePolicyIntent.LAB_ALLOW_LOG,
+            scope=FortiGatePolicyScope.SOURCE_DESTINATION_SERVICE,
+            source_interface="port2",
+            destination_interface="port3",
+            source_ip="192.0.2.10",
+            destination_ip="198.51.100.20",
+            service="HTTPS",
+        )
+    )
+    ssh_preflight = orchestrator.preflight(
+        FortiGatePolicyPreflightRequest(
+            intent=FortiGatePolicyIntent.LAB_ALLOW_LOG,
+            scope=FortiGatePolicyScope.SOURCE_DESTINATION_SERVICE,
+            source_interface="port2",
+            destination_interface="port3",
+            source_ip="192.0.2.10",
+            destination_ip="198.51.100.20",
+            service="SSH",
+        )
+    )
+
+    assert https_preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
+    assert ssh_preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
+    assert len(https_preflight.proposed_policy_name) <= 35
+    assert len(ssh_preflight.proposed_policy_name) <= 35
+    assert https_preflight.proposed_policy_name != ssh_preflight.proposed_policy_name
 
 
 def test_policy_orchestrator_review_hash_is_stable():
@@ -155,7 +192,7 @@ def test_policy_orchestrator_applies_planned_changes_in_order():
     assert [item["name"] for item in applied] == [
         "FD_ADDR_192_0_2_50",
         "FD_ADDR_198_51_100_10",
-        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10",
+        preflight.proposed_policy_name,
     ]
     assert len(client.created_addresses) == 2
     assert client.created_policies[0]["action"] == "deny"

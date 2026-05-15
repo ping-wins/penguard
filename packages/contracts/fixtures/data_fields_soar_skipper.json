@@ -27,6 +27,27 @@
           "type": "category",
           "source": "soar-active-playbook-runs",
           "recommendedVisuals": ["table", "bar"]
+        },
+        {
+          "id": "history",
+          "label": "All Playbook Runs",
+          "type": "array",
+          "source": "soar-playbook-run-history",
+          "recommendedVisuals": ["table", "feed"]
+        },
+        {
+          "id": "history.incidentId",
+          "label": "Run Incident ID",
+          "type": "string",
+          "source": "soar-playbook-run-history",
+          "recommendedVisuals": ["table"]
+        },
+        {
+          "id": "history.status",
+          "label": "History Run Status",
+          "type": "category",
+          "source": "soar-playbook-run-history",
+          "recommendedVisuals": ["table", "bar"]
         }
       ]
     }

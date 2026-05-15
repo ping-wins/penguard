@@ -117,6 +117,11 @@ class PolicyCapableFortiGateClient(SyslogCapableFortiGateClient):
         return {"status": "success", "mkey": payload["name"]}
 
 
+class FailingPolicyFortiGateClient(PolicyCapableFortiGateClient):
+    def create_firewall_policy(self, payload):
+        raise FortiGateApiError("FortiGate API request failed with HTTP 500: name size[35]")
+
+
 def healthy_client_factory(*, host: str, api_key: str, verify_tls: bool):
     return SyslogCapableFortiGateClient()
 
@@ -1409,9 +1414,8 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
 
     assert preflight_response.status_code == 200
     preflight_payload = preflight_response.json()
-    assert preflight_payload["proposed_policy_name"] == (
-        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10"
-    )
+    assert preflight_payload["proposed_policy_name"].startswith("FD_TMP_BLOCK_")
+    assert len(preflight_payload["proposed_policy_name"]) <= 35
     assert preflight_payload["placement"] == (
         "before first FortiDashboard-owned lab allow/log policy"
     )
@@ -1430,7 +1434,7 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
     assert [item["name"] for item in apply_payload["applied_changes"]] == [
         "FD_ADDR_192_0_2_50",
         "FD_ADDR_198_51_100_10",
-        "FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10",
+        preflight_payload["proposed_policy_name"],
     ]
     assert len(fake_client.created_addresses) == 2
     assert fake_client.created_policies[0]["action"] == "deny"
@@ -1438,6 +1442,99 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
         "integration.fortigate.policy_preflight",
         "integration.fortigate.policy_review_created",
         "integration.fortigate.policy_applied",
+    ]
+
+
+def test_fortigate_policy_apply_returns_gateway_error_for_fortigate_failure():
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    fake_client = FailingPolicyFortiGateClient()
+    service = FortiGateIntegrationService(
+        store=SqlAlchemyFortiGateIntegrationStore(
+            engine=engine,
+            secret_cipher=TokenCipher.from_secret("test-secret"),
+            id_factory=lambda: "int_fgt_policy_fail",
+        ),
+        client_factory=lambda **_: fake_client,
+    )
+    audit_store = InMemoryAuthAuditStore()
+
+    def override_policy_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[integrations_router.get_fortigate_integration_service] = lambda: (
+        service
+    )
+    app.dependency_overrides[integrations_router.get_policy_db] = override_policy_db
+    app.dependency_overrides[auth_dependencies.get_auth_audit_store] = lambda: audit_store
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "usr_owner",
+        "email": "owner@example.com",
+        "displayName": "Owner",
+        "roles": ["analyst"],
+    }
+    client = TestClient(app, raise_server_exceptions=False)
+
+    try:
+        client.post(
+            "/api/integrations/fortigate",
+            headers=csrf_headers(client),
+            json={
+                "name": "FortiGate Lab",
+                "host": "https://fortigate.local",
+                "apiKey": "fg_api_key_from_user",
+                "verifyTls": False,
+                "collectorHost": "127.0.0.1",
+            },
+        )
+        review_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_fail/policy/review",
+            headers=csrf_headers(client),
+            json={
+                "intent": "temporary_block",
+                "scope": "source_destination",
+                "source_interface": "port2",
+                "destination_interface": "port3",
+                "source_ip": "192.0.2.50",
+                "destination_ip": "198.51.100.10",
+                "duration_minutes": 30,
+                "incident_id": "inc_123",
+                "playbook_run_id": "run_123",
+            },
+        )
+        review_payload = review_response.json()
+        apply_response = client.post(
+            "/api/integrations/fortigate/int_fgt_policy_fail/policy/apply",
+            headers=csrf_headers(client),
+            json={
+                "request_id": review_payload["request_id"],
+                "review_hash": review_payload["review_hash"],
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(
+            integrations_router.get_fortigate_integration_service,
+            None,
+        )
+        app.dependency_overrides.pop(integrations_router.get_policy_db, None)
+        app.dependency_overrides.pop(auth_dependencies.get_auth_audit_store, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert apply_response.status_code == 502
+    assert apply_response.json() == {
+        "detail": "FortiGate API request failed with HTTP 500: name size[35]"
+    }
+    assert [event.action for event in audit_store.events][-1:] == [
+        "integration.fortigate.policy_apply_failed"
     ]
 
 

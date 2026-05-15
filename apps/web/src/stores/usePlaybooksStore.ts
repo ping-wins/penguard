@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   approvePlaybookRun,
   createPlaybook,
+  listPlaybookRuns,
   listPlaybookNodeTypes,
   listPlaybooks,
   runPlaybook,
@@ -16,6 +17,7 @@ import {
 
 export const usePlaybooksStore = defineStore('playbooks', () => {
   const playbooks = ref<Playbook[]>([])
+  const runHistory = ref<PlaybookRun[]>([])
   const nodeTypes = ref<PlaybookNodeType[]>([])
   const simulations = ref<Record<string, PlaybookSimulation>>({})
   const runs = ref<Record<string, PlaybookRun>>({})
@@ -35,12 +37,14 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     isLoading.value = true
     error.value = null
     try {
-      const [nextPlaybooks, nextNodeTypes] = await Promise.all([
+      const [nextPlaybooks, nextNodeTypes, nextRunHistory] = await Promise.all([
         listPlaybooks(),
         listPlaybookNodeTypes(),
+        listPlaybookRuns(),
       ])
       playbooks.value = nextPlaybooks
       nodeTypes.value = nextNodeTypes
+      runHistory.value = nextRunHistory
     } catch (e: any) {
       error.value = e?.message ?? 'Failed to load playbooks'
     } finally {
@@ -69,6 +73,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     try {
       const result = await runPlaybook(incidentId, playbookId)
       runs.value[result.id] = result
+      runHistory.value = [result, ...runHistory.value.filter((run) => run.id !== result.id)]
       latestRunByPlaybook.value[playbookId] = result.id
       return result
     } catch (e: any) {
@@ -85,6 +90,8 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     try {
       const result = await approvePlaybookRun(runId)
       runs.value[result.id] = result
+      runHistory.value = runHistory.value.map((run) => run.id === result.id ? result : run)
+      if (!runHistory.value.some((run) => run.id === result.id)) runHistory.value = [result, ...runHistory.value]
       if (result.playbookId) latestRunByPlaybook.value[result.playbookId] = result.id
       return result
     } catch (e: any) {
@@ -112,6 +119,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
 
   return {
     playbooks,
+    runHistory,
     nodeTypes,
     simulations,
     runs,

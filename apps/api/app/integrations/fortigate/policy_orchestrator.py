@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
-import re
 from typing import Any
 
 from app.integrations.fortigate.policy_models import (
@@ -12,12 +11,12 @@ from app.integrations.fortigate.policy_models import (
     FortiGatePolicyObjectChange,
     FortiGatePolicyPreflightRequest,
     FortiGatePolicyPreflightResponse,
-    FortiGatePolicyScope,
 )
 
 FD_LAB_PREFIX = "FD_LAB_ALLOW"
 FD_TMP_BLOCK_PREFIX = "FD_TMP_BLOCK"
 FD_ADDR_PREFIX = "FD_ADDR"
+POLICY_NAME_DIGEST_LENGTH = 12
 
 
 def normalize_address_name(ip_value: str) -> str:
@@ -175,12 +174,7 @@ class FortiGatePolicyOrchestrator:
             if request.intent == FortiGatePolicyIntent.LAB_ALLOW_LOG
             else FD_TMP_BLOCK_PREFIX
         )
-        parts = [prefix, _name_part(request.source_ip)]
-        if request.destination_ip:
-            parts.extend(["TO", _name_part(request.destination_ip)])
-        if request.scope == FortiGatePolicyScope.SOURCE_DESTINATION_SERVICE and request.service:
-            parts.append(_name_part(request.service))
-        return "_".join(parts)
+        return f"{prefix}_{_policy_digest(request)}"
 
     def _placement(
         self,
@@ -232,6 +226,17 @@ class FortiGatePolicyOrchestrator:
         return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-def _name_part(value: str) -> str:
-    normalized = re.sub(r"[^A-Za-z0-9]+", "_", value.strip())
-    return normalized.strip("_").upper()
+def _policy_digest(request: FortiGatePolicyPreflightRequest) -> str:
+    payload = {
+        "intent": str(request.intent),
+        "scope": str(request.scope),
+        "sourceInterface": request.source_interface,
+        "destinationInterface": request.destination_interface,
+        "sourceIp": str(ipaddress.ip_address(request.source_ip)),
+        "destinationIp": (
+            str(ipaddress.ip_address(request.destination_ip)) if request.destination_ip else ""
+        ),
+        "service": request.service or "ALL",
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode()).hexdigest()[:POLICY_NAME_DIGEST_LENGTH].upper()

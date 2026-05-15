@@ -31,6 +31,7 @@ SOC_WIDGET_IDS = {
     "soc-top-entities",
     "xdr-endpoint-health",
     "soar-active-playbook-runs",
+    "soar-playbook-run-history",
 }
 
 
@@ -149,6 +150,10 @@ def _soc_widget_data(
             active_runs = [run for run in runs if run.get("status") != "completed"]
             data = {"runs": active_runs, "count": len(active_runs)}
             source = "soar_skipper"
+        case "soar-playbook-run-history":
+            runs = _items(soar_client.request("GET", "/playbook-runs"))
+            data = {"runs": runs, "count": len(runs), "summary": _playbook_run_summary(runs)}
+            source = "soar_skipper"
         case _:
             raise HTTPException(status_code=404, detail="Widget data not found")
     _log_soc_widget_data(
@@ -209,6 +214,12 @@ def _soc_widget_summary(widget_id: str, data: dict[str, Any]) -> str:
             return f"endpoints={len(data.get('endpoints', []))} total={data.get('total', 0)}"
         case "soar-active-playbook-runs":
             return f"runs={len(data.get('runs', []))} count={data.get('count', 0)}"
+        case "soar-playbook-run-history":
+            summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+            return (
+                f"runs={len(data.get('runs', []))} count={data.get('count', 0)} "
+                f"active={summary.get('active', 0)} completed={summary.get('completed', 0)}"
+            )
         case _:
             return "unknown"
 
@@ -225,6 +236,8 @@ def _soc_widget_is_empty(widget_id: str, data: dict[str, Any]) -> bool:
             return not data.get("endpoints")
         case "soar-active-playbook-runs":
             return not data.get("runs")
+        case "soar-playbook-run-history":
+            return not data.get("runs")
         case _:
             return False
 
@@ -234,6 +247,29 @@ def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
+
+
+def _playbook_run_summary(runs: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {
+        "active": 0,
+        "completed": 0,
+        "failed": 0,
+        "running": 0,
+        "waitingApproval": 0,
+    }
+    for run in runs:
+        status = str(run.get("status") or "").lower()
+        if status in {"completed", "succeeded"}:
+            summary["completed"] += 1
+        elif status in {"failed", "error"}:
+            summary["failed"] += 1
+        else:
+            summary["active"] += 1
+        if status == "running":
+            summary["running"] += 1
+        if status in {"waiting_approval", "pending_approval"}:
+            summary["waitingApproval"] += 1
+    return summary
 
 
 def _incidents_by_severity(incidents: list[dict[str, Any]]) -> dict[str, Any]:

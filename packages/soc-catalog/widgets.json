@@ -44,6 +44,15 @@
       "template": "table",
       "defaultSize": { "w": 5, "h": 3 },
       "dataEndpoint": "/api/widgets/soar-active-playbook-runs/data"
+    },
+    {
+      "id": "soar-playbook-run-history",
+      "title": "Playbook Run History",
+      "source": "soar_skipper",
+      "kind": "table",
+      "template": "playbook-run-history",
+      "defaultSize": { "w": 6, "h": 5 },
+      "dataEndpoint": "/api/widgets/soar-playbook-run-history/data"
     }
   ]
 }

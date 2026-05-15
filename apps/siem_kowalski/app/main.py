@@ -18,6 +18,15 @@ logger = logging.getLogger("uvicorn.error")
 ALLOWED_SCAN_WINDOW_SECONDS = 60
 ALLOWED_SCAN_MIN_UNIQUE_PORTS = 20
 ALLOWED_SCAN_EVENT_LIMIT = 250
+FORWARDED_SCAN_ACTIONS = {
+    "accept",
+    "allow",
+    "allowed",
+    "close",
+    "client-rst",
+    "server-rst",
+    "timeout",
+}
 
 
 def _triage_from_severity(severity: str) -> TriageLevel:
@@ -422,7 +431,7 @@ def _enrich_allowed_port_scan(event: SecurityEvent) -> SecurityEvent:
     if event.event_type != "network.event":
         return event
 
-    if str(event.attributes.get("action", "")).lower() not in {"accept", "allow", "allowed"}:
+    if not _is_forwarded_scan_action(event):
         return event
 
     integration_id = event.attributes.get("integrationId") or event.entities.get("integrationId")
@@ -455,7 +464,7 @@ def _enrich_allowed_port_scan(event: SecurityEvent) -> SecurityEvent:
             continue
         if not _same_network_flow(event, previous):
             continue
-        if str(previous.attributes.get("action", "")).lower() not in {"accept", "allow", "allowed"}:
+        if not _is_forwarded_scan_action(previous):
             continue
 
         port = _coerce_int(previous.attributes.get("destinationPort"))
@@ -486,6 +495,10 @@ def _enrich_allowed_port_scan(event: SecurityEvent) -> SecurityEvent:
             "attributes": attributes,
         }
     )
+
+
+def _is_forwarded_scan_action(event: SecurityEvent) -> bool:
+    return str(event.attributes.get("action", "")).lower() in FORWARDED_SCAN_ACTIONS
 
 
 def _same_network_flow(left: SecurityEvent, right: SecurityEvent) -> bool:

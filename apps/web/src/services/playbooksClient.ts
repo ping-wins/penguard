@@ -53,9 +53,12 @@ export type PlaybookRun = {
   id: string
   incidentId?: string
   playbookId?: string
+  name?: string
   dryRun?: boolean
   status: string
-  steps: PlaybookSimulationStep[]
+  steps?: PlaybookSimulationStep[]
+  createdAt?: string
+  startedAt?: string
   ticketUpdate?: {
     status?: string
     incidentId?: string
@@ -77,6 +80,7 @@ async function parseOrThrow<T>(response: Response, fallback: string): Promise<T>
 }
 
 type PlaybookListResponse = Playbook[] | { items?: Playbook[] }
+type PlaybookRunListResponse = PlaybookRun[] | { items?: PlaybookRun[] }
 type PlaybookNodeTypesResponse = { items?: PlaybookNodeType[] }
 
 export async function listPlaybookNodeTypes(): Promise<PlaybookNodeType[]> {
@@ -91,6 +95,16 @@ export async function listPlaybooks(): Promise<Playbook[]> {
   const data = await parseOrThrow<PlaybookListResponse>(
     await fetch('/api/soc/playbooks', { credentials: 'include' }),
     'Failed to load playbooks',
+  )
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data.items)) return data.items
+  return []
+}
+
+export async function listPlaybookRuns(): Promise<PlaybookRun[]> {
+  const data = await parseOrThrow<PlaybookRunListResponse>(
+    await fetch('/api/soc/playbook-runs', { credentials: 'include' }),
+    'Failed to load playbook runs',
   )
   if (Array.isArray(data)) return data
   if (Array.isArray(data.items)) return data.items

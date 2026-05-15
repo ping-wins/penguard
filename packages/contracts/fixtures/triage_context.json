@@ -1,0 +1,94 @@
+{
+  "incidentId": "inc_01",
+  "ruleId": "network_scan",
+  "alertFamily": "network.scan",
+  "attackType": "allowed_port_scan",
+  "severity": "high",
+  "confidence": "high",
+  "recommendedTriageLevel": "T1",
+  "recommendedTicketStatus": "investigating",
+  "summary": "Network scan telemetry was observed.",
+  "evidence": [
+    {
+      "id": "ev_unique_destination_ports",
+      "type": "threshold",
+      "label": "Unique destination ports",
+      "value": 20,
+      "threshold": {
+        "operator": "gte",
+        "value": 20,
+        "windowSeconds": 60
+      },
+      "severity": "high",
+      "source": "siem_kowalski"
+    }
+  ],
+  "entities": [
+    {
+      "id": "ip:192.0.2.10",
+      "kind": "ip",
+      "label": "Source IP",
+      "value": "192.0.2.10",
+      "source": "siem_kowalski"
+    }
+  ],
+  "impactedAssets": [
+    {
+      "id": "ip:198.51.100.20",
+      "kind": "ip",
+      "label": "Destination IP",
+      "value": "198.51.100.20"
+    }
+  ],
+  "mitreMappings": [
+    {
+      "tacticId": "TA0007",
+      "tacticName": "Discovery",
+      "techniqueId": "T1046",
+      "techniqueName": "Network Service Discovery",
+      "subtechniqueId": null,
+      "subtechniqueName": null,
+      "confidence": "high",
+      "reason": "Unique destination port evidence crossed the scan threshold.",
+      "evidenceIds": ["ev_unique_destination_ports"]
+    }
+  ],
+  "responseCandidates": [
+    {
+      "id": "fortigate.temporary_source_destination_block",
+      "type": "fortigate",
+      "label": "Temporarily block source to target",
+      "description": "Create a FortiDashboard-owned temporary block scoped to the observed source and destination after approval.",
+      "riskLevel": "high",
+      "requiresApproval": true,
+      "availableNow": true,
+      "providerRequired": "fortigate",
+      "reason": "FortiGate integration, source IP and destination IP are present.",
+      "parameters": {
+        "integrationId": "fgt_lab",
+        "sourceIp": "192.0.2.10",
+        "destinationIp": "198.51.100.20"
+      },
+      "mappedMitreTechniqueIds": ["T1046"],
+      "playbookTemplateIds": ["pb_network_scan_triage", "pb_fortigate_temp_block"]
+    }
+  ],
+  "playbookTemplates": [
+    {
+      "templateId": "pb_network_scan_triage",
+      "label": "Network scan triage",
+      "reason": "Network scan evidence is present and maps to service discovery.",
+      "confidence": "high",
+      "requiredCandidateIds": ["fortigate.temporary_source_destination_block"],
+      "parameters": {
+        "sourceIp": "192.0.2.10",
+        "destinationIp": "198.51.100.20",
+        "integrationId": "fgt_lab",
+        "destinationPorts": [22, 80, 443]
+      },
+      "requiresApproval": true
+    }
+  ],
+  "missingData": [],
+  "generatedAt": "2026-05-15T12:00:00Z"
+}

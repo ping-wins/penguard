@@ -36,6 +36,8 @@ const WIDGET_SIZE_CONSTRAINTS: Record<string, WidgetSizeConstraints> = {
   'fortigate-interface-health': { minW: 440, minH: 340, maxW: 880, maxH: 700 },
   'fortigate-recent-events': { minW: 440, minH: 340, maxW: 880, maxH: 700 },
   'fortigate-anomaly-highlights': { minW: 420, minH: 320, maxW: 840, maxH: 680 },
+  'soar-active-playbook-runs': { minW: 440, minH: 320, maxW: 900, maxH: 700 },
+  'soar-playbook-run-history': { minW: 520, minH: 380, maxW: 980, maxH: 760 },
 }
 
 type CreateWidgetInstanceOptions = {

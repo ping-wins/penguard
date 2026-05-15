@@ -9,6 +9,7 @@ import WidgetRecentEvents from '../../src/components/widgets/WidgetRecentEvents.
 import WidgetRiskPosture from '../../src/components/widgets/WidgetRiskPosture.vue'
 import WidgetThreats from '../../src/components/widgets/WidgetThreats.vue'
 import WidgetGenericData from '../../src/components/widgets/WidgetGenericData.vue'
+import WidgetSoarPlaybookRunHistory from '../../src/components/widgets/soc/WidgetSoarPlaybookRunHistory.vue'
 import TicketsPanel from '../../src/components/tickets/TicketsPanel.vue'
 import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
@@ -283,6 +284,180 @@ describe('FortiGate widget renderers', () => {
     expect(explanation).toContain('42')
     expect(explanation).toContain('attributes.count gte 20')
     expect(explanation).toContain('port_scan')
+    wrapper.unmount()
+  })
+
+  it('renders deterministic MITRE triage context in the ticket drawer', async () => {
+    const authStore = useAuthStore()
+    authStore.csrfToken = 'csrf_01'
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/soc/tickets') {
+        return jsonResponse({
+          items: [{
+            id: 'inc_01',
+            ruleId: 'network_scan',
+            title: 'Possible port scan',
+            severity: 'high',
+            status: 'open',
+            source: 'kowalski',
+            attributes: {
+              attackType: 'allowed_port_scan',
+              uniqueDestinationPortCount: 20,
+            },
+            entities: { sourceIp: '192.0.2.10', destinationIp: '198.51.100.20' },
+            summary: 'Network scan telemetry was observed.',
+            createdAt: '2026-05-12T10:00:00Z',
+            timeline: [],
+            eventIds: ['evt_01'],
+            triageLevel: 'T1',
+            ticketStatus: 'new',
+            assigneeUserId: null,
+            aiAnalysisId: null,
+          }],
+        })
+      }
+      if (url === '/api/soc/incidents/inc_01/triage-context') {
+        return jsonResponse({
+          incidentId: 'inc_01',
+          ruleId: 'network_scan',
+          alertFamily: 'network.scan',
+          attackType: 'allowed_port_scan',
+          severity: 'high',
+          confidence: 'high',
+          recommendedTriageLevel: 'T1',
+          recommendedTicketStatus: 'investigating',
+          summary: 'Network scan telemetry was observed.',
+          evidence: [
+            {
+              id: 'ev_unique_destination_ports',
+              type: 'threshold',
+              label: 'Unique destination ports',
+              value: 20,
+              threshold: { operator: 'gte', value: 20, windowSeconds: 60 },
+              severity: 'high',
+              source: 'siem_kowalski',
+            },
+          ],
+          entities: [],
+          impactedAssets: [],
+          mitreMappings: [
+            {
+              tacticId: 'TA0007',
+              tacticName: 'Discovery',
+              techniqueId: 'T1046',
+              techniqueName: 'Network Service Discovery',
+              subtechniqueId: null,
+              subtechniqueName: null,
+              confidence: 'high',
+              reason: 'Unique destination port evidence crossed the scan threshold.',
+              evidenceIds: ['ev_unique_destination_ports'],
+            },
+          ],
+          responseCandidates: [
+            {
+              id: 'fortigate.temporary_source_destination_block',
+              type: 'fortigate',
+              label: 'Temporarily block source to target',
+              description: 'Create a FortiDashboard-owned temporary block scoped to the observed source and destination after approval.',
+              riskLevel: 'high',
+              requiresApproval: true,
+              availableNow: true,
+              providerRequired: 'fortigate',
+              reason: 'FortiGate integration, source IP and destination IP are present.',
+              parameters: {},
+              mappedMitreTechniqueIds: ['T1046'],
+              playbookTemplateIds: ['pb_network_scan_triage'],
+            },
+          ],
+          playbookTemplates: [
+            {
+              templateId: 'pb_network_scan_triage',
+              label: 'Network scan triage',
+              reason: 'Network scan evidence is present and maps to service discovery.',
+              confidence: 'high',
+              requiredCandidateIds: ['fortigate.temporary_source_destination_block'],
+              parameters: {},
+              requiresApproval: true,
+            },
+          ],
+          missingData: [],
+          generatedAt: '2026-05-15T12:00:00Z',
+        })
+      }
+      if (url === '/api/soc/incidents/inc_01/playbook-recommendations/pb_network_scan_triage/instantiate') {
+        return jsonResponse({
+          ticketId: 'inc_01',
+          playbook: {
+            id: 'pb_tpl_01',
+            name: 'Network scan triage — Possible port scan',
+            enabled: false,
+            nodes: [
+              { id: 'trigger', type: 'trigger.incident_created' },
+              { id: 'temporary_block', type: 'fortigate.temporary_block' },
+            ],
+            edges: [{ from: 'trigger', to: 'temporary_block' }],
+          },
+          simulation: {
+            dryRun: true,
+            valid: true,
+            steps: [
+              {
+                nodeId: 'temporary_block',
+                nodeType: 'fortigate.temporary_block',
+                status: 'waiting_approval',
+                sensitive: true,
+              },
+            ],
+          },
+          suggestion: {
+            incidentId: 'inc_01',
+            provider: 'deterministic',
+            summary: 'Network scan evidence is present.',
+            steps: [
+              {
+                title: 'Prepare FortiGate temporary block',
+                description: 'Create policy review after approval.',
+                playbookNodeType: 'fortigate.temporary_block',
+                severity: 'high',
+                requiresApproval: true,
+              },
+            ],
+            playbookDraftId: 'pb_tpl_01',
+          },
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mount(TicketsPanel, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-test="ticket-card-inc_01"]').trigger('click')
+    await flushPromises()
+
+    const triageContext = wrapper.get('[data-test="ticket-triage-context"]').text()
+    expect(triageContext).toContain('Deterministic triage')
+    expect(triageContext).toContain('network.scan')
+    expect(triageContext).toContain('T1046')
+    expect(triageContext).toContain('Network Service Discovery')
+    expect(triageContext).toContain('Unique destination ports')
+    expect(triageContext).toContain('Temporarily block source to target')
+    expect(triageContext).toContain('Network scan triage')
+
+    await wrapper.get('[data-test="ticket-instantiate-template-pb_network_scan_triage"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/soc/incidents/inc_01/playbook-recommendations/pb_network_scan_triage/instantiate',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(wrapper.get('[data-test="ticket-draft-playbook-result"]').text()).toContain('pb_tpl_01')
     wrapper.unmount()
   })
 
@@ -682,14 +857,40 @@ describe('FortiGate widget renderers', () => {
 
   it('renders normalized FortiGate firewall policies', () => {
     const wrapper = mount(WidgetFirewallPolicies, {
+      global: {
+        plugins: [pinia, i18n],
+      },
       props: {
         data: {
           policies: [
             {
               id: 1,
+              name: 'FD_TMP_BLOCK_32FD0707AD9A',
+              sourceInterfaces: ['port2'],
+              destinationInterfaces: ['port3'],
+              sourceAddresses: ['FD_ADDR_10_10_10_10'],
+              destinationAddresses: ['FD_ADDR_10_10_20_10'],
+              services: ['ALL'],
+              schedule: 'always',
+              logging: 'all',
+              comments: 'FortiDashboard owned temporary block policy',
+              policyKind: 'temporary_block',
+              isBlocking: true,
+              isFortiDashboardOwned: true,
+              action: 'deny',
+              status: 'enabled',
+            },
+            {
+              id: 2,
               name: 'Allow SOC outbound',
-              srcIntf: 'port1',
-              dstIntf: 'wan1',
+              sourceInterfaces: ['port1'],
+              destinationInterfaces: ['wan1'],
+              sourceAddresses: ['all'],
+              destinationAddresses: ['all'],
+              services: ['HTTPS'],
+              schedule: 'always',
+              logging: 'all',
+              policyKind: 'standard',
               action: 'accept',
               status: 'enabled',
             },
@@ -698,11 +899,99 @@ describe('FortiGate widget renderers', () => {
       },
     })
 
+    expect(wrapper.text()).toContain('FD_TMP_BLOCK_32FD0707AD9A')
+    expect(wrapper.text()).toContain('Block')
+    expect(wrapper.text()).toContain('Temporary block')
+    expect(wrapper.text()).toContain('FortiDashboard')
+    expect(wrapper.text()).toContain('port2 -> port3')
+    expect(wrapper.text()).toContain('FD_ADDR_10_10_10_10')
+    expect(wrapper.text()).toContain('FD_ADDR_10_10_20_10')
+    expect(wrapper.text()).toContain('Log all')
+    expect(wrapper.text()).toContain('ALL')
     expect(wrapper.text()).toContain('Allow SOC outbound')
     expect(wrapper.text()).toContain('port1')
     expect(wrapper.text()).toContain('wan1')
-    expect(wrapper.text()).toContain('accept')
+    expect(wrapper.text()).toContain('Allow/log')
     expect(wrapper.text()).toContain('enabled')
+  })
+
+  it('renders all SOAR playbook run history and approves pending runs', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/auth/csrf') return jsonResponse({ csrfToken: 'csrf_01' })
+      if (url === '/api/soc/playbook-runs/run_waiting/approve') {
+        return jsonResponse({
+          id: 'run_waiting',
+          incidentId: 'inc_01',
+          playbookId: 'pb_block',
+          status: 'completed',
+          dryRun: true,
+          steps: [{ nodeType: 'approval.required', status: 'completed' }],
+        })
+      }
+      throw new Error(`unexpected url ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    useAuthStore().csrfToken = 'csrf_01'
+
+    const wrapper = mount(WidgetSoarPlaybookRunHistory, {
+      global: {
+        plugins: [pinia, i18n],
+      },
+      props: {
+        instanceId: 'inst_runs',
+        integrationId: 'int_soar',
+        catalogId: 'soar-playbook-run-history',
+        data: {
+          count: 2,
+          summary: {
+            active: 1,
+            completed: 1,
+            failed: 0,
+            running: 0,
+            waitingApproval: 1,
+          },
+          runs: [
+            {
+              id: 'run_waiting',
+              incidentId: 'inc_01',
+              playbookId: 'pb_block',
+              status: 'waiting_approval',
+              dryRun: true,
+              createdAt: '2026-05-15T16:17:29Z',
+              steps: [{ nodeType: 'approval.required', status: 'waiting_approval' }],
+            },
+            {
+              id: 'run_done',
+              incidentId: 'inc_01',
+              playbookId: 'pb_notes',
+              status: 'completed',
+              dryRun: true,
+              createdAt: '2026-05-15T16:20:22Z',
+              steps: [{ nodeType: 'case.note', status: 'completed' }],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Playbook Run History')
+    expect(wrapper.text()).toContain('run_waiting')
+    expect(wrapper.text()).toContain('pb_block')
+    expect(wrapper.text()).toContain('inc_01')
+    expect(wrapper.text()).toContain('waiting_approval')
+    expect(wrapper.text()).toContain('run_done')
+    expect(wrapper.text()).toContain('completed')
+
+    await wrapper.get('[data-test="playbook-run-history-approve-run_waiting"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/soc/playbook-runs/run_waiting/approve', expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+      headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf_01' }),
+    }))
+    expect(wrapper.text()).toContain('completed')
   })
 
   it('renders FortiGate risk posture signals and summary', () => {

@@ -73,6 +73,21 @@
       }
     },
     {
+      "id": "soar-playbook-run-history",
+      "title": "Playbook Run History",
+      "kind": "table",
+      "source": "soar_skipper",
+      "requiredCapabilities": ["playbook_runs"],
+      "defaultSize": { "w": 6, "h": 5 },
+      "dataEndpoint": "/api/widgets/soar-playbook-run-history/data",
+      "template": "playbook-run-history",
+      "dataGroup": "playbooks",
+      "fieldBindings": {
+        "rows": "playbookRun.items",
+        "summary": "playbookRun.summary"
+      }
+    },
+    {
       "id": "soc-sla-breach",
       "title": "SLA Breach",
       "kind": "feed",

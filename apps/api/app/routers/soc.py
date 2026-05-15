@@ -37,6 +37,7 @@ from app.integrations.fortigate.service import (
 )
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
 from app.soc.client import SocServiceClient
+from app.soc.triage import build_triage_context
 
 router = APIRouter(tags=["soc"])
 
@@ -229,6 +230,213 @@ def _containment_to_dict(
         ],
         "playbookDraftId": suggestion.playbook_draft_id,
     }
+
+
+def _incident_value(incident: dict[str, Any], key: str) -> str:
+    attributes = incident.get("attributes") if isinstance(incident.get("attributes"), dict) else {}
+    entities = incident.get("entities") if isinstance(incident.get("entities"), dict) else {}
+    for payload in (attributes, entities):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            return str(value)
+    return ""
+
+
+def _append_node(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, str]],
+    previous_id: str,
+    node: dict[str, Any],
+) -> str:
+    nodes.append(node)
+    edges.append({"from": previous_id, "to": str(node["id"])})
+    return str(node["id"])
+
+
+def _mitre_technique_summary(triage_context) -> str:
+    techniques = ", ".join(
+        mapping.technique_id for mapping in triage_context.mitre_mappings
+    )
+    return techniques or "no MITRE mapping"
+
+
+def _recommended_template_playbook(
+    incident: dict[str, Any],
+    template_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    triage_context = build_triage_context(incident)
+    template = next(
+        (
+            item
+            for item in triage_context.playbook_templates
+            if item.template_id == template_id
+        ),
+        None,
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Playbook recommendation is not eligible")
+
+    source_ip = _incident_value(incident, "sourceIp")
+    destination_ip = _incident_value(incident, "destinationIp")
+    integration_id = _incident_value(incident, "integrationId")
+    title = str(incident.get("title") or triage_context.attack_type or "incident")[:80]
+    playbook_id = f"pb_tpl_{token_urlsafe(6)}"
+    nodes: list[dict[str, Any]] = [{"id": "trigger", "type": "trigger.incident_created"}]
+    edges: list[dict[str, str]] = []
+    steps: list[dict[str, Any]] = []
+    previous_id = "trigger"
+
+    previous_id = _append_node(
+        nodes,
+        edges,
+        previous_id,
+        {
+            "id": "triage_note",
+            "type": "case.note",
+            "config": {
+                "template": (
+                    f"{triage_context.alert_family} mapped to "
+                    f"{_mitre_technique_summary(triage_context)}."
+                )
+            },
+        },
+    )
+    steps.append(
+        {
+            "title": "Record triage context",
+            "description": template.reason,
+            "playbookNodeType": "case.note",
+            "severity": "low",
+            "requiresApproval": False,
+        }
+    )
+
+    if source_ip:
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "enrich_source_ip",
+                "type": "enrich.ip",
+                "config": {"field": "entities.sourceIp", "value": source_ip},
+            },
+        )
+        steps.append(
+            {
+                "title": "Enrich source IP",
+                "description": f"Collect context for source IP {source_ip}.",
+                "playbookNodeType": "enrich.ip",
+                "severity": "low",
+                "requiresApproval": False,
+            }
+        )
+
+    needs_fortigate_block = template_id in {
+        "pb_network_scan_triage",
+        "pb_fortigate_temp_block",
+        "pb_auth_bruteforce_triage",
+    } and bool(source_ip and integration_id)
+    if needs_fortigate_block:
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {"id": "approval", "type": "approval.required", "config": {"role": "admin"}},
+        )
+        scope = "source_destination" if destination_ip else "source_only"
+        block_config: dict[str, Any] = {
+            "scope": scope,
+            "durationMinutes": 30,
+            "sourceField": "entities.sourceIp",
+            "integrationId": integration_id,
+            "sourceIp": source_ip,
+        }
+        if destination_ip:
+            block_config["destinationField"] = "entities.destinationIp"
+            block_config["destinationIp"] = destination_ip
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "temporary_block",
+                "type": "fortigate.temporary_block",
+                "config": block_config,
+            },
+        )
+        steps.append(
+            {
+                "title": "Prepare FortiGate temporary block",
+                "description": "Create a governed FortiDashboard policy review after approval.",
+                "playbookNodeType": "fortigate.temporary_block",
+                "severity": "high",
+                "requiresApproval": True,
+            }
+        )
+
+    if template_id == "pb_auth_bruteforce_triage":
+        username = _incident_value(incident, "username")
+        previous_id = _append_node(
+            nodes,
+            edges,
+            previous_id,
+            {
+                "id": "identity_review_note",
+                "type": "case.note",
+                "config": {"template": f"Review account activity for {username or 'the user'}."},
+            },
+        )
+        steps.append(
+            {
+                "title": "Review account activity",
+                "description": (
+                    "Identity lockout remains unavailable until an identity "
+                    "connector exists."
+                ),
+                "playbookNodeType": "case.note",
+                "severity": "medium",
+                "requiresApproval": False,
+            }
+        )
+
+    _append_node(
+        nodes,
+        edges,
+        previous_id,
+        {
+            "id": "final_note",
+            "type": "case.note",
+            "config": {"template": "Append outcome and approval status to the ticket timeline."},
+        },
+    )
+    steps.append(
+        {
+            "title": "Record response outcome",
+            "description": "Append the execution outcome to the ticket.",
+            "playbookNodeType": "case.note",
+            "severity": "low",
+            "requiresApproval": False,
+        }
+    )
+
+    playbook = {
+        "id": playbook_id,
+        "name": f"{template.label} — {title}",
+        "enabled": False,
+        "nodes": nodes,
+        "edges": edges,
+    }
+    suggestion = {
+        "incidentId": triage_context.incident_id,
+        "provider": "deterministic",
+        "summary": template.reason,
+        "steps": steps,
+        "playbookDraftId": playbook_id,
+    }
+    return playbook, suggestion
 
 
 def _request_locale(request: Request) -> str:
@@ -434,6 +642,75 @@ def draft_containment_playbook(
         "playbook": created_playbook,
         "simulation": simulation,
         "suggestion": _containment_to_dict(suggestion, provider_name=provider.name),
+    }
+
+
+@router.post(
+    "/soc/incidents/{incident_id}/playbook-recommendations/{template_id}/instantiate",
+    status_code=status.HTTP_201_CREATED,
+)
+def instantiate_recommended_playbook(
+    incident_id: str,
+    template_id: str,
+    request: Request,
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    soar_client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    incident = siem_client.request("GET", f"/incidents/{incident_id}")
+    playbook_payload, suggestion = _recommended_template_playbook(incident, template_id)
+
+    try:
+        created_playbook = soar_client.request("POST", "/playbooks", json=playbook_payload)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.ticket.playbook_drafted",
+            outcome="failure",
+            details={
+                "ticketId": incident_id,
+                "templateId": template_id,
+                "stage": "create_playbook",
+                "provider": "deterministic",
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to create recommended playbook: {exc}",
+        ) from exc
+
+    try:
+        simulation = soar_client.request(
+            "POST",
+            f"/playbooks/{playbook_payload['id']}/simulate",
+        )
+    except Exception as exc:  # noqa: BLE001
+        simulation = {"dryRun": True, "valid": False, "steps": [], "error": str(exc)[:200]}
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.ticket.playbook_drafted",
+        details={
+            "ticketId": incident_id,
+            "playbookId": playbook_payload["id"],
+            "templateId": template_id,
+            "provider": "deterministic",
+            "stepCount": len(suggestion["steps"]),
+            "sensitive": any(step["requiresApproval"] for step in suggestion["steps"]),
+        },
+    )
+    return {
+        "ticketId": incident_id,
+        "playbook": created_playbook,
+        "simulation": simulation,
+        "suggestion": suggestion,
     }
 
 
@@ -730,6 +1007,16 @@ def get_incident(
     return client.request("GET", f"/incidents/{incident_id}")
 
 
+@router.get("/soc/incidents/{incident_id}/triage-context")
+def get_incident_triage_context(
+    incident_id: str,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    incident = client.request("GET", f"/incidents/{incident_id}")
+    return build_triage_context(incident).model_dump(by_alias=True, mode="json")
+
+
 @router.get("/soc/incidents/{incident_id}/endpoint-context")
 def get_incident_endpoint_context(
     incident_id: str,
@@ -896,6 +1183,14 @@ def run_playbook(
         },
     )
     return response
+
+
+@router.get("/soc/playbook-runs")
+def list_playbook_runs(
+    client: Annotated[SocClient, Depends(get_soar_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", "/playbook-runs")
 
 
 @router.get("/soc/playbook-runs/{run_id}")

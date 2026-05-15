@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlaybooksPanel from '../../src/components/playbooks/PlaybooksPanel.vue'
 import { i18n, setLocale } from '../../src/i18n'
-import { approvePlaybookRun, createPlaybook, getPlaybookRun, listPlaybooks, runPlaybook, simulatePlaybook } from '../../src/services/playbooksClient'
+import { approvePlaybookRun, createPlaybook, getPlaybookRun, listPlaybookRuns, listPlaybooks, runPlaybook, simulatePlaybook } from '../../src/services/playbooksClient'
 import { useAuthStore } from '../../src/stores/useAuthStore'
 import { usePlaybooksStore } from '../../src/stores/usePlaybooksStore'
 
@@ -70,6 +70,11 @@ describe('SOAR playbooks console', () => {
         edges: [],
       }, { status: 201 })
       if (url === '/api/soc/playbooks') return jsonResponse([portScanPlaybook])
+      if (url === '/api/soc/playbook-runs') return jsonResponse({
+        items: [
+          { id: 'run_01', incidentId: 'inc_01', playbookId: 'pb_port_scan_triage', status: 'waiting_approval', steps: [] },
+        ],
+      })
       if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
       if (url === '/api/auth/csrf') return jsonResponse({ csrfToken: 'csrf_01' })
       if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') {
@@ -102,6 +107,9 @@ describe('SOAR playbooks console', () => {
     await expect(listPlaybooks()).resolves.toEqual([portScanPlaybook])
     fetcher.mockResolvedValueOnce(jsonResponse({ items: [portScanPlaybook] }))
     await expect(listPlaybooks()).resolves.toEqual([portScanPlaybook])
+    await expect(listPlaybookRuns()).resolves.toEqual([
+      { id: 'run_01', incidentId: 'inc_01', playbookId: 'pb_port_scan_triage', status: 'waiting_approval', steps: [] },
+    ])
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'
     await expect(simulatePlaybook('pb_port_scan_triage')).resolves.toMatchObject({ dryRun: true, valid: true })
@@ -117,6 +125,7 @@ describe('SOAR playbooks console', () => {
     })).resolves.toMatchObject({ id: 'pb_custom_triage' })
 
     expect(fetcher).toHaveBeenCalledWith('/api/soc/playbooks', { credentials: 'include' })
+    expect(fetcher).toHaveBeenCalledWith('/api/soc/playbook-runs', { credentials: 'include' })
     expect(fetcher).toHaveBeenCalledWith('/api/soc/playbooks/pb_port_scan_triage/simulate', expect.objectContaining({
       method: 'POST',
       credentials: 'include',
@@ -155,6 +164,11 @@ describe('SOAR playbooks console', () => {
         if (playbookLoads === 2) return jsonResponse({ detail: 'SOAR unavailable' }, { status: 503 })
         return jsonResponse([portScanPlaybook])
       }
+      if (url === '/api/soc/playbook-runs') return jsonResponse({
+        items: [
+          { id: 'run_01', status: 'waiting_approval', playbookId: 'pb_port_scan_triage', incidentId: 'inc_01', steps: [] },
+        ],
+      })
       if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') return jsonResponse({ dryRun: true, valid: true, steps: [] })
       if (url === '/api/soc/incidents/inc_01/playbooks/pb_port_scan_triage/run') return jsonResponse({ id: 'run_01', status: 'waiting_approval', playbookId: 'pb_port_scan_triage', steps: [] })
       if (url === '/api/soc/playbook-runs/run_01/approve') return jsonResponse({ id: 'run_01', status: 'completed', playbookId: 'pb_port_scan_triage', steps: [] })
@@ -173,6 +187,7 @@ describe('SOAR playbooks console', () => {
 
     await store.refresh()
     expect(store.playbooks[0].id).toBe('pb_port_scan_triage')
+    expect(store.runHistory[0].id).toBe('run_01')
     expect(store.nodeTypeById['fortigate.recommend_block'].boundary).toBe('recommendation_only')
     expect(store.safeActionNodeTypes.map((nodeType) => nodeType.id)).toContain('webhook.dry_run')
     await store.simulate('pb_port_scan_triage')
@@ -189,6 +204,26 @@ describe('SOAR playbooks console', () => {
       const url = String(input)
       if (url === '/api/soc/playbooks') return jsonResponse([portScanPlaybook])
       if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
+      if (url === '/api/soc/playbook-runs') return jsonResponse({
+        items: [
+          {
+            id: 'run_older',
+            incidentId: 'inc_01',
+            playbookId: 'pb_old_waiting',
+            dryRun: true,
+            status: 'waiting_approval',
+            steps: [{ nodeId: 'approval', nodeType: 'approval.required', status: 'waiting_approval', sensitive: true }],
+          },
+          {
+            id: 'run_done',
+            incidentId: 'inc_01',
+            playbookId: 'pb_port_scan_triage',
+            dryRun: true,
+            status: 'completed',
+            steps: [{ nodeId: 'approval', nodeType: 'approval.required', status: 'completed', sensitive: true }],
+          },
+        ],
+      })
       if (url === '/api/soc/playbooks/pb_port_scan_triage/simulate') {
         return jsonResponse({
           dryRun: true,
@@ -220,6 +255,16 @@ describe('SOAR playbooks console', () => {
           steps: [{ nodeId: 'approval', nodeType: 'approval.required', status: 'completed', sensitive: true }],
         })
       }
+      if (url === '/api/soc/playbook-runs/run_older/approve') {
+        return jsonResponse({
+          id: 'run_older',
+          incidentId: 'inc_01',
+          playbookId: 'pb_old_waiting',
+          dryRun: true,
+          status: 'completed',
+          steps: [{ nodeId: 'approval', nodeType: 'approval.required', status: 'completed', sensitive: true }],
+        })
+      }
       return jsonResponse({})
     })
     vi.stubGlobal('fetch', fetcher)
@@ -233,6 +278,9 @@ describe('SOAR playbooks console', () => {
     expect(wrapper.text()).toContain('Dry-run only')
     expect(wrapper.text()).toContain('Requires approval')
     expect(wrapper.text()).toContain('Sensitive steps')
+    expect(wrapper.get('[data-test="playbook-run-history"]').text()).toContain('run_older')
+    expect(wrapper.get('[data-test="playbook-run-history"]').text()).toContain('inc_01')
+    expect(wrapper.get('[data-test="playbook-run-history"]').text()).toContain('waiting_approval')
 
     await wrapper.get('[data-test="playbook-card-pb_port_scan_triage"]').trigger('click')
     expect(wrapper.get('[data-test="playbook-detail"]').text()).toContain('trigger.incident_created')
@@ -259,6 +307,10 @@ describe('SOAR playbooks console', () => {
     await flushPromises()
     expect(wrapper.get('[data-test="playbook-run-detail"]').text()).toContain('completed')
     expect(wrapper.get('[data-test="playbook-run-detail"]').text()).toContain('Ticket contained')
+
+    await wrapper.get('[data-test="playbook-run-history-approve-run_older"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="playbook-run-history"]').text()).toContain('completed')
     wrapper.unmount()
   })
 
@@ -284,6 +336,8 @@ describe('SOAR playbooks console', () => {
         return jsonResponse(payload, { status: 201 })
       }
       if (url === '/api/soc/playbooks') return jsonResponse([])
+      if (url === '/api/soc/playbook-runs') return jsonResponse({ items: [] })
+      if (url === '/api/soc/playbook-node-types') return jsonResponse(nodeTypesResponse)
       throw new Error(`unexpected url ${url}`)
     })
     vi.stubGlobal('fetch', fetcher)
