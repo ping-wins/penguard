@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Implementation status:** executed on `agent/fortigate-policy-orchestration-design`
+on 2026-05-15. The shipped slice covers allowed FortiGate port-scan detection,
+FortiGate CMDB policy helpers, governed policy review/apply persistence and
+BFF endpoints, SOAR `fortigate.temporary_block`, the Lab Policy Wizard and the
+ticket drawer review/apply flow. The task-level checkboxes below are retained
+as the original execution checklist; product status now lives in
+`docs/product/feature-map.md` and `docs/product/roadmap.md`.
+
 **Goal:** Ship the first governed FortiGate firewall-policy orchestration slice: a lab allow+log wizard that creates real logged policies for detection demos, allowed-port-scan detection in `siem_kowalski`, and a ticket-linked SOAR approval path that turns an incident into a reviewed temporary FortiGate block.
 
 **Architecture:** Keep `apps/api` as the only component that talks to FortiGate. Add a FortiGate policy orchestrator behind audited BFF endpoints, store policy change requests in Postgres, expose the workflow through the Vue cockpit, and let `siem_kowalski` detect real scan behavior from forwarded FortiGate traffic logs. SOAR remains the approval/workflow layer, but the final FortiGate write is executed by explicit cockpit action through `apps/api`.

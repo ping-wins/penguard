@@ -14,6 +14,10 @@ Customer-facing changelog. Internal implementation plans stay in
 - Added shared frontend realtime widget state so duplicate widgets render the
   same latest provider snapshot.
 - Added audit-to-SIEM forwarding for security-relevant BFF actions.
+- Added governed FortiGate policy orchestration: lab allow+log wizard,
+  ticket-linked temporary block review/apply, review hashes and audit events.
+- Added SIEM detection for allowed FortiGate port-scan traffic when an allow+log
+  policy records many destination ports from one source in the detection window.
 - Added product documentation set: feature map, roadmap, timeline and release
   notes.
 
@@ -27,8 +31,8 @@ Customer-facing changelog. Internal implementation plans stay in
   lab/demo enablement.
 - The cockpit keeps SOC and FortiGate widget data source labels visible so
   analysts can distinguish live, simulator, seeded demo and scripted AI output.
-- FortiGate policy changes are now documented as governed orchestration work
-  rather than draft/mock-only guidance.
+- FortiGate policy changes now use governed orchestration work rather than
+  draft/mock-only CLI guidance.
 
 ### Fixed
 

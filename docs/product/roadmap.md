@@ -21,7 +21,7 @@ Acceptance criteria:
 - [ ] Realtime event payloads expose enough metadata for an operator-facing
   "last telemetry source" indicator.
 - [ ] Incident dedupe prevents repeated alerts for the same rule/entity/window.
-- [ ] FortiGate onboarding includes governed policy orchestration for
+- [x] FortiGate onboarding includes governed policy orchestration for
   log-enabled lab/customer traffic paths, including preflight, diff/summary,
   approval and audit.
 
