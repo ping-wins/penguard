@@ -20,6 +20,7 @@ from app.integrations.penguin_tools import (
     expected_tool_type_for_widget,
 )
 from app.routers.soc import get_siem_client, get_soar_client, get_xdr_client
+from datetime import UTC, datetime, timedelta
 
 router = APIRouter(tags=["widgets"])
 logger = logging.getLogger("uvicorn.error")
@@ -338,15 +339,14 @@ def _window_seconds(window: str) -> int:
     return {"15m": 900, "1h": 3600, "6h": 21600, "24h": 86400}.get(window, 3600)
 
 
-def _parse_dt(value: Any) -> "datetime":
-    from datetime import UTC, datetime as _datetime
-    if isinstance(value, _datetime):
+def _parse_dt(value: Any) -> datetime:
+    if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
     try:
-        dt = _datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except (TypeError, ValueError):
-        return _datetime.min.replace(tzinfo=UTC)
+        return datetime.min.replace(tzinfo=UTC)
 
 
 def _waf_dos_incidents(siem_client: SocWidgetClient, *, since: "datetime") -> list[dict[str, Any]]:
@@ -375,29 +375,28 @@ def _waf_dos_rate(
     window: str,
     siem_client: SocWidgetClient,
 ) -> dict[str, Any]:
-    from datetime import UTC, datetime, timedelta
     seconds = _window_seconds(window)
     since = datetime.now(UTC) - timedelta(seconds=seconds)
 
-    if source == "raw":
+    use_raw = source == "raw"
+    if use_raw:
         records = _waf_dos_events(siem_client, since=since, limit=500)
-        ts_key = "occurredAt"
-        def is_blocked(r: dict[str, Any]) -> bool:
-            attrs = r.get("attributes") or {}
-            return str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
     else:
         records = _waf_dos_incidents(siem_client, since=since)
-        ts_key = "createdAt"
-        def is_blocked(r: dict[str, Any]) -> bool:  # noqa: E301
-            return True
 
     buckets: dict[str, dict[str, int]] = {}
     for record in records:
+        ts_key = "occurredAt" if use_raw else "createdAt"
         dt = _parse_dt(record.get(ts_key))
         bucket_key = dt.strftime("%Y-%m-%dT%H:%M:00Z")
         if bucket_key not in buckets:
             buckets[bucket_key] = {"blocked": 0, "allowed": 0}
-        if is_blocked(record):
+        if use_raw:
+            attrs = record.get("attributes") or {}
+            blocked = str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+        else:
+            blocked = True
+        if blocked:
             buckets[bucket_key]["blocked"] += 1
         else:
             buckets[bucket_key]["allowed"] += 1
@@ -416,37 +415,33 @@ def _waf_dos_top_ips(
     limit: int,
     siem_client: SocWidgetClient,
 ) -> dict[str, Any]:
-    from datetime import UTC, datetime, timedelta
     seconds = _window_seconds(window)
     since = datetime.now(UTC) - timedelta(seconds=seconds)
 
-    if source == "raw":
+    use_raw = source == "raw"
+    if use_raw:
         records = _waf_dos_events(siem_client, since=since, limit=500)
-        def get_ip(r: dict[str, Any]) -> str:
-            return str(r.get("entities", {}).get("sourceIp") or "")
-        def get_ts(r: dict[str, Any]) -> str:
-            return str(r.get("occurredAt") or "")
-        def get_blocked(r: dict[str, Any]) -> bool:
-            attrs = r.get("attributes") or {}
-            return str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
     else:
         records = _waf_dos_incidents(siem_client, since=since)
-        def get_ip(r: dict[str, Any]) -> str:  # noqa: E301
-            return str(r.get("entities", {}).get("sourceIp") or "")
-        def get_ts(r: dict[str, Any]) -> str:  # noqa: E301
-            return str(r.get("createdAt") or "")
-        def get_blocked(_r: dict[str, Any]) -> bool:  # noqa: E301
-            return True
 
     ip_data: dict[str, dict[str, Any]] = {}
     for record in records:
-        ip = get_ip(record)
+        if use_raw:
+            ip = str(record.get("entities", {}).get("sourceIp") or "")
+            ts = str(record.get("occurredAt") or "")
+            attrs = record.get("attributes") or {}
+            is_blocked = str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+        else:
+            ip = str(record.get("entities", {}).get("sourceIp") or "")
+            ts = str(record.get("createdAt") or "")
+            is_blocked = True
         if not ip:
             continue
         if ip not in ip_data:
-            ip_data[ip] = {"count": 0, "lastSeen": "", "blocked": get_blocked(record)}
+            ip_data[ip] = {"count": 0, "lastSeen": "", "blocked": False}
         ip_data[ip]["count"] += 1
-        ts = get_ts(record)
+        if is_blocked:
+            ip_data[ip]["blocked"] = True
         if ts > ip_data[ip]["lastSeen"]:
             ip_data[ip]["lastSeen"] = ts
 
@@ -464,8 +459,7 @@ def _waf_dos_feed(
     limit: int,
     siem_client: SocWidgetClient,
 ) -> dict[str, Any]:
-    from datetime import UTC, datetime, timedelta
-    since = datetime.now(UTC) - timedelta(hours=24)
+    since = datetime.now(UTC) - timedelta(hours=24)  # feed always shows last 24h regardless of window
 
     if source == "raw":
         records = _waf_dos_events(siem_client, since=since, limit=500)
@@ -479,8 +473,8 @@ def _waf_dos_feed(
                 "message": r.get("message") or "DoS event",
                 "policy": r.get("attributes", {}).get("policy") or "",
             }
-            for r in records
-        ][:limit]
+            for r in records[:limit]
+        ]
     else:
         records = _waf_dos_incidents(siem_client, since=since)
         records.sort(key=lambda r: r.get("createdAt") or "", reverse=True)

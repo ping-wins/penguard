@@ -255,3 +255,33 @@ def test_waf_widget_invalid_source_falls_back_to_siem():
 
     assert resp.status_code == 200
     assert resp.json()["meta"]["source"] == "siem"
+
+
+def test_waf_widget_unknown_id_returns_404():
+    fake = FakeSiemClient()
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-unknown/data")
+
+    # waf-dos-unknown is not in WAF_WIDGET_IDS so falls through to integrationId check
+    assert resp.status_code == 422
+
+
+def test_waf_dos_top_ips_blocked_updates_on_any_blocked_hit():
+    fake = FakeSiemClient(events=[
+        # first hit for this IP has action=allow
+        {"id": "evt_1", "eventType": "waf.dos", "occurredAt": _now_iso(), "severity": "medium", "entities": {"sourceIp": "10.10.10.10"}, "attributes": {"action": "allow"}},
+        # second hit is blocked — should flip blocked=True
+        {"id": "evt_2", "eventType": "waf.dos", "occurredAt": _now_iso(), "severity": "critical", "entities": {"sourceIp": "10.10.10.10"}, "attributes": {"action": "block"}},
+    ])
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-top-ips/data", params={"source": "raw"})
+
+    assert resp.status_code == 200
+    rows = resp.json()["data"]["rows"]
+    assert rows[0]["ip"] == "10.10.10.10"
+    assert rows[0]["count"] == 2
+    assert rows[0]["blocked"] is True
