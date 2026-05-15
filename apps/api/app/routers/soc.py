@@ -125,9 +125,10 @@ def _analysis_to_dict(
 
 
 _SOAR_NODE_MAPPING = {
-    "firewall.block_ip": ("fortigate.recommend_block", True),
-    "fortigate.block_ip": ("fortigate.recommend_block", True),
-    "fortigate.recommend_block": ("fortigate.recommend_block", True),
+    "firewall.block_ip": ("fortigate.temporary_block", True),
+    "fortigate.block_ip": ("fortigate.temporary_block", True),
+    "fortigate.recommend_block": ("fortigate.temporary_block", True),
+    "fortigate.temporary_block": ("fortigate.temporary_block", True),
     "notify.slack": ("notify.webhook", False),
     "notify.email": ("notify.webhook", False),
     "notify.teams": ("notify.webhook", False),

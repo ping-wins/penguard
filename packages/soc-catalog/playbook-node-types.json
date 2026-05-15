@@ -47,7 +47,43 @@
       "label": "Recommend FortiGate Block",
       "category": "action",
       "sensitive": true,
-      "dryRunOnly": true
+      "dryRunOnly": true,
+      "deprecated": true,
+      "executionMode": "dry_run",
+      "liveAvailable": false,
+      "boundary": "recommendation_only"
+    },
+    {
+      "id": "fortigate.temporary_block",
+      "label": "FortiGate Temporary Block",
+      "category": "action",
+      "sensitive": true,
+      "dryRunOnly": false,
+      "executionMode": "approval_required",
+      "liveAvailable": true,
+      "boundary": "fortigate_policy_orchestration",
+      "configSchema": {
+        "type": "object",
+        "required": ["scope", "durationMinutes", "sourceField"],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "source_only",
+              "source_destination",
+              "source_destination_service"
+            ]
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440
+          },
+          "sourceField": { "type": "string" },
+          "destinationField": { "type": "string" },
+          "serviceField": { "type": "string" }
+        }
+      }
     },
     {
       "id": "webhook.dry_run",

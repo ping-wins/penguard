@@ -419,6 +419,17 @@ def test_soar_node_types_gateway_forwards_builder_catalog():
     }
 
 
+def test_ai_firewall_steps_map_to_fortigate_temporary_block():
+    assert soc._map_ai_step_to_soar_node("firewall.block_ip") == (
+        "fortigate.temporary_block",
+        True,
+    )
+    assert soc._map_ai_step_to_soar_node("fortigate.recommend_block") == (
+        "fortigate.temporary_block",
+        True,
+    )
+
+
 def test_soar_playbook_run_approve_requires_admin():
     client = TestClient(app)
     fake_soar = FakeSocClient({"id": "pbr_01", "status": "completed"})
