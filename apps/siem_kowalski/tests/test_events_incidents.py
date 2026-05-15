@@ -144,6 +144,53 @@ def test_failed_login_burst_aggregates_three_individual_attempts_for_same_subjec
     assert brute_force["attributes"]["detection"]["observedCount"] == 3
 
 
+def test_allowed_fortigate_traffic_burst_creates_port_scan_incident():
+    client.post("/admin/reset")
+
+    for port in range(2200, 2220):
+        payload = _event_payload(
+            "network.event",
+            severity="info",
+            source_ip="192.0.2.50",
+        )
+        payload["entities"] = {
+            "integrationId": "integration-lab",
+            "sourceIp": "192.0.2.50",
+            "destinationIp": "198.51.100.10",
+        }
+        payload["attributes"] = {
+            "integrationId": "integration-lab",
+            "sourceIp": "192.0.2.50",
+            "destinationIp": "198.51.100.10",
+            "destinationPort": port,
+            "service": f"tcp/{port}",
+            "action": "accept",
+            "policyId": "FD_LAB_ALLOW_SCAN",
+            "subtype": "forward",
+            "logid": f"000000{port}",
+        }
+        response = client.post("/events", json=payload)
+        assert response.status_code == 200
+
+    incidents = client.get("/incidents").json()
+    matching = [
+        incident
+        for incident in incidents
+        if incident["ruleId"] == "network_scan"
+        and incident["attributes"].get("sourceIp") == "192.0.2.50"
+        and incident["attributes"].get("destinationIp") == "198.51.100.10"
+    ]
+
+    assert len(matching) == 1
+    incident = matching[0]
+    assert incident["severity"] == "high"
+    assert incident["attributes"]["attackType"] == "allowed_port_scan"
+    assert incident["attributes"]["uniqueDestinationPortCount"] == 20
+    assert incident["attributes"]["scanWindowSeconds"] == 60
+    assert 2200 in incident["attributes"]["destinationPorts"]
+    assert 2219 in incident["attributes"]["destinationPorts"]
+
+
 def test_incidents_preserve_event_provenance_for_demo_badges():
     event = client.post(
         "/events",
