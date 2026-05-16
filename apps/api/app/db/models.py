@@ -245,4 +245,27 @@ class WorkspaceTemplateModel(Base):
     )
 
 
+class AiAgentToolCallModel(Base):
+    __tablename__ = "ai_agent_tool_calls"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    args_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+
+
 from app.addons.installed_store import InstalledAddonModel  # noqa: E402,F401

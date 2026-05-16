@@ -1,0 +1,167 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Bot, Hammer, Play, Send, Trash2 } from 'lucide-vue-next'
+import { useAiAgentStore } from '../../stores/useAiAgentStore'
+
+const store = useAiAgentStore()
+const draft = ref('')
+const selectedBackend = ref('scripted')
+
+onMounted(async () => {
+  await store.ensureCatalog()
+  const preferred = store.backends.find((b) => b.default) ?? store.backends[0]
+  if (preferred) selectedBackend.value = preferred.name
+})
+
+onBeforeUnmount(() => {
+  store.endSession()
+})
+
+const canSend = computed(
+  () => draft.value.trim().length > 0 && !store.isStreaming,
+)
+
+async function start() {
+  await store.startSession(selectedBackend.value)
+}
+
+async function submit() {
+  if (!canSend.value) return
+  const content = draft.value.trim()
+  draft.value = ''
+  await store.sendMessage(content)
+}
+
+function previewResult(value: unknown, limit = 320): string {
+  if (value === null || value === undefined) return '∅'
+  try {
+    const text = typeof value === 'string' ? value : JSON.stringify(value)
+    return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
+  } catch {
+    return String(value)
+  }
+}
+</script>
+
+<template>
+  <section class="flex h-full min-h-0 flex-col gap-3 p-3 text-sm">
+    <header class="flex items-center justify-between gap-2 border-b border-theme-border pb-2">
+      <div class="flex items-center gap-2">
+        <Bot class="h-4 w-4 text-theme-primary" />
+        <span class="font-semibold text-theme-text">Agente IA</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <select
+          v-model="selectedBackend"
+          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs"
+          :disabled="store.isStreaming || store.isLoading"
+        >
+          <option v-for="backend in store.backends" :key="backend.name" :value="backend.name">
+            {{ backend.name }}{{ backend.default ? ' (default)' : '' }}
+          </option>
+        </select>
+        <button
+          v-if="!store.session"
+          type="button"
+          class="inline-flex items-center gap-1 rounded bg-theme-primary px-2 py-1 text-xs font-medium text-theme-on-primary disabled:opacity-50"
+          :disabled="store.isLoading"
+          @click="start"
+        >
+          <Play class="h-3 w-3" />
+          Iniciar
+        </button>
+        <button
+          v-else
+          type="button"
+          class="inline-flex items-center gap-1 rounded border border-theme-border px-2 py-1 text-xs"
+          :disabled="store.isStreaming"
+          @click="store.endSession()"
+        >
+          <Trash2 class="h-3 w-3" />
+          Encerrar
+        </button>
+      </div>
+    </header>
+
+    <p v-if="store.error" class="rounded border border-red-400/40 bg-red-950/20 p-2 text-xs text-red-200">
+      {{ store.error }}
+    </p>
+
+    <div class="flex-1 min-h-0 overflow-y-auto rounded border border-theme-border bg-theme-surface/40 p-2">
+      <div v-if="store.trace.length === 0" class="text-xs text-theme-text-muted">
+        Envie uma mensagem para o agente — por exemplo "liste meus incidentes" ou "mostre integrações".
+        Backend: <span class="font-mono">{{ selectedBackend }}</span>.
+      </div>
+      <ol class="flex flex-col gap-2">
+        <li
+          v-for="(entry, idx) in store.trace"
+          :key="`${entry.kind}-${idx}`"
+          class="rounded border border-theme-border/60 bg-theme-bg/50 p-2"
+        >
+          <div v-if="entry.kind === 'user'" class="flex items-start gap-2">
+            <span class="rounded bg-theme-primary/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-primary">
+              você
+            </span>
+            <p class="text-xs text-theme-text">{{ entry.content }}</p>
+          </div>
+
+          <div v-else-if="entry.kind === 'text'" class="flex items-start gap-2">
+            <Bot class="mt-0.5 h-3 w-3 text-theme-primary" />
+            <p class="whitespace-pre-wrap text-xs text-theme-text">{{ entry.text }}</p>
+          </div>
+
+          <div v-else-if="entry.kind === 'tool_call'" class="flex flex-col gap-1">
+            <div class="flex items-center gap-2">
+              <Hammer class="h-3 w-3 text-amber-300" />
+              <span class="font-mono text-[11px] text-theme-text">{{ entry.toolName }}</span>
+              <span
+                v-if="entry.status"
+                class="rounded px-1.5 py-0.5 text-[10px] uppercase"
+                :class="entry.status === 'ok' ? 'bg-emerald-500/15 text-emerald-200' : 'bg-red-500/15 text-red-200'"
+              >
+                {{ entry.status }}
+              </span>
+              <span v-if="entry.latencyMs !== undefined" class="text-[10px] text-theme-text-muted">
+                {{ entry.latencyMs }}ms
+              </span>
+            </div>
+            <code v-if="Object.keys(entry.args).length" class="overflow-x-auto rounded bg-black/40 p-1.5 text-[10px] text-theme-text-muted">
+              args: {{ previewResult(entry.args, 200) }}
+            </code>
+            <code v-if="entry.result !== undefined" class="overflow-x-auto rounded bg-black/40 p-1.5 text-[10px] text-theme-text">
+              {{ previewResult(entry.result) }}
+            </code>
+            <p v-if="entry.error" class="text-[10px] text-red-300">{{ entry.error }}</p>
+          </div>
+
+          <div v-else-if="entry.kind === 'error'" class="text-xs text-red-300">
+            <span class="font-mono text-[10px] uppercase">{{ entry.code }}</span>
+            — {{ entry.message }}
+          </div>
+        </li>
+      </ol>
+
+      <p v-if="store.isStreaming" class="mt-2 text-[10px] text-theme-text-muted">
+        Streaming...
+      </p>
+    </div>
+
+    <form class="flex items-center gap-2" @submit.prevent="submit">
+      <input
+        v-model="draft"
+        type="text"
+        placeholder="Pergunte algo ao agente"
+        class="flex-1 rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
+        :disabled="store.isStreaming"
+      />
+      <button
+        type="submit"
+        class="inline-flex items-center gap-1 rounded bg-theme-primary px-3 py-1 text-sm font-medium text-theme-on-primary disabled:opacity-50"
+        :disabled="!canSend"
+      >
+        <Send class="h-3 w-3" />
+        Enviar
+      </button>
+    </form>
+  </section>
+</template>

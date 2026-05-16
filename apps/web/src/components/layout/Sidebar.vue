@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw, Workflow } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw, Workflow } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -16,6 +16,7 @@ import { useDraggableEdge } from '../../composables/useDraggableEdge'
 import { aiChat, aiStatus, type AIStatus, type WidgetDraftResponse } from '../../services/aiClient'
 import { renderMarkdown } from '../../lib/markdown'
 import AuditFeed from '../audit/AuditFeed.vue'
+import AgentPanel from '../ai/AgentPanel.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
@@ -34,7 +35,7 @@ const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
 const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
+const activeTab = ref<'none' | 'chat' | 'agent' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -128,7 +129,7 @@ async function refreshProviderStatus() {
     providerStatus.value = null
   }
 }
-function toggleTab(tab: 'chat' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks') {
+function toggleTab(tab: 'chat' | 'agent' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -400,6 +401,16 @@ async function handleChatSubmit() {
 
         <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
+          :class="activeTab === 'agent' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('agent')"
+          title="Agente IA (multi-step)"
+          data-testid="sidebar-agent-tab"
+        >
+          <Bot :size="20" />
+        </div>
+
+        <div
+          class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'integrations' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('integrations')"
           :title="t('sidebar.integrations')"
@@ -569,6 +580,11 @@ async function handleChatSubmit() {
             <Send :size="18" />
           </button>
         </form>
+      </div>
+
+      <!-- Agent Tab (multi-step tool-use) -->
+      <div v-if="activeTab === 'agent'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
+        <AgentPanel />
       </div>
 
       <!-- Integrations Tab -->

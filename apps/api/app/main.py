@@ -19,6 +19,7 @@ from app.integrations.fortigate.syslog import (
 from app.realtime import realtime_broker
 from app.routers import (
     ai,
+    ai_agent,
     audit,
     auth,
     health,
@@ -202,6 +203,7 @@ app.include_router(health.router)
 app.include_router(auth.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(ai_agent.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(realtime.router, prefix="/api")
