@@ -17,6 +17,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, st
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai import get_preference_store
+from app.ai.cli_provider import describe_cli_invocation
 from app.ai.cockpit_agent import get_cockpit_agent_runtime
 from app.ai.preferences import UserAiPreference
 from app.ai.tools import (
@@ -163,6 +164,20 @@ def update_ai_preferences(
         },
     )
     return _pref_to_response(pref)
+
+
+class CliProbeRequest(BaseModel):
+    binary_path: str = Field(alias="binaryPath", min_length=1, max_length=512)
+    model: str | None = Field(default=None, max_length=128)
+
+
+@router.post("/ai/preferences/cli/probe")
+def probe_cli_binary(
+    payload: Annotated[CliProbeRequest, Body(...)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    return describe_cli_invocation(payload.binary_path, model=payload.model or "")
 
 
 @router.get("/ai/tools")

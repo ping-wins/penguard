@@ -4,7 +4,9 @@ import { Bot, KeyRound, Save, Terminal } from 'lucide-vue-next'
 import {
   type AiPreferenceMode,
   type AiPreferenceResponse,
+  type CliProbeResponse,
   getAiPreferences,
+  probeCliBinary,
   updateAiPreferences,
 } from '../../services/aiPreferencesClient'
 
@@ -39,6 +41,8 @@ const state = ref<AiPreferenceResponse>({
 const apiKeyDraft = ref('')
 const isLoading = ref(true)
 const isSaving = ref(false)
+const isProbing = ref(false)
+const probeResult = ref<CliProbeResponse | null>(null)
 const error = ref<string | null>(null)
 const saved = ref(false)
 
@@ -87,6 +91,18 @@ async function save() {
     error.value = (e as Error).message
   } finally {
     isSaving.value = false
+  }
+}
+
+async function probe() {
+  isProbing.value = true
+  probeResult.value = null
+  try {
+    probeResult.value = await probeCliBinary(state.value.cliBinary, state.value.model)
+  } catch (e) {
+    probeResult.value = { ok: false, error: (e as Error).message }
+  } finally {
+    isProbing.value = false
   }
 }
 
@@ -227,23 +243,61 @@ async function clearApiKey() {
       </label>
     </fieldset>
 
-    <fieldset v-if="state.mode === 'cli' && !isLoading" class="flex flex-col gap-2 rounded border border-amber-500/30 bg-amber-950/15 p-3 text-amber-100">
-      <legend class="px-1 text-xs uppercase tracking-wide text-amber-300">CLI local</legend>
-      <p class="text-xs">
-        Em breve: o backend vai chamar <code>claude -p ...</code> /
-        <code>codex --prompt ...</code> via subprocess, reusando o auth no
-        <code>~/.config</code>. Funciona apenas quando o cockpit roda fora do
-        container Docker (modo dev nativo).
+    <fieldset v-if="state.mode === 'cli' && !isLoading" class="flex flex-col gap-3 rounded border border-theme-border p-3">
+      <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">CLI local</legend>
+      <p class="rounded border border-amber-500/30 bg-amber-950/15 p-2 text-[11px] text-amber-100">
+        ⚠ CLI subprocess só funciona quando o backend roda nativo no host onde
+        o <code>claude</code>/<code>codex</code> está autenticado.
+        Container Docker não enxerga <code>~/.claude</code> nem
+        <code>~/.codex</code>. Pra usar isto, suba o cockpit com
+        <code>uv run uvicorn app.main:app --reload</code> em vez de
+        <code>docker compose up</code>.
       </p>
       <label class="flex flex-col gap-1 text-xs">
-        <span>Binário CLI (opcional, ex.: /usr/local/bin/claude)</span>
+        <span class="text-theme-text-muted">Binário CLI</span>
         <input
           v-model="state.cliBinary"
           type="text"
-          placeholder="/usr/local/bin/claude"
-          class="rounded border border-amber-500/40 bg-amber-950/30 px-2 py-1 text-sm"
+          placeholder="C:\Users\lucas\.local\bin\claude.exe"
+          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm font-mono"
+        />
+        <span class="text-[11px] text-theme-text-muted">
+          Suportados: <code>claude</code> (Claude Code) e <code>codex</code> (OpenAI Codex CLI).
+        </span>
+      </label>
+      <label class="flex flex-col gap-1 text-xs">
+        <span class="text-theme-text-muted">Modelo (opcional)</span>
+        <input
+          v-model="state.model"
+          type="text"
+          placeholder="sonnet / opus / claude-sonnet-4-6"
+          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
         />
       </label>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded border border-theme-border px-2 py-1 text-xs hover:border-theme-primary/40 disabled:opacity-50"
+          :disabled="!state.cliBinary || isProbing"
+          @click="probe"
+        >
+          Testar binário
+        </button>
+        <span v-if="isProbing" class="text-[11px] text-theme-text-muted">Validando…</span>
+        <span
+          v-else-if="probeResult"
+          class="text-[11px]"
+          :class="probeResult.ok ? 'text-emerald-300' : 'text-red-300'"
+        >
+          <template v-if="probeResult.ok">
+            ✓ {{ probeResult.flavor }} encontrado em {{ probeResult.binary }}
+          </template>
+          <template v-else>✗ {{ probeResult.error }}</template>
+        </span>
+      </div>
+      <p v-if="probeResult?.ok && probeResult.argvPreview" class="overflow-x-auto rounded bg-black/40 p-1.5 text-[10px] font-mono text-theme-text-muted">
+        argv: {{ probeResult.argvPreview }}
+      </p>
     </fieldset>
 
     <footer class="flex items-center justify-between gap-2 border-t border-theme-border pt-3">

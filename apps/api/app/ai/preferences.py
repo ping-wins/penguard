@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.ai.cli_provider import CliAIProvider
 from app.ai.provider import (
     AIConfigurationError,
     AIProvider,
@@ -201,9 +202,18 @@ def build_provider_for_user(user_id: str) -> AIProvider | None:
     pref = store.get(user_id)
     if pref is None:
         return None
+    if pref.mode == "cli":
+        if not pref.cli_binary:
+            return None
+        try:
+            return CliAIProvider(
+                binary_path=pref.cli_binary,
+                model=pref.model or "",
+            )
+        except AIConfigurationError as exc:
+            logger.warning("cli_provider_init_failed user=%s err=%s", user_id, exc)
+            return None
     if pref.mode != "api":
-        # CLI mode is wired in PR2 for local cockpit installs; for now we
-        # fall back to env-driven provider so the cockpit chat still works.
         return None
     if not pref.api_key:
         return None
