@@ -6,6 +6,7 @@ Importing this module triggers registration via the side-effecting
 
 from app.ai.agent.tools import (
     audit_tool,
+    capabilities,
     incidents,
     integrations,
     playbook_runs,
@@ -16,6 +17,7 @@ from app.ai.agent.tools import (
 
 __all__ = [
     "audit_tool",
+    "capabilities",
     "incidents",
     "integrations",
     "playbook_runs",

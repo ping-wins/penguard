@@ -17,6 +17,11 @@ from app.ai.agent.registry import AgentTool
 
 
 _KEYWORDS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [
+    (("analisa", "analise", "analyze"), "analyze_incident", {"incidentId": "demo"}),
+    (("rascunho widget", "draft widget", "criar widget"), "draft_widget",
+     {"provider": "fortigate", "visualType": "card", "fieldIds": ["system.cpu"]}),
+    (("conten", "playbook do", "containment"), "draft_containment_playbook",
+     {"ticketId": "tk-demo"}),
     (("incidente", "incident"), "list_incidents", {"limit": 10}),
     (("integraç", "integration", "integracao"), "list_integrations", {}),
     (("widget",), "get_widget_data", {"widgetId": "fortigate-system-status"}),

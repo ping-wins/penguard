@@ -25,6 +25,7 @@ from app.ai.agent.backends import ScriptedBackend
 # Importing this module side-effect registers the 9 read tools.
 from app.ai.agent.tools import (  # noqa: F401
     audit_tool,
+    capabilities,
     incidents,
     integrations,
     playbook_runs,

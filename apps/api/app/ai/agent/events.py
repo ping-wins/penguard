@@ -21,7 +21,7 @@ class AgentEventType(str, Enum):
     ERROR = "error"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class AgentEvent:
     kind: AgentEventType
     step: int
@@ -32,13 +32,13 @@ class AgentEvent:
         return payload
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class TextDeltaEvent(AgentEvent):
     text: str = ""
     kind: AgentEventType = AgentEventType.TEXT_DELTA
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ToolCallEvent(AgentEvent):
     call_id: str = field(default_factory=lambda: uuid4().hex)
     tool_name: str = ""
@@ -46,7 +46,7 @@ class ToolCallEvent(AgentEvent):
     kind: AgentEventType = AgentEventType.TOOL_CALL
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ToolResultEvent(AgentEvent):
     call_id: str = ""
     tool_name: str = ""
@@ -57,7 +57,7 @@ class ToolResultEvent(AgentEvent):
     kind: AgentEventType = AgentEventType.TOOL_RESULT
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class AwaitingApprovalEvent(AgentEvent):
     call_id: str = ""
     tool_name: str = ""
@@ -66,7 +66,7 @@ class AwaitingApprovalEvent(AgentEvent):
     kind: AgentEventType = AgentEventType.AWAITING_APPROVAL
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class DoneEvent(AgentEvent):
     reply: str = ""
     used_tools: list[str] = field(default_factory=list)
@@ -75,7 +75,7 @@ class DoneEvent(AgentEvent):
     kind: AgentEventType = AgentEventType.DONE
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ErrorEvent(AgentEvent):
     message: str = ""
     code: str = "agent_error"

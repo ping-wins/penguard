@@ -579,6 +579,126 @@ class AnthropicAIProvider:
 
 
 # ---------------------------------------------------------------------------
+# Gemini native adapter — generateContent endpoint with X-goog-api-key
+# ---------------------------------------------------------------------------
+
+
+class GeminiAIProvider:
+    """Native Google AI Studio adapter.
+
+    Talks to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
+    using the `X-goog-api-key` header. Avoids the `/v1beta/openai` shim, which
+    drops fields and silently turns missing keys into 404s.
+    """
+
+    name = "gemini"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str = "https://generativelanguage.googleapis.com",
+        timeout_seconds: float = 20.0,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.http_client = http_client or httpx.Client(timeout=timeout_seconds)
+
+    def analyze_incident(
+        self,
+        context: IncidentContext,
+        *,
+        locale: str = "pt-BR",
+    ) -> IncidentAnalysis:
+        prompt = _build_analyze_prompt(context, locale=locale)
+        raw = self._generate(prompt, response_mime_type="application/json")
+        return _parse_analysis(raw, context=context, locale=locale)
+
+    def suggest_containment(
+        self,
+        context: IncidentContext,
+        *,
+        locale: str = "pt-BR",
+    ) -> ContainmentSuggestion:
+        prompt = _build_containment_prompt(context, locale=locale)
+        raw = self._generate(prompt, response_mime_type="application/json")
+        return _parse_containment(raw, context=context, locale=locale)
+
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+    ) -> str:
+        system_text = _chat_system_prompt(locale)
+        contents: list[dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role", "user")
+            content = str(message.get("content") or "")
+            if not content:
+                continue
+            if role == "system":
+                # Gemini accepts a system_instruction parameter; we fold legacy
+                # system turns into it rather than the contents list.
+                continue
+            contents.append(
+                {
+                    "role": "model" if role == "assistant" else "user",
+                    "parts": [{"text": content}],
+                }
+            )
+        return self._generate_contents(
+            contents=contents,
+            system_instruction=system_text,
+            response_mime_type=None,
+        )
+
+    def _generate(self, prompt: str, *, response_mime_type: str | None = None) -> str:
+        return self._generate_contents(
+            contents=[{"role": "user", "parts": [{"text": prompt}]}],
+            system_instruction=None,
+            response_mime_type=response_mime_type,
+        )
+
+    def _generate_contents(
+        self,
+        *,
+        contents: list[dict[str, Any]],
+        system_instruction: str | None,
+        response_mime_type: str | None,
+    ) -> str:
+        body: dict[str, Any] = {"contents": contents}
+        if system_instruction:
+            body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+        generation_config: dict[str, Any] = {"maxOutputTokens": 4096}
+        if response_mime_type:
+            generation_config["responseMimeType"] = response_mime_type
+        body["generationConfig"] = generation_config
+
+        response = self.http_client.post(
+            f"{self.base_url}/v1beta/models/{self.model}:generateContent",
+            headers={
+                "X-goog-api-key": self.api_key,
+                "Content-Type": "application/json",
+            },
+            json=body,
+        )
+        if response.status_code >= 400:
+            raise _RemoteAIError(
+                f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}"
+            )
+        payload = response.json()
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            return ""
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        return "".join(part.get("text", "") for part in parts if isinstance(part, dict))
+
+
+# ---------------------------------------------------------------------------
 # OpenAI-compatible adapter (works for OpenAI, Groq, Ollama OpenAI shim, etc.)
 # ---------------------------------------------------------------------------
 

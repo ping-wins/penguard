@@ -495,6 +495,7 @@ export default {
       appearance: 'Aparência',
       language: 'Idioma',
       marketplace: 'Marketplace',
+      ai: 'Assistente IA',
     },
     profile: {
       title: 'Perfil do usuário',

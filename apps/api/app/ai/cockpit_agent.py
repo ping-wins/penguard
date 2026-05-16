@@ -7,7 +7,7 @@ from typing import Any
 from pydantic_ai import Agent, ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.ai import ChatMessage, get_ai_provider
+from app.ai import ChatMessage, resolve_ai_provider
 from app.ai.tools import (
     DraftWidgetRequest,
     WidgetDraftValidationError,
@@ -33,10 +33,16 @@ class CockpitAgentResult:
 class CockpitAgentRuntime:
     runtime = "pydantic_ai"
 
-    def chat(self, messages: list[ChatMessage], *, locale: str = "pt-BR") -> CockpitAgentResult:
+    def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        locale: str = "pt-BR",
+        user_id: str | None = None,
+    ) -> CockpitAgentResult:
         settings = get_settings()
         direct_reply, used_tools, widget_drafts = _direct_tool_reply(messages, locale=locale)
-        provider = get_ai_provider()
+        provider = resolve_ai_provider(user_id)
 
         def model_function(
             model_messages: list[ModelMessage],
@@ -48,21 +54,21 @@ class CockpitAgentRuntime:
                 content = provider.chat(messages, locale=locale)
             return ModelResponse(
                 parts=[TextPart(content=content)],
-                model_name=settings.ai_model or f"{provider.name}-cockpit",
+                model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
                 provider_name=f"pydantic_ai.{provider.name}",
                 metadata={"toolCount": len(info.function_tools)},
             )
 
         agent = _build_agent(
             model_function=model_function,
-            model_name=settings.ai_model or f"{provider.name}-cockpit",
+            model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
             locale=locale,
         )
         result = agent.run_sync(_latest_user_prompt(messages))
         return CockpitAgentResult(
             reply=str(result.output),
             provider=f"pydantic_ai.{provider.name}",
-            model=settings.ai_model or f"{provider.name}-cockpit",
+            model=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
             used_tools=used_tools,
             tool_count=len(list_tool_specs()),
             widget_drafts=widget_drafts,

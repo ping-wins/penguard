@@ -245,6 +245,23 @@ class WorkspaceTemplateModel(Base):
     )
 
 
+class UserAiPreferenceModel(Base):
+    __tablename__ = "user_ai_preferences"
+
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="api")
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="gemini")
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    api_key_blob: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cli_binary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
 class AiAgentToolCallModel(Base):
     __tablename__ = "ai_agent_tool_calls"
 

@@ -16,7 +16,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.ai import get_preference_store
 from app.ai.cockpit_agent import get_cockpit_agent_runtime
+from app.ai.preferences import UserAiPreference
 from app.ai.tools import (
     DraftWidgetRequest,
     WidgetDraftResponse,
@@ -80,6 +82,87 @@ def _locale_from_request(
     if accept_language and accept_language.lower().startswith("en"):
         return "en-US"
     return "pt-BR"
+
+
+class AiPreferenceUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    mode: str | None = Field(default=None, pattern="^(api|cli)$")
+    provider: str | None = Field(default=None, max_length=32)
+    model: str | None = Field(default=None, max_length=128)
+    api_key: str | None = Field(default=None, alias="apiKey", max_length=512)
+    cli_binary: str | None = Field(default=None, alias="cliBinary", max_length=255)
+
+
+def _pref_to_response(pref: UserAiPreference | None) -> dict:
+    if pref is None:
+        return {
+            "mode": "api",
+            "provider": "gemini",
+            "model": "",
+            "apiKeySet": False,
+            "cliBinary": "",
+            "updatedAt": None,
+        }
+    payload = pref.to_dict(redact=True)
+    payload.pop("apiKey", None)
+    payload.pop("userId", None)
+    return payload
+
+
+@router.get("/ai/preferences")
+def get_ai_preferences(
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    store = get_preference_store()
+    pref = store.get(str(current_user["id"]))
+    return _pref_to_response(pref)
+
+
+@router.put("/ai/preferences")
+def update_ai_preferences(
+    request: Request,
+    payload: Annotated[AiPreferenceUpdate, Body(...)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    store = get_preference_store()
+    user_id = str(current_user["id"])
+    fields: dict[str, Any] = {}
+    if payload.mode is not None:
+        fields["mode"] = payload.mode
+    if payload.provider is not None:
+        provider_name = payload.provider.lower().strip()
+        if provider_name not in {"gemini", "anthropic", "openai", "openai_compat", "scripted"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider '{payload.provider}' not supported",
+            )
+        fields["provider"] = provider_name
+    if payload.model is not None:
+        fields["model"] = payload.model
+    if payload.cli_binary is not None:
+        fields["cli_binary"] = payload.cli_binary.strip()
+    if payload.api_key is not None:
+        fields["api_key"] = payload.api_key
+    pref = store.upsert(user_id=user_id, **fields)
+    audit_store.record(
+        action="ai.preferences.updated",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "mode": pref.mode,
+            "provider": pref.provider,
+            "model": pref.model,
+            "apiKeySet": bool(pref.api_key),
+            "cliBinarySet": bool(pref.cli_binary),
+        },
+    )
+    return _pref_to_response(pref)
 
 
 @router.get("/ai/tools")
@@ -194,7 +277,9 @@ def ai_chat(
     prompt_len = len(last_user.content) if last_user else 0
 
     try:
-        result = agent_runtime.chat(messages, locale=locale)
+        result = agent_runtime.chat(
+            messages, locale=locale, user_id=str(current_user.get("id") or "")
+        )
     except Exception as exc:  # noqa: BLE001
         audit_store.record(
             action="ai.chat",

@@ -11,8 +11,10 @@ import {
   ShieldCheck,
   CheckCircle2,
   Boxes,
+  Bot,
 } from 'lucide-vue-next'
 import MarketplacePanel from '../marketplace/MarketplacePanel.vue'
+import AiPreferencesPanel from './AiPreferencesPanel.vue'
 import type { AddonManifest } from '../../services/marketplaceClient'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -28,7 +30,7 @@ const themeStore = useThemeStore()
 const router = useRouter()
 const { t, locale } = useI18n()
 
-type Tab = 'profile' | 'appearance' | 'language' | 'marketplace'
+type Tab = 'profile' | 'appearance' | 'language' | 'marketplace' | 'ai'
 const activeTab = ref<Tab>('profile')
 const localeSaved = ref(false)
 
@@ -37,6 +39,7 @@ const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => [
   { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
   { id: 'language', label: t('settings.tabs.language'), icon: Languages },
   { id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes },
+  { id: 'ai', label: t('settings.tabs.ai'), icon: Bot },
 ])
 
 function onMarketplaceInstall(_addon: AddonManifest) {
@@ -264,6 +267,10 @@ watch(
 
           <div v-if="activeTab === 'marketplace'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
             <MarketplacePanel @install="onMarketplaceInstall" />
+          </div>
+
+          <div v-if="activeTab === 'ai'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
+            <AiPreferencesPanel />
           </div>
         </div>
       </div>
