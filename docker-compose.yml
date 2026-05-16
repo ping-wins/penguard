@@ -108,6 +108,8 @@ services:
     build:
       context: .
       dockerfile: apps/siem_kowalski/Dockerfile
+    ports:
+      - "${FORTIDASHBOARD_SIEM_KOWALSKI_PORT:-8011}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
       SIEM_KOWALSKI_DATABASE_URL: ${SIEM_KOWALSKI_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
@@ -127,6 +129,8 @@ services:
     build:
       context: .
       dockerfile: apps/soar_skipper/Dockerfile
+    ports:
+      - "${FORTIDASHBOARD_SOAR_SKIPPER_PORT:-8012}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
       SOAR_SKIPPER_DATABASE_URL: ${SOAR_SKIPPER_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
@@ -146,6 +150,8 @@ services:
     build:
       context: .
       dockerfile: apps/xdr_rico/Dockerfile
+    ports:
+      - "${FORTIDASHBOARD_XDR_RICO_PORT:-8013}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
       XDR_RICO_DATABASE_URL: ${XDR_RICO_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
