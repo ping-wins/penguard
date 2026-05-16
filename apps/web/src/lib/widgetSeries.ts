@@ -93,6 +93,20 @@ const SAMPLERS: Record<string, SamplerFn> = {
   'fortigate-anomaly-highlights': (data) => ({
     count: num(((data as any)?.summary?.count)) || items(data, 'anomalies').length,
   }),
+  'fortigate-top-source-ips': (data) => {
+    const events = items(data, 'events')
+    const uniqueIps = new Set<string>()
+    let denied = 0
+    for (const event of events) {
+      if (!event || typeof event !== 'object') continue
+      const rec = event as Record<string, unknown>
+      const ip = String(rec.sourceIp ?? rec.srcIp ?? '').trim()
+      if (ip) uniqueIps.add(ip)
+      const action = String(rec.action ?? '').toLowerCase()
+      if (action === 'deny' || action === 'drop' || action === 'block') denied += 1
+    }
+    return { uniqueIps: uniqueIps.size, denied, events: events.length }
+  },
   'soc-incidents-by-severity': (data) => ({
     total: num((data as Record<string, unknown> | null)?.total),
     critical: findCount(data, 'critical'),
@@ -106,6 +120,47 @@ const SAMPLERS: Record<string, SamplerFn> = {
   'soc-top-entities': (data) => ({
     uniqueEntities: items(data, 'entities').length,
   }),
+  'soc-sla-breach': (data) => {
+    const incidents = items(data, 'incidents')
+    let red = 0
+    let amber = 0
+    let openCount = 0
+    for (const inc of incidents) {
+      if (!inc || typeof inc !== 'object') continue
+      const rec = inc as Record<string, unknown>
+      const status = String(rec.ticketStatus ?? rec.status ?? '').toLowerCase()
+      if (status === 'closed' || status === 'contained') continue
+      openCount += 1
+      const createdAt = rec.createdAt
+      const createdMs = typeof createdAt === 'string' ? Date.parse(createdAt) : NaN
+      if (!Number.isFinite(createdMs)) continue
+      const ageMs = Date.now() - createdMs
+      const oneHour = 60 * 60 * 1000
+      if (ageMs >= 4 * oneHour) red += 1
+      else if (ageMs >= oneHour) amber += 1
+    }
+    return { red, amber, open: openCount }
+  },
+  'soc-mttd-mttr': (data) => {
+    const incidents = items(data, 'incidents')
+    const mttd: number[] = []
+    const mttr: number[] = []
+    for (const inc of incidents) {
+      if (!inc || typeof inc !== 'object') continue
+      const rec = inc as Record<string, unknown>
+      const created = typeof rec.createdAt === 'string' ? Date.parse(rec.createdAt) : NaN
+      const detected = typeof rec.detectedAt === 'string' ? Date.parse(rec.detectedAt) : NaN
+      const resolved = typeof rec.resolvedAt === 'string' ? Date.parse(rec.resolvedAt) : NaN
+      if (Number.isFinite(created) && Number.isFinite(detected)) mttd.push(detected - created)
+      if (Number.isFinite(created) && Number.isFinite(resolved)) mttr.push(resolved - created)
+    }
+    const avg = (arr: number[]) => arr.length === 0 ? 0 : arr.reduce((s, v) => s + v, 0) / arr.length
+    return {
+      count: incidents.length,
+      mttdAvgMs: Math.round(avg(mttd)),
+      mttrAvgMs: Math.round(avg(mttr)),
+    }
+  },
   'xdr-endpoint-health': (data) => {
     const summary = (data as Record<string, unknown> | null)?.summary
     const summaryObj = summary && typeof summary === 'object' ? summary as Record<string, unknown> : {}
@@ -153,11 +208,11 @@ const SAMPLERS: Record<string, SamplerFn> = {
   },
   'waf-dos-rate': (data) => {
     const buckets = items(data, 'buckets')
-    const blocked = buckets.reduce((s, b) => {
+    const blocked = buckets.reduce<number>((s, b) => {
       if (!b || typeof b !== 'object') return s
       return s + num((b as Record<string, unknown>).blocked)
     }, 0)
-    const allowed = buckets.reduce((s, b) => {
+    const allowed = buckets.reduce<number>((s, b) => {
       if (!b || typeof b !== 'object') return s
       return s + num((b as Record<string, unknown>).allowed)
     }, 0)

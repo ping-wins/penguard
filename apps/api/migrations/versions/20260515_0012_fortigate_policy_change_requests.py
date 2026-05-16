@@ -1,7 +1,7 @@
 """create fortigate policy change requests
 
 Revision ID: 20260515_0012
-Revises: 20260514_0011, 20260515_0011
+Revises: 20260515_0011
 Create Date: 2026-05-15 12:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260515_0012"
-down_revision: tuple[str, str] = ("20260514_0011", "20260515_0011")
+down_revision: str | None = "20260515_0011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
