@@ -502,6 +502,57 @@ describe('DashboardCanvas build pane', () => {
     expect(style).not.toContain('background-size: 24px 24px')
   })
 
+  it('recenters the infinite canvas after returning from grid mode', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({
+          id: 'ws_default',
+          name: 'SOC Overview',
+          widgets: [{
+            instanceId: 'w_01',
+            catalogId: 'visual-template-card',
+            integrationId: '',
+            layout: { x: 0, y: 0, w: 3, h: 2, z: 10 },
+          }],
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia, i18n],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const viewportWrapper = wrapper.get('[data-test="workspace-viewport"]')
+    const viewport = viewportWrapper.element as HTMLElement
+    Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 1200 })
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 800 })
+
+    await wrapper.get('[data-test="workspace-mode-toggle"]').trigger('click')
+    await flushPromises()
+    viewport.scrollLeft = 0
+    viewport.scrollTop = 0
+
+    await wrapper.get('[data-test="workspace-mode-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(viewport.scrollLeft).toBe(WORKSPACE_TEST_ORIGIN - 600)
+    expect(viewport.scrollTop).toBe(WORKSPACE_TEST_ORIGIN - 400)
+  })
+
   it('supports Power BI style wheel and space-drag workspace panning', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

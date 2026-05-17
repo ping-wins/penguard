@@ -617,15 +617,21 @@ function syncViewportScroll() {
   }
 }
 
-function centerWorkspaceOnOrigin() {
-  if (hasCenteredWorkspace) return
+function scrollWorkspaceToOrigin() {
+  const viewport = workspaceViewport.value
+  if (!viewport) return false
+  viewport.scrollLeft = WORKSPACE_ORIGIN_X_PX * dashboardStore.zoom - viewport.clientWidth / 2
+  viewport.scrollTop = WORKSPACE_ORIGIN_Y_PX * dashboardStore.zoom - viewport.clientHeight / 2
+  syncViewportScroll()
+  return true
+}
+
+function centerWorkspaceOnOrigin({ force = false }: { force?: boolean } = {}) {
+  if (hasCenteredWorkspace && !force) return
   requestAnimationFrame(() => {
-    const viewport = workspaceViewport.value
-    if (!viewport) return
-    hasCenteredWorkspace = true
-    viewport.scrollLeft = WORKSPACE_ORIGIN_X_PX * dashboardStore.zoom - viewport.clientWidth / 2
-    viewport.scrollTop = WORKSPACE_ORIGIN_Y_PX * dashboardStore.zoom - viewport.clientHeight / 2
-    syncViewportScroll()
+    if (scrollWorkspaceToOrigin()) {
+      hasCenteredWorkspace = true
+    }
   })
 }
 
@@ -681,6 +687,11 @@ function toggleWorkspaceMode() {
   } else {
     workspaceModeStore.setMode('canvas')
     dashboardStore.restoreCanvasLayout()
+    nextTick(() => {
+      if (scrollWorkspaceToOrigin()) {
+        hasCenteredWorkspace = true
+      }
+    })
   }
 }
 
