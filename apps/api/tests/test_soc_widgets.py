@@ -106,6 +106,7 @@ def test_soc_widget_catalog_returns_soc_widgets():
         "soc-recent-incidents",
         "soc-top-entities",
         "xdr-endpoint-health",
+        "soar-playbook-builder",
         "soar-active-playbook-runs",
         "soar-playbook-run-history",
     }
@@ -124,6 +125,21 @@ def test_policy_manager_widget_data_is_self_managed():
     assert payload["status"] == "ready"
     assert payload["data"] == {"selfManaged": True}
     assert payload["meta"]["source"] == "soc"
+
+
+def test_playbook_builder_widget_data_is_self_managed():
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/widgets/soar-playbook-builder/data",
+        params={"integrationId": "int_soar_01"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["data"] == {"selfManaged": True}
+    assert payload["meta"]["source"] == "soar_skipper"
 
 
 def test_soc_incidents_by_severity_widget_aggregates_incidents():

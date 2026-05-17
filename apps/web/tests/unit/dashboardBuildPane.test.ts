@@ -226,7 +226,7 @@ describe('DashboardCanvas build pane', () => {
     )
   })
 
-  it('keeps automation node catalog inside the playbook builder instead of the workspace build pane', async () => {
+  it('offers the playbook builder as a workspace widget instead of auto-mounting a floating layer', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
@@ -242,7 +242,21 @@ describe('DashboardCanvas build pane', () => {
           ],
         }))
       }
-      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'soar-playbook-builder',
+              title: 'Playbook Builder',
+              kind: 'builder',
+              source: 'soar_skipper',
+              requiredCapabilities: ['playbooks'],
+              defaultSize: { w: 9, h: 7 },
+              dataEndpoint: '/api/widgets/soar-playbook-builder/data',
+            },
+          ],
+        }))
+      }
       if (url.startsWith('/api/providers/soar_skipper/data-fields')) {
         return Promise.resolve(jsonResponse({ provider: 'soar_skipper', groups: [] }))
       }
@@ -312,12 +326,103 @@ describe('DashboardCanvas build pane', () => {
 
     await flushPromises()
 
-    expect(wrapper.get('[data-test="playbook-canvas-layer"]').text()).toContain('Canvas playbook')
+    expect(wrapper.find('[data-test="playbook-canvas-layer"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="catalog-widget-soar-playbook-builder"]').text()).toContain('Playbook Builder')
     expect(wrapper.find('[data-test="build-tab-automation"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="automation-node-case.note"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Automation nodes')
     expect(wrapper.text()).not.toContain('Create Case Note')
     expect(wrapper.text()).not.toContain('Require Approval')
+
+    await wrapper.get('[data-test="catalog-widget-soar-playbook-builder"]').trigger('click')
+
+    const dashboardStore = useDashboardStore()
+    expect(dashboardStore.activeWidgets).toContainEqual(
+      expect.objectContaining({
+        catalogId: 'soar-playbook-builder',
+        integrationId: 'int_soar_01',
+      }),
+    )
+  })
+
+  it('renders a saved playbook builder through the draggable widget shell', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'int_soar_01',
+              type: 'soar_skipper',
+              name: 'Skipper SOAR',
+              status: 'connected',
+            },
+          ],
+        }))
+      }
+      if (url.startsWith('/api/widget-catalog')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'soar-playbook-builder',
+              title: 'Playbook Builder',
+              kind: 'builder',
+              source: 'soar_skipper',
+              requiredCapabilities: ['playbooks'],
+              defaultSize: { w: 9, h: 7 },
+              dataEndpoint: '/api/widgets/soar-playbook-builder/data',
+            },
+          ],
+        }))
+      }
+      if (url.startsWith('/api/providers/soar_skipper/data-fields')) {
+        return Promise.resolve(jsonResponse({ provider: 'soar_skipper', groups: [] }))
+      }
+      if (url === '/api/soc/playbook-node-types') return Promise.resolve(jsonResponse({ items: [] }))
+      if (url === '/api/soc/playbooks') return Promise.resolve(jsonResponse([]))
+      if (url === '/api/soc/playbook-runs') return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({
+          id: 'ws_default',
+          name: 'SOC Overview',
+          widgets: [
+            {
+              instanceId: 'w_builder',
+              catalogId: 'soar-playbook-builder',
+              integrationId: 'int_soar_01',
+              layout: { x: 80, y: 40, w: 9, h: 7, z: 10 },
+            },
+          ],
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia, i18n],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: {
+            props: ['instanceId', 'catalogId', 'integrationId', 'layout', 'fieldBindings'],
+            template: '<div data-test="draggable-widget"><slot :widgetData="{ selfManaged: true }" :fieldBindings="[]" /></div>',
+          },
+          PlaybookCanvasLayer: {
+            props: ['embedded'],
+            template: '<div data-test="playbook-canvas-layer" :data-embedded="String(embedded)">Widget builder</div>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="draggable-widget"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="playbook-canvas-layer"]').attributes('data-embedded')).toBe('true')
   })
 
   it('shows loading and empty states for integration visual presets', async () => {

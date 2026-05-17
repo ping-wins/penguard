@@ -39,8 +39,9 @@ WAF_WIDGET_IDS = {
     "waf-dos-top-ips",
     "waf-dos-feed",
 }
-SELF_MANAGED_WIDGET_IDS = {
-    "soc-policy-manager",
+SELF_MANAGED_WIDGET_SOURCES = {
+    "soc-policy-manager": "soc",
+    "soar-playbook-builder": "soar_skipper",
 }
 
 
@@ -103,10 +104,11 @@ def get_widget_data(
     window: Annotated[str, Query()] = "1h",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
-    if widget_id in SELF_MANAGED_WIDGET_IDS:
+    self_managed_source = SELF_MANAGED_WIDGET_SOURCES.get(widget_id)
+    if self_managed_source:
         return {
             "widgetId": widget_id,
-            "integrationId": integration_id or "policy-manager",
+            "integrationId": integration_id or widget_id,
             "status": "ready",
             "data": {"selfManaged": True},
             "refreshedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
@@ -114,7 +116,7 @@ def get_widget_data(
                 "Z",
             ),
             "meta": {
-                "source": "soc",
+                "source": self_managed_source,
                 "cacheTtlSeconds": 0,
                 "refreshIntervalSeconds": 0,
             },
