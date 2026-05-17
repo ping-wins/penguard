@@ -112,6 +112,23 @@ export type FortiGateCollectorTestResponse = {
   receiveStatus?: FortiGateLogReceiveStatus
 }
 
+export type FortiWebBlockReviewResponse = {
+  id: string
+  integrationId: string
+  sourceIp: string
+  incidentId?: string | null
+  status: 'pending_review' | 'active' | 'removed' | string
+  reason?: string | null
+  intent: Record<string, any>
+  preflightSummary: Record<string, any>
+  proposedChanges: Array<Record<string, any>>
+  reviewHash: string
+  appliedResult?: Record<string, any> | null
+  removedResult?: Record<string, any> | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
@@ -122,6 +139,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
   const error = ref<string | null>(null)
 
   const hasFortigate = computed(() => integrations.value.some(i => i.type === 'fortigate'))
+  const hasFortiweb = computed(() => integrations.value.some(i => i.type === 'fortiweb'))
   const hasWorkspaceIntegrations = computed(() => integrations.value.length > 0)
   const connectedIntegrationTypes = computed(() => {
     return Array.from(new Set(
@@ -223,6 +241,54 @@ export const useIntegrationsStore = defineStore('integrations', () => {
       }
       if (res.status === 401) await useAuthStore().fetchSession()
       return { success: false, error: await responseErrorMessage(res, 'Failed to add integration') }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function testFortiweb(host: string, apiKey: string, verifyTls: boolean) {
+    return postIntegrationProbe('/api/integrations/fortiweb/test', { host, apiKey, verifyTls })
+  }
+
+  async function addFortiweb(
+    name: string,
+    host: string,
+    apiKey: string,
+    verifyTls: boolean,
+    targetServerPolicy: string,
+    managedIpListPolicy: string,
+  ) {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch('/api/integrations/fortiweb', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name,
+          host,
+          apiKey,
+          verifyTls,
+          targetServerPolicy,
+          managedIpListPolicy,
+        })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const idx = integrations.value.findIndex(i => i.id === data.id)
+        if (idx >= 0) integrations.value[idx] = data
+        else integrations.value.push(data)
+
+        return { success: true, data }
+      }
+      if (res.status === 401) await useAuthStore().fetchSession()
+      return { success: false, error: await responseErrorMessage(res, 'Failed to add FortiWeb integration') }
     } catch (e) {
       return { success: false, error: 'Network error' }
     }
@@ -461,6 +527,109 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     return postFortigateLogForwarding(integrationId, 'apply', payload)
   }
 
+  async function reviewFortiwebSourceBlock(
+    integrationId: string,
+    payload: { sourceIp: string, incidentId?: string | null, reason?: string | null },
+  ): Promise<{ success: true, data: FortiWebBlockReviewResponse } | { success: false, error: string }> {
+    return postFortiwebBlock<FortiWebBlockReviewResponse>(integrationId, 'review', payload)
+  }
+
+  async function applyFortiwebSourceBlock(
+    integrationId: string,
+    blockId: string,
+    payload: { reviewHash: string, confirmed: true },
+  ): Promise<{ success: true, data: FortiWebBlockReviewResponse } | { success: false, error: string }> {
+    return postFortiwebBlock<FortiWebBlockReviewResponse>(integrationId, blockId, payload)
+  }
+
+  async function removeFortiwebSourceBlock(
+    integrationId: string,
+    blockId: string,
+  ): Promise<{ success: true, data: FortiWebBlockReviewResponse } | { success: false, error: string }> {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/integrations/fortiweb/${encodeURIComponent(integrationId)}/blocks/${encodeURIComponent(blockId)}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': authStore.csrfToken },
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to remove FortiWeb block') }
+      }
+      return { success: true, data: await res.json() }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function postFortiwebBlock<T>(
+    integrationId: string,
+    actionOrBlockId: 'review' | string,
+    payload: Record<string, unknown>,
+  ): Promise<{ success: true, data: T } | { success: false, error: string }> {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const encodedIntegrationId = encodeURIComponent(integrationId)
+      const url = actionOrBlockId === 'review'
+        ? `/api/integrations/fortiweb/${encodedIntegrationId}/blocks/review`
+        : `/api/integrations/fortiweb/${encodedIntegrationId}/blocks/${encodeURIComponent(actionOrBlockId)}/apply`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken,
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to orchestrate FortiWeb block') }
+      }
+      return { success: true, data: await res.json() }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
+  async function postIntegrationProbe(
+    url: string,
+    body: { host: string, apiKey: string, verifyTls: boolean },
+  ) {
+    isTesting.value = true
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': authStore.csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.ok === true) {
+          return { success: true, data }
+        }
+        return { success: false, error: data.error?.message ?? 'Connection failed' }
+      }
+      if (res.status === 401) await useAuthStore().fetchSession()
+      return { success: false, error: await responseErrorMessage(res, 'Connection failed') }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    } finally {
+      isTesting.value = false
+    }
+  }
+
   async function testFortigateLogForwardingCollector(
     integrationId: string,
     payload: Pick<FortiGateLogForwardingRequest, 'collectorHost' | 'port'>,
@@ -506,11 +675,14 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     ingestionStatusById,
     error,
     hasFortigate,
+    hasFortiweb,
     hasWorkspaceIntegrations,
     connectedIntegrationTypes,
     fetchIntegrations,
     testFortigate,
     addFortigate,
+    testFortiweb,
+    addFortiweb,
     testPenguinTool,
     addPenguinTool,
     removeIntegration,
@@ -523,6 +695,9 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     fetchFortigateLogForwardingStatus,
     applyFortigateLogForwarding,
     testFortigateLogForwardingCollector,
+    reviewFortiwebSourceBlock,
+    applyFortiwebSourceBlock,
+    removeFortiwebSourceBlock,
   }
 })
 
