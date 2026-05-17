@@ -49,6 +49,53 @@ describe('ConnectWizard', () => {
     await wrapper.get('[data-test="next"]').trigger('click')
     expect(wrapper.find('[data-test="auth-host"]').exists()).toBe(true)
   })
+
+  it('shows per-destination wiring results after connect', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      calls.push(url)
+      if (url.endsWith('/catalog')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: CATALOG }) })
+      }
+      if (url.endsWith('/auth/csrf')) {
+        return Promise.resolve({ ok: true, json: async () => ({ csrfToken: 'csrf-test' }) })
+      }
+      if (url.endsWith('/connect/test')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true, device: { hostname: 'FWB' } }),
+        })
+      }
+      if (url.endsWith('/connect')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            integration: { id: 'int_fweb_1' },
+            wiring: {
+              siem: { ok: true, detail: 'Managed source registered' },
+              soar: { ok: false, detail: 'no actions' },
+            },
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ items: [] }) })
+    }))
+
+    const wrapper = mountWizard()
+    await flushPromises()
+    await wrapper.get('[data-test="addon-fortiweb-core"]').trigger('click')
+    await wrapper.get('[data-test="next"]').trigger('click')
+    await wrapper.get('[data-test="next"]').trigger('click')
+    await wrapper.get('[data-test="auth-host"]').setValue('https://x')
+    await wrapper.get('[data-test="test"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="finish"]').trigger('click')
+    await flushPromises()
+
+    expect(calls.some(url => url.endsWith('/connect'))).toBe(true)
+    expect(wrapper.get('[data-test="wiring-siem"]').text()).toContain('Managed source registered')
+    expect(wrapper.get('[data-test="wiring-soar"]').text()).toContain('no actions')
+  })
 })
 
 function mountWizard() {

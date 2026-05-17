@@ -21,6 +21,10 @@ const testResult = ref<{
   device?: Record<string, unknown>
   message?: string
 } | null>(null)
+const wiringResult = ref<{
+  siem?: { ok: boolean; detail?: string } | null
+  soar?: { ok: boolean; detail?: string } | null
+} | null>(null)
 const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 
@@ -38,6 +42,7 @@ function pick(entry: CatalogEntry) {
   name.value = entry.name
   errorMsg.value = null
   testResult.value = null
+  wiringResult.value = null
   for (const field of entry.authFields) {
     auth[field.id] = field.default ?? (field.type === 'boolean' ? false : '')
   }
@@ -84,8 +89,9 @@ async function finish() {
   })
   busy.value = false
   if (res.success) {
+    wiringResult.value = res.data.wiring ?? null
     await integrationsStore.fetchIntegrations()
-    emit('close')
+    step.value = 5
   } else {
     errorMsg.value = res.error
   }
@@ -217,6 +223,32 @@ async function finish() {
         </button>
       </div>
     </section>
+
+    <section v-else-if="step === 5" class="connect-wizard__step">
+      <p
+        v-if="wiringResult?.siem"
+        class="connect-wizard__result"
+        :class="wiringResult.siem.ok ? 'connect-wizard__result--ok' : 'connect-wizard__result--amber'"
+        data-test="wiring-siem"
+      >
+        <strong>{{ t('integrations.wizard.wiringSiem') }}:</strong>
+        {{ wiringResult.siem.detail }}
+      </p>
+      <p
+        v-if="wiringResult?.soar"
+        class="connect-wizard__result"
+        :class="wiringResult.soar.ok ? 'connect-wizard__result--ok' : 'connect-wizard__result--amber'"
+        data-test="wiring-soar"
+      >
+        <strong>{{ t('integrations.wizard.wiringSoar') }}:</strong>
+        {{ wiringResult.soar.detail }}
+      </p>
+      <div class="connect-wizard__actions">
+        <button type="button" data-test="done" @click="emit('close')">
+          {{ t('integrations.wizard.done') }}
+        </button>
+      </div>
+    </section>
   </section>
 </template>
 
@@ -313,5 +345,23 @@ async function finish() {
 
 .connect-wizard__error {
   color: rgb(252 165 165);
+}
+
+.connect-wizard__result {
+  margin: 0;
+  border: 1px solid rgb(75 85 99 / 0.7);
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.connect-wizard__result--ok {
+  border-color: rgb(34 197 94 / 0.55);
+  color: rgb(187 247 208);
+}
+
+.connect-wizard__result--amber {
+  border-color: rgb(245 158 11 / 0.65);
+  color: rgb(253 230 138);
 }
 </style>

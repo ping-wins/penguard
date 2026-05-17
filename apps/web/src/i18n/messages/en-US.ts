@@ -849,6 +849,9 @@ export default {
       connect: 'Connect',
       wireSiem: 'Forward logs to SIEM',
       wireSoar: 'Enable SOAR playbooks',
+      wiringSiem: 'SIEM',
+      wiringSoar: 'SOAR',
+      done: 'Done',
     },
   },
   audit: {
