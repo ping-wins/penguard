@@ -8,6 +8,7 @@ import {
   listPlaybooks,
   runPlaybook,
   simulatePlaybook,
+  updatePlaybook,
   type Playbook,
   type PlaybookDraft,
   type PlaybookNodeType,
@@ -117,6 +118,24 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     }
   }
 
+  async function update(playbookId: string, payload: PlaybookDraft) {
+    isCreating.value = true
+    error.value = null
+    try {
+      const result = await updatePlaybook(playbookId, payload)
+      playbooks.value = playbooks.value.map((playbook) => playbook.id === result.id ? result : playbook)
+      if (!playbooks.value.some((playbook) => playbook.id === result.id)) {
+        playbooks.value = [...playbooks.value, result]
+      }
+      return result
+    } catch (e: any) {
+      error.value = e?.message ?? 'Failed to update playbook'
+      throw e
+    } finally {
+      isCreating.value = false
+    }
+  }
+
   return {
     playbooks,
     runHistory,
@@ -138,5 +157,6 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     run,
     approve,
     create,
+    update,
   }
 })

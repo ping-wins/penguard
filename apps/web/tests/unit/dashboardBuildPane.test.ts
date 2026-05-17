@@ -226,6 +226,120 @@ describe('DashboardCanvas build pane', () => {
     )
   })
 
+  it('renders automation node catalog and exposes drag payloads for the playbook canvas', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'int_soar_01',
+              type: 'soar_skipper',
+              name: 'Skipper SOAR',
+              status: 'connected',
+            },
+          ],
+        }))
+      }
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/providers/soar_skipper/data-fields')) {
+        return Promise.resolve(jsonResponse({ provider: 'soar_skipper', groups: [] }))
+      }
+      if (url === '/api/soc/playbook-node-types') {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              id: 'case.note',
+              label: 'Create Case Note',
+              category: 'action',
+              sensitive: false,
+              dryRunOnly: true,
+              executionMode: 'dry_run',
+              liveAvailable: false,
+              boundary: 'case_note',
+              configSchema: { type: 'object' },
+            },
+            {
+              id: 'approval.required',
+              label: 'Require Approval',
+              category: 'control',
+              sensitive: false,
+              dryRunOnly: true,
+              executionMode: 'dry_run',
+              liveAvailable: false,
+              boundary: 'approval_gate',
+              configSchema: { type: 'object' },
+            },
+          ],
+        }))
+      }
+      if (url === '/api/soc/playbooks') {
+        return Promise.resolve(jsonResponse([
+          {
+            id: 'pb_canvas',
+            name: 'Canvas playbook',
+            enabled: false,
+            nodes: [{ id: 'trigger', type: 'trigger.incident_created', config: {} }],
+            edges: [],
+          },
+        ]))
+      }
+      if (url === '/api/soc/playbook-runs') return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({
+          id: 'ws_default',
+          name: 'SOC Overview',
+          widgets: [],
+        }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia, i18n],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+          PlaybookCanvasLayer: { template: '<div data-test="playbook-canvas-layer">Canvas playbook</div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="playbook-canvas-layer"]').text()).toContain('Canvas playbook')
+    await wrapper.get('[data-test="build-tab-automation"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Automation nodes')
+    expect(wrapper.text()).toContain('Create Case Note')
+    expect(wrapper.text()).toContain('Require Approval')
+
+    const payloads: Record<string, string> = {}
+    const dataTransfer = {
+      setData: vi.fn((type: string, value: string) => {
+        payloads[type] = value
+      }),
+      effectAllowed: '',
+    }
+
+    await wrapper.get('[data-test="automation-node-case.note"]').trigger('dragstart', {
+      dataTransfer,
+    })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-fortidashboard-playbook-node',
+      expect.stringContaining('"nodeType":"case.note"'),
+    )
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'case.note')
+    expect(dataTransfer.effectAllowed).toBe('copy')
+  })
+
   it('shows loading and empty states for integration visual presets', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

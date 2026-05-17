@@ -5,6 +5,10 @@ export type PlaybookNode = {
   type: string
   config?: Record<string, any>
   sensitive?: boolean
+  position?: {
+    x: number
+    y: number
+  }
 }
 
 export type PlaybookNodeType = {
@@ -20,8 +24,10 @@ export type PlaybookNodeType = {
 }
 
 export type PlaybookEdge = {
+  id?: string
   from: string
   to: string
+  condition?: string
 }
 
 export type Playbook = {
@@ -123,6 +129,21 @@ export async function createPlaybook(payload: PlaybookDraft): Promise<Playbook> 
       body: JSON.stringify(payload),
     }),
     'Failed to create playbook',
+  )
+}
+
+export async function updatePlaybook(playbookId: string, payload: PlaybookDraft): Promise<Playbook> {
+  return parseOrThrow<Playbook>(
+    await fetch(`/api/soc/playbooks/${encodeURIComponent(playbookId)}`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await csrfHeaders()),
+      },
+      body: JSON.stringify(payload),
+    }),
+    'Failed to update playbook',
   )
 }
 
