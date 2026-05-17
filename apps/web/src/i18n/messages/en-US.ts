@@ -535,6 +535,7 @@ export default {
           workspaces: 'Workspaces',
           playbooks: 'Playbooks',
           tickets: 'Tickets',
+          policies: 'Policies',
         },
         'integrations.write': {
           label: 'Add/remove providers',
@@ -563,6 +564,10 @@ export default {
         'tickets.manage': {
           label: 'Manage tickets',
           description: 'Close, reassign and bulk-edit tickets.',
+        },
+        'policies.manage': {
+          label: 'Manage SOC policies',
+          description: 'Create, edit, disable, enable and remove provider policies.',
         },
       },
       members: {

@@ -535,6 +535,7 @@ export default {
           workspaces: 'Workspaces',
           playbooks: 'Playbooks',
           tickets: 'Tickets',
+          policies: 'Policies',
         },
         'integrations.write': {
           label: 'Adicionar/remover provedores',
@@ -563,6 +564,10 @@ export default {
         'tickets.manage': {
           label: 'Gerenciar tickets',
           description: 'Fechar, reatribuir e editar tickets em massa.',
+        },
+        'policies.manage': {
+          label: 'Gerenciar policies SOC',
+          description: 'Criar, editar, desabilitar, habilitar e remover policies dos provedores.',
         },
       },
       members: {
