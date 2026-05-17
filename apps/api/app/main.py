@@ -24,6 +24,7 @@ from app.routers import (
     auth,
     health,
     integrations,
+    integrations_v2,
     lab_demo,
     marketplace,
     policies,
@@ -208,6 +209,7 @@ app.include_router(audit.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(ai_agent.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
+app.include_router(integrations_v2.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(realtime.router, prefix="/api")
 app.include_router(soc.router, prefix="/api")
