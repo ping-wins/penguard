@@ -155,4 +155,95 @@ describe('WidgetSocPolicyManager', () => {
 
     expect(wrapper.text()).toContain('Policy change applied')
   })
+
+  it('creates FortiGate policy reviews from structured form fields', async () => {
+    const reviewRequests: Array<Record<string, unknown>> = []
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/policies/providers') {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              providerType: 'fortigate',
+              integrationId: 'int_fgt_01',
+              name: 'FortiGate Lab',
+              capabilities: ['list', 'create', 'edit', 'enable', 'disable', 'delete'],
+              policyKinds: ['firewall_policy'],
+            },
+          ],
+        }))
+      }
+      if (url === '/api/policies') {
+        return Promise.resolve(jsonResponse({ items: [], nextCursor: null }))
+      }
+      if (url === '/api/policies/reviews') {
+        const body = JSON.parse(String(init?.body))
+        reviewRequests.push(body)
+        return Promise.resolve(jsonResponse({
+          id: 'fortigate:review_create_01',
+          providerType: 'fortigate',
+          integrationId: 'int_fgt_01',
+          policyId: null,
+          action: 'create',
+          status: 'pending_review',
+          title: 'create FortiGate policy',
+          before: null,
+          after: { summary: 'FD_WEB_ALLOW' },
+          diff: [{ field: 'name', before: null, after: 'FD_WEB_ALLOW' }],
+          warnings: [],
+          rollback: ['Delete the created policy.'],
+          reviewHash: 'hash_create_01',
+        }))
+      }
+      return Promise.resolve(jsonResponse({ detail: `unexpected ${url}` }, { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    useAuthStore().csrfToken = 'csrf_01'
+
+    const wrapper = mount(WidgetSocPolicyManager, {
+      global: { plugins: [pinia, i18n] },
+      props: {
+        data: {},
+        instanceId: 'inst_policy_manager',
+        integrationId: 'int_fgt_01',
+        catalogId: 'soc-policy-manager',
+      },
+    })
+
+    await flushPromises()
+
+    await wrapper.find('[data-test="policy-create"]').trigger('click')
+
+    expect(wrapper.find('[data-test="policy-structured-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="policy-payload"]').exists()).toBe(false)
+
+    await wrapper.find('[data-test="policy-form-name"]').setValue('FD_WEB_ALLOW')
+    await wrapper.find('[data-test="policy-form-srcintf"]').setValue('port2')
+    await wrapper.find('[data-test="policy-form-dstintf"]').setValue('port3')
+    await wrapper.find('[data-test="policy-form-srcaddr"]').setValue('LAN_NET')
+    await wrapper.find('[data-test="policy-form-dstaddr"]').setValue('WEB_VIP')
+    await wrapper.find('[data-test="policy-form-service"]').setValue('HTTP, HTTPS')
+    await wrapper.find('[data-test="policy-review"]').trigger('click')
+    await flushPromises()
+
+    expect(reviewRequests).toHaveLength(1)
+    expect(reviewRequests[0]).toMatchObject({
+      providerType: 'fortigate',
+      integrationId: 'int_fgt_01',
+      policyId: null,
+      action: 'create',
+      payload: {
+        name: 'FD_WEB_ALLOW',
+        srcintf: ['port2'],
+        dstintf: ['port3'],
+        srcaddr: ['LAN_NET'],
+        dstaddr: ['WEB_VIP'],
+        service: ['HTTP', 'HTTPS'],
+        action: 'accept',
+        schedule: 'always',
+        logtraffic: 'all',
+        status: 'enable',
+      },
+    })
+  })
 })

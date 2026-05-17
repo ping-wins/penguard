@@ -52,6 +52,25 @@ type FilterState = {
   q: ''
 }
 
+type FortiGatePolicyForm = {
+  name: string
+  srcintf: string
+  dstintf: string
+  srcaddr: string
+  dstaddr: string
+  service: string
+  action: 'accept' | 'deny'
+  schedule: string
+  logtraffic: 'all' | 'utm' | 'disable'
+  status: 'enable' | 'disable'
+}
+
+type FortiWebPolicyForm = {
+  sourceIp: string
+  incidentId: string
+  reason: string
+}
+
 const filters = ref<FilterState>({
   providerType: '',
   integrationId: '',
@@ -65,6 +84,9 @@ const selectedAction = ref<PolicyAction | null>(null)
 const selectedProviderType = ref<PolicyProviderType>('fortigate')
 const selectedIntegrationId = ref('')
 const payloadText = ref('{}')
+const showAdvancedPayload = ref(false)
+const fortigatePolicyForm = ref<FortiGatePolicyForm>(defaultFortiGatePolicyForm())
+const fortiwebPolicyForm = ref<FortiWebPolicyForm>(defaultFortiWebPolicyForm())
 const formError = ref('')
 const isReviewing = ref(false)
 const isApplying = ref(false)
@@ -114,6 +136,12 @@ const stats = computed(() => {
 
 const reviewDiff = computed(() => pendingReview.value?.diff ?? [])
 const reviewWarnings = computed(() => pendingReview.value?.warnings ?? [])
+const effectiveProviderType = computed<PolicyProviderType>(() => selectedPolicy.value?.providerType ?? selectedProviderType.value)
+const supportsStructuredPolicyForm = computed(() =>
+  selectedAction.value === 'create'
+  && (effectiveProviderType.value === 'fortigate' || effectiveProviderType.value === 'fortiweb'),
+)
+const usesStructuredPolicyForm = computed(() => supportsStructuredPolicyForm.value && !showAdvancedPayload.value)
 
 onMounted(async () => {
   await refreshAll()
@@ -128,6 +156,11 @@ watch(providers, (items) => {
 watch(selectedIntegrationId, (integrationId) => {
   const provider = providers.value.find(item => item.integrationId === integrationId)
   if (provider) selectedProviderType.value = provider.providerType
+})
+
+watch([selectedProviderType, selectedIntegrationId], () => {
+  if (selectedAction.value !== 'create') return
+  resetCreatePayload(selectedProviderType.value)
 })
 
 async function refreshAll() {
@@ -212,13 +245,14 @@ function beginCreate(provider?: PolicyProviderSummary) {
   selectedAction.value = 'create'
   selectedProviderType.value = target.providerType
   selectedIntegrationId.value = target.integrationId
-  payloadText.value = JSON.stringify(defaultCreatePayload(target.providerType), null, 2)
+  resetCreatePayload(target.providerType)
   formError.value = ''
 }
 
 function beginPolicyAction(policy: PolicyRow, action: PolicyAction) {
   selectPolicy(policy)
   selectedAction.value = action
+  showAdvancedPayload.value = false
   payloadText.value = JSON.stringify(defaultPayload(policy, action), null, 2)
   formError.value = ''
 }
@@ -227,6 +261,7 @@ function cancelAction() {
   selectedAction.value = null
   formError.value = ''
   payloadText.value = '{}'
+  showAdvancedPayload.value = false
 }
 
 function defaultCreatePayload(providerType: PolicyProviderType): Record<string, unknown> {
@@ -245,10 +280,47 @@ function defaultCreatePayload(providerType: PolicyProviderType): Record<string, 
     }
   }
   return {
-    sourceIp: '203.0.113.10',
+    sourceIp: '',
     incidentId: null,
-    reason: 'Approved FortiDashboard source block',
+    reason: '',
   }
+}
+
+function defaultFortiGatePolicyForm(): FortiGatePolicyForm {
+  return {
+    name: 'FD_MANAGED_POLICY',
+    srcintf: '',
+    dstintf: '',
+    srcaddr: '',
+    dstaddr: '',
+    service: '',
+    action: 'accept',
+    schedule: 'always',
+    logtraffic: 'all',
+    status: 'enable',
+  }
+}
+
+function defaultFortiWebPolicyForm(): FortiWebPolicyForm {
+  return {
+    sourceIp: '',
+    incidentId: '',
+    reason: '',
+  }
+}
+
+function resetCreatePayload(providerType: PolicyProviderType) {
+  const payload = defaultCreatePayload(providerType)
+  if (providerType === 'fortigate') {
+    fortigatePolicyForm.value = defaultFortiGatePolicyForm()
+  } else {
+    fortiwebPolicyForm.value = defaultFortiWebPolicyForm()
+    fortiwebPolicyForm.value.sourceIp = String(payload.sourceIp ?? '')
+    fortiwebPolicyForm.value.incidentId = String(payload.incidentId ?? '')
+    fortiwebPolicyForm.value.reason = String(payload.reason ?? '')
+  }
+  payloadText.value = JSON.stringify(payload, null, 2)
+  showAdvancedPayload.value = false
 }
 
 function defaultPayload(policy: PolicyRow, action: PolicyAction): Record<string, unknown> {
@@ -260,6 +332,63 @@ function defaultPayload(policy: PolicyRow, action: PolicyAction): Record<string,
     }
   }
   return {}
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function requireText(value: string, labelKey: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    throw new Error(t('widgets.policyManager.errors.requiredField', { field: t(labelKey) }))
+  }
+  return trimmed
+}
+
+function requireList(value: string, labelKey: string): string[] {
+  const values = splitList(value)
+  if (!values.length) {
+    throw new Error(t('widgets.policyManager.errors.requiredList', { field: t(labelKey) }))
+  }
+  return values
+}
+
+function structuredPayload(): Record<string, unknown> {
+  if (effectiveProviderType.value === 'fortigate') {
+    return {
+      name: requireText(fortigatePolicyForm.value.name, 'widgets.policyManager.form.name'),
+      srcintf: requireList(fortigatePolicyForm.value.srcintf, 'widgets.policyManager.form.sourceInterfaces'),
+      dstintf: requireList(fortigatePolicyForm.value.dstintf, 'widgets.policyManager.form.destinationInterfaces'),
+      srcaddr: requireList(fortigatePolicyForm.value.srcaddr, 'widgets.policyManager.form.sourceAddresses'),
+      dstaddr: requireList(fortigatePolicyForm.value.dstaddr, 'widgets.policyManager.form.destinationAddresses'),
+      service: requireList(fortigatePolicyForm.value.service, 'widgets.policyManager.form.services'),
+      action: fortigatePolicyForm.value.action,
+      schedule: requireText(fortigatePolicyForm.value.schedule, 'widgets.policyManager.form.schedule'),
+      logtraffic: fortigatePolicyForm.value.logtraffic,
+      status: fortigatePolicyForm.value.status,
+    }
+  }
+
+  return {
+    sourceIp: requireText(fortiwebPolicyForm.value.sourceIp, 'widgets.policyManager.form.sourceIp'),
+    incidentId: fortiwebPolicyForm.value.incidentId.trim() || null,
+    reason: requireText(fortiwebPolicyForm.value.reason, 'widgets.policyManager.form.reason'),
+  }
+}
+
+function toggleAdvancedPayload() {
+  if (!showAdvancedPayload.value) {
+    try {
+      payloadText.value = JSON.stringify(structuredPayload(), null, 2)
+    } catch {
+      payloadText.value = JSON.stringify(defaultCreatePayload(effectiveProviderType.value), null, 2)
+    }
+  }
+  showAdvancedPayload.value = !showAdvancedPayload.value
 }
 
 function parsePayload(): Record<string, unknown> {
@@ -282,7 +411,7 @@ async function createReview() {
   formError.value = ''
   isReviewing.value = true
   try {
-    const payload = parsePayload()
+    const payload = usesStructuredPolicyForm.value ? structuredPayload() : parsePayload()
     const policy = selectedPolicy.value
     await policiesStore.reviewPolicy({
       providerType: policy?.providerType ?? selectedProviderType.value,
@@ -504,7 +633,174 @@ async function applyReview(review: PolicyReview) {
                 </select>
               </div>
 
-              <label class="grid gap-1">
+              <div
+                v-if="usesStructuredPolicyForm"
+                data-test="policy-structured-form"
+                class="grid gap-2"
+              >
+                <template v-if="effectiveProviderType === 'fortigate'">
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.name') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.name"
+                      data-test="policy-form-name"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.sourceInterfaces') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.srcintf"
+                      data-test="policy-form-srcintf"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.destinationInterfaces') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.dstintf"
+                      data-test="policy-form-dstintf"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.sourceAddresses') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.srcaddr"
+                      data-test="policy-form-srcaddr"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.destinationAddresses') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.dstaddr"
+                      data-test="policy-form-dstaddr"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.services') }}
+                    </span>
+                    <input
+                      v-model="fortigatePolicyForm.service"
+                      data-test="policy-form-service"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <div class="grid grid-cols-1 gap-2">
+                    <label class="grid gap-1">
+                      <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                        {{ t('widgets.policyManager.form.action') }}
+                      </span>
+                      <select
+                        v-model="fortigatePolicyForm.action"
+                        data-test="policy-form-action"
+                        class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                      >
+                        <option value="accept">{{ t('widgets.policyManager.form.accept') }}</option>
+                        <option value="deny">{{ t('widgets.policyManager.form.deny') }}</option>
+                      </select>
+                    </label>
+                    <label class="grid gap-1">
+                      <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                        {{ t('widgets.policyManager.form.status') }}
+                      </span>
+                      <select
+                        v-model="fortigatePolicyForm.status"
+                        data-test="policy-form-status"
+                        class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                      >
+                        <option value="enable">{{ t('widgets.policyManager.form.enable') }}</option>
+                        <option value="disable">{{ t('widgets.policyManager.form.disable') }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="grid grid-cols-1 gap-2">
+                    <label class="grid gap-1">
+                      <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                        {{ t('widgets.policyManager.form.schedule') }}
+                      </span>
+                      <input
+                        v-model="fortigatePolicyForm.schedule"
+                        data-test="policy-form-schedule"
+                        class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                      />
+                    </label>
+                    <label class="grid gap-1">
+                      <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                        {{ t('widgets.policyManager.form.logtraffic') }}
+                      </span>
+                      <select
+                        v-model="fortigatePolicyForm.logtraffic"
+                        data-test="policy-form-logtraffic"
+                        class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                      >
+                        <option value="all">{{ t('widgets.policyManager.form.logAll') }}</option>
+                        <option value="utm">{{ t('widgets.policyManager.form.logSecurity') }}</option>
+                        <option value="disable">{{ t('widgets.policyManager.form.logDisable') }}</option>
+                      </select>
+                    </label>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.sourceIp') }}
+                    </span>
+                    <input
+                      v-model="fortiwebPolicyForm.sourceIp"
+                      data-test="policy-form-source-ip"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.incidentId') }}
+                    </span>
+                    <input
+                      v-model="fortiwebPolicyForm.incidentId"
+                      data-test="policy-form-incident-id"
+                      class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+                      {{ t('widgets.policyManager.form.reason') }}
+                    </span>
+                    <textarea
+                      v-model="fortiwebPolicyForm.reason"
+                      data-test="policy-form-reason"
+                      class="min-h-[64px] resize-none rounded border border-theme-border bg-theme-bg/80 p-2 text-xs text-theme-text outline-none focus:border-theme-primary"
+                    />
+                  </label>
+                </template>
+              </div>
+
+              <div v-if="supportsStructuredPolicyForm" class="flex justify-end">
+                <button
+                  type="button"
+                  data-test="policy-advanced-json-toggle"
+                  class="text-[11px] font-semibold text-theme-primary hover:text-theme-primary/80"
+                  @click.stop="toggleAdvancedPayload"
+                >
+                  {{ showAdvancedPayload ? t('widgets.policyManager.hideAdvancedJson') : t('widgets.policyManager.showAdvancedJson') }}
+                </button>
+              </div>
+
+              <label v-if="!supportsStructuredPolicyForm || showAdvancedPayload" class="grid gap-1">
                 <span class="text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
                   {{ t('widgets.policyManager.payload') }}
                 </span>
