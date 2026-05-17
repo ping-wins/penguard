@@ -74,6 +74,18 @@
       }
     },
     {
+      "id": "soar-playbook-builder",
+      "title": "Playbook Builder",
+      "kind": "builder",
+      "source": "soar_skipper",
+      "requiredCapabilities": ["playbooks"],
+      "defaultSize": { "w": 9, "h": 7 },
+      "dataEndpoint": "/api/widgets/soar-playbook-builder/data",
+      "template": "playbook-builder",
+      "dataGroup": "playbooks",
+      "fieldBindings": {}
+    },
+    {
       "id": "soar-active-playbook-runs",
       "title": "Active Playbook Runs",
       "kind": "table",

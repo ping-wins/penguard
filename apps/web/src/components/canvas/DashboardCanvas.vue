@@ -36,7 +36,6 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 import DraggableWidget from './DraggableWidget.vue'
-import PlaybookCanvasLayer from '../playbooks/canvas/PlaybookCanvasLayer.vue'
 import WidgetHealth from '../widgets/WidgetHealth.vue'
 import WidgetThreats from '../widgets/WidgetThreats.vue'
 import WidgetNetwork from '../widgets/WidgetNetwork.vue'
@@ -54,6 +53,7 @@ import WidgetSocTopEntities from '../widgets/soc/WidgetSocTopEntities.vue'
 import WidgetXdrEndpointHealth from '../widgets/soc/WidgetXdrEndpointHealth.vue'
 import WidgetSoarPlaybookRuns from '../widgets/soc/WidgetSoarPlaybookRuns.vue'
 import WidgetSoarPlaybookRunHistory from '../widgets/soc/WidgetSoarPlaybookRunHistory.vue'
+import WidgetPlaybookBuilder from '../widgets/soc/WidgetPlaybookBuilder.vue'
 import WidgetSocSlaBreach from '../widgets/soc/WidgetSocSlaBreach.vue'
 import WidgetSocMttdMttr from '../widgets/soc/WidgetSocMttdMttr.vue'
 import WidgetSocPolicyManager from '../widgets/policies/WidgetSocPolicyManager.vue'
@@ -554,6 +554,7 @@ const widgetMap: Record<string, any> = {
   'soc-recent-incidents': WidgetSocRecentIncidents,
   'soc-top-entities': WidgetSocTopEntities,
   'xdr-endpoint-health': WidgetXdrEndpointHealth,
+  'soar-playbook-builder': WidgetPlaybookBuilder,
   'soar-active-playbook-runs': WidgetSoarPlaybookRuns,
   'soar-playbook-run-history': WidgetSoarPlaybookRunHistory,
   'soc-sla-breach': WidgetSocSlaBreach,
@@ -925,8 +926,6 @@ watch(
             class="absolute origin-top-left"
             :style="workspaceStageStyle"
           >
-            <PlaybookCanvasLayer v-if="!isGridMode && hasSoarIntegration" />
-
             <DraggableWidget
               v-for="widget in activeWidgets"
               :key="widget.instanceId"

@@ -231,6 +231,34 @@ describe('PlaybookCanvasLayer', () => {
     host.remove()
   })
 
+  it('embeds inside a workspace widget without its own canvas move handle', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+
+    const wrapper = mount(PlaybookCanvasLayer, {
+      props: { embedded: true },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFlow: {
+            props: ['nodes', 'edges'],
+            template: '<div data-test="vue-flow-stub"><slot /></div>',
+          },
+          Background: { template: '<div />' },
+          Controls: { template: '<div />' },
+          MiniMap: { template: '<div />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const layer = wrapper.get('[data-test="playbook-canvas-layer"]')
+    expect(layer.classes()).toContain('relative')
+    expect(layer.classes()).toContain('h-full')
+    expect(layer.attributes('style')).toBeUndefined()
+    expect(wrapper.find('[data-test="playbook-canvas-drag-handle"]').exists()).toBe(false)
+  })
+
   it('moves as a special widget on the workspace canvas', async () => {
     vi.stubGlobal('fetch', vi.fn())
     useDashboardStore().setZoom(2)

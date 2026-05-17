@@ -23,6 +23,12 @@ import PlaybookFlowEdge from './PlaybookFlowEdge.vue'
 import PlaybookNodePropertiesPanel from './PlaybookNodePropertiesPanel.vue'
 import PlaybookRunOverlay from './PlaybookRunOverlay.vue'
 
+const props = withDefaults(defineProps<{
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
+
 const { t } = useI18n()
 const dashboardStore = useDashboardStore()
 const playbooksStore = usePlaybooksStore()
@@ -55,17 +61,21 @@ const automationNodeTypes = computed(() => playbooksStore.nodeTypes.filter((node
 const layerClass = computed(() => (
   isFullscreen.value
     ? 'fixed inset-4 z-[900] h-auto w-auto rounded-lg'
+    : props.embedded
+      ? 'relative h-full w-full rounded-none'
     : 'absolute z-[160] h-[680px] w-[1180px] rounded'
 ))
 const layerStyle = computed(() => (
-  isFullscreen.value
+  isFullscreen.value || props.embedded
     ? undefined
     : { transform: `translate(${Math.round(layerPosition.value.x)}px, ${Math.round(layerPosition.value.y)}px)` }
 ))
 const bodyGridClass = computed(() => (
   isFullscreen.value
-    ? 'grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_320px]'
-    : 'grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_260px]'
+    ? 'playbook-builder-body playbook-builder-body--fullscreen'
+    : props.embedded
+      ? 'playbook-builder-body playbook-builder-body--embedded'
+      : 'playbook-builder-body playbook-builder-body--floating'
 ))
 const fullscreenLabel = computed(() => (
   isFullscreen.value ? t('playbooks.canvas.exitFullscreen') : t('playbooks.canvas.enterFullscreen')
@@ -163,7 +173,7 @@ function handleFullscreenKeydown(event: KeyboardEvent) {
 }
 
 function startMove(event: PointerEvent) {
-  if (isFullscreen.value) return
+  if (isFullscreen.value || props.embedded) return
   isMoving.value = true
   moveStartClientX = event.clientX
   moveStartClientY = event.clientY
@@ -207,13 +217,14 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
   <Teleport to="body" :disabled="!isFullscreen">
     <section
       data-test="playbook-canvas-layer"
-      class="flex flex-col overflow-hidden border border-theme-border bg-theme-panel/95 shadow-2xl"
-      :class="[layerClass, isMoving ? 'ring-2 ring-theme-primary/50 shadow-theme-primary/10' : '']"
+      class="playbook-builder-shell flex flex-col overflow-hidden border border-theme-border bg-theme-panel/95 shadow-2xl"
+      :class="[layerClass, props.embedded && !isFullscreen ? 'shadow-none' : '', isMoving ? 'ring-2 ring-theme-primary/50 shadow-theme-primary/10' : '']"
       :style="layerStyle"
     >
       <header class="flex items-center justify-between gap-3 border-b border-theme-border px-3 py-2">
         <div class="flex min-w-0 items-center gap-2">
           <button
+            v-if="!props.embedded"
             type="button"
             data-test="playbook-canvas-drag-handle"
             class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-theme-border bg-theme-bg text-theme-text-muted hover:text-theme-text disabled:cursor-default disabled:opacity-50"
@@ -292,7 +303,7 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
       <div :class="bodyGridClass">
         <aside
           data-test="playbook-node-drawer"
-          class="flex min-h-0 flex-col border-r border-theme-border bg-theme-panel/80"
+          class="playbook-builder-node-drawer flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-theme-border bg-theme-panel/80"
         >
           <div class="border-b border-theme-border px-3 py-2">
             <div class="flex items-center justify-between gap-2">
@@ -365,7 +376,7 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
 
         <div
           data-test="playbook-canvas-drop-zone"
-          class="relative min-h-0"
+          class="relative min-h-0 min-w-0"
           @drop="handleDrop"
           @dragover="handleDragOver"
         >
@@ -389,7 +400,7 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
           </VueFlow>
         </div>
 
-        <div class="flex min-h-0 flex-col gap-3 border-l border-theme-border bg-theme-panel/80 p-3">
+        <div class="playbook-builder-properties flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto border-l border-theme-border bg-theme-panel/80 p-3">
           <div v-if="!selectedPlaybookId" class="grid grid-cols-1 gap-2">
             <input
               v-model="draftId"
@@ -437,4 +448,51 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
 @import '@vue-flow/core/dist/theme-default.css';
 @import '@vue-flow/controls/dist/style.css';
 @import '@vue-flow/minimap/dist/style.css';
+
+.playbook-builder-shell {
+  container-type: inline-size;
+}
+
+.playbook-builder-body {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+.playbook-builder-body--fullscreen {
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+}
+
+.playbook-builder-body--floating {
+  grid-template-columns: 220px minmax(0, 1fr) 260px;
+}
+
+.playbook-builder-body--embedded {
+  grid-template-columns: minmax(190px, 220px) minmax(360px, 1fr) minmax(240px, 280px);
+}
+
+@container (max-width: 920px) {
+  .playbook-builder-body--embedded {
+    grid-template-columns: minmax(170px, 200px) minmax(0, 1fr);
+  }
+
+  .playbook-builder-body--embedded .playbook-builder-properties {
+    grid-column: 1 / -1;
+    min-height: 230px;
+    border-left: 0;
+    border-top: 1px solid var(--theme-border);
+  }
+}
+
+@container (max-width: 760px) {
+  .playbook-builder-body--embedded {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-builder-body--embedded .playbook-builder-node-drawer {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--theme-border);
+  }
+}
 </style>
