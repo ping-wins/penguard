@@ -54,7 +54,7 @@ class AddonCapabilities(BaseModel):
 
     log_source: bool = Field(default=False, alias="logSource")
     playbook_target: bool = Field(default=False, alias="playbookTarget")
-    managed: bool = Field(default=False)
+    managed: bool = Field(default=False, alias="managed")
 
 
 class AddonManifest(BaseModel):
