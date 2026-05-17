@@ -138,6 +138,15 @@ def test_run_creates_dry_run_history_and_waits_for_sensitive_approval():
         "waiting_approval",
         "waiting_approval",
     ]
+    assert [node["nodeId"] for node in body["nodeRuns"]] == [
+        "trigger",
+        "severity",
+        "enrich_source_ip",
+        "approval",
+        "recommend_block",
+    ]
+    assert body["nodeRuns"][-1]["status"] == "waiting_approval"
+    assert body["edgeTraversals"][-1]["condition"] == "success"
 
     get_response = client.get(f"/playbook-runs/{body['id']}")
     assert get_response.status_code == 200

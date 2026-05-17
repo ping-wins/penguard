@@ -1,12 +1,21 @@
 import logging
-from collections import defaultdict, deque
 from datetime import UTC, datetime
-from typing import Any, Literal
-from uuid import uuid4
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.graph_validation import validate_playbook_for_save
+from app.models import (
+    NodeTypesResponse,
+    Playbook,
+    PlaybookEdge,
+    PlaybookNode,
+    PlaybookRun,
+    RunStatus,
+    SimulationResponse,
+)
+from app.node_catalog import node_type_definitions
+from app.runtime import build_playbook_run, build_step_previews
 from app.store import SoarStore
 
 SERVICE_NAME = "soar_skipper"
@@ -15,300 +24,6 @@ logger = logging.getLogger("uvicorn.error")
 app = FastAPI(title="soar_skipper", version="0.1.0")
 
 store = SoarStore()
-
-NodeType = Literal[
-    "trigger.incident_created",
-    "condition.severity",
-    "enrich.ip",
-    "case.note",
-    "audit.note",
-    "approval.required",
-    "notify.webhook",
-    "fortigate.recommend_block",
-    "fortiweb.recommend_block",
-    "fortigate.temporary_block",
-    "webhook.dry_run",
-]
-NodeCategory = Literal["trigger", "condition", "enrichment", "action", "control"]
-ExecutionMode = Literal["dry_run", "live", "approval_required"]
-NodeBoundary = Literal[
-    "trigger_only",
-    "decision_only",
-    "enrichment_read_only",
-    "case_note",
-    "approval_gate",
-    "notification_dry_run",
-    "recommendation_only",
-    "fortigate_policy_orchestration",
-    "webhook_dry_run",
-]
-RunStatus = Literal["completed", "waiting_approval"]
-StepStatus = Literal["completed", "waiting_approval"]
-
-SENSITIVE_NODE_TYPES = {
-    "fortigate.recommend_block",
-    "fortigate.temporary_block",
-    "fortiweb.recommend_block",
-}
-APPROVAL_NODE_TYPES = {"approval.required"}
-
-
-class PlaybookNode(BaseModel):
-    id: str = Field(min_length=1)
-    type: NodeType
-    config: dict[str, Any] = Field(default_factory=dict)
-
-
-class PlaybookEdge(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    from_node: str = Field(alias="from", min_length=1)
-    to_node: str = Field(alias="to", min_length=1)
-
-
-class NodeTypeDefinition(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: NodeType
-    label: str
-    category: NodeCategory
-    sensitive: bool = False
-    dry_run_only: bool = Field(default=True, alias="dryRunOnly")
-    execution_mode: ExecutionMode = Field(default="dry_run", alias="executionMode")
-    live_available: bool = Field(default=False, alias="liveAvailable")
-    boundary: NodeBoundary
-    config_schema: dict[str, Any] = Field(default_factory=dict, alias="configSchema")
-
-
-class NodeTypesResponse(BaseModel):
-    items: list[NodeTypeDefinition]
-
-
-class Playbook(BaseModel):
-    id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
-    enabled: bool = False
-    nodes: list[PlaybookNode] = Field(min_length=1)
-    edges: list[PlaybookEdge] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_graph(self) -> "Playbook":
-        node_ids = [node.id for node in self.nodes]
-        unique_node_ids = set(node_ids)
-        if len(unique_node_ids) != len(node_ids):
-            raise ValueError("playbook node ids must be unique")
-
-        missing_refs = [
-            edge
-            for edge in self.edges
-            if edge.from_node not in unique_node_ids or edge.to_node not in unique_node_ids
-        ]
-        if missing_refs:
-            raise ValueError("playbook edges must reference existing node ids")
-        return self
-
-
-class StepPreview(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    node_id: str = Field(alias="nodeId")
-    node_type: NodeType = Field(alias="nodeType")
-    status: StepStatus
-    sensitive: bool = False
-
-
-class SimulationResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    dry_run: bool = Field(alias="dryRun")
-    valid: bool
-    steps: list[StepPreview]
-
-
-class PlaybookStepRun(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: str
-    node_id: str = Field(alias="nodeId")
-    node_type: NodeType = Field(alias="nodeType")
-    status: StepStatus
-    sensitive: bool = False
-    created_at: datetime = Field(alias="createdAt")
-
-
-class PlaybookRun(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: str
-    incident_id: str = Field(alias="incidentId")
-    playbook_id: str = Field(alias="playbookId")
-    dry_run: bool = Field(alias="dryRun")
-    status: RunStatus
-    steps: list[PlaybookStepRun]
-    created_at: datetime = Field(alias="createdAt")
-
-
-def _node_type_definitions() -> list[NodeTypeDefinition]:
-    return [
-        NodeTypeDefinition(
-            id="trigger.incident_created",
-            label="Incident Created",
-            category="trigger",
-            boundary="trigger_only",
-            config_schema={"type": "object", "properties": {}},
-        ),
-        NodeTypeDefinition(
-            id="condition.severity",
-            label="Severity Condition",
-            category="condition",
-            boundary="decision_only",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "severity": {
-                        "type": "array",
-                        "items": {"enum": ["low", "medium", "high", "critical"]},
-                    }
-                },
-                "required": ["severity"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="enrich.ip",
-            label="Enrich IP",
-            category="enrichment",
-            boundary="enrichment_read_only",
-            config_schema={
-                "type": "object",
-                "properties": {"field": {"type": "string"}},
-                "required": ["field"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="case.note",
-            label="Create Case Note",
-            category="action",
-            boundary="case_note",
-            config_schema={
-                "type": "object",
-                "properties": {"template": {"type": "string"}},
-                "required": ["template"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="audit.note",
-            label="Write Audit Note",
-            category="action",
-            boundary="case_note",
-            config_schema={
-                "type": "object",
-                "properties": {"message": {"type": "string"}},
-                "required": ["message"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="approval.required",
-            label="Require Approval",
-            category="control",
-            boundary="approval_gate",
-            config_schema={
-                "type": "object",
-                "properties": {"role": {"type": "string", "default": "admin"}},
-            },
-        ),
-        NodeTypeDefinition(
-            id="notify.webhook",
-            label="Notify Webhook",
-            category="action",
-            boundary="notification_dry_run",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "mode": {"enum": ["dry_run"]},
-                    "channel": {"type": "string"},
-                },
-            },
-        ),
-        NodeTypeDefinition(
-            id="fortigate.recommend_block",
-            label="Recommend FortiGate Block",
-            category="action",
-            sensitive=True,
-            boundary="recommendation_only",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "mode": {"enum": ["dry_run"]},
-                    "field": {"type": "string"},
-                },
-                "required": ["field"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="fortiweb.recommend_block",
-            label="Recommend FortiWeb Block",
-            category="action",
-            sensitive=True,
-            boundary="recommendation_only",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "sourceIp": {"type": "string"},
-                    "durationMinutes": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "default": 60,
-                    },
-                },
-                "required": ["sourceIp"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="fortigate.temporary_block",
-            label="FortiGate Temporary Block",
-            category="action",
-            sensitive=True,
-            dryRunOnly=False,
-            executionMode="approval_required",
-            liveAvailable=True,
-            boundary="fortigate_policy_orchestration",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "scope": {
-                        "type": "string",
-                        "enum": [
-                            "source_only",
-                            "source_destination",
-                            "source_destination_service",
-                        ],
-                    },
-                    "durationMinutes": {
-                        "type": "integer",
-                        "minimum": 5,
-                        "maximum": 1440,
-                    },
-                    "sourceField": {"type": "string"},
-                    "destinationField": {"type": "string"},
-                    "serviceField": {"type": "string"},
-                },
-                "required": ["scope", "durationMinutes", "sourceField"],
-            },
-        ),
-        NodeTypeDefinition(
-            id="webhook.dry_run",
-            label="Webhook Dry Run",
-            category="action",
-            boundary="webhook_dry_run",
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string"},
-                    "method": {"enum": ["POST"]},
-                },
-            },
-        ),
-    ]
 
 
 def _default_playbooks() -> list[Playbook]:
@@ -385,10 +100,7 @@ def _default_playbooks() -> list[Playbook]:
 
 
 def _seed_default_playbooks() -> None:
-    """Insert the default disabled playbooks the first time the service comes
-    up against an empty store. Subsequent restarts are idempotent — the
-    operator's custom playbooks stay intact.
-    """
+    """Insert default disabled playbooks only when the store is empty."""
     for playbook in _default_playbooks():
         if store.get_playbook(playbook.id) is None:
             store.save_playbook(playbook.id, _playbook_to_payload(playbook))
@@ -420,7 +132,7 @@ def health() -> dict[str, str]:
 
 @app.get("/node-types", response_model=NodeTypesResponse)
 def list_node_types() -> NodeTypesResponse:
-    items = _node_type_definitions()
+    items = node_type_definitions()
     logger.info("soar_node_types_list returned=%s", len(items))
     return NodeTypesResponse(items=items)
 
@@ -438,6 +150,12 @@ def create_playbook(playbook: Playbook) -> Playbook:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"playbook {playbook.id} already exists",
+        )
+    validation_errors = validate_playbook_for_save(playbook)
+    if validation_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": validation_errors},
         )
     store.save_playbook(playbook.id, _playbook_to_payload(playbook))
     logger.info(
@@ -462,6 +180,12 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
             detail="playbook id must match path",
         )
     _get_playbook_or_404(playbook_id)
+    validation_errors = validate_playbook_for_save(playbook)
+    if validation_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": validation_errors},
+        )
     store.update_playbook(playbook_id, _playbook_to_payload(playbook))
     logger.info(
         "soar_playbook_updated playbook_id=%s enabled=%s nodes=%s",
@@ -475,7 +199,7 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
 @app.post("/playbooks/{playbook_id}/simulate", response_model=SimulationResponse)
 def simulate_playbook(playbook_id: str) -> SimulationResponse:
     playbook = _get_playbook_or_404(playbook_id)
-    steps = _build_step_previews(playbook)
+    steps = build_step_previews(playbook)
     logger.info(
         "soar_playbook_simulated playbook_id=%s steps=%s",
         playbook_id,
@@ -491,29 +215,7 @@ def simulate_playbook(playbook_id: str) -> SimulationResponse:
 )
 def run_playbook(incident_id: str, playbook_id: str) -> PlaybookRun:
     playbook = _get_playbook_or_404(playbook_id)
-    now = _utc_now()
-    steps = [
-        PlaybookStepRun(
-            id=f"step_{index + 1}",
-            node_id=preview.node_id,
-            node_type=preview.node_type,
-            status=preview.status,
-            sensitive=preview.sensitive,
-            created_at=now,
-        )
-        for index, preview in enumerate(_build_step_previews(playbook))
-    ]
-    has_waiting_step = any(step.status == "waiting_approval" for step in steps)
-    run_status: RunStatus = "waiting_approval" if has_waiting_step else "completed"
-    run = PlaybookRun(
-        id=f"run_{uuid4().hex}",
-        incident_id=incident_id,
-        playbook_id=playbook_id,
-        dry_run=True,
-        status=run_status,
-        steps=steps,
-        created_at=now,
-    )
+    run = build_playbook_run(playbook, incident_id=incident_id, now=_utc_now())
     store.save_run(
         _run_to_payload(run),
         incident_id=run.incident_id,
@@ -557,6 +259,17 @@ def approve_playbook_run(run_id: str) -> PlaybookRun:
                 else step
                 for step in run.steps
             ],
+            "node_runs": [
+                node.model_copy(
+                    update={
+                        "status": "completed",
+                        "completed_at": _utc_now(),
+                    }
+                )
+                if node.status == "waiting_approval"
+                else node
+                for node in run.node_runs
+            ],
         }
     )
     store.update_run(_run_to_payload(approved), status=approved.status)
@@ -581,52 +294,6 @@ def _get_playbook_or_404(playbook_id: str) -> Playbook:
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="playbook not found")
     return _payload_to_playbook(payload)
-
-
-def _build_step_previews(playbook: Playbook) -> list[StepPreview]:
-    return [
-        StepPreview(
-            node_id=node.id,
-            node_type=node.type,
-            status=_status_for_node(node),
-            sensitive=node.type in SENSITIVE_NODE_TYPES,
-        )
-        for node in _ordered_nodes(playbook)
-    ]
-
-
-def _status_for_node(node: PlaybookNode) -> StepStatus:
-    if node.type in SENSITIVE_NODE_TYPES or node.type in APPROVAL_NODE_TYPES:
-        return "waiting_approval"
-    return "completed"
-
-
-def _ordered_nodes(playbook: Playbook) -> list[PlaybookNode]:
-    nodes_by_id = {node.id: node for node in playbook.nodes}
-    input_order = {node.id: index for index, node in enumerate(playbook.nodes)}
-    outgoing: dict[str, list[str]] = defaultdict(list)
-    indegree = {node.id: 0 for node in playbook.nodes}
-
-    for edge in playbook.edges:
-        outgoing[edge.from_node].append(edge.to_node)
-        indegree[edge.to_node] += 1
-
-    starting_node_ids = (node_id for node_id, degree in indegree.items() if degree == 0)
-    queue = deque(sorted(starting_node_ids, key=input_order.get))
-    ordered_ids: list[str] = []
-
-    while queue:
-        node_id = queue.popleft()
-        ordered_ids.append(node_id)
-        for next_node_id in sorted(outgoing[node_id], key=input_order.get):
-            indegree[next_node_id] -= 1
-            if indegree[next_node_id] == 0:
-                queue.append(next_node_id)
-
-    if len(ordered_ids) != len(playbook.nodes):
-        return playbook.nodes
-
-    return [nodes_by_id[node_id] for node_id in ordered_ids]
 
 
 def _utc_now() -> datetime:
