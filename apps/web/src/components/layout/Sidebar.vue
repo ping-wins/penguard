@@ -21,7 +21,6 @@ import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
 import PlaybooksPanel from '../playbooks/PlaybooksPanel.vue'
-import LabPolicyWizard from '../integrations/LabPolicyWizard.vue'
 import { useRouter } from 'vue-router'
 import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
@@ -712,7 +711,6 @@ async function handleChatSubmit() {
                     {{ fortigateIngestionStatus(intg.id)?.enabled ? t('integrations.disableScheduler') : t('integrations.enableScheduler') }}
                   </button>
                 </div>
-                <LabPolicyWizard :integration-id="intg.id" />
               </div>
             </div>
 
