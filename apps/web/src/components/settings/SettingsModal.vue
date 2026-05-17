@@ -147,9 +147,9 @@ watch(
             </button>
           </nav>
 
-          <section class="flex-1 overflow-y-auto p-5">
+          <section class="flex-1 min-w-0 flex flex-col overflow-hidden">
             <!-- PROFILE TAB -->
-            <div v-if="activeTab === 'profile'" class="space-y-4">
+            <div v-if="activeTab === 'profile'" class="flex-1 overflow-y-auto p-5 space-y-4">
               <header>
                 <h3 class="text-base font-semibold text-theme-text">{{ t('settings.profile.title') }}</h3>
                 <p class="text-xs text-theme-text-muted mt-1">{{ t('settings.profile.subtitle') }}</p>
@@ -211,7 +211,7 @@ watch(
             </div>
 
             <!-- APPEARANCE TAB -->
-            <div v-if="activeTab === 'appearance'" class="space-y-4">
+            <div v-if="activeTab === 'appearance'" class="flex-1 overflow-y-auto p-5 space-y-4">
               <header>
                 <h3 class="text-base font-semibold text-theme-text">{{ t('settings.appearance.title') }}</h3>
                 <p class="text-xs text-theme-text-muted mt-1">{{ t('settings.appearance.subtitle') }}</p>
@@ -228,7 +228,7 @@ watch(
             </div>
 
             <!-- LANGUAGE TAB -->
-            <div v-if="activeTab === 'language'" class="space-y-4">
+            <div v-if="activeTab === 'language'" class="flex-1 overflow-y-auto p-5 space-y-4">
               <header>
                 <h3 class="text-base font-semibold text-theme-text">{{ t('settings.language.title') }}</h3>
                 <p class="text-xs text-theme-text-muted mt-1">{{ t('settings.language.subtitle') }}</p>
@@ -278,19 +278,18 @@ watch(
                 </div>
               </transition>
             </div>
+            <div v-if="activeTab === 'marketplace'" class="flex-1 min-h-0 overflow-hidden">
+              <MarketplacePanel @install="onMarketplaceInstall" />
+            </div>
+
+            <div v-if="activeTab === 'ai'" class="flex-1 min-h-0 overflow-hidden">
+              <AiPreferencesPanel />
+            </div>
+
+            <div v-if="activeTab === 'roles'" class="flex-1 min-h-0 overflow-hidden relative">
+              <RolesManagerPanel />
+            </div>
           </section>
-
-          <div v-if="activeTab === 'marketplace'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
-            <MarketplacePanel @install="onMarketplaceInstall" />
-          </div>
-
-          <div v-if="activeTab === 'ai'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
-            <AiPreferencesPanel />
-          </div>
-
-          <div v-if="activeTab === 'roles'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border relative">
-            <RolesManagerPanel />
-          </div>
         </div>
       </div>
     </div>
