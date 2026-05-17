@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.integrations.fortiweb.auth import fortiweb_runtime_auth
+
 
 class UnsupportedProviderType(ValueError):
     pass
@@ -46,12 +48,19 @@ def persist_integration(
             verify_tls=bool(auth.get("verifyTls", False)),
         )
     if provider_type == "fortiweb":
+        runtime_auth = fortiweb_runtime_auth(auth)
         return services["fortiweb"].create(
             owner_user_id=owner_user_id,
             name=name,
-            host=str(auth["host"]),
-            api_key=str(auth["apiKey"]),
-            verify_tls=bool(auth.get("verifyTls", False)),
+            host=str(runtime_auth["host"]),
+            api_key=str(runtime_auth["apiKey"]),
+            verify_tls=bool(runtime_auth.get("verifyTls", False)),
+            target_server_policy=str(
+                runtime_auth.get("targetServerPolicy") or "lab-waf-policy"
+            ),
+            managed_ip_list_policy=str(
+                runtime_auth.get("managedIpListPolicy") or "FD_IP_BLOCKLIST"
+            ),
         )
     if provider_type in ("siem_kowalski", "xdr_rico", "soar_skipper"):
         return services["penguin"].create(

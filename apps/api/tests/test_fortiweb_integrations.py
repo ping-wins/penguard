@@ -18,7 +18,9 @@ def test_create_fortiweb_integration_never_returns_api_key():
         json={
             "name": "FortiWeb Lab",
             "host": "https://fortiweb.local",
-            "apiKey": "fweb_api_key_from_user",
+            "username": "fortidashboard-api",
+            "password": "secret",
+            "vdom": "root",
             "verifyTls": False,
             "targetServerPolicy": "lab-waf-policy",
             "managedIpListPolicy": "FD_IP_BLOCKLIST",
@@ -46,7 +48,9 @@ def test_test_fortiweb_connection_returns_device_metadata():
         headers=csrf_headers(),
         json={
             "host": "https://fortiweb.local",
-            "apiKey": "fweb_api_key_from_user",
+            "username": "fortidashboard-api",
+            "password": "secret",
+            "vdom": "root",
             "verifyTls": False,
         },
     )

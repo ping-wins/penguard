@@ -45,6 +45,11 @@ function addonAuthFields(addon: AddonManifest) {
   return addon.provider?.auth?.fields ?? []
 }
 
+function isCurrentVersion(addon: AddonManifest) {
+  const version = addonVersion(addon)
+  return Boolean(addon.installed && version && addon.installedVersion === version)
+}
+
 async function installAddon(addon: AddonManifest) {
   try {
     await store.install(addon)
@@ -137,12 +142,13 @@ onMounted(() => {
             <div class="flex shrink-0 flex-col gap-1">
               <button
                 type="button"
+                :data-test="`marketplace-install-${addon.id}`"
                 class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="addon.installed || store.installingId === addon.id || !addonVersion(addon)"
+                :disabled="isCurrentVersion(addon) || store.installingId === addon.id || !addonVersion(addon)"
                 @click="installAddon(addon)"
               >
                 <Plug :size="12" />
-                {{ addon.installed ? t('marketplace.installed') : t('marketplace.install') }}
+                {{ isCurrentVersion(addon) ? t('marketplace.installed') : t('marketplace.install') }}
               </button>
               <button
                 type="button"
@@ -238,11 +244,11 @@ onMounted(() => {
             <button
               type="button"
               class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-3 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="selected.installed || store.installingId === selected.id || !addonVersion(selected)"
+              :disabled="isCurrentVersion(selected) || store.installingId === selected.id || !addonVersion(selected)"
               @click="installAddon(selected); selected = null"
             >
               <Plug :size="12" />
-              {{ selected.installed ? t('marketplace.installed') : t('marketplace.install') }}
+              {{ isCurrentVersion(selected) ? t('marketplace.installed') : t('marketplace.install') }}
             </button>
           </footer>
         </div>

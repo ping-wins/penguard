@@ -38,10 +38,56 @@ def build_catalog(records: list[InstalledAddonRecord]) -> list[dict[str, Any]]:
                 "icon": manifest.icon,
                 "providerType": manifest.provider.type,
                 "versions": list(versions),
-                "authFields": [
-                    field.model_dump(by_alias=True) for field in manifest.provider.auth.fields
-                ],
+                "authFields": _auth_fields(
+                    manifest.provider.type,
+                    [field.model_dump(by_alias=True) for field in manifest.provider.auth.fields],
+                ),
                 "capabilities": manifest.capabilities.model_dump(by_alias=True),
             }
         )
     return catalog
+
+
+def _auth_fields(provider_type: str, fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if provider_type == "fortiweb":
+        return [
+            {
+                "id": "host",
+                "label": "FortiWeb URL",
+                "type": "url",
+                "required": True,
+                "placeholder": "https://fortiweb.example.local",
+            },
+            {
+                "id": "username",
+                "label": "Username",
+                "type": "text",
+                "required": True,
+            },
+            {
+                "id": "password",
+                "label": "Password",
+                "type": "secret",
+                "required": True,
+            },
+            {"id": "vdom", "label": "VDOM", "type": "text", "default": "root"},
+            {
+                "id": "verifyTls",
+                "label": "Verify TLS",
+                "type": "boolean",
+                "default": False,
+            },
+            {
+                "id": "targetServerPolicy",
+                "label": "Target server policy",
+                "type": "text",
+                "default": "lab-waf-policy",
+            },
+            {
+                "id": "managedIpListPolicy",
+                "label": "Managed IP list policy",
+                "type": "text",
+                "default": "FD_IP_BLOCKLIST",
+            },
+        ]
+    return fields

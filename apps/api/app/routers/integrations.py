@@ -5,7 +5,7 @@ from ipaddress import ip_network
 from typing import Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 from sqlalchemy.orm import Session
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
@@ -39,6 +39,7 @@ from app.integrations.fortigate.store import (
     SqlAlchemyFortiGateIntegrationStore,
 )
 from app.integrations.fortigate.syslog import send_fortigate_syslog_probe
+from app.integrations.fortiweb.auth import build_fortiweb_authorization
 from app.integrations.fortiweb.service import (
     FortiWebConnectionFailed,
     FortiWebIntegrationService,
@@ -109,11 +110,36 @@ class FortiGateConnectionTest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class FortiWebIntegrationCreate(BaseModel):
-    name: str
+class FortiWebAuthPayload(BaseModel):
     host: HttpUrl
-    api_key: str = Field(alias="apiKey", min_length=16)
+    api_key: str | None = Field(alias="apiKey", default=None, min_length=16)
+    username: str | None = Field(default=None, min_length=1)
+    password: str | None = Field(default=None, min_length=1)
+    vdom: str = Field(default="root", min_length=1)
     verify_tls: bool = Field(alias="verifyTls", default=True)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def require_credentials_or_legacy_key(self) -> "FortiWebAuthPayload":
+        if self.api_key:
+            return self
+        if not self.username or not self.password:
+            raise ValueError("username and password are required")
+        return self
+
+    def authorization_value(self) -> str:
+        if self.api_key:
+            return self.api_key
+        return build_fortiweb_authorization(
+            username=self.username or "",
+            password=self.password or "",
+            vdom=self.vdom,
+        )
+
+
+class FortiWebIntegrationCreate(FortiWebAuthPayload):
+    name: str
     target_server_policy: str = Field(
         alias="targetServerPolicy",
         default="lab-waf-policy",
@@ -129,15 +155,8 @@ class FortiWebIntegrationCreate(BaseModel):
         pattern=r"^[A-Za-z0-9_. -]+$",
     )
 
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class FortiWebConnectionTest(BaseModel):
-    host: HttpUrl
-    api_key: str = Field(alias="apiKey", min_length=16)
-    verify_tls: bool = Field(alias="verifyTls", default=True)
-
-    model_config = ConfigDict(populate_by_name=True)
+class FortiWebConnectionTest(FortiWebAuthPayload):
+    pass
 
 
 class FortiWebSourceBlockReviewRequest(BaseModel):
@@ -390,7 +409,7 @@ def create_fortiweb_integration(
             owner_user_id=str(current_user["id"]),
             name=payload.name,
             host=str(payload.host),
-            api_key=payload.api_key,
+            api_key=payload.authorization_value(),
             verify_tls=payload.verify_tls,
             target_server_policy=payload.target_server_policy,
             managed_ip_list_policy=payload.managed_ip_list_policy,
@@ -405,6 +424,8 @@ def create_fortiweb_integration(
             user_agent=request.headers.get("user-agent"),
             details={
                 "host": str(payload.host),
+                "username": payload.username,
+                "vdom": payload.vdom,
                 "verifyTls": payload.verify_tls,
                 "targetServerPolicy": payload.target_server_policy,
                 "managedIpListPolicy": payload.managed_ip_list_policy,
@@ -422,6 +443,8 @@ def create_fortiweb_integration(
         details={
             "integrationId": created["id"],
             "host": str(payload.host),
+            "username": payload.username,
+            "vdom": payload.vdom,
             "verifyTls": payload.verify_tls,
             "targetServerPolicy": payload.target_server_policy,
             "managedIpListPolicy": payload.managed_ip_list_policy,
@@ -439,7 +462,7 @@ def test_fortiweb_connection(
 ) -> dict:
     return service.test_connection(
         host=str(payload.host),
-        api_key=payload.api_key,
+        api_key=payload.authorization_value(),
         verify_tls=payload.verify_tls,
     )
 

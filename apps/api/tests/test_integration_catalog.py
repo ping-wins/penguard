@@ -66,5 +66,16 @@ def test_build_catalog_reads_installed_manifest(tmp_path: Path) -> None:
     }
 
 
+def test_build_catalog_uses_fortiweb_credential_fields(tmp_path: Path) -> None:
+    rec = _write_manifest(tmp_path)
+    catalog = build_catalog([rec])
+
+    fields = {field["id"]: field for field in catalog[0]["authFields"]}
+    assert set(fields) >= {"host", "username", "password", "vdom", "verifyTls"}
+    assert "apiKey" not in fields
+    assert fields["password"]["type"] == "secret"
+    assert fields["vdom"]["default"] == "root"
+
+
 def test_build_catalog_skips_records_without_manifest(tmp_path: Path) -> None:
     assert build_catalog([_Rec("ghost", "1.0.0", str(tmp_path / "nope"))]) == []

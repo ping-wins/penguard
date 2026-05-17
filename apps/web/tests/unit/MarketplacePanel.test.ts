@@ -51,6 +51,35 @@ describe('MarketplacePanel', () => {
     expect(wrapper.text()).toContain('FortiWeb Core')
     expect(wrapper.text()).toContain('8.0.5')
   })
+
+  it('allows installing newer remote version over an older installed add-on', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      items: [
+        {
+          id: 'fortiweb-core',
+          name: 'FortiWeb Core',
+          vendor: 'Fortinet',
+          category: 'waf',
+          description: 'Connect a FortiWeb WAF.',
+          latestVersion: '8.0.5.1',
+          versions: ['8.0.5.1', '8.0.5'],
+          installed: true,
+          installedVersion: '8.0.5',
+        },
+      ],
+      count: 1,
+    })))
+
+    const wrapper = mount(MarketplacePanel, {
+      global: {
+        plugins: [i18n],
+      },
+    })
+    await flushPromises()
+
+    const installButton = wrapper.get('button[data-test="marketplace-install-fortiweb-core"]')
+    expect(installButton.attributes('disabled')).toBeUndefined()
+  })
 })
 
 async function flushPromises() {

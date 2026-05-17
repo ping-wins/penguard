@@ -17,6 +17,7 @@ from app.integrations.connect_persistence import (
     persist_integration,
     validate_auth,
 )
+from app.integrations.fortiweb.auth import fortiweb_runtime_auth
 from app.integrations.wiring import apply_wiring, get_soar_actions
 from app.routers.integrations import (
     get_fortigate_integration_service,
@@ -63,15 +64,22 @@ def _resolve_and_test(
         auth = validate_auth(entry["authFields"], body.get("auth") or {})
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    runtime_auth = (
+        fortiweb_runtime_auth(auth) if entry["providerType"] == "fortiweb" else auth
+    )
 
     registry: ConnectorRegistry = get_connector_registry()
     try:
-        connector = registry.get(str(addon_id), integration_id="__probe__", config=auth)
+        connector = registry.get(
+            str(addon_id),
+            integration_id="__probe__",
+            config=runtime_auth,
+        )
         result = connector.health_check()
     except Exception as exc:
         logger.exception("connect_health_check_failed addon=%s", addon_id)
         result = {"ok": False, "status": "error", "device": {}, "message": str(exc)}
-    return entry, auth, result
+    return entry, runtime_auth, result
 
 
 @router.post("/connect/test")

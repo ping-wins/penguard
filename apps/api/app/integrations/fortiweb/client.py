@@ -40,7 +40,7 @@ class FortiWebApiClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not api_key.strip():
-            raise ValueError("api_key is required")
+            raise ValueError("FortiWeb authorization is required")
         self.host = host.rstrip("/")
         self.api_key = api_key.strip()
         self.verify_tls = verify_tls
@@ -134,7 +134,7 @@ class FortiWebApiClient:
             status_code = exc.response.status_code
             if status_code in (401, 403):
                 raise FortiWebApiError(
-                    "FortiWeb rejected the API key (invalid or insufficient permissions)"
+                    "FortiWeb credentials invalid or insufficient permissions"
                 ) from exc
             if status_code == 404:
                 raise FortiWebApiError(

@@ -9,7 +9,7 @@ PKGS = Path(__file__).resolve().parents[4] / "fortidashboard-addons"
 
 CASES = [
     ("fortigate-core", "0.2.0"),
-    ("fortiweb-core", "8.0.5"),
+    ("fortiweb-core", "8.0.5.1"),
     ("penguin-siem", "1.0.0"),
     ("penguin-xdr", "1.0.0"),
     ("penguin-soar", "1.0.0"),
@@ -54,3 +54,13 @@ def test_soar_package_exposes_playbook_actions() -> None:
     connector = module.get_connector({"host": "http://x"})
     actions = connector.list_playbook_actions()
     assert any(action["id"] == "run_skipper_playbook" for action in actions)
+
+
+def test_fortiweb_package_uses_dashboard_managed_credentials() -> None:
+    manifest = (PKGS / "fortiweb-core" / "8.0.5.1" / "addon.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"username"' in manifest
+    assert '"password"' in manifest
+    assert '"vdom"' in manifest
+    assert '"id": "apiKey"' not in manifest

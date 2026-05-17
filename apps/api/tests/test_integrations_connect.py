@@ -88,11 +88,18 @@ def test_connect_returns_per_destination_wiring(monkeypatch) -> None:
             "authFields": [
                 {"id": "host", "label": "URL", "type": "url", "required": True},
                 {
-                    "id": "apiKey",
-                    "label": "API Key",
+                    "id": "username",
+                    "label": "Username",
+                    "type": "text",
+                    "required": True,
+                },
+                {
+                    "id": "password",
+                    "label": "Password",
                     "type": "secret",
                     "required": True,
                 },
+                {"id": "vdom", "label": "VDOM", "type": "text", "default": "root"},
                 {"id": "verifyTls", "label": "Verify TLS", "type": "boolean"},
             ],
             "capabilities": {
@@ -111,7 +118,9 @@ def test_connect_returns_per_destination_wiring(monkeypatch) -> None:
                 "name": "WAF",
                 "auth": {
                     "host": "https://fw.local",
-                    "apiKey": "0123456789abcdef",
+                    "username": "fortidashboard-api",
+                    "password": "secret",
+                    "vdom": "root",
                     "verifyTls": False,
                 },
                 "wire": {"siem": True, "soar": True},
@@ -133,6 +142,9 @@ def test_connect_returns_per_destination_wiring(monkeypatch) -> None:
 
     assert actions.status_code == 200
     assert any(action["id"] == "block_source_ip" for action in actions.json()["items"])
+    assert registry.configs[0]["apiKey"]
+    assert registry.configs[0]["apiKey"] != "secret"
+    assert "password" not in registry.configs[0]
 
 
 class _FakeConnector:
@@ -154,7 +166,11 @@ class _FakeConnector:
 
 
 class _FakeRegistry:
+    def __init__(self) -> None:
+        self.configs: list[dict] = []
+
     def get(self, *args, **kwargs):
+        self.configs.append(kwargs["config"])
         return _FakeConnector()
 
 
