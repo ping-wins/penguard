@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import { VueFlow, type Connection } from '@vue-flow/core'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
-import { Plus, Save, Workflow } from 'lucide-vue-next'
+import { Maximize2, Minimize2, Plus, Save, Workflow } from 'lucide-vue-next'
 import { usePlaybooksStore } from '../../../stores/usePlaybooksStore'
 import { usePlaybookCanvasStore } from '../../../stores/usePlaybookCanvasStore'
 import {
@@ -22,6 +22,7 @@ import PlaybookRunOverlay from './PlaybookRunOverlay.vue'
 const { t } = useI18n()
 const playbooksStore = usePlaybooksStore()
 const canvasStore = usePlaybookCanvasStore()
+const isFullscreen = ref(false)
 const {
   selectedPlaybookId,
   draftId,
@@ -43,9 +44,27 @@ const selectedRun = computed(() => {
   const runId = playbooksStore.latestRunByPlaybook[selectedPlaybookId.value]
   return runId ? playbooksStore.runs[runId] ?? null : null
 })
+const layerClass = computed(() => (
+  isFullscreen.value
+    ? 'fixed inset-4 z-[900] h-auto w-auto rounded-lg'
+    : 'absolute left-[840px] top-[120px] z-[160] h-[620px] w-[980px] rounded'
+))
+const bodyGridClass = computed(() => (
+  isFullscreen.value
+    ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px]'
+    : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px]'
+))
+const fullscreenLabel = computed(() => (
+  isFullscreen.value ? t('playbooks.canvas.exitFullscreen') : t('playbooks.canvas.enterFullscreen')
+))
 
 onMounted(() => {
   canvasStore.loadFirstPlaybookIfNeeded()
+  window.addEventListener('keydown', handleFullscreenKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleFullscreenKeydown)
 })
 
 watch(
@@ -98,6 +117,16 @@ async function simulateGraph() {
   await playbooksStore.simulate(selectedPlaybookId.value).catch(() => undefined)
 }
 
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
+
+function handleFullscreenKeydown(event: KeyboardEvent) {
+  if (!isFullscreen.value || event.key !== 'Escape') return
+  event.preventDefault()
+  isFullscreen.value = false
+}
+
 function nodeColor(node: { data?: PlaybookCanvasNodeData }) {
   if (node.data?.sensitive) return '#ef4444'
   if (node.data?.category === 'control') return '#f59e0b'
@@ -111,132 +140,146 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
 </script>
 
 <template>
-  <section
-    data-test="playbook-canvas-layer"
-    class="absolute left-[840px] top-[120px] z-[160] flex h-[620px] w-[980px] flex-col overflow-hidden rounded border border-theme-border bg-theme-panel/95 shadow-2xl"
-  >
-    <header class="flex items-center justify-between gap-3 border-b border-theme-border px-3 py-2">
-      <div class="flex min-w-0 items-center gap-2">
-        <Workflow :size="16" class="shrink-0 text-theme-primary" />
-        <div class="min-w-0">
-          <div class="truncate text-sm font-semibold text-theme-text">{{ graphTitle }}</div>
-          <div class="truncate text-[11px] text-theme-text-muted">{{ t('playbooks.canvas.subtitle') }}</div>
-        </div>
-      </div>
-      <div class="flex shrink-0 items-center gap-2">
-        <select
-          :value="selectedPlaybookId"
-          data-test="playbook-canvas-select"
-          class="h-8 max-w-[180px] rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
-          @change="selectPlaybook"
-        >
-          <option value="">{{ t('playbooks.canvas.newDraft') }}</option>
-          <option v-for="playbook in playbooksStore.playbooks" :key="playbook.id" :value="playbook.id">
-            {{ playbook.name }}
-          </option>
-        </select>
-        <button
-          type="button"
-          data-test="playbook-canvas-new"
-          class="inline-flex h-8 items-center gap-1 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text-muted hover:text-theme-text"
-          @click="canvasStore.startNewDraft"
-        >
-          <Plus :size="13" />
-          {{ t('playbooks.canvas.newGraph') }}
-        </button>
-        <button
-          type="button"
-          data-test="playbook-canvas-save"
-          class="inline-flex h-8 items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 text-xs font-semibold text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50"
-          :disabled="isSaving || nodes.length === 0"
-          @click="saveGraph"
-        >
-          <Save :size="13" />
-          {{ isSaving ? t('playbooks.saving') : t('playbooks.canvas.saveGraph') }}
-        </button>
-        <button
-          type="button"
-          data-test="playbook-canvas-simulate"
-          class="h-8 rounded border border-emerald-400/40 bg-emerald-500/10 px-2 text-xs font-semibold text-emerald-200 disabled:opacity-50"
-          :disabled="!selectedPlaybookId"
-          @click="simulateGraph"
-        >
-          {{ t('playbooks.simulate') }}
-        </button>
-      </div>
-    </header>
-
-    <div v-if="error || playbooksStore.error" class="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-      {{ error || playbooksStore.error }}
-    </div>
-
-    <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px]">
-      <div
-        data-test="playbook-canvas-drop-zone"
-        class="relative min-h-0"
-        @drop="handleDrop"
-        @dragover="handleDragOver"
-      >
-        <VueFlow
-          v-model:nodes="nodes"
-          v-model:edges="edges"
-          class="h-full w-full bg-theme-bg"
-          fit-view-on-init
-          @connect="handleConnect"
-          @node-click="selectNode($event.node)"
-        >
-          <template #node-playbookNode="nodeProps">
-            <PlaybookFlowNode v-bind="nodeProps" />
-          </template>
-          <template #edge-playbookEdge="edgeProps">
-            <PlaybookFlowEdge v-bind="edgeProps" />
-          </template>
-          <Background />
-          <Controls />
-          <MiniMap :node-color="nodeColor" pannable zoomable />
-        </VueFlow>
-      </div>
-
-      <div class="flex min-h-0 flex-col gap-3 border-l border-theme-border bg-theme-panel/80 p-3">
-        <div v-if="!selectedPlaybookId" class="grid grid-cols-1 gap-2">
-          <input
-            v-model="draftId"
-            data-test="playbook-canvas-draft-id"
-            class="h-8 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
-            :placeholder="t('playbooks.builderIdPlaceholder')"
-          />
-          <input
-            v-model="draftName"
-            data-test="playbook-canvas-draft-name"
-            class="h-8 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
-            :placeholder="t('playbooks.builderNamePlaceholder')"
-          />
-        </div>
-        <PlaybookRunOverlay :simulation="selectedSimulation" :run="selectedRun" />
-        <div class="rounded border border-theme-border bg-theme-bg/70 p-2">
-          <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
-            {{ t('playbooks.canvas.nodesInGraph') }}
+  <Teleport to="body" :disabled="!isFullscreen">
+    <section
+      data-test="playbook-canvas-layer"
+      class="flex flex-col overflow-hidden border border-theme-border bg-theme-panel/95 shadow-2xl"
+      :class="layerClass"
+    >
+      <header class="flex items-center justify-between gap-3 border-b border-theme-border px-3 py-2">
+        <div class="flex min-w-0 items-center gap-2">
+          <Workflow :size="16" class="shrink-0 text-theme-primary" />
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold text-theme-text">{{ graphTitle }}</div>
+            <div class="truncate text-[11px] text-theme-text-muted">{{ t('playbooks.canvas.subtitle') }}</div>
           </div>
-          <button
-            v-for="node in nodes"
-            :key="node.id"
-            type="button"
-            class="mb-1 block w-full truncate rounded px-2 py-1 text-left font-mono text-[11px]"
-            :class="selectedNodeId === node.id ? 'bg-theme-primary/15 text-theme-primary' : 'text-theme-text-muted hover:bg-theme-border/60 hover:text-theme-text'"
-            :data-test="`playbook-canvas-node-list-${node.id}`"
-            @click="selectedNodeId = node.id"
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <select
+            :value="selectedPlaybookId"
+            data-test="playbook-canvas-select"
+            class="h-8 max-w-[180px] rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
+            @change="selectPlaybook"
           >
-            {{ nodeListLabel(node) }}
+            <option value="">{{ t('playbooks.canvas.newDraft') }}</option>
+            <option v-for="playbook in playbooksStore.playbooks" :key="playbook.id" :value="playbook.id">
+              {{ playbook.name }}
+            </option>
+          </select>
+          <button
+            type="button"
+            data-test="playbook-canvas-new"
+            class="inline-flex h-8 items-center gap-1 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text-muted hover:text-theme-text"
+            @click="canvasStore.startNewDraft"
+          >
+            <Plus :size="13" />
+            {{ t('playbooks.canvas.newGraph') }}
+          </button>
+          <button
+            type="button"
+            data-test="playbook-canvas-save"
+            class="inline-flex h-8 items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 text-xs font-semibold text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50"
+            :disabled="isSaving || nodes.length === 0"
+            @click="saveGraph"
+          >
+            <Save :size="13" />
+            {{ isSaving ? t('playbooks.saving') : t('playbooks.canvas.saveGraph') }}
+          </button>
+          <button
+            type="button"
+            data-test="playbook-canvas-fullscreen-toggle"
+            class="inline-flex h-8 w-8 items-center justify-center rounded border border-theme-border bg-theme-bg text-theme-text-muted hover:text-theme-text"
+            :title="fullscreenLabel"
+            :aria-label="fullscreenLabel"
+            @click="toggleFullscreen"
+          >
+            <Minimize2 v-if="isFullscreen" :size="14" />
+            <Maximize2 v-else :size="14" />
+          </button>
+          <button
+            type="button"
+            data-test="playbook-canvas-simulate"
+            class="h-8 rounded border border-emerald-400/40 bg-emerald-500/10 px-2 text-xs font-semibold text-emerald-200 disabled:opacity-50"
+            :disabled="!selectedPlaybookId"
+            @click="simulateGraph"
+          >
+            {{ t('playbooks.simulate') }}
           </button>
         </div>
-        <PlaybookNodePropertiesPanel
-          class="min-h-0 flex-1"
-          :node="selectedNode"
-          @update-config="canvasStore.updateNodeConfig"
-        />
+      </header>
+
+      <div v-if="error || playbooksStore.error" class="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        {{ error || playbooksStore.error }}
       </div>
-    </div>
-  </section>
+
+      <div :class="bodyGridClass">
+        <div
+          data-test="playbook-canvas-drop-zone"
+          class="relative min-h-0"
+          @drop="handleDrop"
+          @dragover="handleDragOver"
+        >
+          <VueFlow
+            v-model:nodes="nodes"
+            v-model:edges="edges"
+            class="h-full w-full bg-theme-bg"
+            fit-view-on-init
+            @connect="handleConnect"
+            @node-click="selectNode($event.node)"
+          >
+            <template #node-playbookNode="nodeProps">
+              <PlaybookFlowNode v-bind="nodeProps" />
+            </template>
+            <template #edge-playbookEdge="edgeProps">
+              <PlaybookFlowEdge v-bind="edgeProps" />
+            </template>
+            <Background />
+            <Controls />
+            <MiniMap :node-color="nodeColor" pannable zoomable />
+          </VueFlow>
+        </div>
+
+        <div class="flex min-h-0 flex-col gap-3 border-l border-theme-border bg-theme-panel/80 p-3">
+          <div v-if="!selectedPlaybookId" class="grid grid-cols-1 gap-2">
+            <input
+              v-model="draftId"
+              data-test="playbook-canvas-draft-id"
+              class="h-8 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
+              :placeholder="t('playbooks.builderIdPlaceholder')"
+            />
+            <input
+              v-model="draftName"
+              data-test="playbook-canvas-draft-name"
+              class="h-8 rounded border border-theme-border bg-theme-bg px-2 text-xs text-theme-text"
+              :placeholder="t('playbooks.builderNamePlaceholder')"
+            />
+          </div>
+          <PlaybookRunOverlay :simulation="selectedSimulation" :run="selectedRun" />
+          <div class="rounded border border-theme-border bg-theme-bg/70 p-2">
+            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-theme-text-muted">
+              {{ t('playbooks.canvas.nodesInGraph') }}
+            </div>
+            <button
+              v-for="node in nodes"
+              :key="node.id"
+              type="button"
+              class="mb-1 block w-full truncate rounded px-2 py-1 text-left font-mono text-[11px]"
+              :class="selectedNodeId === node.id ? 'bg-theme-primary/15 text-theme-primary' : 'text-theme-text-muted hover:bg-theme-border/60 hover:text-theme-text'"
+              :data-test="`playbook-canvas-node-list-${node.id}`"
+              @click="selectedNodeId = node.id"
+            >
+              {{ nodeListLabel(node) }}
+            </button>
+          </div>
+          <PlaybookNodePropertiesPanel
+            class="min-h-0 flex-1"
+            :node="selectedNode"
+            @update-config="canvasStore.updateNodeConfig"
+          />
+        </div>
+      </div>
+    </section>
+  </Teleport>
 </template>
 
 <style>
