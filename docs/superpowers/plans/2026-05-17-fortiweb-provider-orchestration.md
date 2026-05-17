@@ -12,8 +12,9 @@
 
 ## File Structure
 
+- Create `apps/api/app/integrations/fortiweb/auth.py`: FortiWeb credential-to-authorization helper and redaction utilities.
 - Create `apps/api/app/integrations/fortiweb/client.py`: FortiWeb API adapter, response decoding, and stable errors.
-- Create `apps/api/app/integrations/fortiweb/store.py`: SQLAlchemy and in-memory stores for FortiWeb integrations and block requests.
+- Create `apps/api/app/integrations/fortiweb/store.py`: SQLAlchemy and in-memory stores for FortiWeb integrations, encrypted auth secrets, and block requests.
 - Create `apps/api/app/integrations/fortiweb/block_models.py`: Pydantic request/response models for preflight, review, apply, remove.
 - Create `apps/api/app/integrations/fortiweb/block_workflow.py`: source-IP block preflight/apply/remove orchestration.
 - Create `apps/api/app/integrations/fortiweb/service.py`: provider create/test/list/delete/health plus block workflow access.
@@ -38,10 +39,11 @@
 - Create: `apps/api/app/integrations/fortiweb/service.py`
 - Create: `apps/api/tests/test_fortiweb_integrations.py`
 
-- [ ] Add failing tests for FortiWeb connection test, create, list, delete, and secret redaction.
+- [ ] Add failing tests for FortiWeb credential connection test, create, list, delete, and secret redaction.
 - [ ] Add ORM models and Alembic migration for `fortiweb_integrations` and `fortiweb_block_requests`.
-- [ ] Implement `FortiWebApiClient` with API-key auth and stable `FortiWebApiError`.
-- [ ] Implement `FortiWebIntegrationService` and stores with encrypted API key handling.
+- [ ] Implement `FortiWebApiClient` with FortiWeb `Authorization` header auth and stable `FortiWebApiError`.
+- [ ] Implement the credential-to-authorization helper; the backend accepts `username`, `password`, and `vdom`, then stores only the encrypted generated authorization secret.
+- [ ] Implement `FortiWebIntegrationService` and stores with encrypted auth-secret handling.
 - [ ] Add FortiWeb routes and include FortiWeb items in `/api/integrations`.
 - [ ] Run `cd apps/api && uv run pytest -q tests/test_fortiweb_integrations.py`.
 - [ ] Commit with `feat(fortiweb): add provider integration backend`.
@@ -72,7 +74,7 @@
 - Modify: `apps/web/src/i18n/messages/en-US.ts`
 
 - [ ] Add store methods `testFortiweb`, `addFortiweb`, `fetchFortiwebBlocks`, `reviewFortiwebBlock`, `applyFortiwebBlock`, and `removeFortiwebBlock`.
-- [ ] Add FortiWeb form fields: name, host, API key, TLS verification, target policy, managed IP list.
+- [ ] Add FortiWeb form fields: name, host, username, password, VDOM, TLS verification, target policy, managed IP list.
 - [ ] Render connected FortiWeb integrations with status and target policy.
 - [ ] Localize all new strings in pt-BR and en-US.
 - [ ] Run `cd apps/web && pnpm test`.
