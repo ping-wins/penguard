@@ -38,6 +38,12 @@ from app.integrations.fortigate.store import (
     SqlAlchemyFortiGateIntegrationStore,
 )
 from app.integrations.fortigate.syslog import send_fortigate_syslog_probe
+from app.integrations.fortiweb.service import (
+    FortiWebConnectionFailed,
+    FortiWebIntegrationService,
+    MockFortiWebIntegrationService,
+)
+from app.integrations.fortiweb.store import SqlAlchemyFortiWebIntegrationStore
 from app.integrations.penguin_tools import (
     MockPenguinToolIntegrationService,
     PenguinToolConnectionFailed,
@@ -56,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["integrations"])
 FortiGateService = FortiGateIntegrationService | MockFortiGateIntegrationService
+FortiWebService = FortiWebIntegrationService | MockFortiWebIntegrationService
 PenguinToolService = PenguinToolIntegrationService | MockPenguinToolIntegrationService
 AuditStore = InMemoryAuthAuditStore | SqlAlchemyAuthAuditStore
 PenguinToolType = Literal["siem_kowalski", "soar_skipper", "xdr_rico"]
@@ -97,6 +104,52 @@ class FortiGateConnectionTest(BaseModel):
     host: HttpUrl
     api_key: str = Field(alias="apiKey", min_length=16)
     verify_tls: bool = Field(alias="verifyTls", default=True)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiWebIntegrationCreate(BaseModel):
+    name: str
+    host: HttpUrl
+    api_key: str = Field(alias="apiKey", min_length=16)
+    verify_tls: bool = Field(alias="verifyTls", default=True)
+    target_server_policy: str = Field(
+        alias="targetServerPolicy",
+        default="lab-waf-policy",
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9_. -]+$",
+    )
+    managed_ip_list_policy: str = Field(
+        alias="managedIpListPolicy",
+        default="FD_IP_BLOCKLIST",
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9_. -]+$",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiWebConnectionTest(BaseModel):
+    host: HttpUrl
+    api_key: str = Field(alias="apiKey", min_length=16)
+    verify_tls: bool = Field(alias="verifyTls", default=True)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiWebSourceBlockReviewRequest(BaseModel):
+    source_ip: str = Field(alias="sourceIp")
+    incident_id: str | None = Field(alias="incidentId", default=None)
+    reason: str | None = Field(default=None, max_length=512)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FortiWebSourceBlockApplyRequest(BaseModel):
+    review_hash: str = Field(alias="reviewHash", min_length=32)
+    confirmed: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -196,6 +249,21 @@ def get_fortigate_ingestion_store() -> FortiGateIngestionStore:
             settings.token_encryption_key or settings.secret_key
         ),
         default_ingestion_interval_seconds=settings.fortigate_ingestion_default_interval_seconds,
+    )
+
+
+@lru_cache
+def get_fortiweb_integration_service() -> FortiWebService:
+    settings = get_settings()
+    if settings.mock_mode:
+        return MockFortiWebIntegrationService()
+    return FortiWebIntegrationService(
+        store=SqlAlchemyFortiWebIntegrationStore(
+            database_url=settings.database_url,
+            secret_cipher=TokenCipher.from_secret(
+                settings.token_encryption_key or settings.secret_key
+            ),
+        )
     )
 
 
@@ -304,6 +372,249 @@ def test_fortigate_connection(
     )
 
 
+@router.post(
+    "/integrations/fortiweb",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_fortiweb_integration(
+    request: Request,
+    payload: FortiWebIntegrationCreate,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    try:
+        created = service.create(
+            owner_user_id=str(current_user["id"]),
+            name=payload.name,
+            host=str(payload.host),
+            api_key=payload.api_key,
+            verify_tls=payload.verify_tls,
+            target_server_policy=payload.target_server_policy,
+            managed_ip_list_policy=payload.managed_ip_list_policy,
+        )
+    except FortiWebConnectionFailed as exc:
+        audit_store.record(
+            action="integration.fortiweb.created",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=str(current_user["id"]),
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "host": str(payload.host),
+                "verifyTls": payload.verify_tls,
+                "targetServerPolicy": payload.target_server_policy,
+                "managedIpListPolicy": payload.managed_ip_list_policy,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortiweb.created",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=str(current_user["id"]),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": created["id"],
+            "host": str(payload.host),
+            "verifyTls": payload.verify_tls,
+            "targetServerPolicy": payload.target_server_policy,
+            "managedIpListPolicy": payload.managed_ip_list_policy,
+        },
+    )
+    return created
+
+
+@router.post("/integrations/fortiweb/test")
+def test_fortiweb_connection(
+    payload: FortiWebConnectionTest,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    return service.test_connection(
+        host=str(payload.host),
+        api_key=payload.api_key,
+        verify_tls=payload.verify_tls,
+    )
+
+
+@router.post(
+    "/integrations/fortiweb/{integration_id}/blocks/review",
+    status_code=status.HTTP_201_CREATED,
+)
+def review_fortiweb_source_block(
+    integration_id: str,
+    payload: FortiWebSourceBlockReviewRequest,
+    request: Request,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(require_admin_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    try:
+        review = service.review_source_block(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            source_ip=payload.source_ip,
+            incident_id=payload.incident_id,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    except PermissionError as exc:
+        audit_store.record(
+            action="integration.fortiweb.block_reviewed",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FortiWebConnectionFailed as exc:
+        audit_store.record(
+            action="integration.fortiweb.block_reviewed",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortiweb.block_reviewed",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "blockId": review["id"],
+            "sourceIp": review["sourceIp"],
+            "incidentId": review.get("incidentId"),
+        },
+    )
+    return review
+
+
+@router.post("/integrations/fortiweb/{integration_id}/blocks/{block_id}/apply")
+def apply_fortiweb_source_block(
+    integration_id: str,
+    block_id: str,
+    payload: FortiWebSourceBlockApplyRequest,
+    request: Request,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(require_admin_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    try:
+        applied = service.apply_source_block(
+            owner_user_id=owner_user_id,
+            block_id=block_id,
+            review_hash=payload.review_hash,
+            confirmed=payload.confirmed,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="FortiWeb block not found") from exc
+    except (PermissionError, FortiWebConnectionFailed) as exc:
+        audit_store.record(
+            action="integration.fortiweb.block_applied",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "blockId": block_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortiweb.block_applied",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "blockId": block_id,
+            "sourceIp": applied.get("sourceIp"),
+            "status": applied.get("status"),
+        },
+    )
+    return applied
+
+
+@router.get("/integrations/fortiweb/{integration_id}/blocks")
+def list_fortiweb_source_blocks(
+    integration_id: str,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict[str, Any]:
+    return service.list_blocks(
+        owner_user_id=str(current_user["id"]),
+        integration_id=integration_id,
+    )
+
+
+@router.delete("/integrations/fortiweb/{integration_id}/blocks/{block_id}")
+def remove_fortiweb_source_block(
+    integration_id: str,
+    block_id: str,
+    request: Request,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(require_admin_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    owner_user_id = str(current_user["id"])
+    try:
+        removed = service.remove_source_block(
+            owner_user_id=owner_user_id,
+            block_id=block_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="FortiWeb block not found") from exc
+    except (PermissionError, FortiWebConnectionFailed) as exc:
+        audit_store.record(
+            action="integration.fortiweb.block_removed",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id, "blockId": block_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_store.record(
+        action="integration.fortiweb.block_removed",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "blockId": block_id,
+            "sourceIp": removed.get("sourceIp"),
+            "status": removed.get("status"),
+        },
+    )
+    return removed
+
+
 @router.post("/integrations/penguin-tools/test")
 def test_penguin_tool_connection(
     payload: PenguinToolConnectionTest,
@@ -366,13 +677,15 @@ def create_penguin_tool_integration(
 @router.get("/integrations")
 def list_integrations(
     fortigate_service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    fortiweb_service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
     penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
     owner_user_id = str(current_user["id"])
     fortigate_items = fortigate_service.list(owner_user_id=owner_user_id).get("items", [])
+    fortiweb_items = fortiweb_service.list(owner_user_id=owner_user_id).get("items", [])
     penguin_items = penguin_service.list(owner_user_id=owner_user_id).get("items", [])
-    return {"items": [*fortigate_items, *penguin_items]}
+    return {"items": [*fortigate_items, *fortiweb_items, *penguin_items]}
 
 
 @router.delete("/integrations/{integration_id}")
@@ -380,12 +693,43 @@ def delete_integration(
     integration_id: str,
     request: Request,
     fortigate_service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
+    fortiweb_service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
     penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
     owner_user_id = str(current_user["id"])
+    if integration_id.startswith("int_fweb_"):
+        deleted = fortiweb_service.delete(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        if not deleted:
+            audit_store.record(
+                action="integration.fortiweb.deleted",
+                outcome="failed",
+                email=current_user.get("email"),
+                user_id=owner_user_id,
+                client_ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+                details={
+                    "integrationId": integration_id,
+                    "error": "Integration not found",
+                },
+            )
+            raise HTTPException(status_code=404, detail="Integration not found")
+        audit_store.record(
+            action="integration.fortiweb.deleted",
+            outcome="success",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={"integrationId": integration_id},
+        )
+        return {"deleted": True, "id": integration_id}
+
     if not integration_id.startswith("int_fgt_"):
         penguin_integration = penguin_service.get(
             integration_id=integration_id,

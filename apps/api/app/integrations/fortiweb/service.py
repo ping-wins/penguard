@@ -1,0 +1,696 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable
+from datetime import UTC, datetime
+from ipaddress import ip_address
+from typing import Any, Protocol
+
+from app.integrations.fortiweb.client import FortiWebApiClient, FortiWebApiError
+from app.integrations.fortiweb.store import FORTIWEB_CAPABILITIES
+
+
+class FortiWebIntegrationStore(Protocol):
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        name: str,
+        host: str,
+        api_key: str,
+        verify_tls: bool,
+        target_server_policy: str,
+        managed_ip_list_policy: str,
+        device: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        pass
+
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
+        pass
+
+    def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
+        pass
+
+    def delete(self, *, owner_user_id: str, integration_id: str) -> bool:
+        pass
+
+    def record_health_check(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        ok: bool,
+        status: str,
+        device: dict[str, Any],
+        message: str | None,
+        latency_ms: int | None,
+        checked_at: datetime,
+    ) -> dict[str, Any]:
+        pass
+
+    def create_block_request(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        source_ip: str,
+        incident_id: str | None,
+        reason: str | None,
+        intent: dict[str, Any],
+        preflight_summary: dict[str, Any],
+        proposed_changes: list[dict[str, Any]],
+        review_hash: str,
+    ) -> dict[str, Any]:
+        pass
+
+    def get_block_request(self, block_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
+        pass
+
+    def list_blocks(self, *, owner_user_id: str, integration_id: str) -> dict[str, Any]:
+        pass
+
+    def mark_block_applied(
+        self,
+        *,
+        block_id: str,
+        owner_user_id: str,
+        applied_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        pass
+
+    def mark_block_removed(
+        self,
+        *,
+        block_id: str,
+        owner_user_id: str,
+        removed_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        pass
+
+
+class FortiWebClient(Protocol):
+    def get_system_status(self) -> dict[str, Any]:
+        pass
+
+    def get_server_policy(self, name: str) -> dict[str, Any]:
+        pass
+
+    def get_inline_protection_profile(self, name: str) -> dict[str, Any]:
+        pass
+
+    def update_inline_protection_profile(
+        self,
+        name: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        pass
+
+    def get_ip_list(self, name: str) -> dict[str, Any]:
+        pass
+
+    def create_ip_list(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+    def update_ip_list(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+
+class FortiWebClientFactory(Protocol):
+    def __call__(self, *, host: str, api_key: str, verify_tls: bool) -> FortiWebClient:
+        pass
+
+
+class FortiWebConnectionFailed(RuntimeError):
+    pass
+
+
+class MockFortiWebIntegrationService:
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        name: str,
+        host: str,
+        api_key: str,
+        verify_tls: bool,
+        target_server_policy: str = "lab-waf-policy",
+        managed_ip_list_policy: str = "FD_IP_BLOCKLIST",
+    ) -> dict[str, Any]:
+        _ = (owner_user_id, host, api_key, verify_tls)
+        return {
+            "id": "int_fweb_01",
+            "type": "fortiweb",
+            "name": name,
+            "status": "connected",
+            "capabilities": FORTIWEB_CAPABILITIES,
+            "targetServerPolicy": target_server_policy,
+            "managedIpListPolicy": managed_ip_list_policy,
+            "lastCheckedAt": "2026-05-17T12:00:00.000Z",
+        }
+
+    def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
+        _ = (host, api_key, verify_tls)
+        return {
+            "ok": True,
+            "status": "connected",
+            "device": {
+                "hostname": "FWB-VM",
+                "model": "FortiWeb-VM",
+                "version": "v8.0.x",
+                "serial": "FWBVMTEST",
+            },
+        }
+
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
+        _ = owner_user_id
+        return {"items": []}
+
+    def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
+        _ = owner_user_id
+        return integration_id == "int_fweb_01"
+
+    def run_health_check(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
+        _ = owner_user_id
+        return {
+            "id": "fweb_health_01",
+            "integrationId": integration_id,
+            "ok": True,
+            "status": "connected",
+            "device": self.test_connection(
+                host="https://fortiweb.local",
+                api_key="mock",
+                verify_tls=False,
+            )["device"],
+            "message": None,
+            "latencyMs": 0,
+            "checkedAt": "2026-05-17T12:00:00.000Z",
+        }
+
+    def review_source_block(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        source_ip: str,
+        incident_id: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        _ = owner_user_id
+        normalized_ip = _normalize_ip(source_ip)
+        intent = {
+            "action": "block_source_ip",
+            "sourceIp": normalized_ip,
+            "incidentId": incident_id,
+            "targetServerPolicy": "lab-waf-policy",
+            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "reason": reason,
+        }
+        preflight_summary = {
+            "integrationId": integration_id,
+            "serverPolicy": "lab-waf-policy",
+            "inlineProtectionProfile": "lab-inline-protection",
+            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "ipListAttached": True,
+            "ipListExists": True,
+            "alreadyBlocked": False,
+        }
+        proposed_changes = [_update_ip_list_change("FD_IP_BLOCKLIST", normalized_ip)]
+        review_hash = _review_hash(intent, preflight_summary, proposed_changes)
+        return {
+            "id": "fweb_block_01",
+            "integrationId": integration_id,
+            "sourceIp": normalized_ip,
+            "incidentId": incident_id,
+            "status": "pending_review",
+            "reason": reason,
+            "intent": intent,
+            "preflightSummary": preflight_summary,
+            "proposedChanges": proposed_changes,
+            "reviewHash": review_hash,
+            "createdAt": "2026-05-17T12:00:00.000Z",
+            "updatedAt": "2026-05-17T12:00:00.000Z",
+        }
+
+    def apply_source_block(
+        self,
+        *,
+        owner_user_id: str,
+        block_id: str,
+        review_hash: str,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        _ = owner_user_id
+        if not confirmed:
+            raise PermissionError("Explicit confirmation is required to apply FortiWeb block")
+        return {
+            "id": block_id,
+            "integrationId": "int_fweb_01",
+            "sourceIp": "10.10.10.10",
+            "status": "active",
+            "reviewHash": review_hash,
+            "appliedResult": {"applied": True},
+        }
+
+    def list_blocks(self, *, owner_user_id: str, integration_id: str) -> dict[str, Any]:
+        _ = (owner_user_id, integration_id)
+        return {"items": []}
+
+    def remove_source_block(self, *, owner_user_id: str, block_id: str) -> dict[str, Any]:
+        _ = owner_user_id
+        return {
+            "id": block_id,
+            "integrationId": "int_fweb_01",
+            "sourceIp": "10.10.10.10",
+            "status": "removed",
+            "removedResult": {"removed": True},
+        }
+
+
+class FortiWebIntegrationService:
+    def __init__(
+        self,
+        *,
+        store: FortiWebIntegrationStore,
+        client_factory: FortiWebClientFactory | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.store = store
+        self.client_factory = client_factory or self._default_client_factory
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    def create(
+        self,
+        *,
+        owner_user_id: str,
+        name: str,
+        host: str,
+        api_key: str,
+        verify_tls: bool,
+        target_server_policy: str = "lab-waf-policy",
+        managed_ip_list_policy: str = "FD_IP_BLOCKLIST",
+    ) -> dict[str, Any]:
+        probe = self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
+        if not probe["ok"]:
+            error = probe.get("error") or {}
+            raise FortiWebConnectionFailed(error.get("message") or "FortiWeb connection failed")
+        return self.store.create(
+            owner_user_id=owner_user_id,
+            name=name,
+            host=host,
+            api_key=api_key,
+            verify_tls=verify_tls,
+            target_server_policy=target_server_policy,
+            managed_ip_list_policy=managed_ip_list_policy,
+            device=dict(probe.get("device") or {}),
+        )
+
+    def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
+        return self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
+
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
+        return self.store.list_public(owner_user_id=owner_user_id)
+
+    def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
+        return self.store.delete(owner_user_id=owner_user_id, integration_id=integration_id)
+
+    def run_health_check(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
+        connection = self.store.get_connection(integration_id, owner_user_id=owner_user_id)
+        if connection is None:
+            raise KeyError("Integration not found")
+        started_at = self.clock()
+        result = self._probe_connection(
+            host=str(connection["host"]),
+            api_key=str(connection["api_key"]),
+            verify_tls=bool(connection["verify_tls"]),
+        )
+        finished_at = self.clock()
+        latency_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
+        return self.store.record_health_check(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            ok=bool(result["ok"]),
+            status=str(result["status"]),
+            device=dict(result.get("device") or {}),
+            message=(result.get("error") or {}).get("message"),
+            latency_ms=latency_ms,
+            checked_at=finished_at,
+        )
+
+    def review_source_block(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        source_ip: str,
+        incident_id: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        connection, client = self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        normalized_ip = _normalize_ip(source_ip)
+        target_server_policy = str(connection["target_server_policy"])
+        managed_ip_list_policy = str(connection["managed_ip_list_policy"])
+        preflight_summary, proposed_changes = self._preflight_source_block(
+            client=client,
+            integration_id=integration_id,
+            target_server_policy=target_server_policy,
+            managed_ip_list_policy=managed_ip_list_policy,
+            source_ip=normalized_ip,
+        )
+        intent = {
+            "action": "block_source_ip",
+            "sourceIp": normalized_ip,
+            "incidentId": incident_id,
+            "targetServerPolicy": target_server_policy,
+            "managedIpListPolicy": managed_ip_list_policy,
+            "reason": reason,
+        }
+        review_hash = _review_hash(intent, preflight_summary, proposed_changes)
+        return self.store.create_block_request(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            source_ip=normalized_ip,
+            incident_id=incident_id,
+            reason=reason,
+            intent=intent,
+            preflight_summary=preflight_summary,
+            proposed_changes=proposed_changes,
+            review_hash=review_hash,
+        )
+
+    def apply_source_block(
+        self,
+        *,
+        owner_user_id: str,
+        block_id: str,
+        review_hash: str,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        if not confirmed:
+            raise PermissionError("Explicit confirmation is required to apply FortiWeb block")
+        block = self.store.get_block_request(block_id, owner_user_id=owner_user_id)
+        if block is None:
+            raise KeyError("FortiWeb block request not found")
+        if block["status"] not in ("pending_review", "active"):
+            raise PermissionError("FortiWeb block request is not pending review")
+        if block["reviewHash"] != review_hash:
+            raise PermissionError("FortiWeb block review hash mismatch")
+        integration_id = str(block["integrationId"])
+        connection, client = self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        source_ip = str(block["sourceIp"])
+        managed_ip_list_policy = str(block["intent"]["managedIpListPolicy"])
+        target_server_policy = str(connection["target_server_policy"])
+        profile_name = str(block["preflightSummary"]["inlineProtectionProfile"])
+        member = _block_member(source_ip)
+        ip_list_exists = bool(block["preflightSummary"].get("ipListExists"))
+        current_ip_list = (
+            client.get_ip_list(managed_ip_list_policy)
+            if ip_list_exists
+            else {"name": managed_ip_list_policy, "members": []}
+        )
+        desired_members = _members_without_source(current_ip_list, source_ip)
+        desired_members.append(member)
+        desired_ip_list = {
+            **current_ip_list,
+            "name": managed_ip_list_policy,
+            "members": desired_members,
+        }
+        if ip_list_exists:
+            client.update_ip_list(managed_ip_list_policy, desired_ip_list)
+        else:
+            client.create_ip_list(desired_ip_list)
+        if not block["preflightSummary"].get("ipListAttached"):
+            profile = client.get_inline_protection_profile(profile_name)
+            profile["ip-list-policy"] = managed_ip_list_policy
+            client.update_inline_protection_profile(profile_name, profile)
+        applied_result = {
+            "applied": True,
+            "sourceIp": source_ip,
+            "targetServerPolicy": target_server_policy,
+            "managedIpListPolicy": managed_ip_list_policy,
+            "mode": "manual_removal_required",
+        }
+        return self.store.mark_block_applied(
+            block_id=block_id,
+            owner_user_id=owner_user_id,
+            applied_result=applied_result,
+        )
+
+    def list_blocks(self, *, owner_user_id: str, integration_id: str) -> dict[str, Any]:
+        return self.store.list_blocks(owner_user_id=owner_user_id, integration_id=integration_id)
+
+    def remove_source_block(self, *, owner_user_id: str, block_id: str) -> dict[str, Any]:
+        block = self.store.get_block_request(block_id, owner_user_id=owner_user_id)
+        if block is None:
+            raise KeyError("FortiWeb block request not found")
+        if block["status"] != "active":
+            raise PermissionError("Only active FortiWeb blocks can be removed")
+        integration_id = str(block["integrationId"])
+        _, client = self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        source_ip = str(block["sourceIp"])
+        managed_ip_list_policy = str(block["intent"]["managedIpListPolicy"])
+        current_ip_list = client.get_ip_list(managed_ip_list_policy)
+        desired_ip_list = {
+            **current_ip_list,
+            "members": _members_without_source(current_ip_list, source_ip),
+        }
+        client.update_ip_list(managed_ip_list_policy, desired_ip_list)
+        removed_result = {
+            "removed": True,
+            "sourceIp": source_ip,
+            "managedIpListPolicy": managed_ip_list_policy,
+        }
+        return self.store.mark_block_removed(
+            block_id=block_id,
+            owner_user_id=owner_user_id,
+            removed_result=removed_result,
+        )
+
+    def _probe_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
+        try:
+            client = self.client_factory(host=host, api_key=api_key, verify_tls=verify_tls)
+            system_status = _normalize_system_status(client.get_system_status())
+        except FortiWebApiError as exc:
+            return {
+                "ok": False,
+                "status": "disconnected",
+                "error": {"message": str(exc)},
+            }
+        return {
+            "ok": True,
+            "status": "connected",
+            "device": system_status,
+        }
+
+    def _default_client_factory(
+        self,
+        *,
+        host: str,
+        api_key: str,
+        verify_tls: bool,
+    ) -> FortiWebClient:
+        return FortiWebApiClient(host=host, api_key=api_key, verify_tls=verify_tls)
+
+    def _client_for_integration(
+        self,
+        *,
+        integration_id: str,
+        owner_user_id: str,
+    ) -> tuple[dict[str, Any], FortiWebClient]:
+        connection = self.store.get_connection(integration_id, owner_user_id=owner_user_id)
+        if connection is None:
+            raise KeyError("Integration not found")
+        return connection, self.client_factory(
+            host=str(connection["host"]),
+            api_key=str(connection["api_key"]),
+            verify_tls=bool(connection["verify_tls"]),
+        )
+
+    def _preflight_source_block(
+        self,
+        *,
+        client: FortiWebClient,
+        integration_id: str,
+        target_server_policy: str,
+        managed_ip_list_policy: str,
+        source_ip: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        server_policy = client.get_server_policy(target_server_policy)
+        profile_name = _inline_profile_name(server_policy)
+        if not profile_name:
+            raise PermissionError(
+                "Target FortiWeb server policy must reference a web protection profile"
+            )
+        profile = client.get_inline_protection_profile(profile_name)
+        attached_ip_list = _profile_ip_list_policy(profile)
+        if attached_ip_list and attached_ip_list != managed_ip_list_policy:
+            raise PermissionError(
+                "Target FortiWeb profile already uses a non-FortiDashboard IP list policy"
+            )
+        ip_list_exists = True
+        try:
+            ip_list = client.get_ip_list(managed_ip_list_policy)
+        except FortiWebApiError as exc:
+            if "not found" not in str(exc).lower():
+                raise FortiWebConnectionFailed(str(exc)) from exc
+            ip_list_exists = False
+            ip_list = {"name": managed_ip_list_policy, "members": []}
+        members = _ip_list_members(ip_list)
+        already_blocked = any(str(member.get("ip")) == source_ip for member in members)
+        proposed_changes: list[dict[str, Any]] = []
+        if not ip_list_exists:
+            proposed_changes.append(
+                {
+                    "operation": "create_ip_list",
+                    "target": managed_ip_list_policy,
+                    "summary": (
+                        "Create FortiDashboard managed FortiWeb IP list "
+                        f"{managed_ip_list_policy}"
+                    ),
+                }
+            )
+        if not attached_ip_list:
+            proposed_changes.append(
+                {
+                    "operation": "attach_ip_list_policy",
+                    "target": profile_name,
+                    "summary": (
+                        f"Attach {managed_ip_list_policy} to FortiWeb inline "
+                        f"protection profile {profile_name}"
+                    ),
+                }
+            )
+        if not already_blocked:
+            proposed_changes.append(_update_ip_list_change(managed_ip_list_policy, source_ip))
+        return (
+            {
+                "integrationId": integration_id,
+                "serverPolicy": target_server_policy,
+                "inlineProtectionProfile": profile_name,
+                "managedIpListPolicy": managed_ip_list_policy,
+                "ipListAttached": attached_ip_list == managed_ip_list_policy,
+                "ipListExists": ip_list_exists,
+                "alreadyBlocked": already_blocked,
+            },
+            proposed_changes,
+        )
+
+
+def _normalize_system_status(payload: dict[str, Any]) -> dict[str, Any]:
+    nested = payload.get("system") if isinstance(payload.get("system"), dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    merged = {**nested, **data, **payload}
+    return {
+        "hostname": str(
+            merged.get("hostname")
+            or merged.get("hostName")
+            or merged.get("name")
+            or "FortiWeb"
+        ),
+        "model": str(
+            merged.get("model")
+            or merged.get("model_name")
+            or merged.get("platform")
+            or "FortiWeb"
+        ),
+        "version": str(
+            merged.get("version")
+            or merged.get("firmware")
+            or merged.get("firmwareVersion")
+            or "unknown"
+        ),
+        "serial": str(merged.get("serial") or merged.get("serialNumber") or ""),
+    }
+
+
+def _normalize_ip(source_ip: str) -> str:
+    return str(ip_address(source_ip))
+
+
+def _block_member(source_ip: str) -> dict[str, Any]:
+    return {
+        "ip": source_ip,
+        "type": "black-ip",
+        "action": "alert_deny",
+        "status": "enable",
+    }
+
+
+def _update_ip_list_change(managed_ip_list_policy: str, source_ip: str) -> dict[str, Any]:
+    return {
+        "operation": "update_ip_list",
+        "target": managed_ip_list_policy,
+        "summary": f"Add {source_ip} to FortiDashboard managed FortiWeb IP list",
+        "sourceIp": source_ip,
+        "member": _block_member(source_ip),
+    }
+
+
+def _review_hash(
+    intent: dict[str, Any],
+    preflight_summary: dict[str, Any],
+    proposed_changes: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "intent": intent,
+        "preflightSummary": preflight_summary,
+        "proposedChanges": proposed_changes,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _inline_profile_name(server_policy: dict[str, Any]) -> str | None:
+    for key in (
+        "web-protection-profile",
+        "web_protection_profile",
+        "webProtectionProfile",
+        "inline-protection-profile",
+        "profile",
+        "profile_name",
+    ):
+        value = server_policy.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = value.get("name") or value.get("q_origin_key")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return None
+
+
+def _profile_ip_list_policy(profile: dict[str, Any]) -> str | None:
+    for key in ("ip-list-policy", "ip_list_policy", "ipListPolicy"):
+        value = profile.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = value.get("name") or value.get("q_origin_key")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return None
+
+
+def _ip_list_members(ip_list: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("members", "member", "entries", "black-ip-list"):
+        value = ip_list.get(key)
+        if isinstance(value, list):
+            return [dict(item) for item in value if isinstance(item, dict)]
+    return []
+
+
+def _members_without_source(ip_list: dict[str, Any], source_ip: str) -> list[dict[str, Any]]:
+    return [
+        dict(member)
+        for member in _ip_list_members(ip_list)
+        if str(member.get("ip") or member.get("address") or "") != source_ip
+    ]
