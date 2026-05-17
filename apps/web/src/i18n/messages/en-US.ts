@@ -765,6 +765,7 @@ export default {
       saveGraph: 'Save graph',
       enterFullscreen: 'Enter fullscreen',
       exitFullscreen: 'Exit fullscreen',
+      moveBuilder: 'Move playbook builder',
       automationTab: 'Automation',
       automationNodes: 'Automation nodes',
       automationHint: 'Drag SOAR nodes into the playbook canvas layer.',

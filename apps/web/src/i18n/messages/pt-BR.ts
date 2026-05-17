@@ -765,6 +765,7 @@ export default {
       saveGraph: 'Salvar grafo',
       enterFullscreen: 'Entrar em fullscreen',
       exitFullscreen: 'Sair do fullscreen',
+      moveBuilder: 'Mover builder de playbook',
       automationTab: 'Automação',
       automationNodes: 'Nós de automação',
       automationHint: 'Arraste nós SOAR para a camada de playbook no canvas.',

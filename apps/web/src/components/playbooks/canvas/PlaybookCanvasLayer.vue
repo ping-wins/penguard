@@ -6,7 +6,8 @@ import { MiniMap } from '@vue-flow/minimap'
 import { VueFlow, type Connection } from '@vue-flow/core'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
-import { Maximize2, Minimize2, Plus, Save, Workflow } from 'lucide-vue-next'
+import { GripHorizontal, Maximize2, Minimize2, Plus, Save, Workflow } from 'lucide-vue-next'
+import { useDashboardStore } from '../../../stores/useDashboardStore'
 import { usePlaybooksStore } from '../../../stores/usePlaybooksStore'
 import { usePlaybookCanvasStore } from '../../../stores/usePlaybookCanvasStore'
 import {
@@ -20,9 +21,12 @@ import PlaybookNodePropertiesPanel from './PlaybookNodePropertiesPanel.vue'
 import PlaybookRunOverlay from './PlaybookRunOverlay.vue'
 
 const { t } = useI18n()
+const dashboardStore = useDashboardStore()
 const playbooksStore = usePlaybooksStore()
 const canvasStore = usePlaybookCanvasStore()
 const isFullscreen = ref(false)
+const isMoving = ref(false)
+const layerPosition = ref({ x: 840, y: 120 })
 const {
   selectedPlaybookId,
   draftId,
@@ -47,7 +51,12 @@ const selectedRun = computed(() => {
 const layerClass = computed(() => (
   isFullscreen.value
     ? 'fixed inset-4 z-[900] h-auto w-auto rounded-lg'
-    : 'absolute left-[840px] top-[120px] z-[160] h-[620px] w-[980px] rounded'
+    : 'absolute z-[160] h-[620px] w-[980px] rounded'
+))
+const layerStyle = computed(() => (
+  isFullscreen.value
+    ? undefined
+    : { transform: `translate(${Math.round(layerPosition.value.x)}px, ${Math.round(layerPosition.value.y)}px)` }
 ))
 const bodyGridClass = computed(() => (
   isFullscreen.value
@@ -57,6 +66,12 @@ const bodyGridClass = computed(() => (
 const fullscreenLabel = computed(() => (
   isFullscreen.value ? t('playbooks.canvas.exitFullscreen') : t('playbooks.canvas.enterFullscreen')
 ))
+const moveLabel = computed(() => t('playbooks.canvas.moveBuilder'))
+
+let moveStartClientX = 0
+let moveStartClientY = 0
+let moveStartLayerX = 0
+let moveStartLayerY = 0
 
 onMounted(() => {
   canvasStore.loadFirstPlaybookIfNeeded()
@@ -65,6 +80,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleFullscreenKeydown)
+  stopMove()
 })
 
 watch(
@@ -118,6 +134,7 @@ async function simulateGraph() {
 }
 
 function toggleFullscreen() {
+  stopMove()
   isFullscreen.value = !isFullscreen.value
 }
 
@@ -125,6 +142,35 @@ function handleFullscreenKeydown(event: KeyboardEvent) {
   if (!isFullscreen.value || event.key !== 'Escape') return
   event.preventDefault()
   isFullscreen.value = false
+}
+
+function startMove(event: PointerEvent) {
+  if (isFullscreen.value) return
+  isMoving.value = true
+  moveStartClientX = event.clientX
+  moveStartClientY = event.clientY
+  moveStartLayerX = layerPosition.value.x
+  moveStartLayerY = layerPosition.value.y
+  window.addEventListener('pointermove', handleMove)
+  window.addEventListener('pointerup', stopMove)
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function handleMove(event: PointerEvent) {
+  if (!isMoving.value) return
+  const zoom = dashboardStore.zoom || 1
+  layerPosition.value = {
+    x: moveStartLayerX + (event.clientX - moveStartClientX) / zoom,
+    y: moveStartLayerY + (event.clientY - moveStartClientY) / zoom,
+  }
+}
+
+function stopMove() {
+  if (!isMoving.value) return
+  isMoving.value = false
+  window.removeEventListener('pointermove', handleMove)
+  window.removeEventListener('pointerup', stopMove)
 }
 
 function nodeColor(node: { data?: PlaybookCanvasNodeData }) {
@@ -144,10 +190,23 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
     <section
       data-test="playbook-canvas-layer"
       class="flex flex-col overflow-hidden border border-theme-border bg-theme-panel/95 shadow-2xl"
-      :class="layerClass"
+      :class="[layerClass, isMoving ? 'ring-2 ring-theme-primary/50 shadow-theme-primary/10' : '']"
+      :style="layerStyle"
     >
       <header class="flex items-center justify-between gap-3 border-b border-theme-border px-3 py-2">
         <div class="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            data-test="playbook-canvas-drag-handle"
+            class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-theme-border bg-theme-bg text-theme-text-muted hover:text-theme-text disabled:cursor-default disabled:opacity-50"
+            :class="isMoving ? 'cursor-grabbing' : 'cursor-grab'"
+            :disabled="isFullscreen"
+            :title="moveLabel"
+            :aria-label="moveLabel"
+            @pointerdown="startMove"
+          >
+            <GripHorizontal :size="14" />
+          </button>
           <Workflow :size="16" class="shrink-0 text-theme-primary" />
           <div class="min-w-0">
             <div class="truncate text-sm font-semibold text-theme-text">{{ graphTitle }}</div>
