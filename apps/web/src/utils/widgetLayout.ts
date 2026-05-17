@@ -4,6 +4,8 @@ const GRID_COLUMN_PX = 100
 const GRID_ROW_PX = 90
 const GRID_PADDING_PX = 20
 const GRID_UNIT_THRESHOLD = 24
+const WORKSPACE_ORIGIN_OFFSET_PX = 100000
+const WORKSPACE_ORIGIN_OFFSET_REPAIR_THRESHOLD_PX = -50000
 
 export type WidgetSizeConstraints = {
   minW: number
@@ -75,6 +77,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
+function repairHiddenOriginOffset(value: number) {
+  if (value > WORKSPACE_ORIGIN_OFFSET_REPAIR_THRESHOLD_PX) return value
+  return value + WORKSPACE_ORIGIN_OFFSET_PX
+}
+
 export function getWidgetSizeConstraints(catalogId: string): WidgetSizeConstraints {
   return WIDGET_SIZE_CONSTRAINTS[catalogId] ?? DEFAULT_WIDGET_SIZE_CONSTRAINTS
 }
@@ -93,8 +100,8 @@ export function clampWidgetLayoutSize(
 
 export function normalizeWidgetLayout(layout: WidgetLayout): WidgetLayout {
   const normalized = {
-    x: Number(layout.x) || 0,
-    y: Number(layout.y) || 0,
+    x: repairHiddenOriginOffset(Number(layout.x) || 0),
+    y: repairHiddenOriginOffset(Number(layout.y) || 0),
     w: Number(layout.w) || 320,
     h: Number(layout.h) || 240,
     z: Number(layout.z) || 10,

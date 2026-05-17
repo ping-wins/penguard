@@ -56,6 +56,28 @@ describe('widget layout normalization', () => {
     }))
   })
 
+  it('repairs widgets saved with the hidden canvas origin offset', () => {
+    const widgets = normalizeWorkspaceWidgets([
+      {
+        instanceId: 'w_policy',
+        catalogId: 'soc-policy-manager',
+        integrationId: 'int_fwb_01',
+        layout: { x: -99632, y: -99923, w: 841, h: 675, z: 311 },
+      },
+      {
+        instanceId: 'w_dos_rate',
+        catalogId: 'waf-dos-rate',
+        integrationId: 'int_fwb_01',
+        layout: { x: -98802, y: -99119, w: 620, h: 380, z: 312 },
+      },
+    ])
+
+    expect(widgets.map(widget => widget.layout)).toEqual([
+      { x: 368, y: 77, w: 841, h: 675, z: 311 },
+      { x: 1198, y: 881, w: 620, h: 380, z: 312 },
+    ])
+  })
+
   it('normalizes all widgets from a workspace response', () => {
     const widgets = normalizeWorkspaceWidgets([
       {

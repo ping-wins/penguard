@@ -834,6 +834,79 @@ describe('DashboardCanvas build pane', () => {
     }))
   })
 
+  it('does not save hidden origin offsets when dropping before initial recenter completes', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) {
+        return Promise.resolve(jsonResponse({
+          items: [{
+            id: 'int_fgt_01',
+            type: 'fortigate',
+            name: 'FortiGate Lab',
+            status: 'connected',
+          }],
+        }))
+      }
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/providers/fortigate/data-fields')) {
+        return Promise.resolve(jsonResponse({ provider: 'fortigate', groups: [] }))
+      }
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia, i18n],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const dragPayload: Record<string, string> = {}
+    const dataTransfer = {
+      setData: vi.fn((type: string, value: string) => {
+        dragPayload[type] = value
+      }),
+      getData: vi.fn((type: string) => dragPayload[type] ?? ''),
+      effectAllowed: '',
+      dropEffect: '',
+    }
+
+    await wrapper.get('[data-test="visual-template-visual-template-card"]').trigger('dragstart', {
+      dataTransfer,
+    })
+    const viewportWrapper = wrapper.get('[data-test="workspace-viewport"]')
+    const viewport = viewportWrapper.element as HTMLElement
+    Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 1200 })
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 800 })
+    viewport.scrollLeft = 0
+    viewport.scrollTop = 0
+
+    await viewportWrapper.trigger('drop', {
+      dataTransfer,
+      clientX: 140,
+      clientY: 90,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    })
+
+    const store = useDashboardStore()
+    expect(store.activeWidgets).toHaveLength(1)
+    expect(store.activeWidgets[0].layout.x).toBeGreaterThan(-10000)
+    expect(store.activeWidgets[0].layout.y).toBeGreaterThan(-10000)
+    expect(viewport.scrollLeft).toBe(WORKSPACE_TEST_ORIGIN - 600)
+    expect(viewport.scrollTop).toBe(WORKSPACE_TEST_ORIGIN - 400)
+  })
+
   it('renders a minimap with widget markers and the current viewport', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

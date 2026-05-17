@@ -343,6 +343,11 @@ function handleWorkspaceDragOver(event: DragEvent) {
 function workspacePointFromEvent(event: DragEvent) {
   const viewport = workspaceViewport.value
   if (!viewport) return { x: 0, y: 0 }
+  if (!isGridMode.value && !hasCenteredWorkspace && viewport.scrollLeft === 0 && viewport.scrollTop === 0) {
+    if (scrollWorkspaceToOrigin()) {
+      hasCenteredWorkspace = true
+    }
+  }
   const rect = viewport.getBoundingClientRect()
   return {
     x: (viewport.scrollLeft + event.clientX - rect.left - WORKSPACE_ORIGIN_X_PX * dashboardStore.zoom) / dashboardStore.zoom,
