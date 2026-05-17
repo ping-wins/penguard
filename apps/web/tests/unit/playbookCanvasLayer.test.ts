@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlaybookCanvasLayer from '../../src/components/playbooks/canvas/PlaybookCanvasLayer.vue'
 import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
+import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { usePlaybooksStore } from '../../src/stores/usePlaybooksStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -175,5 +176,45 @@ describe('PlaybookCanvasLayer', () => {
 
     wrapper.unmount()
     host.remove()
+  })
+
+  it('moves as a special widget on the workspace canvas', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    useDashboardStore().setZoom(2)
+
+    const wrapper = mount(PlaybookCanvasLayer, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFlow: {
+            props: ['nodes', 'edges'],
+            template: '<div data-test="vue-flow-stub"><slot /></div>',
+          },
+          Background: { template: '<div />' },
+          Controls: { template: '<div />' },
+          MiniMap: { template: '<div />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const layerBefore = wrapper.get('[data-test="playbook-canvas-layer"]')
+    expect(layerBefore.attributes('style')).toContain('translate(840px, 120px)')
+
+    await wrapper.get('[data-test="playbook-canvas-drag-handle"]').trigger('pointerdown', {
+      clientX: 100,
+      clientY: 100,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 180,
+      clientY: 140,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="playbook-canvas-layer"]').attributes('style')).toContain('translate(880px, 140px)')
   })
 })
