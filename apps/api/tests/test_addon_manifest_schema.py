@@ -51,3 +51,25 @@ def test_manifest_rejects_empty_entrypoint():
     payload["entrypoint"] = ""
     with pytest.raises(ValidationError):
         AddonManifest.model_validate(payload)
+
+
+def test_manifest_capabilities_defaults_all_false():
+    m = AddonManifest.model_validate(_base_payload())
+    assert m.capabilities.log_source is False
+    assert m.capabilities.playbook_target is False
+    assert m.capabilities.managed is False
+
+
+def test_manifest_capabilities_round_trips_camel_case():
+    payload = _base_payload()
+    payload["capabilities"] = {
+        "logSource": True,
+        "playbookTarget": True,
+        "managed": False,
+    }
+    dumped = AddonManifest.model_validate(payload).model_dump(by_alias=True)
+    assert dumped["capabilities"] == {
+        "logSource": True,
+        "playbookTarget": True,
+        "managed": False,
+    }

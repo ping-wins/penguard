@@ -49,6 +49,14 @@ class AddonCompatibility(BaseModel):
     notes: str | None = None
 
 
+class AddonCapabilities(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    log_source: bool = Field(default=False, alias="logSource")
+    playbook_target: bool = Field(default=False, alias="playbookTarget")
+    managed: bool = Field(default=False)
+
+
 class AddonManifest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -62,6 +70,7 @@ class AddonManifest(BaseModel):
     min_dashboard_version: str | None = Field(default=None, alias="minDashboardVersion")
     provider: AddonProvider
     compatibility: AddonCompatibility | None = None
+    capabilities: AddonCapabilities = Field(default_factory=AddonCapabilities)
     routes: list[AddonRoute] = Field(default_factory=list)
     widgets: list[str] = Field(default_factory=list)
     siem_event_types: list[str] = Field(default_factory=list, alias="siemEventTypes")
