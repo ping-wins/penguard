@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from secrets import token_urlsafe
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, desc, select
+from sqlalchemy import Engine, create_engine, desc, or_ as sa_or, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import WorkspaceSpecModel, WorkspaceTemplateModel
@@ -256,18 +256,34 @@ class SqlAlchemyWorkspaceStore:
             db.refresh(model)
             return self._template_payload(model, include_manifest=True)
 
-    def list_templates(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    def list_templates(
+        self,
+        *,
+        limit: int = 100,
+        category: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
         with self.session_factory() as db:
-            rows = (
-                db.execute(
-                    select(WorkspaceTemplateModel)
-                    .where(WorkspaceTemplateModel.is_visible == True)  # noqa: E712
-                    .order_by(desc(WorkspaceTemplateModel.created_at))
-                    .limit(limit)
-                )
-                .scalars()
-                .all()
+            stmt = (
+                select(WorkspaceTemplateModel)
+                .where(WorkspaceTemplateModel.is_visible == True)  # noqa: E712
             )
+            if category:
+                stmt = stmt.where(WorkspaceTemplateModel.category == category)
+            if search:
+                like = f"%{search.lower()}%"
+                stmt = stmt.where(
+                    sa_or(
+                        WorkspaceTemplateModel.title.ilike(like),
+                        WorkspaceTemplateModel.slug.ilike(like),
+                        WorkspaceTemplateModel.description.ilike(like),
+                    )
+                )
+            stmt = stmt.order_by(
+                desc(WorkspaceTemplateModel.is_curated),
+                desc(WorkspaceTemplateModel.created_at),
+            ).limit(limit)
+            rows = db.execute(stmt).scalars().all()
             return [self._template_payload(row, include_manifest=False) for row in rows]
 
     def get_template(self, template_id: str) -> dict[str, Any] | None:
@@ -286,6 +302,8 @@ class SqlAlchemyWorkspaceStore:
             ).scalar_one_or_none()
             if model is None:
                 return False
+            if model.is_curated:
+                raise PermissionError("Curated templates cannot be deleted")
             if model.published_by_user_id != published_by_user_id:
                 raise PermissionError("Template not owned by user")
             db.delete(model)
@@ -341,6 +359,9 @@ class SqlAlchemyWorkspaceStore:
             "publishedByEmail": model.published_by_email,
             "publishedByUserId": model.published_by_user_id,
             "installCount": model.install_count,
+            "category": model.category,
+            "isCurated": model.is_curated,
+            "icon": model.icon,
             "createdAt": self._format_datetime(model.created_at),
             "updatedAt": self._format_datetime(model.updated_at),
         }

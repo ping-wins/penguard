@@ -1,0 +1,66 @@
+{
+  "slug": "network-engineer",
+  "title": "Network Engineer",
+  "description": "FortiGate device health, interface status, traffic flow, firewall policies and top source IPs.",
+  "category": "engineer",
+  "icon": "Network",
+  "tags": ["engineer", "fortigate", "network"],
+  "manifest": {
+    "schemaVersion": 1,
+    "workspaceId": "tpl_network_engineer",
+    "name": "Network Engineer",
+    "providerTypes": ["fortigate"],
+    "widgets": [
+      {
+        "instanceId": "w_system_status",
+        "catalogId": "fortigate-system-status",
+        "providerType": "fortigate",
+        "layout": { "x": 0, "y": 0, "w": 3, "h": 2, "z": 10 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_kpi_sessions",
+        "catalogId": "fortigate-kpi-sessions",
+        "providerType": "fortigate",
+        "layout": { "x": 3, "y": 0, "w": 3, "h": 2, "z": 11 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_interface_health",
+        "catalogId": "fortigate-interface-health",
+        "providerType": "fortigate",
+        "layout": { "x": 6, "y": 0, "w": 5, "h": 4, "z": 12 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_network_traffic",
+        "catalogId": "fortigate-network-traffic",
+        "providerType": "fortigate",
+        "layout": { "x": 0, "y": 2, "w": 6, "h": 4, "z": 13 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_firewall_policies",
+        "catalogId": "fortigate-firewall-policies",
+        "providerType": "fortigate",
+        "layout": { "x": 0, "y": 6, "w": 5, "h": 4, "z": 14 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_top_source_ips",
+        "catalogId": "fortigate-top-source-ips",
+        "providerType": "fortigate",
+        "layout": { "x": 5, "y": 6, "w": 5, "h": 4, "z": 15 },
+        "fieldBindings": []
+      }
+    ],
+    "presentation": null,
+    "metadata": {
+      "description": "Network engineer preset",
+      "tags": ["engineer", "fortigate"],
+      "incidentId": null,
+      "exportedAt": "2026-05-17T00:00:00.000Z",
+      "exportedByEmail": null
+    }
+  }
+}

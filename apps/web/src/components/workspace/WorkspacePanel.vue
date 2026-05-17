@@ -30,13 +30,14 @@ import {
   exportWorkspace,
   importWorkspace,
   installCommunityTemplate,
-  listCommunityTemplates,
+  listWorkspaceTemplates,
   publishWorkspaceTemplate,
   readManifestFile,
   updatePresentation,
   type CommunityTemplate,
   type PresentationMetadata,
   type PresentationSlide,
+  type TemplateCategory,
   type WorkspaceManifest,
   type WorkspaceOrigin,
   type WorkspaceSummary,
@@ -67,6 +68,16 @@ const publishForm = ref({
 })
 const community = ref<CommunityTemplate[]>([])
 const communityFilter = ref('')
+const communityCategory = ref<TemplateCategory | 'all'>('all')
+
+const CATEGORY_TABS: { value: TemplateCategory | 'all', labelKey: string }[] = [
+  { value: 'all', labelKey: 'workspaces.communityDialog.category.all' },
+  { value: 'executive', labelKey: 'workspaces.communityDialog.category.executive' },
+  { value: 'analyst', labelKey: 'workspaces.communityDialog.category.analyst' },
+  { value: 'engineer', labelKey: 'workspaces.communityDialog.category.engineer' },
+  { value: 'incident_response', labelKey: 'workspaces.communityDialog.category.incident_response' },
+  { value: 'community', labelKey: 'workspaces.communityDialog.category.community' },
+]
 const presentationDraft = ref<PresentationMetadata>({
   title: '',
   incidentSummary: '',
@@ -182,12 +193,19 @@ async function handlePublish() {
 async function loadCommunity() {
   isBusy.value = true
   try {
-    community.value = await listCommunityTemplates()
+    community.value = await listWorkspaceTemplates({
+      category: communityCategory.value,
+    })
   } catch (e: any) {
     errorMsg.value = e?.message ?? t('workspaces.communityDialog.loadError')
   } finally {
     isBusy.value = false
   }
+}
+
+function selectCategory(category: TemplateCategory | 'all') {
+  communityCategory.value = category
+  loadCommunity()
 }
 
 async function installTemplate(template: CommunityTemplate) {
@@ -350,7 +368,7 @@ watch(
 
 onMounted(() => {
   dashboardStore.refreshWorkspaceList()
-  listCommunityTemplates()
+  listWorkspaceTemplates({ category: 'all' })
     .then((items) => {
       community.value = items
     })
@@ -698,6 +716,21 @@ const actions = computed(() => [
         <!-- COMMUNITY -->
         <div v-if="openDialog === 'community'">
           <h2 class="text-xl font-semibold mb-2 text-theme-text">{{ t('workspaces.communityDialog.title') }}</h2>
+          <div class="flex flex-wrap gap-1.5 mb-3">
+            <button
+              v-for="tab in CATEGORY_TABS"
+              :key="tab.value"
+              type="button"
+              :disabled="isBusy"
+              @click="selectCategory(tab.value)"
+              class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors disabled:opacity-50"
+              :class="communityCategory === tab.value
+                ? 'border-theme-primary bg-theme-primary/15 text-theme-primary'
+                : 'border-theme-border bg-theme-bg/40 text-theme-text-muted hover:text-theme-text'"
+            >
+              {{ t(tab.labelKey) }}
+            </button>
+          </div>
           <input
             v-model="communityFilter"
             :placeholder="t('workspaces.communityDialog.filter')"
@@ -712,8 +745,15 @@ const actions = computed(() => [
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
                     <span class="font-semibold text-theme-text">{{ template.title }}</span>
+                    <span
+                      v-if="template.isCurated"
+                      data-test="curated-badge"
+                      class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-semibold"
+                    >
+                      {{ t('workspaces.communityDialog.curatedBadge') }}
+                    </span>
                     <span class="text-xs text-theme-text-muted">@{{ template.slug }}</span>
                   </div>
                   <p class="text-sm text-theme-text-muted">{{ template.description || t('workspaces.communityDialog.noDescription') }}</p>
@@ -741,7 +781,7 @@ const actions = computed(() => [
                     {{ t('workspaces.communityDialog.install') }}
                   </button>
                   <button
-                    v-if="authStore.user?.id === template.publishedByUserId"
+                    v-if="!template.isCurated && authStore.user?.id === template.publishedByUserId"
                     type="button"
                     :disabled="isBusy"
                     @click="removeTemplate(template)"

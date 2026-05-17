@@ -1,0 +1,59 @@
+{
+  "slug": "incident-response",
+  "title": "Incident Response",
+  "description": "Live ops dashboard for incident responders: active playbook runs, SLA breach, recent incidents, SOAR history and XDR endpoint health.",
+  "category": "incident_response",
+  "icon": "Siren",
+  "tags": ["incident", "response", "soar", "xdr"],
+  "manifest": {
+    "schemaVersion": 1,
+    "workspaceId": "tpl_incident_response",
+    "name": "Incident Response",
+    "providerTypes": ["siem_kowalski", "soar_skipper", "xdr_rico"],
+    "widgets": [
+      {
+        "instanceId": "w_sla_breach",
+        "catalogId": "soc-sla-breach",
+        "providerType": "siem_kowalski",
+        "layout": { "x": 0, "y": 0, "w": 5, "h": 4, "z": 10 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_active_playbooks",
+        "catalogId": "soar-active-playbook-runs",
+        "providerType": "soar_skipper",
+        "layout": { "x": 5, "y": 0, "w": 5, "h": 4, "z": 11 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_recent_incidents",
+        "catalogId": "soc-recent-incidents",
+        "providerType": "siem_kowalski",
+        "layout": { "x": 0, "y": 4, "w": 5, "h": 4, "z": 12 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_endpoint_health",
+        "catalogId": "xdr-endpoint-health",
+        "providerType": "xdr_rico",
+        "layout": { "x": 5, "y": 4, "w": 4, "h": 3, "z": 13 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_playbook_history",
+        "catalogId": "soar-playbook-run-history",
+        "providerType": "soar_skipper",
+        "layout": { "x": 0, "y": 8, "w": 6, "h": 5, "z": 14 },
+        "fieldBindings": []
+      }
+    ],
+    "presentation": null,
+    "metadata": {
+      "description": "Incident response preset",
+      "tags": ["incident", "response"],
+      "incidentId": null,
+      "exportedAt": "2026-05-17T00:00:00.000Z",
+      "exportedByEmail": null
+    }
+  }
+}

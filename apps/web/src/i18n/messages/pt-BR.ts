@@ -238,7 +238,7 @@ export default {
       error: 'Erro ao publicar template',
     },
     communityDialog: {
-      title: 'Biblioteca da comunidade',
+      title: 'Biblioteca de templates',
       filter: 'Filtrar por título, slug ou tag...',
       empty: 'Nenhum template encontrado.',
       noDescription: 'Sem descrição.',
@@ -253,6 +253,15 @@ export default {
       removed: 'Template removido.',
       removeError: 'Erro ao remover template',
       loadError: 'Erro ao carregar biblioteca',
+      curatedBadge: 'Oficial',
+      category: {
+        all: 'Todos',
+        executive: 'Executivo',
+        analyst: 'Analista',
+        engineer: 'Engenheiro',
+        incident_response: 'Resposta a incidentes',
+        community: 'Comunidade',
+      },
     },
     presentationDialog: {
       title: 'Modo apresentação',
