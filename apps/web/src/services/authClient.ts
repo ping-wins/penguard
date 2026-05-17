@@ -3,6 +3,8 @@ export type AuthUser = {
   email: string
   displayName: string
   roles: string[]
+  permissions?: string[]
+  isAdmin?: boolean
 }
 
 export type BrowserSession = {

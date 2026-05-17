@@ -28,8 +28,10 @@ from app.routers import (
     marketplace,
     providers,
     realtime,
+    roles,
     soc,
     soc_ingest,
+    users,
     widget_catalog,
     widgets,
     workspaces,
@@ -215,3 +217,5 @@ app.include_router(widget_catalog.router, prefix="/api")
 app.include_router(widgets.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(marketplace.router, prefix="/api")
+app.include_router(roles.router, prefix="/api")
+app.include_router(users.router, prefix="/api")

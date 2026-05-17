@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -282,6 +282,57 @@ class AiAgentToolCallModel(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
+    )
+
+
+class RoleModel(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
+class RolePermissionModel(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (PrimaryKeyConstraint("role_id", "permission"),)
+
+    role_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    permission: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class UserRoleModel(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (PrimaryKeyConstraint("user_id", "role_id"),)
+
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    granted_by_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
 

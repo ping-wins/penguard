@@ -166,6 +166,7 @@ def register(
         user_agent=request.headers.get("user-agent"),
     )
     set_session_cookie(response, result.session_id)
+    result.payload["user"] = _enrich_with_permissions(result.payload["user"])
     return result.payload
 
 
@@ -202,6 +203,7 @@ def login(
         user_agent=request.headers.get("user-agent"),
     )
     set_session_cookie(response, result.session_id)
+    result.payload["user"] = _enrich_with_permissions(result.payload["user"])
     return result.payload
 
 
@@ -211,7 +213,45 @@ def get_current_session(request: Request) -> dict:
     user = get_auth_service().get_current_user(request.cookies.get(settings.session_cookie_name))
     if user is None:
         return {"authenticated": False, "user": None}
-    return {"authenticated": True, "user": user}
+    return {"authenticated": True, "user": _enrich_with_permissions(user)}
+
+
+def _enrich_with_permissions(user: dict) -> dict:
+    """Attach the user's effective permission slugs to the session payload.
+
+    Falls back silently to an empty list if the DB lookup fails (mock mode,
+    transient DB error). Keycloak ``admin`` claim always wins.
+    """
+    from app.auth.permissions import (  # local import avoids cycle at module load
+        PERMISSION_CATALOG,
+        WILDCARD,
+        has_keycloak_admin_claim,
+        effective_permissions,
+    )
+    from app.db.session import SessionLocal
+
+    enriched = dict(user)
+    if has_keycloak_admin_claim(user):
+        enriched["permissions"] = sorted({p.slug for p in PERMISSION_CATALOG})
+        enriched["isAdmin"] = True
+        return enriched
+    user_id = user.get("id") or user.get("user_id")
+    if not user_id:
+        enriched["permissions"] = []
+        enriched["isAdmin"] = False
+        return enriched
+    try:
+        with SessionLocal() as db:
+            perms = effective_permissions(db, user_id)
+    except Exception:
+        perms = set()
+    if WILDCARD in perms:
+        enriched["permissions"] = sorted({p.slug for p in PERMISSION_CATALOG})
+        enriched["isAdmin"] = True
+    else:
+        enriched["permissions"] = sorted(perms)
+        enriched["isAdmin"] = False
+    return enriched
 
 
 def sso_failure_redirect(reason: str) -> RedirectResponse:

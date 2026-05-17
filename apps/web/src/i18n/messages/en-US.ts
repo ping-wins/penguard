@@ -496,6 +496,87 @@ export default {
       language: 'Language',
       marketplace: 'Marketplace',
       ai: 'AI Assistant',
+      roles: 'Roles & Members',
+    },
+    roles: {
+      tabs: {
+        roles: 'Roles',
+        users: 'Users',
+      },
+      listTitle: 'Roles',
+      empty: 'No roles created yet.',
+      selectHint: 'Select a role on the left or create a new one.',
+      create: 'Create role',
+      save: 'Save',
+      system: 'system',
+      'delete': {
+        confirm: 'Delete role "{name}"? This cannot be undone.',
+        button: 'Delete',
+      },
+      subtabs: {
+        display: 'Display',
+        permissions: 'Permissions',
+        members: 'Members',
+      },
+      fields: {
+        name: 'Name',
+        description: 'Description',
+        color: 'Color',
+      },
+      permissions: {
+        systemNote: 'System role has all permissions (*) and cannot be edited.',
+      },
+      permission: {
+        category: {
+          integrations: 'Integrations',
+          audit: 'Audit',
+          roles: 'Roles',
+          marketplace: 'Marketplace',
+          workspaces: 'Workspaces',
+          playbooks: 'Playbooks',
+          tickets: 'Tickets',
+        },
+        'integrations.write': {
+          label: 'Add/remove providers',
+          description: 'Connect FortiGate, Penguin Tools and other providers.',
+        },
+        'audit.read': {
+          label: 'View audit logs',
+          description: 'Access the full audit event feed.',
+        },
+        'roles.manage': {
+          label: 'Manage roles & members',
+          description: 'Create roles, grant permissions and assign users.',
+        },
+        'marketplace.install': {
+          label: 'Install add-ons',
+          description: 'Install/uninstall marketplace packages.',
+        },
+        'workspaces.share': {
+          label: 'Share workspaces',
+          description: 'Publish workspaces to the rest of the organization.',
+        },
+        'playbooks.execute': {
+          label: 'Execute playbooks',
+          description: 'Trigger SOAR playbooks (dry-run and live).',
+        },
+        'tickets.manage': {
+          label: 'Manage tickets',
+          description: 'Close, reassign and bulk-edit tickets.',
+        },
+      },
+      members: {
+        add: 'Add',
+        remove: 'Remove',
+        empty: 'No members in this role.',
+        count: '{count} members',
+        inputHint: 'Email or user ID',
+      },
+    },
+    users: {
+      searchPlaceholder: 'Search user',
+      empty: 'No users found.',
+      hint: 'Click the colored pills to grant or revoke roles per user.',
     },
     profile: {
       title: 'User profile',

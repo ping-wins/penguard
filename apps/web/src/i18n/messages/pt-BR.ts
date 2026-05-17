@@ -496,6 +496,87 @@ export default {
       language: 'Idioma',
       marketplace: 'Marketplace',
       ai: 'Assistente IA',
+      roles: 'Cargos & Membros',
+    },
+    roles: {
+      tabs: {
+        roles: 'Cargos',
+        users: 'Usuários',
+      },
+      listTitle: 'Cargos',
+      empty: 'Nenhum cargo criado ainda.',
+      selectHint: 'Selecione um cargo na esquerda ou crie um novo.',
+      create: 'Criar cargo',
+      save: 'Salvar',
+      system: 'sistema',
+      'delete': {
+        confirm: 'Excluir cargo "{name}"? Esta ação não pode ser desfeita.',
+        button: 'Excluir',
+      },
+      subtabs: {
+        display: 'Exibição',
+        permissions: 'Permissões',
+        members: 'Membros',
+      },
+      fields: {
+        name: 'Nome',
+        description: 'Descrição',
+        color: 'Cor',
+      },
+      permissions: {
+        systemNote: 'Cargo do sistema tem todas as permissões (*) e não pode ser editado.',
+      },
+      permission: {
+        category: {
+          integrations: 'Integrações',
+          audit: 'Auditoria',
+          roles: 'Cargos',
+          marketplace: 'Marketplace',
+          workspaces: 'Workspaces',
+          playbooks: 'Playbooks',
+          tickets: 'Tickets',
+        },
+        'integrations.write': {
+          label: 'Adicionar/remover provedores',
+          description: 'Conectar FortiGate, Penguin Tools e outros provedores.',
+        },
+        'audit.read': {
+          label: 'Ver logs de auditoria',
+          description: 'Acessar o feed completo de eventos de auditoria.',
+        },
+        'roles.manage': {
+          label: 'Gerenciar cargos & membros',
+          description: 'Criar cargos, conceder permissões e atribuir usuários.',
+        },
+        'marketplace.install': {
+          label: 'Instalar add-ons',
+          description: 'Instalar/remover pacotes do marketplace.',
+        },
+        'workspaces.share': {
+          label: 'Compartilhar workspaces',
+          description: 'Publicar workspaces para outros usuários da organização.',
+        },
+        'playbooks.execute': {
+          label: 'Executar playbooks',
+          description: 'Disparar playbooks de SOAR (dry-run e execução real).',
+        },
+        'tickets.manage': {
+          label: 'Gerenciar tickets',
+          description: 'Fechar, reatribuir e editar tickets em massa.',
+        },
+      },
+      members: {
+        add: 'Adicionar',
+        remove: 'Remover',
+        empty: 'Nenhum membro neste cargo.',
+        count: '{count} membros',
+        inputHint: 'E-mail ou user ID',
+      },
+    },
+    users: {
+      searchPlaceholder: 'Buscar usuário',
+      empty: 'Nenhum usuário encontrado.',
+      hint: 'Clique nos pills coloridos para conceder ou revogar cargos por usuário.',
     },
     profile: {
       title: 'Perfil do usuário',

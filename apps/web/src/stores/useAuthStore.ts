@@ -15,7 +15,20 @@ export const useAuthStore = defineStore('auth', {
     isInitialized: false,
     csrfToken: ''
   }),
+  getters: {
+    permissions(state): string[] {
+      return state.user?.permissions ?? []
+    },
+    isAdmin(state): boolean {
+      if (state.user?.isAdmin) return true
+      return (state.user?.roles ?? []).includes('admin')
+    },
+  },
   actions: {
+    hasPermission(slug: string): boolean {
+      if (this.isAdmin) return true
+      return (this.user?.permissions ?? []).includes(slug)
+    },
     async fetchCsrf() {
       this.csrfToken = await fetchCsrfToken()
       return this.csrfToken

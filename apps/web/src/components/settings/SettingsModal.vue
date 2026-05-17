@@ -12,9 +12,11 @@ import {
   CheckCircle2,
   Boxes,
   Bot,
+  Users as UsersIcon,
 } from 'lucide-vue-next'
 import MarketplacePanel from '../marketplace/MarketplacePanel.vue'
 import AiPreferencesPanel from './AiPreferencesPanel.vue'
+import RolesManagerPanel from './RolesManagerPanel.vue'
 import type { AddonManifest } from '../../services/marketplaceClient'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -30,17 +32,30 @@ const themeStore = useThemeStore()
 const router = useRouter()
 const { t, locale } = useI18n()
 
-type Tab = 'profile' | 'appearance' | 'language' | 'marketplace' | 'ai'
+type Tab = 'profile' | 'appearance' | 'language' | 'marketplace' | 'ai' | 'roles'
 const activeTab = ref<Tab>('profile')
 const localeSaved = ref(false)
 
-const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => [
-  { id: 'profile', label: t('settings.tabs.profile'), icon: UserCog },
-  { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
-  { id: 'language', label: t('settings.tabs.language'), icon: Languages },
-  { id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes },
-  { id: 'ai', label: t('settings.tabs.ai'), icon: Bot },
-])
+function tabLabel(key: string, fallback: string): string {
+  // Avoid throwing if the i18n key is missing during incremental rollouts
+  // (so new tabs don't break existing locales).
+  // @ts-expect-error te is provided by vue-i18n at runtime
+  return (t.te ? t.te(key) : true) ? t(key) : fallback
+}
+
+const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => {
+  const base: { id: Tab; label: string; icon: any }[] = [
+    { id: 'profile', label: t('settings.tabs.profile'), icon: UserCog },
+    { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
+    { id: 'language', label: t('settings.tabs.language'), icon: Languages },
+    { id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes },
+    { id: 'ai', label: t('settings.tabs.ai'), icon: Bot },
+  ]
+  if (authStore.hasPermission('roles.manage')) {
+    base.push({ id: 'roles', label: tabLabel('settings.tabs.roles', 'Cargos & Membros'), icon: UsersIcon })
+  }
+  return base
+})
 
 function onMarketplaceInstall(_addon: AddonManifest) {
   // Close the settings modal so the user can finish provisioning the
@@ -271,6 +286,10 @@ watch(
 
           <div v-if="activeTab === 'ai'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border">
             <AiPreferencesPanel />
+          </div>
+
+          <div v-if="activeTab === 'roles'" class="-mx-5 -my-5 h-[60vh] overflow-hidden border-t border-theme-border relative">
+            <RolesManagerPanel />
           </div>
         </div>
       </div>
