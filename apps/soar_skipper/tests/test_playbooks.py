@@ -65,6 +65,26 @@ def test_lists_playbook_node_types_for_visual_builder():
     assert webhook["dryRunOnly"] is True
 
 
+def test_every_node_type_exposes_self_explaining_builder_metadata():
+    response = client.get("/node-types")
+
+    assert response.status_code == 200
+    for node in response.json()["items"]:
+        assert node["description"]
+        assert node["effectSummary"]
+        assert isinstance(node["exampleConfig"], dict)
+        assert isinstance(node["requiredInputs"], list)
+        for required_input in node["requiredInputs"]:
+            assert {"key", "label", "description"} <= set(required_input)
+
+    notify = next(item for item in response.json()["items"] if item["id"] == "notify.webhook")
+    assert notify["effectSummary"] == "Sends a real outbound notification through a configured webhook destination."
+    assert notify["exampleConfig"] == {
+        "destinationId": "pwd_discord_soc",
+        "content": "Critical incident {incident.id} from {entities.sourceIp}",
+    }
+
+
 def test_create_playbook_rejects_unknown_node_type():
     response = client.post(
         "/playbooks",
