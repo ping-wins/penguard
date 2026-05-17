@@ -281,12 +281,10 @@ describe('Sidebar integrations panel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Penguin SOC Lite')
-    expect(wrapper.text()).toContain('Kowalski SIEM-lite')
-    expect(wrapper.text()).toContain('XDR/EDR-lite manager')
-    expect(wrapper.text()).toContain('SOAR-lite workflows')
-    expect(wrapper.text()).toContain('Conectado como Kowalski SIEM')
-    expect(wrapper.get('[data-test="penguin-connect-siem_kowalski"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-test="penguin-connect-xdr_rico"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Kowalski SIEM')
+    expect(wrapper.text()).toContain('siem_kowalski')
+    expect(wrapper.find('[data-test="penguin-connect-siem_kowalski"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="penguin-connect-xdr_rico"]').exists()).toBe(false)
   })
 
   it('groups integration connectors by provider category', async () => {
@@ -302,9 +300,10 @@ describe('Sidebar integrations panel', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Provedores Fortinet')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Nenhum provedor Fortinet conectado')
     expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Penguin SOC Lite')
-    expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Kowalski SIEM-lite')
+    expect(wrapper.get('[data-test="integration-group-penguin"]').text()).toContain('Não conectado')
+    expect(wrapper.get('[data-test="open-connect-wizard"]').text()).toContain('Conectar uma máquina')
     expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).toContain('Sensor de endpoint / onboarding')
     expect(wrapper.get('[data-test="integration-group-endpoint"]').text()).not.toContain('agent_private')
     expect(wrapper.get('[data-test="integration-toggle-endpoint"]').attributes('aria-expanded')).toBe('false')
@@ -329,17 +328,50 @@ describe('Sidebar integrations panel', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Nenhum provedor Fortinet conectado')
 
     await wrapper.get('[data-test="integration-toggle-fortinet"]').trigger('click')
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).not.toContain('Host (URL)')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).not.toContain('Nenhum provedor Fortinet conectado')
 
     await wrapper.get('[data-test="integration-toggle-fortinet"]').trigger('click')
 
     expect(wrapper.get('[data-test="integration-toggle-fortinet"]').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Host (URL)')
+    expect(wrapper.get('[data-test="integration-group-fortinet"]').text()).toContain('Nenhum provedor Fortinet conectado')
+  })
+
+  it('opens the unified connect wizard from the integrations drawer', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/integrations/catalog') {
+        return Promise.resolve(jsonResponse({
+          items: [
+            {
+              addonId: 'fortiweb-core',
+              name: 'FortiWeb Core',
+              vendor: 'Fortinet',
+              category: 'waf',
+              providerType: 'fortiweb',
+              versions: ['8.0.5'],
+              authFields: [],
+              capabilities: { logSource: true, playbookTarget: true, managed: true },
+            },
+          ],
+        }))
+      }
+      return Promise.resolve(jsonResponse({ items: [] }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+
+    const wrapper = mountSidebar()
+
+    await wrapper.get('[title="Integrações SOC"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="open-connect-wizard"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('FortiWeb Core')
   })
 
   it('renders AI widget drafts and inserts them into the workspace after confirmation', async () => {

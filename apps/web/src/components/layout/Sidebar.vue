@@ -21,8 +21,8 @@ import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
 import PlaybooksPanel from '../playbooks/PlaybooksPanel.vue'
+import ConnectWizard from '../integrations/ConnectWizard.vue'
 import { useRouter } from 'vue-router'
-import type { PenguinToolType } from '../../stores/useIntegrationsStore'
 
 const { t } = useI18n()
 const emit = defineEmits<{ 'open-settings': [] }>()
@@ -37,78 +37,25 @@ const router = useRouter()
 const activeTab = ref<'none' | 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
 const assistantMode = ref<'chat' | 'agent'>('chat')
 
-const fgForm = ref({
-  name: 'FortiGate Lab',
-  host: 'https://fortigate.local',
-  apiKey: '',
-  verifyTls: false
-})
-const fgTestResult = ref<any>(null)
-const fgTestError = ref<string | null>(null)
-const fwebForm = ref({
-  name: 'FortiWeb Lab',
-  host: 'https://fortiweb.local',
-  apiKey: '',
-  verifyTls: false,
-  targetServerPolicy: 'lab-waf-policy',
-  managedIpListPolicy: 'FD_IP_BLOCKLIST',
-})
-const fwebTestResult = ref<any>(null)
-const fwebTestError = ref<string | null>(null)
-const penguinTestResults = ref<Record<PenguinToolType, any | null>>({
-  siem_kowalski: null,
-  xdr_rico: null,
-  soar_skipper: null,
-})
-const penguinErrors = ref<Record<PenguinToolType, string | null>>({
-  siem_kowalski: null,
-  xdr_rico: null,
-  soar_skipper: null,
-})
+const showWizard = ref(false)
+const integrationError = ref<string | null>(null)
 const integrationGroupsOpen = ref({
   fortinet: true,
   penguin: true,
   endpoint: false,
-})
-const penguinTools: Array<{
-  type: PenguinToolType
-  title: string
-  description: string
-  defaultName: string
-}> = [
-  {
-    type: 'siem_kowalski',
-    title: 'Kowalski SIEM-lite',
-    description: 'Events, detections, incidents and investigation widgets.',
-    defaultName: 'Kowalski SIEM',
-  },
-  {
-    type: 'xdr_rico',
-    title: 'XDR/EDR-lite manager',
-    description: 'Endpoint inventory, heartbeat and timeline widgets.',
-    defaultName: 'Rico XDR',
-  },
-  {
-    type: 'soar_skipper',
-    title: 'SOAR-lite workflows',
-    description: 'Playbooks, dry-run response and approval widgets.',
-    defaultName: 'Skipper SOAR',
-  },
-]
-const canSubmitFortigate = computed(() => {
-  return fgForm.value.host.trim().length > 0 && fgForm.value.apiKey.trim().length > 0
-})
-const canSubmitFortiweb = computed(() => {
-  return fwebForm.value.host.trim().length > 0
-    && fwebForm.value.apiKey.trim().length > 0
-    && fwebForm.value.targetServerPolicy.trim().length > 0
-    && fwebForm.value.managedIpListPolicy.trim().length > 0
 })
 const fortigateIntegrations = computed(() => {
   return integrationsStore.integrations.filter(integration => integration.type === 'fortigate')
 })
 const fortiwebIntegrations = computed(() => {
   return integrationsStore.integrations.filter(integration => integration.type === 'fortiweb')
+})
+const penguinIntegrations = computed(() => {
+  return integrationsStore.integrations.filter(integration => (
+    integration.type === 'siem_kowalski'
+    || integration.type === 'xdr_rico'
+    || integration.type === 'soar_skipper'
+  ))
 })
 const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
 const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
@@ -191,88 +138,31 @@ onBeforeUnmount(() => {
   ticketsStore.stopRealtime()
 })
 
-async function handleTestFortigate() {
-  fgTestResult.value = null
-  fgTestError.value = null
-  const res = await integrationsStore.testFortigate(fgForm.value.host, fgForm.value.apiKey, fgForm.value.verifyTls)
-  if (res.success) {
-    fgTestResult.value = res.data
-  } else {
-    fgTestError.value = res.error ?? 'Connection failed'
-  }
-}
-
-async function handleSaveFortigate() {
-  const res = await integrationsStore.addFortigate(fgForm.value.name, fgForm.value.host, fgForm.value.apiKey, fgForm.value.verifyTls)
-  if (res.success) {
-    fgTestResult.value = null
-    fgTestError.value = null
-    fgForm.value.apiKey = ''
-  } else {
-    fgTestError.value = res.error ?? 'Failed to add integration'
-  }
-}
-
-async function handleTestFortiweb() {
-  fwebTestResult.value = null
-  fwebTestError.value = null
-  const res = await integrationsStore.testFortiweb(
-    fwebForm.value.host,
-    fwebForm.value.apiKey,
-    fwebForm.value.verifyTls,
-  )
-  if (res.success) {
-    fwebTestResult.value = res.data
-  } else {
-    fwebTestError.value = res.error ?? 'Connection failed'
-  }
-}
-
-async function handleSaveFortiweb() {
-  const res = await integrationsStore.addFortiweb(
-    fwebForm.value.name,
-    fwebForm.value.host,
-    fwebForm.value.apiKey,
-    fwebForm.value.verifyTls,
-    fwebForm.value.targetServerPolicy,
-    fwebForm.value.managedIpListPolicy,
-  )
-  if (res.success) {
-    fwebTestResult.value = null
-    fwebTestError.value = null
-    fwebForm.value.apiKey = ''
-  } else {
-    fwebTestError.value = res.error ?? 'Failed to add integration'
-  }
-}
-
 async function handleRemoveIntegration(integrationId: string) {
-  fgTestError.value = null
-  fwebTestError.value = null
+  integrationError.value = null
   const res = await integrationsStore.removeIntegration(integrationId)
   if (!res.success) {
-    fgTestError.value = res.error ?? 'Failed to remove integration'
-    fwebTestError.value = res.error ?? 'Failed to remove integration'
+    integrationError.value = res.error ?? 'Failed to remove integration'
   }
 }
 
 async function handleRunFortigateIngestion(integrationId: string) {
-  fgTestError.value = null
+  integrationError.value = null
   const res = await integrationsStore.runFortigateIngestion(integrationId)
   if (!res.success) {
-    fgTestError.value = res.error ?? 'Failed to ingest FortiGate events'
+    integrationError.value = res.error ?? 'Failed to ingest FortiGate events'
   }
 }
 
 async function handleToggleFortigateIngestion(integrationId: string) {
-  fgTestError.value = null
+  integrationError.value = null
   const current = fortigateIngestionStatus(integrationId)
   const res = await integrationsStore.configureFortigateIngestion(integrationId, {
     enabled: !current?.enabled,
     intervalSeconds: current?.intervalSeconds ?? 30,
   })
   if (!res.success) {
-    fgTestError.value = res.error ?? 'Failed to configure FortiGate ingestion'
+    integrationError.value = res.error ?? 'Failed to configure FortiGate ingestion'
   }
 }
 
@@ -286,33 +176,8 @@ function ingestionPipelineLabel(integrationId: string) {
   return t('integrations.pipelineStatus', { status: status.status })
 }
 
-function connectedPenguinTool(type: PenguinToolType) {
-  return integrationsStore.integrations.find(integration => integration.type === type)
-}
-
 function toggleIntegrationGroup(group: keyof typeof integrationGroupsOpen.value) {
   integrationGroupsOpen.value[group] = !integrationGroupsOpen.value[group]
-}
-
-async function handleTestPenguinTool(type: PenguinToolType) {
-  penguinTestResults.value[type] = null
-  penguinErrors.value[type] = null
-  const res = await integrationsStore.testPenguinTool(type)
-  if (res.success) {
-    penguinTestResults.value[type] = res.data
-  } else {
-    penguinErrors.value[type] = res.error ?? 'Connection failed'
-  }
-}
-
-async function handleAddPenguinTool(type: PenguinToolType, name: string) {
-  penguinErrors.value[type] = null
-  const res = await integrationsStore.addPenguinTool(type, name)
-  if (res.success) {
-    penguinTestResults.value[type] = res.data
-  } else {
-    penguinErrors.value[type] = res.error ?? 'Failed to add integration'
-  }
 }
 
 function integrationForCatalogItem(item: { source?: string, integrationType?: string }) {
@@ -674,6 +539,22 @@ async function handleChatSubmit() {
           {{ t('integrations.loading') }}
         </div>
 
+        <div v-if="integrationError" class="mb-3 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          {{ integrationError }}
+        </div>
+
+        <div class="mb-4 flex flex-col gap-2">
+          <button
+            type="button"
+            data-test="open-connect-wizard"
+            class="rounded bg-theme-primary px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            @click="showWizard = true"
+          >
+            {{ t('integrations.wizard.title') }}
+          </button>
+          <ConnectWizard v-if="showWizard" @close="showWizard = false" />
+        </div>
+
         <div class="flex flex-col gap-4">
           <section data-test="integration-group-fortinet" class="rounded-lg border border-theme-border bg-theme-bg/60 p-3">
             <button
@@ -804,121 +685,6 @@ async function handleChatSubmit() {
               </div>
             </div>
 
-            <div v-if="integrationGroupsOpen.fortinet" class="grid grid-cols-2 gap-2">
-              <div class="col-span-2 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
-                {{ t('integrations.fortigate.title') }}
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.name') }}</label>
-                <input v-model="fgForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.host') }}</label>
-                <input v-model="fgForm.host" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="col-span-2 flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.apiKey') }}</label>
-                <input v-model="fgForm.apiKey" type="password" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <label class="col-span-2 flex cursor-pointer items-center gap-2">
-                <input v-model="fgForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
-                <span class="text-xs text-theme-text">{{ t('integrations.verifyTls') }}</span>
-              </label>
-
-              <div v-if="fgTestResult" class="col-span-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
-                <div class="mb-1 font-medium text-green-400">{{ t('integrations.connectionSuccess') }}</div>
-                <div class="text-theme-text-muted">{{ t('integrations.hostname', { hostname: fgTestResult.device?.hostname }) }}</div>
-                <div class="text-theme-text-muted">{{ t('integrations.model', { model: fgTestResult.device?.model }) }}</div>
-              </div>
-
-              <div v-if="fgTestError" class="col-span-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
-                {{ fgTestError }}
-              </div>
-
-              <div class="col-span-2 flex gap-2">
-                <button
-                  @click="handleTestFortigate"
-                  class="flex-1 rounded border border-theme-border px-3 py-1.5 text-sm font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
-                  :disabled="integrationsStore.isTesting || !canSubmitFortigate"
-                >
-                  <span v-if="integrationsStore.isTesting">{{ t('integrations.testing') }}</span>
-                  <span v-else>{{ t('integrations.testConnection') }}</span>
-                </button>
-                <button
-                  @click="handleSaveFortigate"
-                  class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  :disabled="!canSubmitFortigate"
-                >
-                  {{ t('integrations.save') }}
-                </button>
-              </div>
-
-              <div class="col-span-2 mt-3 border-t border-theme-border pt-3 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
-                {{ t('integrations.fortiweb.title') }}
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.name') }}</label>
-                <input v-model="fwebForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.host') }}</label>
-                <input v-model="fwebForm.host" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="col-span-2 flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.apiKey') }}</label>
-                <input v-model="fwebForm.apiKey" type="password" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.fortiweb.targetPolicy') }}</label>
-                <input v-model="fwebForm.targetServerPolicy" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <label class="text-xs text-theme-text">{{ t('integrations.fortiweb.ipListPolicy') }}</label>
-                <input v-model="fwebForm.managedIpListPolicy" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
-              </div>
-
-              <label class="col-span-2 flex cursor-pointer items-center gap-2">
-                <input v-model="fwebForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
-                <span class="text-xs text-theme-text">{{ t('integrations.verifyTls') }}</span>
-              </label>
-
-              <div v-if="fwebTestResult" class="col-span-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
-                <div class="mb-1 font-medium text-green-400">{{ t('integrations.connectionSuccess') }}</div>
-                <div class="text-theme-text-muted">{{ t('integrations.hostname', { hostname: fwebTestResult.device?.hostname }) }}</div>
-                <div class="text-theme-text-muted">{{ t('integrations.model', { model: fwebTestResult.device?.model }) }}</div>
-              </div>
-
-              <div v-if="fwebTestError" class="col-span-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
-                {{ fwebTestError }}
-              </div>
-
-              <div class="col-span-2 flex gap-2">
-                <button
-                  @click="handleTestFortiweb"
-                  class="flex-1 rounded border border-theme-border px-3 py-1.5 text-sm font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
-                  :disabled="integrationsStore.isTesting || !canSubmitFortiweb"
-                >
-                  <span v-if="integrationsStore.isTesting">{{ t('integrations.testing') }}</span>
-                  <span v-else>{{ t('integrations.testConnection') }}</span>
-                </button>
-                <button
-                  @click="handleSaveFortiweb"
-                  class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  :disabled="!canSubmitFortiweb"
-                >
-                  {{ t('integrations.save') }}
-                </button>
-              </div>
-            </div>
-
             <h4 v-if="integrationGroupsOpen.fortinet" class="sr-only">{{ t('integrations.fortinetTitle') }}</h4>
           </section>
 
@@ -940,75 +706,45 @@ async function handleChatSubmit() {
                 </div>
               </div>
               <span class="shrink-0 rounded border border-theme-border bg-theme-panel px-2 py-0.5 text-[10px] font-medium text-theme-text-muted">
-                {{ t('integrations.connectedCount', { count: penguinTools.filter(tool => connectedPenguinTool(tool.type)).length, total: penguinTools.length }) }}
+                {{ t('integrations.connectedCount', { count: penguinIntegrations.length, total: 3 }) }}
               </span>
             </button>
 
             <div v-if="integrationGroupsOpen.penguin" class="grid grid-cols-1 gap-2">
               <div
-                v-for="tool in penguinTools"
-                :key="tool.type"
+                v-if="penguinIntegrations.length === 0"
+                class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted"
+              >
+                {{ t('integrations.notConnected') }}
+              </div>
+              <div
+                v-for="integration in penguinIntegrations"
+                :key="integration.id"
                 class="rounded border border-theme-border bg-theme-panel p-3"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="text-sm font-medium text-theme-text">{{ tool.title }}</div>
-                    <p class="mt-1 text-xs leading-snug text-theme-text-muted">{{ tool.description }}</p>
+                    <div class="text-sm font-medium text-theme-text">{{ integration.name }}</div>
+                    <p class="mt-1 truncate font-mono text-xs leading-snug text-theme-text-muted">
+                      {{ integration.host || integration.type }}
+                    </p>
                   </div>
                   <div class="flex shrink-0 items-center gap-1">
                     <span
-                      v-if="connectedPenguinTool(tool.type)"
                       class="rounded border border-green-500/30 bg-green-500/20 px-2 py-0.5 text-[10px] font-medium text-green-400"
                     >
                       {{ t('integrations.connected') }}
                     </span>
                     <button
-                      v-if="connectedPenguinTool(tool.type)"
                       type="button"
                       class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
-                      :disabled="integrationsStore.isDeleting[connectedPenguinTool(tool.type)?.id || '']"
+                      :disabled="integrationsStore.isDeleting[integration.id]"
                       :title="t('integrations.remove')"
-                      @click="handleRemoveIntegration(connectedPenguinTool(tool.type)?.id || '')"
+                      @click="handleRemoveIntegration(integration.id)"
                     >
                       <Trash2 :size="13" />
                     </button>
                   </div>
-                </div>
-
-                <div v-if="connectedPenguinTool(tool.type)" class="mt-2 text-xs text-theme-text-muted">
-                  {{ t('integrations.connectedAs', { name: connectedPenguinTool(tool.type)?.name || connectedPenguinTool(tool.type)?.id }) }}
-                </div>
-
-                <div v-if="penguinTestResults[tool.type] && !connectedPenguinTool(tool.type)" class="mt-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
-                  <div class="font-medium text-green-400">{{ t('integrations.serviceReachable') }}</div>
-                  <div class="text-theme-text-muted">
-                    {{ penguinTestResults[tool.type]?.status || 'connected' }}
-                  </div>
-                </div>
-
-                <div v-if="penguinErrors[tool.type]" class="mt-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
-                  {{ penguinErrors[tool.type] }}
-                </div>
-
-                <div class="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    class="flex-1 rounded border border-theme-border px-2 py-1.5 text-xs font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
-                    :disabled="integrationsStore.isTesting"
-                    :data-test="`penguin-test-${tool.type}`"
-                    @click="handleTestPenguinTool(tool.type)"
-                  >
-                    {{ t('integrations.test') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 rounded bg-theme-primary px-2 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                    :disabled="Boolean(connectedPenguinTool(tool.type))"
-                    :data-test="`penguin-connect-${tool.type}`"
-                    @click="handleAddPenguinTool(tool.type, tool.defaultName)"
-                  >
-                    {{ t('integrations.connect') }}
-                  </button>
                 </div>
               </div>
             </div>
