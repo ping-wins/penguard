@@ -314,26 +314,11 @@ describe('SOAR playbooks console', () => {
     wrapper.unmount()
   })
 
-  it('builds and saves a linear dry-run playbook from the console', async () => {
+  it('keeps the drawer as management surface and points building to the canvas', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/soc/playbooks' && init?.method === 'POST') {
-        const payload = JSON.parse(String(init.body))
-        expect(payload).toMatchObject({
-          id: 'pb_custom_triage',
-          name: 'Custom triage',
-          enabled: false,
-          nodes: [
-            { id: 'trigger', type: 'trigger.incident_created' },
-            { id: 'step_1', type: 'enrich.ip', config: { field: 'entities.sourceIp' } },
-            { id: 'step_2', type: 'case.note', config: { template: 'Review source IP.' } },
-          ],
-          edges: [
-            { from: 'trigger', to: 'step_1' },
-            { from: 'step_1', to: 'step_2' },
-          ],
-        })
-        return jsonResponse(payload, { status: 201 })
+        throw new Error('drawer should not create playbooks directly')
       }
       if (url === '/api/soc/playbooks') return jsonResponse([])
       if (url === '/api/soc/playbook-runs') return jsonResponse({ items: [] })
@@ -346,24 +331,8 @@ describe('SOAR playbooks console', () => {
     const wrapper = mount(PlaybooksPanel, { global: { plugins: [pinia, i18n] } })
     await flushPromises()
 
-    await wrapper.get('[data-test="playbook-builder-id"]').setValue('pb_custom_triage')
-    await wrapper.get('[data-test="playbook-builder-name"]').setValue('Custom triage')
-    await wrapper.get('[data-test="playbook-builder-step-type"]').setValue('enrich.ip')
-    await wrapper.get('[data-test="playbook-builder-step-config"]').setValue('{"field":"entities.sourceIp"}')
-    await wrapper.get('[data-test="playbook-builder-add-step"]').trigger('click')
-    await wrapper.get('[data-test="playbook-builder-step-type"]').setValue('case.note')
-    await wrapper.get('[data-test="playbook-builder-step-config"]').setValue('{"template":"Review source IP."}')
-    await wrapper.get('[data-test="playbook-builder-add-step"]').trigger('click')
-
-    expect(wrapper.get('[data-test="playbook-builder-preview"]').text()).toContain('trigger.incident_created → enrich.ip → case.note')
-    await wrapper.get('[data-test="playbook-builder-save"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Custom triage')
-    expect(fetcher).toHaveBeenCalledWith('/api/soc/playbooks', expect.objectContaining({
-      method: 'POST',
-      headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf_01' }),
-    }))
+    expect(wrapper.find('[data-test="playbook-builder-save"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="playbook-canvas-builder-hint"]').text()).toContain('workspace canvas')
     wrapper.unmount()
   })
 })

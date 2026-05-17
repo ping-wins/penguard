@@ -64,11 +64,13 @@ class PlaybookNode(BaseModel):
     id: str = Field(min_length=1)
     type: NodeType
     config: dict[str, Any] = Field(default_factory=dict)
+    position: dict[str, float] | None = None
 
 
 class PlaybookEdge(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    id: str | None = None
     from_node: str = Field(alias="from", min_length=1)
     to_node: str = Field(alias="to", min_length=1)
     condition: EdgeCondition = "success"

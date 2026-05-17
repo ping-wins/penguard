@@ -3,33 +3,17 @@ import { computed, onMounted, ref } from 'vue'
 import { AlertCircle, CheckCircle2, Clock, History, Loader2, Play, RefreshCcw, ShieldAlert, Workflow } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { usePlaybooksStore } from '../../stores/usePlaybooksStore'
-import type { Playbook, PlaybookNode, PlaybookRun } from '../../services/playbooksClient'
+import type { Playbook, PlaybookRun } from '../../services/playbooksClient'
 
 const { t } = useI18n()
 const store = usePlaybooksStore()
 const selectedId = ref<string | null>(null)
 const incidentId = ref('')
-const builderId = ref('')
-const builderName = ref('')
-const builderStepType = ref<PlaybookNode['type']>('case.note')
-const builderStepConfig = ref('{"template":"Review incident."}')
-const builderSteps = ref<Array<Pick<PlaybookNode, 'type' | 'config'>>>([])
 
 const selected = computed(() => store.playbooks.find((playbook) => playbook.id === selectedId.value) ?? store.playbooks[0] ?? null)
 const selectedRunId = computed(() => selected.value ? store.latestRunByPlaybook[selected.value.id] : null)
 const selectedRun = computed(() => selectedRunId.value ? store.runs[selectedRunId.value] : null)
 const visibleRunHistory = computed(() => store.runHistory.slice(0, 8))
-const builderPreview = computed(() => ['trigger.incident_created', ...builderSteps.value.map((step) => step.type)].join(' → '))
-const builderNodeTypes = computed(() => store.safeActionNodeTypes.length > 0
-  ? store.safeActionNodeTypes
-  : [
-      { id: 'enrich.ip', label: 'Enrich IP', boundary: 'enrichment_read_only', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'enrichment', configSchema: {} },
-      { id: 'case.note', label: 'Create Case Note', boundary: 'case_note', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
-      { id: 'approval.required', label: 'Require Approval', boundary: 'approval_gate', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'control', configSchema: {} },
-      { id: 'notify.webhook', label: 'Notify Webhook', boundary: 'notification_dry_run', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
-      { id: 'fortigate.recommend_block', label: 'Recommend FortiGate Block', boundary: 'recommendation_only', sensitive: true, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
-      { id: 'webhook.dry_run', label: 'Webhook Dry Run', boundary: 'webhook_dry_run', sensitive: false, dryRunOnly: true, executionMode: 'dry_run', liveAvailable: false, category: 'action', configSchema: {} },
-    ])
 
 function select(playbook: Playbook) {
   selectedId.value = playbook.id
@@ -92,33 +76,6 @@ async function approveHistoryRun(run: PlaybookRun) {
   await store.approve(run.id).catch(() => undefined)
 }
 
-function addBuilderStep() {
-  let config: Record<string, any> = {}
-  try {
-    config = builderStepConfig.value.trim() ? JSON.parse(builderStepConfig.value) : {}
-  } catch {
-    store.error = t('playbooks.invalidJson')
-    return
-  }
-  builderSteps.value.push({ type: builderStepType.value, config })
-}
-
-async function saveBuilderPlaybook() {
-  const nodes: PlaybookNode[] = [
-    { id: 'trigger', type: 'trigger.incident_created', config: {} },
-    ...builderSteps.value.map((step, index) => ({ id: `step_${index + 1}`, type: step.type, config: step.config })),
-  ]
-  const edges = nodes.slice(1).map((node, index) => ({ from: nodes[index].id, to: node.id }))
-  const created = await store.create({
-    id: builderId.value.trim(),
-    name: builderName.value.trim(),
-    enabled: false,
-    nodes,
-    edges,
-  }).catch(() => undefined)
-  if (created) selectedId.value = created.id
-}
-
 async function simulateSelected() {
   if (!selected.value) return
   await store.simulate(selected.value.id).catch(() => undefined)
@@ -163,69 +120,14 @@ onMounted(() => store.refresh())
       {{ store.error }}
     </div>
 
-    <section class="m-3 rounded-lg border border-theme-border bg-theme-panel/40 p-3 space-y-3">
-      <div>
-        <h3 class="text-sm font-semibold text-theme-text">{{ t('playbooks.builderTitle') }}</h3>
-        <p class="text-xs text-theme-text-muted mt-0.5">{{ t('playbooks.builderSubtitle') }}</p>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <input
-          v-model="builderId"
-          data-test="playbook-builder-id"
-          class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-xs text-theme-text placeholder:text-theme-text-muted"
-          :placeholder="t('playbooks.builderIdPlaceholder')"
-        />
-        <input
-          v-model="builderName"
-          data-test="playbook-builder-name"
-          class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-xs text-theme-text placeholder:text-theme-text-muted"
-          :placeholder="t('playbooks.builderNamePlaceholder')"
-        />
-      </div>
-      <div class="grid grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto] gap-2">
-        <select
-          v-model="builderStepType"
-          data-test="playbook-builder-step-type"
-          class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-xs text-theme-text"
-        >
-          <option
-            v-for="nodeType in builderNodeTypes"
-            :key="nodeType.id"
-            :value="nodeType.id"
-          >
-            {{ nodeType.label }} · {{ boundaryLabel(nodeType.boundary) }}
-          </option>
-        </select>
-        <input
-          v-model="builderStepConfig"
-          data-test="playbook-builder-step-config"
-          class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-xs text-theme-text placeholder:text-theme-text-muted"
-          :placeholder="t('playbooks.builderConfigPlaceholder')"
-        />
-        <button
-          type="button"
-          data-test="playbook-builder-add-step"
-          class="rounded border border-theme-border bg-theme-bg/70 px-2 py-1 text-xs font-semibold text-theme-text hover:bg-theme-bg"
-          @click="addBuilderStep"
-        >
-          {{ t('playbooks.addStep') }}
-        </button>
-      </div>
-      <div data-test="playbook-builder-preview" class="rounded border border-theme-border bg-theme-bg/50 px-2 py-1 text-xs font-mono text-theme-text">
-        {{ builderPreview }}
-      </div>
-      <div class="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100">
-        {{ t('playbooks.builderSafetyHint') }}
-      </div>
-      <button
-        type="button"
-        data-test="playbook-builder-save"
-        class="rounded border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-100 hover:bg-sky-500/20 disabled:opacity-50"
-        :disabled="!builderId.trim() || !builderName.trim() || builderSteps.length === 0 || store.isCreating"
-        @click="saveBuilderPlaybook"
-      >
-        {{ store.isCreating ? t('playbooks.saving') : t('playbooks.saveDraft') }}
-      </button>
+    <section
+      data-test="playbook-canvas-builder-hint"
+      class="m-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3"
+    >
+      <h3 class="text-sm font-semibold text-sky-100">{{ t('playbooks.canvasBuilderTitle') }}</h3>
+      <p class="mt-1 text-xs leading-snug text-theme-text-muted">
+        {{ t('playbooks.canvasBuilderHint') }}
+      </p>
     </section>
 
     <section data-test="playbook-run-history" class="mx-3 mb-3 rounded-lg border border-theme-border bg-theme-panel/40 p-3">

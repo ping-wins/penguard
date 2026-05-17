@@ -88,10 +88,27 @@ def test_create_and_get_playbook_with_allowed_nodes():
             "name": "Allowed nodes",
             "enabled": False,
             "nodes": [
-                {"id": "trigger", "type": "trigger.incident_created", "config": {}},
-                {"id": "note", "type": "case.note", "config": {"template": "Review incident"}},
+                {
+                    "id": "trigger",
+                    "type": "trigger.incident_created",
+                    "config": {},
+                    "position": {"x": 40, "y": 120},
+                },
+                {
+                    "id": "note",
+                    "type": "case.note",
+                    "config": {"template": "Review incident"},
+                    "position": {"x": 340, "y": 120},
+                },
             ],
-            "edges": [{"from": "trigger", "to": "note"}],
+            "edges": [
+                {
+                    "id": "edge_trigger_note",
+                    "from": "trigger",
+                    "to": "note",
+                    "condition": "success",
+                }
+            ],
         },
     )
 
@@ -100,7 +117,11 @@ def test_create_and_get_playbook_with_allowed_nodes():
 
     get_response = client.get("/playbooks/pb_allowed_nodes")
     assert get_response.status_code == 200
-    assert get_response.json()["nodes"][1]["type"] == "case.note"
+    body = get_response.json()
+    assert body["nodes"][1]["type"] == "case.note"
+    assert body["nodes"][1]["position"] == {"x": 340.0, "y": 120.0}
+    assert body["edges"][0]["id"] == "edge_trigger_note"
+    assert body["edges"][0]["condition"] == "success"
 
 
 def test_simulate_returns_dry_run_valid_ordered_step_preview():

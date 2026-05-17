@@ -12,6 +12,10 @@
   },
   "dependencies": {
     "@fortidashboard/contracts": "workspace:*",
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "@vue-flow/minimap": "^1.5.4",
     "@vueuse/motion": "^3.0.3",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^3.0.4",
