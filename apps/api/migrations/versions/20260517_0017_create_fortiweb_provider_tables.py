@@ -1,7 +1,7 @@
 """create fortiweb provider tables
 
-Revision ID: 20260517_0016
-Revises: 20260517_0015
+Revision ID: 20260517_0017
+Revises: 20260517_0016
 Create Date: 2026-05-17
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20260517_0016"
-down_revision: str | None = "20260517_0015"
+revision: str = "20260517_0017"
+down_revision: str | None = "20260517_0016"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

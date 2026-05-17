@@ -18,7 +18,7 @@
 - Create `apps/api/app/integrations/fortiweb/block_workflow.py`: source-IP block preflight/apply/remove orchestration.
 - Create `apps/api/app/integrations/fortiweb/service.py`: provider create/test/list/delete/health plus block workflow access.
 - Modify `apps/api/app/db/models.py`: FortiWeb integration and block request ORM models.
-- Create `apps/api/migrations/versions/20260517_0015_create_fortiweb_provider_tables.py`: database tables.
+- Create `apps/api/migrations/versions/20260517_0017_create_fortiweb_provider_tables.py`: database tables.
 - Modify `apps/api/app/routers/integrations.py`: FortiWeb integration and block endpoints.
 - Create `apps/api/tests/test_fortiweb_client.py`: API client decoding/error tests.
 - Create `apps/api/tests/test_fortiweb_block_workflow.py`: pure workflow tests.
@@ -32,7 +32,7 @@
 
 **Files:**
 - Modify: `apps/api/app/db/models.py`
-- Create: `apps/api/migrations/versions/20260517_0015_create_fortiweb_provider_tables.py`
+- Create: `apps/api/migrations/versions/20260517_0017_create_fortiweb_provider_tables.py`
 - Create: `apps/api/app/integrations/fortiweb/store.py`
 - Create: `apps/api/app/integrations/fortiweb/client.py`
 - Create: `apps/api/app/integrations/fortiweb/service.py`
