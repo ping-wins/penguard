@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Annotated, Any, Protocol
 
@@ -20,7 +21,6 @@ from app.integrations.penguin_tools import (
     expected_tool_type_for_widget,
 )
 from app.routers.soc import get_siem_client, get_soar_client, get_xdr_client
-from datetime import UTC, datetime, timedelta
 
 router = APIRouter(tags=["widgets"])
 logger = logging.getLogger("uvicorn.error")
@@ -38,6 +38,9 @@ WAF_WIDGET_IDS = {
     "waf-dos-rate",
     "waf-dos-top-ips",
     "waf-dos-feed",
+}
+SELF_MANAGED_WIDGET_IDS = {
+    "soc-policy-manager",
 }
 
 
@@ -100,6 +103,22 @@ def get_widget_data(
     window: Annotated[str, Query()] = "1h",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
+    if widget_id in SELF_MANAGED_WIDGET_IDS:
+        return {
+            "widgetId": widget_id,
+            "integrationId": integration_id or "policy-manager",
+            "status": "ready",
+            "data": {"selfManaged": True},
+            "refreshedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
+                "+00:00",
+                "Z",
+            ),
+            "meta": {
+                "source": "soc",
+                "cacheTtlSeconds": 0,
+                "refreshIntervalSeconds": 0,
+            },
+        }
     if widget_id in WAF_WIDGET_IDS:
         return _waf_widget_data(
             widget_id,
@@ -358,7 +377,12 @@ def _waf_dos_incidents(siem_client: SocWidgetClient, *, since: "datetime") -> li
     ]
 
 
-def _waf_dos_events(siem_client: SocWidgetClient, *, since: "datetime", limit: int) -> list[dict[str, Any]]:
+def _waf_dos_events(
+    siem_client: SocWidgetClient,
+    *,
+    since: "datetime",
+    limit: int,
+) -> list[dict[str, Any]]:
     raw = _items(
         siem_client.request(
             "GET",
@@ -393,7 +417,12 @@ def _waf_dos_rate(
             buckets[bucket_key] = {"blocked": 0, "allowed": 0}
         if use_raw:
             attrs = record.get("attributes") or {}
-            blocked = str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+            blocked = str(attrs.get("action", "")).lower() in {
+                "block",
+                "blocked",
+                "deny",
+                "dropped",
+            }
         else:
             blocked = True
         if blocked:
@@ -430,7 +459,12 @@ def _waf_dos_top_ips(
             ip = str(record.get("entities", {}).get("sourceIp") or "")
             ts = str(record.get("occurredAt") or "")
             attrs = record.get("attributes") or {}
-            is_blocked = str(attrs.get("action", "")).lower() in {"block", "blocked", "deny", "dropped"}
+            is_blocked = str(attrs.get("action", "")).lower() in {
+                "block",
+                "blocked",
+                "deny",
+                "dropped",
+            }
         else:
             ip = str(record.get("entities", {}).get("sourceIp") or "")
             ts = str(record.get("createdAt") or "")
@@ -459,7 +493,8 @@ def _waf_dos_feed(
     limit: int,
     siem_client: SocWidgetClient,
 ) -> dict[str, Any]:
-    since = datetime.now(UTC) - timedelta(hours=24)  # feed always shows last 24h regardless of window
+    # Feed always shows last 24h regardless of the chart window selector.
+    since = datetime.now(UTC) - timedelta(hours=24)
 
     if source == "raw":
         records = _waf_dos_events(siem_client, since=since, limit=500)
@@ -506,7 +541,12 @@ def _waf_widget_data(
         case "waf-dos-rate":
             data = _waf_dos_rate(normalized_source, window=window, siem_client=siem_client)
         case "waf-dos-top-ips":
-            data = _waf_dos_top_ips(normalized_source, window=window, limit=limit, siem_client=siem_client)
+            data = _waf_dos_top_ips(
+                normalized_source,
+                window=window,
+                limit=limit,
+                siem_client=siem_client,
+            )
         case "waf-dos-feed":
             data = _waf_dos_feed(normalized_source, limit=limit, siem_client=siem_client)
         case _:

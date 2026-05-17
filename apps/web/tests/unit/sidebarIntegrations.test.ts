@@ -31,6 +31,17 @@ describe('Sidebar integrations panel', () => {
       clear: vi.fn(),
     })
     setLocale('pt-BR')
+    const authStore = useAuthStore()
+    authStore.isAuthenticated = true
+    authStore.csrfToken = 'csrf_01'
+    authStore.user = {
+      id: 'usr_admin',
+      email: 'admin@example.com',
+      displayName: 'SOC Admin',
+      roles: ['admin'],
+      isAdmin: true,
+      permissions: ['*'],
+    }
   })
 
   afterEach(() => {
@@ -141,7 +152,7 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.get('[data-test="fortigate-ingestion-status-int_fgt_01"]').text()).toContain('1 SIEM')
   })
 
-  it('renders the FortiGate lab policy wizard instead of the old CLI draft helper', async () => {
+  it('keeps FortiGate policy management out of the integrations drawer', async () => {
     const authStore = useAuthStore()
     authStore.csrfToken = 'csrf_01'
     const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -185,8 +196,8 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.find('[data-test="fortigate-policy-draft-int_fgt_01"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Traffic policy helper')
     expect(wrapper.text()).not.toContain('Draft CLI')
-    expect(wrapper.text()).toContain('Lab policy wizard')
-    expect(wrapper.find('[data-test="fortigate-lab-policy-wizard-int_fgt_01"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Lab policy wizard')
+    expect(wrapper.find('[data-test="fortigate-lab-policy-wizard-int_fgt_01"]').exists()).toBe(false)
   })
 
   it('opens the SOAR playbooks drawer from the sidebar', async () => {

@@ -1,6 +1,21 @@
 {
   "items": [
     {
+      "id": "soc-policy-manager",
+      "title": "SOC Policy Manager",
+      "kind": "admin",
+      "source": "soc",
+      "requiredCapabilities": ["policies"],
+      "defaultSize": { "w": 7, "h": 5 },
+      "dataEndpoint": "/api/widgets/soc-policy-manager/data",
+      "template": "policy-manager",
+      "dataGroup": "policies",
+      "fieldBindings": {
+        "providers": "policy.providers",
+        "rows": "policy.items"
+      }
+    },
+    {
       "id": "soc-incidents-by-severity",
       "title": "Incidents by Severity",
       "kind": "bar",

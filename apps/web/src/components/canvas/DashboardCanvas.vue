@@ -55,6 +55,7 @@ import WidgetSoarPlaybookRuns from '../widgets/soc/WidgetSoarPlaybookRuns.vue'
 import WidgetSoarPlaybookRunHistory from '../widgets/soc/WidgetSoarPlaybookRunHistory.vue'
 import WidgetSocSlaBreach from '../widgets/soc/WidgetSocSlaBreach.vue'
 import WidgetSocMttdMttr from '../widgets/soc/WidgetSocMttdMttr.vue'
+import WidgetSocPolicyManager from '../widgets/policies/WidgetSocPolicyManager.vue'
 import WidgetFortigateTopSourceIps from '../widgets/fortigate/WidgetFortigateTopSourceIps.vue'
 import WidgetWafDosRate from '../widgets/waf/WidgetWafDosRate.vue'
 import WidgetWafDosTopIps from '../widgets/waf/WidgetWafDosTopIps.vue'
@@ -181,6 +182,11 @@ const isBuildPaneOpen = ref(true)
 const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
 const fortigateIntegrations = computed(() => integrationsStore.integrations.filter(i => i.type === 'fortigate'))
 const connectedIntegrationTypes = computed(() => integrationsStore.connectedIntegrationTypes)
+const catalogIntegrationTypes = computed(() => (
+  integrationsStore.hasWorkspaceIntegrations
+    ? Array.from(new Set([...connectedIntegrationTypes.value, 'soc-admin']))
+    : connectedIntegrationTypes.value
+))
 const dataFieldCount = computed(() => dataFieldGroups.value.reduce((total, group) => total + group.fields.length, 0))
 const dataFieldCountLabel = computed(() => `${dataFieldCount.value} field${dataFieldCount.value === 1 ? '' : 's'} available`)
 const visualPresetCountLabel = computed(() => `${catalogItems.value.length} preset${catalogItems.value.length === 1 ? '' : 's'} ready`)
@@ -236,6 +242,9 @@ function toggleFolder(id: string) {
 function integrationForCatalogId(catalogId: string) {
   const catalogItem = catalogItems.value.find(item => item.id === catalogId)
   const integrationType = catalogItem?.integrationType || catalogItem?.source
+  if (integrationType === 'soc-admin' || integrationType === 'soc') {
+    return integrationsStore.integrations[0]
+  }
   if (integrationType) {
     return integrationsStore.integrations.find(integration => integration.type === integrationType)
   }
@@ -253,7 +262,7 @@ async function loadBuildPaneData() {
   if (buildPaneDataLoad) return buildPaneDataLoad
   buildPaneDataLoad = (async () => {
     const tasks: Array<Promise<unknown>> = []
-    tasks.push(dashboardStore.fetchCatalog(connectedIntegrationTypes.value))
+    tasks.push(dashboardStore.fetchCatalog(catalogIntegrationTypes.value))
     if (!providerDataStore.isLoading) {
       if (integrationsStore.hasWorkspaceIntegrations) {
         tasks.push(providerDataStore.fetchFieldsForIntegrations(integrationsStore.integrations))
@@ -353,7 +362,7 @@ function handleWorkspaceDrop(event: DragEvent) {
 }
 
 function retryVisualPresets() {
-  dashboardStore.fetchCatalog(connectedIntegrationTypes.value)
+  dashboardStore.fetchCatalog(catalogIntegrationTypes.value)
 }
 
 function retryProviderFields() {
@@ -378,6 +387,9 @@ function categoryLabelForIntegration(integrationType: string) {
       return 'XDR / Endpoints'
     case 'soar_skipper':
       return 'SOAR / Playbooks'
+    case 'soc':
+    case 'soc-admin':
+      return 'SOC Administration'
     default:
       return 'Other Integrations'
   }
@@ -534,6 +546,7 @@ const widgetMap: Record<string, any> = {
   'soar-playbook-run-history': WidgetSoarPlaybookRunHistory,
   'soc-sla-breach': WidgetSocSlaBreach,
   'soc-mttd-mttr': WidgetSocMttdMttr,
+  'soc-policy-manager': WidgetSocPolicyManager,
   'fortigate-top-source-ips': WidgetFortigateTopSourceIps,
   'waf-dos-rate': WidgetWafDosRate,
   'waf-dos-top-ips': WidgetWafDosTopIps,

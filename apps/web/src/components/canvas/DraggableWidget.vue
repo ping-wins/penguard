@@ -51,7 +51,7 @@ const isVisualTemplate = computed(() => Boolean(visualTemplate.value))
 const widgetTitle = computed(() => catalogItem.value?.title ?? visualTemplate.value?.title ?? props.catalogId)
 const rendererOwnsEmptyState = computed(() => {
   const source = catalogItem.value?.source
-  return source === 'siem_kowalski' || source === 'xdr_rico' || source === 'soar_skipper'
+  return source === 'siem_kowalski' || source === 'xdr_rico' || source === 'soar_skipper' || source === 'soc'
 })
 
 let currentController: AbortController | null = null

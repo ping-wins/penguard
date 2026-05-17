@@ -26,6 +26,7 @@ from app.routers import (
     integrations,
     lab_demo,
     marketplace,
+    policies,
     providers,
     realtime,
     roles,
@@ -217,5 +218,6 @@ app.include_router(widget_catalog.router, prefix="/api")
 app.include_router(widgets.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(marketplace.router, prefix="/api")
+app.include_router(policies.router, prefix="/api")
 app.include_router(roles.router, prefix="/api")
 app.include_router(users.router, prefix="/api")

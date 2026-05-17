@@ -40,6 +40,7 @@ const WIDGET_SIZE_CONSTRAINTS: Record<string, WidgetSizeConstraints> = {
   'soar-playbook-run-history': { minW: 520, minH: 380, maxW: 980, maxH: 760 },
   'soc-sla-breach': { minW: 420, minH: 300, maxW: 880, maxH: 660 },
   'soc-mttd-mttr': { minW: 380, minH: 260, maxW: 760, maxH: 560 },
+  'soc-policy-manager': { minW: 640, minH: 460, maxW: 1100, maxH: 820 },
   'xdr-endpoint-health': { minW: 420, minH: 300, maxW: 880, maxH: 680 },
   'fortigate-top-source-ips': { minW: 420, minH: 300, maxW: 880, maxH: 700 },
   'waf-dos-rate': { minW: 480, minH: 300, maxW: 980, maxH: 680 },
