@@ -81,6 +81,8 @@ class NodeTypeDefinition(BaseModel):
 
     id: NodeType
     label: str
+    description: str = ""
+    effect_summary: str = Field(default="", alias="effectSummary")
     category: NodeCategory
     sensitive: bool = False
     dry_run_only: bool = Field(default=True, alias="dryRunOnly")
@@ -88,6 +90,8 @@ class NodeTypeDefinition(BaseModel):
     live_available: bool = Field(default=False, alias="liveAvailable")
     boundary: NodeBoundary
     config_schema: dict[str, Any] = Field(default_factory=dict, alias="configSchema")
+    example_config: dict[str, Any] = Field(default_factory=dict, alias="exampleConfig")
+    required_inputs: list[dict[str, str]] = Field(default_factory=list, alias="requiredInputs")
 
 
 class NodeTypesResponse(BaseModel):

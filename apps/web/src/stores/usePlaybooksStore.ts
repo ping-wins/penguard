@@ -2,24 +2,31 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   approvePlaybookRun,
+  createPlaybookWebhookDestination,
   createPlaybook,
   listPlaybookRuns,
   listPlaybookNodeTypes,
+  listPlaybookWebhookDestinations,
   listPlaybooks,
   runPlaybook,
   simulatePlaybook,
+  testPlaybookWebhookDestination,
   updatePlaybook,
   type Playbook,
   type PlaybookDraft,
   type PlaybookNodeType,
   type PlaybookRun,
   type PlaybookSimulation,
+  type PlaybookWebhookDestination,
+  type PlaybookWebhookDestinationDraft,
+  type PlaybookWebhookDestinationTestResult,
 } from '../services/playbooksClient'
 
 export const usePlaybooksStore = defineStore('playbooks', () => {
   const playbooks = ref<Playbook[]>([])
   const runHistory = ref<PlaybookRun[]>([])
   const nodeTypes = ref<PlaybookNodeType[]>([])
+  const webhookDestinations = ref<PlaybookWebhookDestination[]>([])
   const simulations = ref<Record<string, PlaybookSimulation>>({})
   const runs = ref<Record<string, PlaybookRun>>({})
   const latestRunByPlaybook = ref<Record<string, string>>({})
@@ -50,6 +57,42 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
       error.value = e?.message ?? 'Failed to load playbooks'
     } finally {
       isLoading.value = false
+    }
+  }
+
+  async function loadWebhookDestinations() {
+    try {
+      webhookDestinations.value = await listPlaybookWebhookDestinations()
+    } catch {
+      webhookDestinations.value = []
+    }
+  }
+
+  async function createWebhookDestination(payload: PlaybookWebhookDestinationDraft) {
+    error.value = null
+    try {
+      const result = await createPlaybookWebhookDestination(payload)
+      webhookDestinations.value = [
+        ...webhookDestinations.value.filter((destination) => destination.id !== result.id),
+        result,
+      ]
+      return result
+    } catch (e: any) {
+      error.value = e?.message ?? 'Failed to create webhook destination'
+      throw e
+    }
+  }
+
+  async function testWebhookDestination(
+    destinationId: string,
+    content: string,
+  ): Promise<PlaybookWebhookDestinationTestResult> {
+    error.value = null
+    try {
+      return await testPlaybookWebhookDestination(destinationId, content)
+    } catch (e: any) {
+      error.value = e?.message ?? 'Failed to test webhook destination'
+      throw e
     }
   }
 
@@ -140,6 +183,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     playbooks,
     runHistory,
     nodeTypes,
+    webhookDestinations,
     simulations,
     runs,
     latestRunByPlaybook,
@@ -153,6 +197,9 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     nodeTypeById,
     safeActionNodeTypes,
     refresh,
+    loadWebhookDestinations,
+    createWebhookDestination,
+    testWebhookDestination,
     simulate,
     run,
     approve,

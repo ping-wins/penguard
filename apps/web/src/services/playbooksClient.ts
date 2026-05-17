@@ -14,6 +14,8 @@ export type PlaybookNode = {
 export type PlaybookNodeType = {
   id: string
   label: string
+  description?: string
+  effectSummary?: string
   category: 'trigger' | 'condition' | 'enrichment' | 'action' | 'control' | string
   sensitive: boolean
   dryRunOnly: boolean
@@ -21,6 +23,12 @@ export type PlaybookNodeType = {
   liveAvailable: boolean
   boundary: string
   configSchema: Record<string, any>
+  exampleConfig?: Record<string, any>
+  requiredInputs?: Array<{
+    key: string
+    label: string
+    description: string
+  }>
 }
 
 export type PlaybookEdge = {
@@ -72,6 +80,26 @@ export type PlaybookRun = {
   }
 }
 
+export type PlaybookWebhookDestination = {
+  id: string
+  name: string
+  kind: 'discord' | 'generic' | string
+  redactedUrl: string
+  status: string
+}
+
+export type PlaybookWebhookDestinationDraft = {
+  name: string
+  kind: 'discord' | 'generic'
+  url: string
+}
+
+export type PlaybookWebhookDestinationTestResult = {
+  destinationId: string
+  statusCode: number
+  ok: boolean
+}
+
 async function csrfHeaders(): Promise<Record<string, string>> {
   const auth = useAuthStore()
   if (!auth.csrfToken) await auth.fetchCsrf()
@@ -88,6 +116,7 @@ async function parseOrThrow<T>(response: Response, fallback: string): Promise<T>
 type PlaybookListResponse = Playbook[] | { items?: Playbook[] }
 type PlaybookRunListResponse = PlaybookRun[] | { items?: PlaybookRun[] }
 type PlaybookNodeTypesResponse = { items?: PlaybookNodeType[] }
+type PlaybookWebhookDestinationListResponse = { items?: PlaybookWebhookDestination[] }
 
 export async function listPlaybookNodeTypes(): Promise<PlaybookNodeType[]> {
   const data = await parseOrThrow<PlaybookNodeTypesResponse>(
@@ -115,6 +144,49 @@ export async function listPlaybookRuns(): Promise<PlaybookRun[]> {
   if (Array.isArray(data)) return data
   if (Array.isArray(data.items)) return data.items
   return []
+}
+
+export async function listPlaybookWebhookDestinations(): Promise<PlaybookWebhookDestination[]> {
+  const data = await parseOrThrow<PlaybookWebhookDestinationListResponse>(
+    await fetch('/api/soc/playbook-webhook-destinations', { credentials: 'include' }),
+    'Failed to load playbook webhook destinations',
+  )
+  return Array.isArray(data.items) ? data.items : []
+}
+
+export async function createPlaybookWebhookDestination(
+  payload: PlaybookWebhookDestinationDraft,
+): Promise<PlaybookWebhookDestination> {
+  return parseOrThrow<PlaybookWebhookDestination>(
+    await fetch('/api/soc/playbook-webhook-destinations', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await csrfHeaders()),
+      },
+      body: JSON.stringify(payload),
+    }),
+    'Failed to create playbook webhook destination',
+  )
+}
+
+export async function testPlaybookWebhookDestination(
+  destinationId: string,
+  content: string,
+): Promise<PlaybookWebhookDestinationTestResult> {
+  return parseOrThrow<PlaybookWebhookDestinationTestResult>(
+    await fetch(`/api/soc/playbook-webhook-destinations/${encodeURIComponent(destinationId)}/test`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await csrfHeaders()),
+      },
+      body: JSON.stringify({ content }),
+    }),
+    'Failed to test playbook webhook destination',
+  )
 }
 
 export async function createPlaybook(payload: PlaybookDraft): Promise<Playbook> {

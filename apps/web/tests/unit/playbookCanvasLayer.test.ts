@@ -34,13 +34,23 @@ describe('PlaybookCanvasLayer', () => {
       {
         id: 'case.note',
         label: 'Create Case Note',
+        description: 'Adds a rendered note to the incident timeline.',
+        effectSummary: 'Writes a real case note through the SIEM gateway.',
         category: 'action',
         sensitive: false,
         dryRunOnly: true,
         executionMode: 'dry_run',
         liveAvailable: false,
         boundary: 'case_note',
-        configSchema: {},
+        configSchema: { required: ['template'] },
+        exampleConfig: { template: 'Investigate {incident.id}.' },
+        requiredInputs: [
+          {
+            key: 'template',
+            label: 'Note template',
+            description: 'Timeline note to write.',
+          },
+        ],
       },
     ]
     store.playbooks = [
@@ -81,6 +91,8 @@ describe('PlaybookCanvasLayer', () => {
 
     expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Automation nodes')
     expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Create Case Note')
+    expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Writes a real case note through the SIEM gateway.')
+    expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Note template')
     expect(wrapper.find('[data-test="playbook-node-drawer-node-trigger.incident_created"]').exists()).toBe(false)
 
     const dataTransfer = {

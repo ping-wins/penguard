@@ -79,6 +79,7 @@ let moveStartLayerY = 0
 
 onMounted(() => {
   canvasStore.loadFirstPlaybookIfNeeded()
+  playbooksStore.loadWebhookDestinations()
   window.addEventListener('keydown', handleFullscreenKeydown)
 })
 
@@ -344,6 +345,18 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
                   <span class="max-w-full truncate rounded border border-theme-border bg-theme-panel/70 px-1.5 py-0.5 text-[10px] text-theme-text-muted">
                     {{ nodeType.boundary }}
                   </span>
+                </div>
+                <p v-if="nodeType.effectSummary" class="mt-2 line-clamp-2 text-[10px] leading-snug text-theme-text-muted">
+                  {{ nodeType.effectSummary }}
+                </p>
+                <div v-if="nodeType.requiredInputs?.length" class="mt-2 flex flex-col gap-1">
+                  <div
+                    v-for="input in nodeType.requiredInputs"
+                    :key="input.key"
+                    class="rounded border border-theme-border bg-theme-panel/70 px-1.5 py-1 text-[10px] text-theme-text-muted"
+                  >
+                    <span class="font-semibold text-theme-text">{{ input.label }}</span>
+                  </div>
                 </div>
               </div>
             </div>

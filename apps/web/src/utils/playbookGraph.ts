@@ -122,7 +122,10 @@ export function defaultNodeConfig(nodeType: string): Record<string, unknown> {
     case 'approval.required':
       return { role: 'admin' }
     case 'notify.webhook':
-      return { mode: 'dry_run', channel: 'soc' }
+      return {
+        destinationId: '',
+        content: 'Critical incident {incident.id} from {entities.sourceIp}',
+      }
     case 'fortigate.recommend_block':
       return { mode: 'dry_run', field: 'entities.sourceIp' }
     case 'fortiweb.recommend_block':

@@ -36,6 +36,13 @@ from app.integrations.fortigate.service import (
     MockFortiGateIntegrationService,
 )
 from app.integrations.fortigate.store import SqlAlchemyFortiGateIntegrationStore
+from app.playbooks.effects import execute_playbook_effects
+from app.playbooks.webhook_destinations import (
+    InMemoryPlaybookWebhookDestinationStore,
+    PlaybookWebhookDestinationService,
+    SqlAlchemyPlaybookWebhookDestinationStore,
+    WebhookSender,
+)
 from app.soc.client import SocServiceClient
 from app.soc.triage import build_triage_context
 
@@ -92,6 +99,16 @@ class PlaybookRunPolicyApplyRequest(BaseModel):
     review_hash: str = Field(alias="reviewHash")
 
 
+class PlaybookWebhookDestinationCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    kind: Literal["discord", "generic"] = "discord"
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class PlaybookWebhookDestinationTestRequest(BaseModel):
+    content: str = Field(default="FortiDashboard test", max_length=1800)
+
+
 @lru_cache
 def get_siem_client() -> SocServiceClient:
     settings = get_settings()
@@ -135,6 +152,28 @@ def get_fortigate_policy_service() -> FortiGateIntegrationService | MockFortiGat
             ),
         )
     )
+
+
+def create_playbook_webhook_destination_service(
+    *,
+    sender: WebhookSender | None = None,
+) -> PlaybookWebhookDestinationService:
+    settings = get_settings()
+    if settings.mock_mode:
+        store = InMemoryPlaybookWebhookDestinationStore()
+    else:
+        store = SqlAlchemyPlaybookWebhookDestinationStore(
+            database_url=settings.database_url,
+            token_cipher=TokenCipher.from_secret(
+                settings.token_encryption_key or settings.secret_key
+            ),
+        )
+    return PlaybookWebhookDestinationService(store=store, sender=sender)
+
+
+@lru_cache
+def get_playbook_webhook_destination_service() -> PlaybookWebhookDestinationService:
+    return create_playbook_webhook_destination_service()
 
 
 def get_policy_db():
@@ -1083,6 +1122,103 @@ def list_playbook_node_types(
     return client.request("GET", "/node-types")
 
 
+@router.get("/soc/playbook-webhook-destinations")
+def list_playbook_webhook_destinations(
+    service: Annotated[
+        PlaybookWebhookDestinationService,
+        Depends(get_playbook_webhook_destination_service),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return {"items": service.list(owner_user_id=str(current_user["id"]))}
+
+
+@router.post("/soc/playbook-webhook-destinations", status_code=status.HTTP_201_CREATED)
+def create_playbook_webhook_destination(
+    payload: PlaybookWebhookDestinationCreateRequest,
+    request: Request,
+    service: Annotated[
+        PlaybookWebhookDestinationService,
+        Depends(get_playbook_webhook_destination_service),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    try:
+        result = service.create(
+            owner_user_id=str(current_user["id"]),
+            name=payload.name,
+            kind=payload.kind,
+            url=payload.url,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.webhook_destination.created",
+        details={
+            "destinationId": result["id"],
+            "kind": result["kind"],
+            "name": result["name"],
+            "redactedUrl": result["redactedUrl"],
+        },
+    )
+    return result
+
+
+@router.post("/soc/playbook-webhook-destinations/{destination_id}/test")
+def test_playbook_webhook_destination(
+    destination_id: str,
+    payload: PlaybookWebhookDestinationTestRequest,
+    request: Request,
+    service: Annotated[
+        PlaybookWebhookDestinationService,
+        Depends(get_playbook_webhook_destination_service),
+    ],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    try:
+        result = service.send(
+            owner_user_id=str(current_user["id"]),
+            destination_id=destination_id,
+            payload={"content": payload.content},
+        )
+        public_destination = service.public_item(
+            owner_user_id=str(current_user["id"]),
+            destination_id=destination_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Webhook destination not found") from exc
+    except Exception as exc:
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.playbook.webhook_destination.tested",
+            outcome="failure",
+            details={"destinationId": destination_id, "error": str(exc)[:200]},
+        )
+        raise HTTPException(status_code=502, detail=f"Webhook test failed: {exc}") from exc
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.webhook_destination.tested",
+        outcome="success" if result["ok"] else "failure",
+        details={
+            "destinationId": destination_id,
+            "redactedUrl": public_destination.get("redactedUrl"),
+            "statusCode": result["statusCode"],
+        },
+    )
+    return result
+
+
 @router.post("/soc/playbooks")
 def create_playbook(
     request: Request,
@@ -1160,6 +1296,11 @@ def run_playbook(
     playbook_id: str,
     request: Request,
     client: Annotated[SocClient, Depends(get_soar_client)],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    webhook_destinations: Annotated[
+        PlaybookWebhookDestinationService,
+        Depends(get_playbook_webhook_destination_service),
+    ],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
@@ -1182,6 +1323,39 @@ def run_playbook(
             "service": "soar_skipper",
         },
     )
+    try:
+        playbook = client.request("GET", f"/playbooks/{playbook_id}")
+        if _playbook_has_effect_nodes(playbook):
+            incident = siem_client.request("GET", f"/incidents/{incident_id}")
+            effects = execute_playbook_effects(
+                playbook=playbook,
+                run=response,
+                incident=incident,
+                siem_client=siem_client,
+                audit_store=audit_store,
+                webhook_destinations=webhook_destinations,
+                actor=current_user,
+                client_ip=_client_ip(request),
+                user_agent=request.headers.get("user-agent"),
+            )
+            if effects:
+                response["effects"] = effects
+                response["effectCount"] = len(effects)
+    except Exception as exc:  # noqa: BLE001
+        response["effectsError"] = str(exc)[:200]
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.playbook.effects_failed",
+            outcome="failure",
+            details={
+                "incidentId": incident_id,
+                "playbookId": playbook_id,
+                "runId": response.get("id"),
+                "error": str(exc)[:200],
+            },
+        )
     return response
 
 
@@ -1337,6 +1511,28 @@ def _run_has_fortigate_policy_step(run: dict[str, Any]) -> bool:
     return any(
         isinstance(step, dict) and step.get("nodeType") == "fortigate.temporary_block"
         for step in steps
+    )
+
+
+def _playbook_has_effect_nodes(playbook: dict[str, Any]) -> bool:
+    nodes = playbook.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    effect_types = {
+        "condition.severity",
+        "enrich.ip",
+        "case.note",
+        "audit.note",
+        "notify.webhook",
+        "webhook.dry_run",
+        "approval.required",
+        "fortigate.recommend_block",
+        "fortigate.temporary_block",
+        "fortiweb.recommend_block",
+    }
+    return any(
+        isinstance(node, dict) and node.get("type") in effect_types
+        for node in nodes
     )
 
 
