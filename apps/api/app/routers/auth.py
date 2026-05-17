@@ -235,6 +235,11 @@ def _enrich_with_permissions(user: dict) -> dict:
         enriched["permissions"] = sorted({p.slug for p in PERMISSION_CATALOG})
         enriched["isAdmin"] = True
         return enriched
+    # mock_mode has no roles DB; skip the lookup entirely.
+    if get_settings().mock_mode:
+        enriched["permissions"] = []
+        enriched["isAdmin"] = False
+        return enriched
     user_id = user.get("id") or user.get("user_id")
     if not user_id:
         enriched["permissions"] = []

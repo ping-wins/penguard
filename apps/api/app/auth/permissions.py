@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_api_user
+from app.core.config import get_settings
 from app.db.models import RolePermissionModel, UserRoleModel
 from app.db.session import get_db_session
 
@@ -106,9 +107,16 @@ def effective_permissions(db: Session, user_id: str) -> set[str]:
 def resolve_effective_permissions(
     db: Session, current_user: dict[str, Any]
 ) -> set[str]:
-    """Effective set after applying the keycloak-admin bootstrap rule."""
+    """Effective set after applying the keycloak-admin bootstrap rule.
+
+    In ``mock_mode`` there is no roles database, so the only source of
+    truth is the Keycloak ``admin`` claim: admins get the wildcard,
+    everyone else gets nothing.
+    """
     if has_keycloak_admin_claim(current_user):
         return {WILDCARD}
+    if get_settings().mock_mode:
+        return set()
     user_id = current_user_id(current_user)
     if not user_id:
         return set()
@@ -132,6 +140,14 @@ def require_permission(slug: str):
     ) -> dict[str, Any]:
         if has_keycloak_admin_claim(current_user):
             return current_user
+        # mock_mode has no roles DB; fall back to the legacy admin-only gate
+        # so the existing message/behaviour is preserved for tests and
+        # mock deployments.
+        if get_settings().mock_mode:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Administrator role required",
+            )
         user_id = current_user_id(current_user)
         perms = effective_permissions(db, user_id) if user_id else set()
         if slug in perms or WILDCARD in perms:

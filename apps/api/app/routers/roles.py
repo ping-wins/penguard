@@ -94,7 +94,7 @@ def _normalize_permissions(perms: list[str]) -> list[str]:
             )
         if slug not in VALID_PERMISSION_SLUGS:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=422,
                 detail=f"Unknown permission slug: {slug}",
             )
         out.add(slug)
