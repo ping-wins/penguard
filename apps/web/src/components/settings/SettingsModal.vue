@@ -24,7 +24,9 @@ import { useAuthStore } from '../../stores/useAuthStore'
 import { useThemeStore } from '../../stores/useThemeStore'
 import { setLocale, type SupportedLocale } from '../../i18n'
 
-const props = defineProps<{ isOpen: boolean }>()
+type Tab = 'profile' | 'appearance' | 'language' | 'marketplace' | 'ai' | 'roles'
+
+const props = defineProps<{ isOpen: boolean; initialTab?: Tab }>()
 const emit = defineEmits<{ close: [] }>()
 
 const authStore = useAuthStore()
@@ -32,7 +34,6 @@ const themeStore = useThemeStore()
 const router = useRouter()
 const { t, locale } = useI18n()
 
-type Tab = 'profile' | 'appearance' | 'language' | 'marketplace' | 'ai' | 'roles'
 const activeTab = ref<Tab>('profile')
 const localeSaved = ref(false)
 
@@ -97,10 +98,10 @@ const keycloakAccountUrl = computed(() => {
 })
 
 watch(
-  () => props.isOpen,
-  (open) => {
+  () => [props.isOpen, props.initialTab] as const,
+  ([open, initialTab]) => {
     if (open) {
-      activeTab.value = 'profile'
+      activeTab.value = initialTab ?? 'profile'
       localeSaved.value = false
     }
   },

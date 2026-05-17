@@ -61,6 +61,38 @@ describe('useMarketplaceStore', () => {
     expect(store.error).toBe(null)
   })
 
+  it('installs remote catalog summary add-ons using latestVersion', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ id: 'fortiweb-core', status: 'installed' }))
+      .mockResolvedValueOnce(jsonResponse({
+        items: [],
+        count: 0,
+      }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useMarketplaceStore()
+
+    await store.install({
+      id: 'fortiweb-core',
+      latestVersion: '8.0.5',
+      versions: ['8.0.5'],
+      name: 'FortiWeb Core',
+      vendor: 'Fortinet',
+      category: 'waf',
+      description: 'FortiWeb WAF',
+      installed: false,
+      installedVersion: null,
+    })
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      '/api/marketplace/addons/fortiweb-core/install',
+      expect.objectContaining({
+        body: JSON.stringify({ version: '8.0.5' }),
+      }),
+    )
+  })
+
   it('captures install error and rethrows', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ detail: 'tarball fetch returned HTTP 404' }),

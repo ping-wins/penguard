@@ -25,6 +25,32 @@ def _bundled_items() -> list[dict[str, Any]]:
     return [m.model_dump(by_alias=True) for m in list_addons()]
 
 
+def _normalize_catalog_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    versions = entry.get("versions")
+    if not isinstance(versions, list):
+        versions = []
+    version = entry.get("version") or entry.get("latestVersion")
+    if not version and versions:
+        version = versions[0]
+    if version and version not in versions:
+        versions = [version, *versions]
+
+    provider = entry.get("provider") or {
+        "type": entry.get("providerType") or entry["id"],
+        "auth": {"kind": "none", "fields": []},
+    }
+
+    return {
+        **entry,
+        "version": version,
+        "versions": versions,
+        "provider": provider,
+        "routes": entry.get("routes") or [],
+        "widgets": entry.get("widgets") or [],
+        "siemEventTypes": entry.get("siemEventTypes") or [],
+    }
+
+
 def get_installed_index() -> dict[str, dict[str, Any]]:
     with SessionLocal() as session:
         return {
@@ -57,10 +83,11 @@ def list_marketplace_addons(
 
     items: list[dict[str, Any]] = []
     for entry in by_id.values():
+        normalized = _normalize_catalog_entry(entry)
         info = installed.get(entry["id"])
         items.append(
             {
-                **entry,
+                **normalized,
                 "installed": info is not None,
                 "installedVersion": info["version"] if info else None,
             }

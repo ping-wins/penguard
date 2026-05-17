@@ -8,7 +8,10 @@ import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 const { t } = useI18n()
 const connectStore = useIntegrationConnectStore()
 const integrationsStore = useIntegrationsStore()
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'openMarketplace'): void
+}>()
 
 const step = ref(1)
 const selected = ref<CatalogEntry | null>(null)
@@ -123,9 +126,9 @@ async function finish() {
       </p>
       <p v-else-if="connectStore.catalog.length === 0" class="connect-wizard__empty" data-test="empty">
         {{ t('integrations.wizard.empty') }}
-        <RouterLink to="/settings/marketplace">
+        <button type="button" class="connect-wizard__link" @click="emit('openMarketplace')">
           {{ t('integrations.wizard.goMarketplace') }}
-        </RouterLink>
+        </button>
       </p>
       <ul v-else class="connect-wizard__addons">
         <li v-for="entry in connectStore.catalog" :key="entry.addonId">
@@ -345,6 +348,11 @@ async function finish() {
 
 .connect-wizard__error {
   color: rgb(252 165 165);
+}
+
+.connect-wizard__link {
+  color: rgb(96 165 250);
+  text-decoration: underline;
 }
 
 .connect-wizard__result {

@@ -9,14 +9,24 @@ import { useThemeStore } from '../stores/useThemeStore'
 
 const themeStore = useThemeStore()
 const isSettingsOpen = ref(false)
+const settingsInitialTab = ref<'profile' | 'marketplace'>('profile')
+
+function openSettings(tab: 'profile' | 'marketplace' = 'profile') {
+  settingsInitialTab.value = tab
+  isSettingsOpen.value = true
+}
 </script>
 
 <template>
   <div class="w-screen h-screen flex overflow-hidden">
-    <Sidebar @open-settings="isSettingsOpen = true" />
+    <Sidebar @open-settings="openSettings" />
     <DashboardCanvas />
     <ThemeBuilderModal :is-open="themeStore.isBuilderOpen" @close="themeStore.closeBuilder()" />
-    <SettingsModal :is-open="isSettingsOpen" @close="isSettingsOpen = false" />
+    <SettingsModal
+      :is-open="isSettingsOpen"
+      :initial-tab="settingsInitialTab"
+      @close="isSettingsOpen = false"
+    />
     <IncidentToastContainer />
   </div>
 </template>

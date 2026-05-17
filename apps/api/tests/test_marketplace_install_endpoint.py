@@ -161,6 +161,20 @@ def test_install_then_list_marks_addon_installed(client):
     assert demo["installedVersion"] == "1.0.0"
 
 
+def test_remote_catalog_items_are_normalized_for_marketplace_ui(client):
+    r = client.get("/api/marketplace/addons")
+    assert r.status_code == 200, r.text
+
+    demo = next(it for it in r.json()["items"] if it["id"] == "demo-core")
+    assert demo["version"] == "1.0.0"
+    assert demo["versions"] == ["1.0.0"]
+    assert demo["routes"] == []
+    assert demo["widgets"] == []
+    assert demo["siemEventTypes"] == []
+    assert demo["provider"]["auth"]["fields"] == []
+    assert demo["installed"] is False
+
+
 def test_uninstall_clears_installed_flag(client):
     client.post(
         "/api/marketplace/addons/demo-core/install",

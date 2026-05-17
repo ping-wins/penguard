@@ -22,17 +22,19 @@ export type AddonRoute = {
 
 export type AddonManifest = {
   id: string
-  version: string
+  version?: string
+  latestVersion?: string
+  versions?: string[]
   name: string
   vendor: string
   category: string
   description: string
   icon?: string
   minDashboardVersion?: string
-  provider: { type: string, auth: AddonAuth }
-  routes: AddonRoute[]
-  widgets: string[]
-  siemEventTypes: string[]
+  provider?: { type: string, auth: AddonAuth }
+  routes?: AddonRoute[]
+  widgets?: string[]
+  siemEventTypes?: string[]
   installed?: boolean
   installedVersion?: string | null
 }

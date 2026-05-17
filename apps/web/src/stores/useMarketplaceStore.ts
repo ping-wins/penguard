@@ -37,10 +37,15 @@ export const useMarketplaceStore = defineStore('marketplace', () => {
   }
 
   async function install(addon: AddonManifest): Promise<void> {
+    const version = addon.version ?? addon.latestVersion ?? addon.versions?.[0]
+    if (!version) {
+      error.value = 'Marketplace add-on version is unavailable'
+      throw new Error(error.value)
+    }
     installingId.value = addon.id
     error.value = null
     try {
-      await installMarketplaceAddon(addon.id, addon.version)
+      await installMarketplaceAddon(addon.id, version)
       await refresh()
     } catch (err: any) {
       error.value = err?.message ?? 'Failed to install marketplace add-on'

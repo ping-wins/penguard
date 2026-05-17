@@ -25,7 +25,7 @@ import ConnectWizard from '../integrations/ConnectWizard.vue'
 import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
-const emit = defineEmits<{ 'open-settings': [] }>()
+const emit = defineEmits<{ 'open-settings': [tab?: 'profile' | 'marketplace'] }>()
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
@@ -552,7 +552,11 @@ async function handleChatSubmit() {
           >
             {{ t('integrations.wizard.title') }}
           </button>
-          <ConnectWizard v-if="showWizard" @close="showWizard = false" />
+          <ConnectWizard
+            v-if="showWizard"
+            @close="showWizard = false"
+            @open-marketplace="showWizard = false; emit('open-settings', 'marketplace')"
+          />
         </div>
 
         <div class="flex flex-col gap-4">

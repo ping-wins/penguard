@@ -25,6 +25,26 @@ const filtered = computed<AddonManifest[]>(() => {
   })
 })
 
+function addonVersion(addon: AddonManifest) {
+  return addon.version ?? addon.latestVersion ?? addon.versions?.[0] ?? ''
+}
+
+function addonRoutes(addon: AddonManifest) {
+  return addon.routes ?? []
+}
+
+function addonWidgets(addon: AddonManifest) {
+  return addon.widgets ?? []
+}
+
+function addonSiemEventTypes(addon: AddonManifest) {
+  return addon.siemEventTypes ?? []
+}
+
+function addonAuthFields(addon: AddonManifest) {
+  return addon.provider?.auth?.fields ?? []
+}
+
 async function installAddon(addon: AddonManifest) {
   try {
     await store.install(addon)
@@ -98,7 +118,7 @@ onMounted(() => {
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-theme-text truncate">{{ addon.name }}</span>
                 <span class="rounded border border-theme-border/70 bg-theme-text/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-text-muted">{{ addon.category }}</span>
-                <span class="text-[10px] font-mono text-theme-text-muted">v{{ addon.version }}</span>
+                <span class="text-[10px] font-mono text-theme-text-muted">v{{ addonVersion(addon) }}</span>
                 <span
                   v-if="addon.installed"
                   class="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase text-emerald-200"
@@ -107,18 +127,18 @@ onMounted(() => {
               <p class="text-[11px] text-theme-text-muted mt-0.5">{{ addon.vendor }}</p>
               <p class="text-xs text-theme-text mt-1 line-clamp-2">{{ addon.description }}</p>
               <div class="mt-2 flex flex-wrap gap-1 text-[10px] text-theme-text-muted">
-                <span>{{ t('marketplace.routesLabel', { count: addon.routes.length }) }}</span>
+                <span>{{ t('marketplace.routesLabel', { count: addonRoutes(addon).length }) }}</span>
                 <span>·</span>
-                <span>{{ t('marketplace.widgetsLabel', { count: addon.widgets.length }) }}</span>
-                <span v-if="addon.siemEventTypes.length">·</span>
-                <span v-if="addon.siemEventTypes.length">{{ t('marketplace.siemLabel', { count: addon.siemEventTypes.length }) }}</span>
+                <span>{{ t('marketplace.widgetsLabel', { count: addonWidgets(addon).length }) }}</span>
+                <span v-if="addonSiemEventTypes(addon).length">·</span>
+                <span v-if="addonSiemEventTypes(addon).length">{{ t('marketplace.siemLabel', { count: addonSiemEventTypes(addon).length }) }}</span>
               </div>
             </div>
             <div class="flex shrink-0 flex-col gap-1">
               <button
                 type="button"
                 class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="addon.installed || store.installingId === addon.id"
+                :disabled="addon.installed || store.installingId === addon.id || !addonVersion(addon)"
                 @click="installAddon(addon)"
               >
                 <Plug :size="12" />
@@ -148,7 +168,7 @@ onMounted(() => {
           <header class="flex items-start justify-between gap-3 border-b border-theme-border px-4 py-3">
             <div class="min-w-0">
               <h3 class="truncate text-base font-semibold text-theme-text">{{ selected.name }}</h3>
-              <p class="text-[11px] text-theme-text-muted">{{ selected.vendor }} · {{ selected.category }} · v{{ selected.version }}</p>
+              <p class="text-[11px] text-theme-text-muted">{{ selected.vendor }} · {{ selected.category }} · v{{ addonVersion(selected) }}</p>
             </div>
             <button
               type="button"
@@ -161,11 +181,11 @@ onMounted(() => {
           </header>
           <div class="px-4 py-3 text-sm text-theme-text space-y-3">
             <p>{{ selected.description }}</p>
-            <section>
+            <section v-if="addonAuthFields(selected).length">
               <h4 class="text-[10px] uppercase tracking-wide text-theme-text-muted mb-1">{{ t('marketplace.authHeader') }}</h4>
               <ul class="text-xs flex flex-col gap-1">
                 <li
-                  v-for="field in selected.provider.auth.fields"
+                  v-for="field in addonAuthFields(selected)"
                   :key="field.id"
                   class="rounded border border-theme-border bg-theme-bg/50 px-2 py-1"
                 >
@@ -174,11 +194,11 @@ onMounted(() => {
                 </li>
               </ul>
             </section>
-            <section v-if="selected.routes.length">
+            <section v-if="addonRoutes(selected).length">
               <h4 class="text-[10px] uppercase tracking-wide text-theme-text-muted mb-1">{{ t('marketplace.routesHeader') }}</h4>
               <ul class="text-xs font-mono space-y-1">
                 <li
-                  v-for="route in selected.routes"
+                  v-for="route in addonRoutes(selected)"
                   :key="route.id"
                   class="rounded border border-theme-border bg-theme-bg/50 px-2 py-1"
                 >
@@ -188,21 +208,21 @@ onMounted(() => {
                 </li>
               </ul>
             </section>
-            <section v-if="selected.widgets.length">
+            <section v-if="addonWidgets(selected).length">
               <h4 class="text-[10px] uppercase tracking-wide text-theme-text-muted mb-1">{{ t('marketplace.widgetsHeader') }}</h4>
               <div class="flex flex-wrap gap-1">
                 <span
-                  v-for="widget in selected.widgets"
+                  v-for="widget in addonWidgets(selected)"
                   :key="widget"
                   class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] font-mono text-theme-text"
                 >{{ widget }}</span>
               </div>
             </section>
-            <section v-if="selected.siemEventTypes.length">
+            <section v-if="addonSiemEventTypes(selected).length">
               <h4 class="text-[10px] uppercase tracking-wide text-theme-text-muted mb-1">{{ t('marketplace.siemHeader') }}</h4>
               <div class="flex flex-wrap gap-1">
                 <span
-                  v-for="evt in selected.siemEventTypes"
+                  v-for="evt in addonSiemEventTypes(selected)"
                   :key="evt"
                   class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] font-mono text-theme-text"
                 >{{ evt }}</span>
@@ -218,7 +238,7 @@ onMounted(() => {
             <button
               type="button"
               class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-3 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="selected.installed || store.installingId === selected.id"
+              :disabled="selected.installed || store.installingId === selected.id || !addonVersion(selected)"
               @click="installAddon(selected); selected = null"
             >
               <Plug :size="12" />
