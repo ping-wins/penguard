@@ -357,15 +357,19 @@ function requireList(value: string, labelKey: string): string[] {
   return values
 }
 
+function namedItems(value: string, labelKey: string): Array<{ name: string }> {
+  return requireList(value, labelKey).map(name => ({ name }))
+}
+
 function structuredPayload(): Record<string, unknown> {
   if (effectiveProviderType.value === 'fortigate') {
     return {
       name: requireText(fortigatePolicyForm.value.name, 'widgets.policyManager.form.name'),
-      srcintf: requireList(fortigatePolicyForm.value.srcintf, 'widgets.policyManager.form.sourceInterfaces'),
-      dstintf: requireList(fortigatePolicyForm.value.dstintf, 'widgets.policyManager.form.destinationInterfaces'),
-      srcaddr: requireList(fortigatePolicyForm.value.srcaddr, 'widgets.policyManager.form.sourceAddresses'),
-      dstaddr: requireList(fortigatePolicyForm.value.dstaddr, 'widgets.policyManager.form.destinationAddresses'),
-      service: requireList(fortigatePolicyForm.value.service, 'widgets.policyManager.form.services'),
+      srcintf: namedItems(fortigatePolicyForm.value.srcintf, 'widgets.policyManager.form.sourceInterfaces'),
+      dstintf: namedItems(fortigatePolicyForm.value.dstintf, 'widgets.policyManager.form.destinationInterfaces'),
+      srcaddr: namedItems(fortigatePolicyForm.value.srcaddr, 'widgets.policyManager.form.sourceAddresses'),
+      dstaddr: namedItems(fortigatePolicyForm.value.dstaddr, 'widgets.policyManager.form.destinationAddresses'),
+      service: namedItems(fortigatePolicyForm.value.service, 'widgets.policyManager.form.services'),
       action: fortigatePolicyForm.value.action,
       schedule: requireText(fortigatePolicyForm.value.schedule, 'widgets.policyManager.form.schedule'),
       logtraffic: fortigatePolicyForm.value.logtraffic,
