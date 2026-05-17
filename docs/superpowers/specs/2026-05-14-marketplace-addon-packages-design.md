@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-14
 **Status:** design — awaiting user review
-**Repos affected:** `ping-wins/FortiDashboard`, `ping-wins/fortidashboard-addons`
+**Repos affected:** `ping-wins/fortidashboard`, `ping-wins/fortidashboard-addons`
 
 ## Problem
 
