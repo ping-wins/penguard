@@ -404,6 +404,7 @@ async function handleChatSubmit() {
         </div>
 
         <div
+          v-if="authStore.hasPermission('integrations.write')"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'integrations' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('integrations')"
@@ -422,6 +423,7 @@ async function handleChatSubmit() {
         </div>
 
         <div
+          v-if="authStore.hasPermission('tickets.manage')"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'tickets' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('tickets')"
@@ -431,6 +433,7 @@ async function handleChatSubmit() {
         </div>
 
         <div
+          v-if="authStore.isAdmin"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'endpoints' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('endpoints')"
@@ -440,6 +443,7 @@ async function handleChatSubmit() {
         </div>
 
         <div
+          v-if="authStore.hasPermission('playbooks.execute')"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'playbooks' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('playbooks')"
@@ -449,6 +453,7 @@ async function handleChatSubmit() {
         </div>
 
         <div
+          v-if="authStore.hasPermission('audit.read')"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
           :class="activeTab === 'audit' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
           @click="toggleTab('audit')"

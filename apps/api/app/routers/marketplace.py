@@ -13,7 +13,8 @@ from app.addons.install_service import InstallService
 from app.addons.installed_store import list_installed
 from app.addons.registry import get_addon, list_addons, reload_addons
 from app.addons.registry_runtime import ConnectorRegistry
-from app.auth.dependencies import get_current_api_user, require_admin_user
+from app.auth.dependencies import get_current_api_user
+from app.auth.permissions import require_permission
 from app.db.session import SessionLocal
 
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
@@ -80,7 +81,7 @@ def get_marketplace_addon(
 
 @router.post("/addons/refresh")
 def refresh_marketplace_addons(
-    _admin: Annotated[dict, Depends(require_admin_user)],
+    _admin: Annotated[dict, Depends(require_permission("marketplace.install"))],
     catalog: Annotated[CatalogFetcher, Depends(get_catalog_fetcher)],
 ) -> dict:
     catalog.invalidate()
@@ -90,7 +91,7 @@ def refresh_marketplace_addons(
 @router.post("/addons/{addon_id}/install")
 def install_marketplace_addon(
     addon_id: str,
-    _admin: Annotated[dict, Depends(require_admin_user)],
+    _admin: Annotated[dict, Depends(require_permission("marketplace.install"))],
     service: Annotated[InstallService, Depends(get_install_service)],
     registry: Annotated[ConnectorRegistry, Depends(get_connector_registry)],
     body: InstallBody,
@@ -111,7 +112,7 @@ def install_marketplace_addon(
 @router.delete("/addons/{addon_id}")
 def uninstall_marketplace_addon(
     addon_id: str,
-    _admin: Annotated[dict, Depends(require_admin_user)],
+    _admin: Annotated[dict, Depends(require_permission("marketplace.install"))],
     service: Annotated[InstallService, Depends(get_install_service)],
     registry: Annotated[ConnectorRegistry, Depends(get_connector_registry)],
 ) -> dict:
