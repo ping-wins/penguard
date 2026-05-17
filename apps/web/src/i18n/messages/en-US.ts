@@ -763,6 +763,8 @@ export default {
       newDraft: 'New draft',
       newGraph: 'New graph',
       saveGraph: 'Save graph',
+      enterFullscreen: 'Enter fullscreen',
+      exitFullscreen: 'Exit fullscreen',
       automationTab: 'Automation',
       automationNodes: 'Automation nodes',
       automationHint: 'Drag SOAR nodes into the playbook canvas layer.',

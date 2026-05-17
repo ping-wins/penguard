@@ -763,6 +763,8 @@ export default {
       newDraft: 'Novo rascunho',
       newGraph: 'Novo grafo',
       saveGraph: 'Salvar grafo',
+      enterFullscreen: 'Entrar em fullscreen',
+      exitFullscreen: 'Sair do fullscreen',
       automationTab: 'Automação',
       automationNodes: 'Nós de automação',
       automationHint: 'Arraste nós SOAR para a camada de playbook no canvas.',

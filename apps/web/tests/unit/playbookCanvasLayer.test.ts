@@ -127,4 +127,53 @@ describe('PlaybookCanvasLayer', () => {
       }),
     }))
   })
+
+  it('can expand the builder to fullscreen and restore it with Escape', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const wrapper = mount(PlaybookCanvasLayer, {
+      attachTo: host,
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFlow: {
+            props: ['nodes', 'edges'],
+            template: '<div data-test="vue-flow-stub"><slot /></div>',
+          },
+          Background: { template: '<div />' },
+          Controls: { template: '<div />' },
+          MiniMap: { template: '<div />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const layerBefore = document.querySelector('[data-test="playbook-canvas-layer"]')
+    expect(layerBefore?.className).toContain('absolute')
+    expect(layerBefore?.className).not.toContain('fixed')
+
+    await wrapper.get('[data-test="playbook-canvas-fullscreen-toggle"]').trigger('click')
+    await flushPromises()
+
+    const fullscreenLayer = document.querySelector('[data-test="playbook-canvas-layer"]')
+    const fullscreenToggle = document.querySelector<HTMLButtonElement>('[data-test="playbook-canvas-fullscreen-toggle"]')
+    expect(fullscreenLayer?.className).toContain('fixed')
+    expect(fullscreenLayer?.className).toContain('inset-4')
+    expect(fullscreenToggle?.title).toBe('Exit fullscreen')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    const restoredLayer = document.querySelector('[data-test="playbook-canvas-layer"]')
+    const restoredToggle = document.querySelector<HTMLButtonElement>('[data-test="playbook-canvas-fullscreen-toggle"]')
+    expect(restoredLayer?.className).toContain('absolute')
+    expect(restoredLayer?.className).not.toContain('fixed')
+    expect(restoredToggle?.title).toBe('Enter fullscreen')
+
+    wrapper.unmount()
+    host.remove()
+  })
 })
