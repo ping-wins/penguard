@@ -3,7 +3,6 @@ import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useRealtimeStore } from '../../stores/useRealtimeStore'
-import { useWorkspaceModeStore } from '../../stores/useWorkspaceModeStore'
 import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
 import { useWidgetRealtimeStore } from '../../stores/useWidgetRealtimeStore'
 import type { RealtimeWidgetSnapshot } from '../../stores/useRealtimeStore'
@@ -30,8 +29,6 @@ const emit = defineEmits<{
 const store = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
 const realtimeStore = useRealtimeStore()
-const workspaceModeStore = useWorkspaceModeStore()
-const isGridMode = computed(() => workspaceModeStore.mode === 'grid')
 const widgetSeriesStore = useWidgetSeriesStore()
 const widgetRealtimeStore = useWidgetRealtimeStore()
 
@@ -399,7 +396,6 @@ let initialDragX = 0
 let initialDragY = 0
 
 function startDrag(e: PointerEvent) {
-  if (isGridMode.value) return
   isDragging.value = true
   bringToFront()
   
@@ -573,8 +569,7 @@ async function selectIntegration(integrationId: string) {
     <!-- Header -->
     <div
       data-test="widget-drag-handle"
-      class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 select-none rounded-t-md relative"
-      :class="isGridMode ? 'cursor-default' : 'cursor-move'"
+      class="h-10 bg-theme-bg/80 border-b border-theme-border flex items-center justify-between px-3 select-none rounded-t-md relative cursor-move"
       @pointerdown="startDrag"
     >
       <div class="flex items-center gap-2 text-theme-text-muted min-w-0">

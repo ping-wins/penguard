@@ -4,6 +4,7 @@ import { h, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DraggableWidget from '../../src/components/canvas/DraggableWidget.vue'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
+import { useWorkspaceModeStore } from '../../src/stores/useWorkspaceModeStore'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -784,5 +785,53 @@ describe('DraggableWidget', () => {
 
     expect(store.activeWidgets[0].layout.x).toBe(-70)
     expect(store.activeWidgets[0].layout.y).toBe(-55)
+  })
+
+  it('allows manual widget positioning in grid mode', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const workspaceModeStore = useWorkspaceModeStore()
+    workspaceModeStore.setMode('grid')
+    const store = useDashboardStore()
+    store.catalogItems = []
+    store.isCatalogLoaded = true
+    store.activeWidgets = [{
+      instanceId: 'w_card',
+      catalogId: 'visual-template-card',
+      integrationId: '',
+      layout: { x: 96, y: 128, w: 320, h: 200, z: 10 },
+    }]
+
+    const wrapper = mount(DraggableWidget, {
+      props: {
+        instanceId: 'w_card',
+        catalogId: 'visual-template-card',
+        integrationId: '',
+        layout: store.activeWidgets[0].layout,
+      },
+      global: {
+        plugins: [pinia],
+        directives: { motion: {} },
+      },
+      slots: {
+        default: () => h('div', { class: 'payload' }, 'Custom card'),
+      },
+    })
+
+    const handle = wrapper.get('[data-test="widget-drag-handle"]')
+    expect(handle.classes()).toContain('cursor-move')
+
+    await handle.trigger('pointerdown', {
+      clientX: 40,
+      clientY: 50,
+    })
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      clientX: 140,
+      clientY: 95,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(store.activeWidgets[0].layout.x).toBe(196)
+    expect(store.activeWidgets[0].layout.y).toBe(173)
   })
 })

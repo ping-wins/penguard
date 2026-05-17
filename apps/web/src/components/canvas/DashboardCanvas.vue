@@ -449,10 +449,20 @@ const workspaceStageStyle = computed(() => {
   }
 })
 
-const workspaceDotCanvasStyle = computed(() => ({
-  backgroundImage: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.26) 1px, transparent 1.3px)',
-  backgroundSize: `${WORKSPACE_DOT_SIZE_PX}px ${WORKSPACE_DOT_SIZE_PX}px`,
-}))
+const workspaceViewportStyle = computed(() => {
+  if (isGridMode.value) {
+    return {
+      backgroundImage: 'none',
+      backgroundSize: 'auto',
+      backgroundColor: 'var(--theme-bg)',
+    }
+  }
+
+  return {
+    backgroundImage: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.26) 1px, transparent 1.3px)',
+    backgroundSize: `${WORKSPACE_DOT_SIZE_PX}px ${WORKSPACE_DOT_SIZE_PX}px`,
+  }
+})
 
 const viewportWorldRect = computed(() => {
   const viewport = workspaceViewport.value
@@ -859,7 +869,7 @@ watch(
           'cursor-grab select-none': isSpacePanning && !isViewportPanning,
           'cursor-grabbing select-none': isViewportPanning,
         }"
-        :style="workspaceDotCanvasStyle"
+        :style="workspaceViewportStyle"
         @wheel="handleWheel"
         @scroll="syncViewportScroll"
         @keydown="handleViewportKeyDown"

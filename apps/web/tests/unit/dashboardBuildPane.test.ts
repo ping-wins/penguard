@@ -5,6 +5,7 @@ import DashboardCanvas from '../../src/components/canvas/DashboardCanvas.vue'
 import { i18n } from '../../src/i18n'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { useIntegrationsStore } from '../../src/stores/useIntegrationsStore'
+import { useWorkspaceModeStore } from '../../src/stores/useWorkspaceModeStore'
 
 const WORKSPACE_TEST_ORIGIN = 100000
 
@@ -371,6 +372,40 @@ describe('DashboardCanvas build pane', () => {
     expect(store.zoom).toBeGreaterThan(1)
     expect(viewport.attributes('style')).toBe(dotStyle)
     expect(wrapper.get('[data-test="workspace-stage"]').attributes('style')).toContain('scale(')
+  })
+
+  it('uses a plain workspace background in grid mode', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
+      if (url.startsWith('/api/integrations')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/widget-catalog')) return Promise.resolve(jsonResponse({ items: [] }))
+      if (url.startsWith('/api/workspaces/ws_default')) {
+        return Promise.resolve(jsonResponse({ id: 'ws_default', name: 'SOC Overview', widgets: [] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    }))
+
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const workspaceModeStore = useWorkspaceModeStore()
+    workspaceModeStore.setMode('grid')
+
+    const wrapper = mount(DashboardCanvas, {
+      global: {
+        plugins: [pinia, i18n],
+        directives: { motion: {} },
+        stubs: {
+          DraggableWidget: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const style = wrapper.get('[data-test="workspace-viewport"]').attributes('style') ?? ''
+    expect(style).toContain('background-image: none')
+    expect(style).not.toContain('radial-gradient')
+    expect(style).not.toContain('background-size: 24px 24px')
   })
 
   it('supports Power BI style wheel and space-drag workspace panning', async () => {
