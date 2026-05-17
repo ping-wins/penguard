@@ -109,12 +109,12 @@ watch(
   <transition name="settings-fade">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       @click.self="close"
     >
-      <div class="w-full max-w-3xl max-h-[90vh] overflow-hidden bg-theme-panel border border-theme-border rounded-2xl shadow-2xl flex flex-col">
+      <div class="w-[880px] h-[640px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-hidden bg-theme-panel border border-theme-border rounded-2xl shadow-2xl flex flex-col">
         <header class="flex items-center justify-between px-5 py-4 border-b border-theme-border">
           <div class="flex items-center gap-2">
             <UserCog :size="18" class="text-theme-text-muted" />
