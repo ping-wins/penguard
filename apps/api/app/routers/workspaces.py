@@ -98,7 +98,13 @@ class WorkspaceStore(Protocol):
     ) -> dict:
         pass
 
-    def list_templates(self, *, limit: int = 100) -> list[dict]:
+    def list_templates(
+        self,
+        *,
+        limit: int = 100,
+        category: str | None = None,
+        search: str | None = None,
+    ) -> list[dict]:
         pass
 
     def get_template(self, template_id: str) -> dict | None:
@@ -195,6 +201,31 @@ def list_workspaces(
     if store is None:
         return {"items": []}
     return {"items": store.list_workspaces(owner_user_id=str(current_user["id"]))}
+
+
+VALID_TEMPLATE_CATEGORIES = frozenset(
+    {"executive", "analyst", "engineer", "incident_response", "community"}
+)
+
+
+@router.get("/workspaces/templates")
+def list_workspace_templates(
+    store: Annotated[WorkspaceStore | None, Depends(get_workspace_store)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+    category: str | None = None,
+    search: str | None = None,
+) -> dict:
+    if store is None:
+        return {"items": []}
+    if category and category not in VALID_TEMPLATE_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Unknown category: {category}")
+    return {
+        "items": store.list_templates(
+            limit=100,
+            category=category,
+            search=search,
+        )
+    }
 
 
 @router.get("/workspaces/community")

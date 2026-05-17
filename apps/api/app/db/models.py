@@ -316,6 +316,13 @@ class WorkspaceTemplateModel(Base):
     published_by_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     install_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    category: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="community", index=True
+    )
+    is_curated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+    icon: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

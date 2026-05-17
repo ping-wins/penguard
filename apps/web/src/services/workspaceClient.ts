@@ -61,6 +61,13 @@ export type WorkspaceManifest = {
   }
 }
 
+export type TemplateCategory =
+  | 'executive'
+  | 'analyst'
+  | 'engineer'
+  | 'incident_response'
+  | 'community'
+
 export type CommunityTemplate = {
   id: string
   slug: string
@@ -70,6 +77,9 @@ export type CommunityTemplate = {
   publishedByEmail: string | null
   publishedByUserId: string
   installCount: number
+  category: TemplateCategory
+  isCurated: boolean
+  icon: string | null
   createdAt: string
   updatedAt: string
   manifest?: WorkspaceManifest
@@ -238,6 +248,24 @@ export async function publishWorkspaceTemplate(payload: {
 export async function listCommunityTemplates(): Promise<CommunityTemplate[]> {
   const response = await fetch('/api/workspaces/community', { credentials: 'include' })
   const data = await parseOrThrow(response, 'Failed to load community library')
+  return data.items ?? []
+}
+
+export async function listWorkspaceTemplates(options: {
+  category?: TemplateCategory | 'all'
+  search?: string
+} = {}): Promise<CommunityTemplate[]> {
+  const params = new URLSearchParams()
+  if (options.category && options.category !== 'all') {
+    params.set('category', options.category)
+  }
+  if (options.search) params.set('search', options.search)
+  const query = params.toString()
+  const url = query
+    ? `/api/workspaces/templates?${query}`
+    : '/api/workspaces/templates'
+  const response = await fetch(url, { credentials: 'include' })
+  const data = await parseOrThrow(response, 'Failed to load workspace templates')
   return data.items ?? []
 }
 

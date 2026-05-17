@@ -238,7 +238,7 @@ export default {
       error: 'Failed to publish template',
     },
     communityDialog: {
-      title: 'Community library',
+      title: 'Template library',
       filter: 'Filter by title, slug or tag...',
       empty: 'No templates found.',
       noDescription: 'No description.',
@@ -253,6 +253,15 @@ export default {
       removed: 'Template removed.',
       removeError: 'Failed to remove template',
       loadError: 'Failed to load library',
+      curatedBadge: 'Official',
+      category: {
+        all: 'All',
+        executive: 'Executive',
+        analyst: 'Analyst',
+        engineer: 'Engineer',
+        incident_response: 'Incident Response',
+        community: 'Community',
+      },
     },
     presentationDialog: {
       title: 'Presentation mode',
