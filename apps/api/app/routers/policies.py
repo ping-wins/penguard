@@ -7,14 +7,20 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_current_api_user
 from app.auth.permissions import require_permission
+from app.policies.fortigate_adapter import FortiGatePolicyAdapter
 from app.policies.models import PolicyReviewApplyRequest, PolicyReviewCreateRequest
 from app.policies.service import PolicyService
+from app.routers import integrations
 
 router = APIRouter(tags=["policies"])
 
 
 def get_policy_service() -> PolicyService:
-    return PolicyService(adapters=[])
+    return PolicyService(
+        adapters=[
+            FortiGatePolicyAdapter(integrations.get_fortigate_integration_service()),
+        ]
+    )
 
 
 def _owner_user_id(current_user: dict) -> str:

@@ -114,6 +114,18 @@ class FortiGateApiClient:
             raise FortiGateApiError("FortiGate firewall policy create response was not an object")
         return results
 
+    def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        results = self._put(f"/api/v2/cmdb/firewall/policy/{policy_id}", json=payload)
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate firewall policy update response was not an object")
+        return results
+
+    def delete_firewall_policy(self, policy_id: str) -> dict[str, Any]:
+        results = self._delete(f"/api/v2/cmdb/firewall/policy/{policy_id}")
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate firewall policy delete response was not an object")
+        return results
+
     def get_threat_logs(self, *, limit: int = 25) -> list[dict[str, Any]]:
         return self._get_list("/api/v2/log/memory/ips", params={"count": limit})
 
@@ -262,6 +274,42 @@ class FortiGateApiClient:
                 transport=self.transport,
             ) as client:
                 response = client.post(path, json=json)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in (401, 403):
+                raise FortiGateApiError(
+                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                ) from exc
+            if status_code == 404:
+                raise FortiGateApiError(
+                    "FortiGate API endpoint not found "
+                    f"({path}); check host URL and firmware version"
+                ) from exc
+            raise FortiGateApiError(_http_status_error_message(exc.response)) from exc
+        except httpx.RequestError as exc:
+            raise FortiGateApiError(f"FortiGate API request failed: {exc}") from exc
+
+        payload = self._decode_json(response)
+        if isinstance(payload, dict) and payload.get("status") not in (None, "success"):
+            raise FortiGateApiError("FortiGate API returned error status")
+        if isinstance(payload, dict) and "results" in payload:
+            return payload["results"]
+        return payload
+
+    def _delete(self, path: str) -> Any:
+        try:
+            with httpx.Client(
+                base_url=self.host,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "application/json",
+                },
+                verify=self.verify_tls,
+                timeout=self.timeout_seconds,
+                transport=self.transport,
+            ) as client:
+                response = client.delete(path)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code

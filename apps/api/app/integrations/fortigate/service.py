@@ -118,6 +118,12 @@ class FortiGateClient(Protocol):
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
+    def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+    def delete_firewall_policy(self, policy_id: str) -> dict[str, Any]:
+        pass
+
     def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
         pass
 
@@ -308,6 +314,12 @@ class _MockFortiGatePolicyClient:
 
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "mkey": payload.get("name"), "payload": dict(payload)}
+
+    def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"status": "success", "mkey": policy_id, "payload": dict(payload)}
+
+    def delete_firewall_policy(self, policy_id: str) -> dict[str, Any]:
+        return {"status": "success", "mkey": policy_id, "deleted": True}
 
     def get_syslog_setting(self, *, slot: int = 1) -> dict[str, Any]:
         _ = slot
