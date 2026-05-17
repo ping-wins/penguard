@@ -226,7 +226,7 @@ describe('DashboardCanvas build pane', () => {
     )
   })
 
-  it('renders automation node catalog and exposes drag payloads for the playbook canvas', async () => {
+  it('keeps automation node catalog inside the playbook builder instead of the workspace build pane', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith('/api/auth/csrf')) return Promise.resolve(jsonResponse({ csrfToken: 'csrf_01' }))
@@ -313,31 +313,11 @@ describe('DashboardCanvas build pane', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="playbook-canvas-layer"]').text()).toContain('Canvas playbook')
-    await wrapper.get('[data-test="build-tab-automation"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Automation nodes')
-    expect(wrapper.text()).toContain('Create Case Note')
-    expect(wrapper.text()).toContain('Require Approval')
-
-    const payloads: Record<string, string> = {}
-    const dataTransfer = {
-      setData: vi.fn((type: string, value: string) => {
-        payloads[type] = value
-      }),
-      effectAllowed: '',
-    }
-
-    await wrapper.get('[data-test="automation-node-case.note"]').trigger('dragstart', {
-      dataTransfer,
-    })
-
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      'application/x-fortidashboard-playbook-node',
-      expect.stringContaining('"nodeType":"case.note"'),
-    )
-    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'case.note')
-    expect(dataTransfer.effectAllowed).toBe('copy')
+    expect(wrapper.find('[data-test="build-tab-automation"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="automation-node-case.note"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Automation nodes')
+    expect(wrapper.text()).not.toContain('Create Case Note')
+    expect(wrapper.text()).not.toContain('Require Approval')
   })
 
   it('shows loading and empty states for integration visual presets', async () => {

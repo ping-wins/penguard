@@ -59,6 +59,47 @@ describe('PlaybookCanvasLayer', () => {
     vi.unstubAllGlobals()
   })
 
+  it('renders an internal automation node drawer and emits drag payloads from the builder', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+
+    const wrapper = mount(PlaybookCanvasLayer, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFlow: {
+            props: ['nodes', 'edges'],
+            template: '<div data-test="vue-flow-stub"><slot /></div>',
+          },
+          Background: { template: '<div />' },
+          Controls: { template: '<div />' },
+          MiniMap: { template: '<div />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Automation nodes')
+    expect(wrapper.get('[data-test="playbook-node-drawer"]').text()).toContain('Create Case Note')
+    expect(wrapper.find('[data-test="playbook-node-drawer-node-trigger.incident_created"]').exists()).toBe(false)
+
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: '',
+    }
+
+    await wrapper.get('[data-test="playbook-node-drawer-node-case.note"]').trigger('dragstart', {
+      dataTransfer,
+    })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-fortidashboard-playbook-node',
+      expect.stringContaining('"nodeType":"case.note"'),
+    )
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'case.note')
+    expect(dataTransfer.effectAllowed).toBe('copy')
+  })
+
   it('adds an automation node from drag payload and saves the visual graph', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)

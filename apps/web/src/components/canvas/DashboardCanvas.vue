@@ -34,7 +34,6 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  Workflow,
 } from 'lucide-vue-next'
 import DraggableWidget from './DraggableWidget.vue'
 import PlaybookCanvasLayer from '../playbooks/canvas/PlaybookCanvasLayer.vue'
@@ -63,11 +62,9 @@ import WidgetWafDosRate from '../widgets/waf/WidgetWafDosRate.vue'
 import WidgetWafDosTopIps from '../widgets/waf/WidgetWafDosTopIps.vue'
 import WidgetWafDosFeed from '../widgets/waf/WidgetWafDosFeed.vue'
 import { isVisualTemplateId, visualTemplates, type VisualTemplate } from '../../constants/visualTemplates'
-import type { PlaybookNodeType } from '../../services/playbooksClient'
 import type { ProviderDataField, ProviderDataGroup } from '../../services/providerDataClient'
 import type { WidgetFieldBinding } from '../../types/dashboard'
 import { PROVIDER_FIELD_DRAG_MIME, serializeFieldBinding } from '../../utils/fieldDrag'
-import { defaultNodeConfig, PLAYBOOK_NODE_DRAG_MIME, serializePlaybookNodeDragPayload } from '../../utils/playbookGraph'
 import { usePlaybooksStore } from '../../stores/usePlaybooksStore'
 
 const dashboardStore = useDashboardStore()
@@ -185,7 +182,7 @@ const severityHeatStrip = computed(() => {
 const heatStripTotal = computed(() => Object.values(severityHeatStrip.value).reduce((sum, v) => sum + v, 0))
 
 const isBuildPaneOpen = ref(true)
-const activeBuildTab = ref<'filters' | 'visuals' | 'data' | 'automation'>('visuals')
+const activeBuildTab = ref<'filters' | 'visuals' | 'data'>('visuals')
 const fortigateIntegrations = computed(() => integrationsStore.integrations.filter(i => i.type === 'fortigate'))
 const connectedIntegrationTypes = computed(() => integrationsStore.connectedIntegrationTypes)
 const hasSoarIntegration = computed(() => connectedIntegrationTypes.value.includes('soar_skipper'))
@@ -197,7 +194,6 @@ const catalogIntegrationTypes = computed(() => (
 const dataFieldCount = computed(() => dataFieldGroups.value.reduce((total, group) => total + group.fields.length, 0))
 const dataFieldCountLabel = computed(() => `${dataFieldCount.value} field${dataFieldCount.value === 1 ? '' : 's'} available`)
 const visualPresetCountLabel = computed(() => `${catalogItems.value.length} preset${catalogItems.value.length === 1 ? '' : 's'} ready`)
-const automationNodeTypes = computed(() => playbooksStore.nodeTypes.filter((nodeType) => nodeType.category !== 'trigger'))
 const isVisualCatalogLoading = computed(() => !dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 const isVisualCatalogEmpty = computed(() => dashboardStore.isCatalogLoaded && catalogItems.value.length === 0)
 const catalogGroups = computed(() => {
@@ -310,19 +306,6 @@ function handleCatalogWidgetDragStart(event: DragEvent, catalogId: string) {
 
 function handleVisualTemplateDragStart(event: DragEvent, templateId: string) {
   setWorkspaceWidgetDragData(event, { kind: 'template', catalogId: templateId })
-}
-
-function handleAutomationNodeDragStart(event: DragEvent, nodeType: PlaybookNodeType) {
-  if (!event.dataTransfer) return
-  event.dataTransfer.setData(
-    PLAYBOOK_NODE_DRAG_MIME,
-    serializePlaybookNodeDragPayload({
-      nodeType: nodeType.id,
-      config: defaultNodeConfig(nodeType.id),
-    }),
-  )
-  event.dataTransfer.setData('text/plain', nodeType.id)
-  event.dataTransfer.effectAllowed = 'copy'
 }
 
 function parseWorkspaceWidgetDrag(dataTransfer: DataTransfer | null): WorkspaceWidgetDragPayload | null {
@@ -1038,15 +1021,6 @@ watch(
           >
             <Database :size="14" /> Data
           </button>
-          <button
-            v-if="hasSoarIntegration"
-            data-test="build-tab-automation"
-            @click="activeBuildTab = 'automation'"
-            class="flex-1 py-3 text-xs font-medium uppercase tracking-wider flex justify-center items-center gap-1 border-b-2 transition-colors"
-            :class="activeBuildTab === 'automation' ? 'border-theme-primary text-theme-primary' : 'border-transparent text-theme-text-muted hover:text-theme-text'"
-          >
-            <Workflow :size="14" /> {{ t('playbooks.canvas.automationTab') }}
-          </button>
         </div>
 
         <div class="flex-1 overflow-y-auto shrink-0" :style="{ width: `${buildPaneWidth}px` }">
@@ -1276,70 +1250,6 @@ watch(
             </template>
           </div>
 
-          <!-- Automation Tab -->
-          <div v-if="activeBuildTab === 'automation'" class="p-4 flex flex-col gap-3">
-            <div class="border-b border-theme-border pb-3">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <h3 class="text-xs font-semibold uppercase tracking-wider text-theme-text">
-                    {{ t('playbooks.canvas.automationNodes') }}
-                  </h3>
-                  <p class="mt-1 text-[11px] leading-snug text-theme-text-muted">
-                    {{ t('playbooks.canvas.automationHint') }}
-                  </p>
-                </div>
-                <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-2 py-1 text-[10px] font-medium text-theme-text-muted">
-                  {{ playbooksStore.isLoading ? t('common.loading') : t('playbooks.canvas.nodeCount', { count: automationNodeTypes.length }) }}
-                </span>
-              </div>
-            </div>
-
-            <div v-if="playbooksStore.error" class="rounded border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
-              {{ playbooksStore.error }}
-            </div>
-            <div v-else-if="playbooksStore.isLoading" class="rounded border border-theme-border bg-theme-bg p-3 text-sm text-theme-text-muted">
-              <div class="flex items-center gap-2 font-medium text-theme-text">
-                <RefreshCcw :size="14" class="animate-spin text-theme-primary" />
-                <span>{{ t('playbooks.canvas.loadingNodes') }}</span>
-              </div>
-            </div>
-            <div v-else-if="automationNodeTypes.length === 0" class="rounded border border-theme-border bg-theme-bg p-3 text-xs text-theme-text-muted">
-              {{ t('playbooks.canvas.emptyNodes') }}
-            </div>
-            <div v-else class="grid grid-cols-1 gap-2">
-              <div
-                v-for="nodeType in automationNodeTypes"
-                :key="nodeType.id"
-                draggable="true"
-                class="rounded border border-theme-border bg-theme-bg p-3 text-left transition-colors hover:border-theme-primary/50 hover:bg-theme-border/50"
-                :class="nodeType.sensitive ? 'border-red-400/30 bg-red-500/5' : ''"
-                :data-test="`automation-node-${nodeType.id}`"
-                :title="nodeType.boundary"
-                @dragstart="handleAutomationNodeDragStart($event, nodeType)"
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <div class="truncate text-xs font-semibold text-theme-text">{{ nodeType.label }}</div>
-                    <div class="mt-0.5 truncate font-mono text-[10px] text-theme-text-muted">{{ nodeType.id }}</div>
-                  </div>
-                  <span
-                    class="shrink-0 rounded border px-1.5 py-0.5 text-[10px]"
-                    :class="nodeType.liveAvailable ? 'border-amber-400/40 text-amber-100' : 'border-sky-400/30 text-sky-100'"
-                  >
-                    {{ nodeType.liveAvailable ? t('playbooks.liveCapable') : t('playbooks.dryRunOnly') }}
-                  </span>
-                </div>
-                <div class="mt-2 flex flex-wrap gap-1">
-                  <span class="rounded border border-theme-border bg-theme-panel/70 px-1.5 py-0.5 text-[10px] text-theme-text-muted">
-                    {{ nodeType.category }}
-                  </span>
-                  <span class="rounded border border-theme-border bg-theme-panel/70 px-1.5 py-0.5 text-[10px] text-theme-text-muted">
-                    {{ nodeType.boundary }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </aside>
     </div>
