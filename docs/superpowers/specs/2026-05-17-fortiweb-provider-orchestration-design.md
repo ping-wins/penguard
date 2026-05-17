@@ -1,0 +1,486 @@
+# FortiWeb Provider Orchestration Design
+
+**Date:** 2026-05-17
+**Status:** Approved for implementation
+
+## Goal
+
+Add FortiWeb as a real FortiDashboard provider with plug-and-play connection,
+live telemetry, and a governed live response action that blocks the DoS attack
+source on FortiWeb until an admin removes the block from the dashboard.
+
+The first lab story is:
+
+```txt
+BlackArch attacker 10.10.10.10
+  -> FortiGate port2 10.10.10.1
+  -> FortiGate port3 10.10.20.1
+  -> FortiWeb VIP 10.10.20.30:80
+  -> FortiWeb port3 10.10.40.1
+  -> Arch victim/origin 10.10.40.10:8080
+```
+
+The demo must prove that FortiWeb sees the WAF/DoS condition and that a
+permitted FortiDashboard user can apply and later remove a FortiWeb-owned block.
+The FortiGate policy orchestration path remains available for firewall demos,
+but it is not the primary FortiWeb DoS response.
+
+## Existing Context
+
+The repo already contains several FortiWeb pieces:
+
+- `POST /api/soc/ingest/fortiweb` normalizes FortiWeb push events into
+  `waf.attack`, `waf.dos`, `waf.blocked_request`, and `http.attack`.
+- `siem_kowalski` already creates incidents for FortiWeb WAF and DoS events.
+- WAF DoS widgets already read FortiWeb DoS incidents and raw SIEM events.
+- Lab docs define the no-bypass VMware topology and object names:
+  `FD_VIP_LANDING`, `lab-vserver`, `victim-pool`, and `lab-waf-policy`.
+- The marketplace direction says vendor providers should ship as add-on
+  packages, not as new bundled vendor code in the monorepo.
+
+Official FortiWeb references used for this design:
+
+- [Managing API users](https://docs.fortinet.com/document/fortiweb/8.0.0/administration-guide/271068/managing-api-users):
+  FortiWeb API users support API keys and access restriction fields.
+- [FortiWeb Manager API Proxy](https://docs.fortinet.com/document/fortiweb/8.0.0/fortiweb-manager-administration-guide/974737/api-proxy):
+  FortiWeb native APIs use the `/api/v2.0/...` shape.
+- [waf ip-list](https://docs.fortinet.com/document/fortiweb/7.6.0/cli-reference/270473/waf-ip-list):
+  FortiWeb `waf ip-list` supports `black-ip` entries that block a source IP
+  until the entry is removed.
+- [waf web-protection-profile inline-protection](https://docs.fortinet.com/document/fortiweb/8.0.5/cli-reference/025296/waf-web-protection-profile-inline-protection):
+  FortiWeb inline protection profiles can reference an `ip-list-policy`.
+- [server-policy policy](https://docs.fortinet.com/document/fortiweb/8.0.5/cli-reference/338812/server-policy-policy):
+  FortiWeb server policies can reference a `web-protection-profile`.
+
+## Non-Goals
+
+- No automatic block triggered by SIEM, SOAR, AI, background workers, or widget
+  state without human approval.
+- No FortiWeb full policy editor.
+- No FortiWeb DoS profile tuning in this phase.
+- No changes to customer-owned FortiWeb objects except explicit attachment of a
+  FortiDashboard-owned IP list policy after preflight and approval.
+- No TTL auto-expiry for the block. The block remains active until an admin
+  removes it in FortiDashboard.
+- No frontend plugin runtime. FortiWeb widget components remain in this repo.
+
+## Provider Model
+
+FortiWeb appears as provider type `fortiweb` and marketplace add-on
+`fortiweb-waf`.
+
+Connection fields:
+
+```txt
+name
+host
+apiKey
+verifyTls
+targetServerPolicy default lab-waf-policy
+managedIpListPolicy default FD_IP_BLOCKLIST
+```
+
+The API key is encrypted at rest using the same backend token cipher pattern as
+FortiGate. The API key is never returned to Vue, audit details, logs, fixtures,
+or exported workspace manifests.
+
+Create flow:
+
+```txt
+Vue integration drawer
+  -> POST /api/integrations/fortiweb/test
+  -> POST /api/integrations/fortiweb
+  -> encrypted connection row
+  -> audit event
+```
+
+The probe reads FortiWeb health/config metadata through the API user and returns
+sanitized metadata:
+
+```json
+{
+  "ok": true,
+  "status": "reachable",
+  "device": {
+    "product": "FortiWeb",
+    "version": "8.0.5",
+    "serial": "redacted-or-present-if-safe"
+  },
+  "capabilities": {
+    "ipList": true,
+    "serverPolicy": true,
+    "inlineProtectionProfile": true
+  }
+}
+```
+
+If the API user is read-only, the connection can be saved as telemetry-capable
+but the live block action is disabled with a clear "write permission required"
+state.
+
+## FortiWeb Block Mechanism
+
+The MVP uses FortiWeb IP Protection through `waf ip-list`.
+
+FortiDashboard creates or updates one managed IP list policy:
+
+```txt
+config waf ip-list
+  edit "FD_IP_BLOCKLIST"
+    set action alert_deny
+    set severity High
+    config members
+      edit <index>
+        set type black-ip
+        set ip "10.10.10.10"
+      next
+    end
+  next
+end
+```
+
+The managed list is applied through the target inline protection profile:
+
+```txt
+config waf web-protection-profile inline-protection
+  edit "<profile>"
+    set ip-list-policy "FD_IP_BLOCKLIST"
+  next
+end
+```
+
+The target server policy must already reference a web protection profile:
+
+```txt
+config server-policy policy
+  edit "lab-waf-policy"
+    set web-protection-profile "<profile>"
+  next
+end
+```
+
+Preflight must read:
+
+- The target server policy, default `lab-waf-policy`.
+- The current `web-protection-profile` value on that policy.
+- The current `ip-list-policy` value on that profile.
+- The current `FD_IP_BLOCKLIST` members, if it exists.
+- Whether the source IP is already blocked.
+
+If the server policy has no web protection profile, the first implementation
+does not silently create one. It returns a review-blocking error that tells the
+operator to attach an inline protection profile to the policy. This avoids
+changing the WAF posture more broadly than a source block.
+
+If the profile already has a non-FortiDashboard IP list policy, the first
+implementation does not overwrite it. It returns a review-blocking error with
+the current policy name. A later phase may support merging or operator-selected
+replacement.
+
+## Product Flow
+
+### Provider Setup
+
+1. User opens Integrations.
+2. User chooses FortiWeb WAF.
+3. User enters host, API key, TLS verification, and optional target policy.
+4. Dashboard probes FortiWeb.
+5. Dashboard saves the integration only after a successful probe or an explicit
+   telemetry-only save path.
+6. Dashboard shows:
+   - connection status
+   - target server policy
+   - managed IP list policy
+   - last FortiWeb event received
+   - live block capability status
+
+### DoS Response
+
+1. BlackArch runs a bounded DoS test against `http://10.10.20.30/`.
+2. FortiWeb emits telemetry to `/api/soc/ingest/fortiweb`.
+3. `siem_kowalski` creates a `waf.dos` incident with `sourceIp`.
+4. Ticket/incident shows `Block source on FortiWeb`.
+5. Admin opens the review modal.
+6. Backend runs preflight and returns a diff:
+   - source IP to block
+   - target server policy
+   - target inline profile
+   - managed IP list policy
+   - new member to add
+   - rollback/removal action
+7. Admin confirms.
+8. Backend applies the FortiWeb API writes, records audit events, and persists
+   the active block.
+9. Dashboard shows `FortiWeb block active`.
+10. Admin later clicks `Remove block`.
+11. Backend removes only the managed `black-ip` member that FortiDashboard
+    created and records audit.
+
+## API Surface
+
+FortiWeb integration APIs:
+
+```txt
+POST /api/integrations/fortiweb/test
+POST /api/integrations/fortiweb
+GET  /api/integrations/fortiweb/{integrationId}/health
+```
+
+FortiWeb block workflow APIs:
+
+```txt
+POST   /api/integrations/fortiweb/{integrationId}/blocks/preflight
+POST   /api/integrations/fortiweb/{integrationId}/blocks/review
+POST   /api/integrations/fortiweb/{integrationId}/blocks/apply
+GET    /api/integrations/fortiweb/{integrationId}/blocks
+DELETE /api/integrations/fortiweb/{integrationId}/blocks/{blockId}
+```
+
+Request model for review/apply:
+
+```json
+{
+  "sourceIp": "10.10.10.10",
+  "incidentId": "inc_...",
+  "ticketId": "tic_...",
+  "targetServerPolicy": "lab-waf-policy",
+  "reason": "FortiWeb DoS activity detected"
+}
+```
+
+Review response:
+
+```json
+{
+  "status": "ready",
+  "integrationId": "int_fweb_...",
+  "sourceIp": "10.10.10.10",
+  "targetServerPolicy": "lab-waf-policy",
+  "targetProfile": "lab-inline-protection",
+  "managedIpListPolicy": "FD_IP_BLOCKLIST",
+  "alreadyBlocked": false,
+  "diff": [
+    {
+      "operation": "add",
+      "path": "waf.ip-list.FD_IP_BLOCKLIST.members",
+      "value": { "type": "black-ip", "ip": "10.10.10.10" }
+    }
+  ],
+  "warnings": [],
+  "rollback": {
+    "operation": "remove",
+    "sourceIp": "10.10.10.10",
+    "managedIpListPolicy": "FD_IP_BLOCKLIST"
+  }
+}
+```
+
+## Persistence
+
+Create FortiWeb integration storage alongside the existing integration storage
+pattern. The exact migration name can differ, but the schema must express:
+
+```txt
+fortiweb_integrations
+  id
+  owner_user_id
+  name
+  host
+  encrypted_api_key
+  verify_tls
+  target_server_policy
+  managed_ip_list_policy
+  status
+  last_checked_at
+  device_identifiers
+  created_at
+  updated_at
+```
+
+Create block request storage:
+
+```txt
+fortiweb_block_requests
+  id
+  integration_id
+  owner_user_id
+  source_ip
+  target_server_policy
+  target_profile
+  managed_ip_list_policy
+  remote_member_key
+  incident_id
+  ticket_id
+  status
+  review_payload
+  apply_result
+  remove_result
+  created_by
+  approved_by
+  removed_by
+  created_at
+  applied_at
+  removed_at
+  updated_at
+```
+
+Statuses:
+
+```txt
+review_pending
+active
+apply_failed
+remove_failed
+removed
+```
+
+The local table is not the FortiWeb source of truth. It is FortiDashboard's
+audit and UX state for changes FortiDashboard initiated. Preflight still reads
+FortiWeb before apply and before remove.
+
+## Security Boundary
+
+- Applying and removing FortiWeb blocks requires role `admin`.
+- Review/preflight may be available to authenticated analysts, but apply/remove
+  is admin-only.
+- Mutating endpoints require CSRF protection.
+- Every apply/remove writes audit records with secrets redacted.
+- The dashboard creates or edits only `FD_*` objects or members it previously
+  recorded.
+- If a remote object is not `FD_*`, it is read-only for this workflow.
+- If FortiWeb returns a permission error, the UI shows the API user permission
+  problem and the backend records an audit failure.
+- AI, SIEM, SOAR, widgets, and realtime events can suggest a block, but cannot
+  apply or remove it.
+
+Audit actions:
+
+```txt
+integration.fortiweb.created
+integration.fortiweb.probed
+integration.fortiweb.block_reviewed
+integration.fortiweb.block_applied
+integration.fortiweb.block_apply_failed
+integration.fortiweb.block_removed
+integration.fortiweb.block_remove_failed
+```
+
+## Error Handling
+
+Stable API errors:
+
+```txt
+400 source IP missing or invalid
+400 target server policy has no web protection profile
+400 target profile already uses a non-FortiDashboard IP list policy
+401/403 FortiWeb API user lacks required permission
+404 integration or block request not found
+409 block already removed
+409 source IP is already blocked by a different FortiDashboard request
+502 FortiWeb unreachable or returned an unexpected response
+```
+
+State rules:
+
+- Apply failure leaves no `active` local block.
+- Remove failure leaves the block visible as `remove_failed` and retryable.
+- If FortiWeb says the member is already absent during remove, mark the block
+  `removed` and include that remote drift in the audit details.
+- If FortiWeb says the source IP is already present in `FD_IP_BLOCKLIST`,
+  preflight returns `alreadyBlocked: true`; apply can record the block as active
+  for the current ticket without duplicating the remote member.
+
+## UI Behavior
+
+Integration drawer:
+
+- FortiWeb card appears near FortiGate under network/security providers.
+- Fields are localized in `pt-BR` and `en-US`.
+- The card shows probe status, target policy, and live block capability.
+
+Incident/ticket:
+
+- For `waf.dos`, `waf.attack`, and `waf.blocked_request` incidents with a
+  `sourceIp`, show `Block source on FortiWeb` when a FortiWeb integration exists
+  and live block capability is ready.
+- The review modal shows diff, warning, FortiWeb target policy/profile, and
+  rollback text.
+- Active blocks show `Remove FortiWeb block`.
+- Removed blocks remain in the timeline/audit view but do not show as active.
+
+## Marketplace/Add-on Boundary
+
+The long-term provider package is `fortiweb-waf` in
+`ping-wins/fortidashboard-addons`.
+
+Because FortiGate extraction is still pending, this implementation can add the
+FortiWeb provider in the monorepo using the current FortiGate service/store
+pattern, but the code must keep vendor-specific API calls isolated behind a
+small `FortiWebClient` and workflow layer. That keeps the future add-on move
+mechanical.
+
+Do not add new bundled JSON manifests under `addons/<id>/` as the product path.
+If local catalog data is needed for development, keep it clearly transitional
+and aligned with `docs/marketplace/README.md`.
+
+## Testing Strategy
+
+API tests:
+
+- FortiWeb connection test returns sanitized device metadata.
+- FortiWeb integration create never returns `apiKey`.
+- FortiWeb block review requires source IP and a target profile.
+- FortiWeb block apply requires admin.
+- FortiWeb block apply creates or updates only `FD_IP_BLOCKLIST`.
+- FortiWeb block apply records audit and persists `active`.
+- FortiWeb block remove requires admin.
+- FortiWeb block remove records audit and persists `removed`.
+- Apply handles FortiWeb permission and network errors without marking active.
+- Remove failure keeps the block retryable.
+
+Web tests:
+
+- Integration drawer renders FortiWeb fields and status.
+- WAF DoS incident/ticket renders the FortiWeb block action.
+- Review modal renders the returned diff.
+- Active block renders the remove action.
+- Non-admin users do not see apply/remove controls.
+
+Lab validation:
+
+```txt
+curl -v http://10.10.20.30/
+ab -n 500 -c 50 http://10.10.20.30/
+```
+
+Expected before block:
+
+- Victim page is reachable through FortiWeb VIP.
+- FortiWeb emits DoS/WAF telemetry.
+- Dashboard creates a FortiWeb WAF/DoS incident.
+
+Expected after block:
+
+- `10.10.10.10` no longer reaches `http://10.10.20.30/`.
+- FortiWeb log shows IP-list/blocked-client behavior.
+- Dashboard shows active FortiWeb block.
+
+Expected after removal:
+
+- `10.10.10.10` can reach `http://10.10.20.30/` again.
+- Dashboard shows the block as removed.
+
+## Open Implementation Detail
+
+The FortiWeb 8.0.5 trial must validate exact REST payload envelopes for:
+
+```txt
+/api/v2.0/cmdb/waf/ip-list
+/api/v2.0/cmdb/waf/ip-list/{name}/members
+/api/v2.0/cmdb/waf/web-protection-profile/inline-protection/{name}
+/api/v2.0/cmdb/server-policy/policy/{name}
+```
+
+The design is fixed on the FortiWeb object model and safety boundary. If the
+trial API exposes different REST paths or payload envelopes, update only the
+`FortiWebClient` adapter and keep the workflow/API/UX contract unchanged.

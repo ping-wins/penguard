@@ -19,6 +19,10 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useTicketsStore } from '../../stores/useTicketsStore'
 import {
+  useIntegrationsStore,
+  type FortiWebBlockReviewResponse,
+} from '../../stores/useIntegrationsStore'
+import {
   analyzeIncident,
   approvePlaybookRun,
   applyContainmentPlaybook,
@@ -46,6 +50,7 @@ import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
 
 const { t } = useI18n()
 const store = useTicketsStore()
+const integrationsStore = useIntegrationsStore()
 
 function cvssBadgeClass(severity: string | undefined): string {
   switch (severity) {
@@ -92,6 +97,12 @@ const policyReview = ref<PlaybookRunPolicyReviewResponse | null>(null)
 const policyApplyResult = ref<PlaybookRunPolicyApplyResponse | null>(null)
 const isCreatingPolicyReview = ref(false)
 const isApplyingPolicyReview = ref(false)
+const fortiwebBlockReview = ref<FortiWebBlockReviewResponse | null>(null)
+const fortiwebBlockResult = ref<FortiWebBlockReviewResponse | null>(null)
+const isCreatingFortiwebBlockReview = ref(false)
+const isApplyingFortiwebBlock = ref(false)
+const isRemovingFortiwebBlock = ref(false)
+const fortiwebBlockError = ref<string | null>(null)
 const policyForm = ref({
   integrationId: '',
   scope: 'source_destination' as FortiGatePolicyScope,
@@ -102,8 +113,13 @@ const policyForm = ref({
   service: 'ALL',
   durationMinutes: 30,
 })
+const fortiwebBlockForm = ref({
+  integrationId: '',
+  sourceIp: '',
+})
 
 const tickets = computed(() => store.tickets)
+const fortiwebIntegrations = computed(() => integrationsStore.integrations.filter(integration => integration.type === 'fortiweb'))
 const aiAnalysisBadge = computed(() => aiAnalysis.value ? sourceBadgeFor(aiAnalysis.value) : null)
 const selectedDetection = computed(() => {
   const detection = selected.value?.attributes?.detection
@@ -215,6 +231,11 @@ const canCreatePolicyReview = computed(() => {
   )
 })
 const canApplyPolicyReview = computed(() => Boolean(policyReview.value && !policyApplyResult.value))
+const canCreateFortiwebBlockReview = computed(() => {
+  return Boolean(fortiwebBlockForm.value.integrationId.trim() && fortiwebBlockForm.value.sourceIp.trim())
+})
+const canApplyFortiwebBlock = computed(() => Boolean(fortiwebBlockReview.value && fortiwebBlockResult.value?.status !== 'active'))
+const canRemoveFortiwebBlock = computed(() => fortiwebBlockResult.value?.status === 'active')
 
 async function applyPatch(
   ticket: Ticket,
@@ -299,6 +320,16 @@ function resetAiState() {
   policyApplyResult.value = null
   isCreatingPolicyReview.value = false
   isApplyingPolicyReview.value = false
+  resetFortiwebBlockState()
+}
+
+function resetFortiwebBlockState() {
+  fortiwebBlockReview.value = null
+  fortiwebBlockResult.value = null
+  fortiwebBlockError.value = null
+  isCreatingFortiwebBlockReview.value = false
+  isApplyingFortiwebBlock.value = false
+  isRemovingFortiwebBlock.value = false
 }
 
 async function runDraftPlaybook(ticket: Ticket) {
@@ -427,6 +458,93 @@ function primePolicyReviewForm(ticket: Ticket) {
   }
 }
 
+function sourceIpForTicket(ticket: Ticket): string {
+  const attributes = ticket.attributes ?? {}
+  const entities = ticket.entities ?? {}
+  return stringValue(
+    attributes.sourceIp,
+    attributes.source_ip,
+    attributes.srcip,
+    entities.sourceIp,
+    entities.source_ip,
+    entities.srcip,
+  )
+}
+
+function primeFortiwebBlockForm(ticket: Ticket) {
+  fortiwebBlockForm.value = {
+    integrationId: fortiwebBlockForm.value.integrationId || fortiwebIntegrations.value[0]?.id || '',
+    sourceIp: sourceIpForTicket(ticket),
+  }
+}
+
+async function runCreateFortiwebBlockReview(ticket: Ticket) {
+  fortiwebBlockError.value = null
+  fortiwebBlockReview.value = null
+  fortiwebBlockResult.value = null
+  isCreatingFortiwebBlockReview.value = true
+  try {
+    const result = await integrationsStore.reviewFortiwebSourceBlock(
+      fortiwebBlockForm.value.integrationId.trim(),
+      {
+        sourceIp: fortiwebBlockForm.value.sourceIp.trim(),
+        incidentId: ticket.id,
+        reason: ticket.title,
+      },
+    )
+    if (result.success) {
+      fortiwebBlockReview.value = result.data
+    } else {
+      fortiwebBlockError.value = result.error || t('tickets.fortiweb.reviewError')
+    }
+  } finally {
+    isCreatingFortiwebBlockReview.value = false
+  }
+}
+
+async function runApplyFortiwebBlock() {
+  if (!fortiwebBlockReview.value) return
+  fortiwebBlockError.value = null
+  isApplyingFortiwebBlock.value = true
+  try {
+    const result = await integrationsStore.applyFortiwebSourceBlock(
+      fortiwebBlockForm.value.integrationId.trim(),
+      fortiwebBlockReview.value.id,
+      {
+        reviewHash: fortiwebBlockReview.value.reviewHash,
+        confirmed: true,
+      },
+    )
+    if (result.success) {
+      fortiwebBlockResult.value = result.data
+    } else {
+      fortiwebBlockError.value = result.error || t('tickets.fortiweb.applyError')
+    }
+  } finally {
+    isApplyingFortiwebBlock.value = false
+  }
+}
+
+async function runRemoveFortiwebBlock() {
+  const blockId = fortiwebBlockResult.value?.id || fortiwebBlockReview.value?.id
+  if (!blockId) return
+  fortiwebBlockError.value = null
+  isRemovingFortiwebBlock.value = true
+  try {
+    const result = await integrationsStore.removeFortiwebSourceBlock(
+      fortiwebBlockForm.value.integrationId.trim(),
+      blockId,
+    )
+    if (result.success) {
+      fortiwebBlockResult.value = result.data
+    } else {
+      fortiwebBlockError.value = result.error || t('tickets.fortiweb.removeError')
+    }
+  } finally {
+    isRemovingFortiwebBlock.value = false
+  }
+}
+
 async function runCreatePolicyReview() {
   const runId = applyResult.value?.run?.id
   if (!runId) return
@@ -516,11 +634,24 @@ watch(
     resetAiState()
     triageContext.value = null
     triageContextError.value = null
+    if (selected.value) primeFortiwebBlockForm(selected.value)
     if (ticketId) void loadTriageContext(ticketId)
   },
 )
 
-onMounted(() => store.startRealtime())
+watch(
+  () => fortiwebIntegrations.value.map(integration => integration.id).join('|'),
+  () => {
+    if (!fortiwebBlockForm.value.integrationId && fortiwebIntegrations.value[0]) {
+      fortiwebBlockForm.value.integrationId = fortiwebIntegrations.value[0].id
+    }
+  },
+)
+
+onMounted(() => {
+  store.startRealtime()
+  integrationsStore.fetchIntegrations()
+})
 onBeforeUnmount(() => store.stopRealtime())
 
 const isResetting = ref(false)
@@ -930,6 +1061,109 @@ async function resetIncidents() {
           <div v-if="isSavingPatch" class="text-xs text-theme-text-muted flex items-center gap-1">
             <Loader2 :size="12" class="animate-spin" />
             {{ t('common.saving') }}
+          </div>
+        </div>
+
+        <!-- FortiWeb Response -->
+        <div class="px-4 py-3 border-b border-theme-border bg-emerald-500/5 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs uppercase tracking-wider text-emerald-300 flex items-center gap-1">
+              <Shield :size="13" />
+              {{ t('tickets.fortiweb.title') }}
+            </h4>
+            <span
+              v-if="fortiwebBlockResult?.status === 'active'"
+              class="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200"
+            >
+              {{ t('tickets.fortiweb.active') }}
+            </span>
+            <span
+              v-else-if="fortiwebBlockResult?.status === 'removed'"
+              class="rounded border border-theme-border bg-theme-bg/60 px-1.5 py-0.5 text-[10px] text-theme-text-muted"
+            >
+              {{ t('tickets.fortiweb.removed') }}
+            </span>
+          </div>
+
+          <div v-if="fortiwebIntegrations.length" class="grid grid-cols-2 gap-2 text-xs">
+            <label class="col-span-2 flex flex-col gap-1">
+              <span class="text-theme-text-muted">{{ t('tickets.fortiweb.integrationId') }}</span>
+              <select
+                v-model="fortiwebBlockForm.integrationId"
+                class="rounded border border-theme-border bg-theme-bg px-2 py-1 text-theme-text outline-none focus:border-emerald-400"
+              >
+                <option
+                  v-for="integration in fortiwebIntegrations"
+                  :key="integration.id"
+                  :value="integration.id"
+                >
+                  {{ integration.name || integration.id }}
+                </option>
+              </select>
+            </label>
+            <label class="col-span-2 flex flex-col gap-1">
+              <span class="text-theme-text-muted">{{ t('tickets.fortiweb.sourceIp') }}</span>
+              <input
+                v-model="fortiwebBlockForm.sourceIp"
+                class="rounded border border-theme-border bg-theme-bg px-2 py-1 font-mono text-theme-text outline-none focus:border-emerald-400"
+              >
+            </label>
+          </div>
+          <div v-else class="text-xs text-theme-text-muted">
+            {{ t('tickets.fortiweb.noIntegration') }}
+          </div>
+
+          <div v-if="fortiwebBlockError" class="text-xs text-red-300 flex items-start gap-1">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ fortiwebBlockError }}
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-test="ticket-create-fortiweb-block-review"
+              :disabled="!canCreateFortiwebBlockReview || isCreatingFortiwebBlockReview || !fortiwebIntegrations.length"
+              @click="runCreateFortiwebBlockReview(selected!)"
+              class="inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+            >
+              <Loader2 v-if="isCreatingFortiwebBlockReview" :size="12" class="animate-spin" />
+              <CheckCircle2 v-else :size="12" />
+              {{ t('tickets.fortiweb.createReview') }}
+            </button>
+            <button
+              type="button"
+              data-test="ticket-apply-fortiweb-block"
+              :disabled="!canApplyFortiwebBlock || isApplyingFortiwebBlock"
+              @click="runApplyFortiwebBlock"
+              class="inline-flex items-center gap-1 rounded border border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-50"
+            >
+              <Loader2 v-if="isApplyingFortiwebBlock" :size="12" class="animate-spin" />
+              <Shield v-else :size="12" />
+              {{ t('tickets.fortiweb.apply') }}
+            </button>
+            <button
+              type="button"
+              data-test="ticket-remove-fortiweb-block"
+              :disabled="!canRemoveFortiwebBlock || isRemovingFortiwebBlock"
+              @click="runRemoveFortiwebBlock"
+              class="inline-flex items-center gap-1 rounded border border-theme-border bg-theme-bg/60 px-3 py-1.5 text-xs font-semibold text-theme-text hover:bg-theme-border disabled:opacity-50"
+            >
+              <Loader2 v-if="isRemovingFortiwebBlock" :size="12" class="animate-spin" />
+              <X v-else :size="12" />
+              {{ t('tickets.fortiweb.remove') }}
+            </button>
+          </div>
+
+          <div v-if="fortiwebBlockReview" class="rounded border border-theme-border bg-theme-bg/60 p-2 text-xs">
+            <div class="font-semibold text-theme-text">{{ t('tickets.fortiweb.proposedChanges') }}</div>
+            <ul class="mt-1 space-y-1 text-theme-text-muted">
+              <li
+                v-for="change in fortiwebBlockReview.proposedChanges"
+                :key="`${change.operation}-${change.target}-${change.sourceIp || ''}`"
+              >
+                {{ change.operation }} · {{ change.target }}
+              </li>
+            </ul>
           </div>
         </div>
 

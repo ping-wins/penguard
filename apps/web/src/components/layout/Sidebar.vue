@@ -46,6 +46,16 @@ const fgForm = ref({
 })
 const fgTestResult = ref<any>(null)
 const fgTestError = ref<string | null>(null)
+const fwebForm = ref({
+  name: 'FortiWeb Lab',
+  host: 'https://fortiweb.local',
+  apiKey: '',
+  verifyTls: false,
+  targetServerPolicy: 'lab-waf-policy',
+  managedIpListPolicy: 'FD_IP_BLOCKLIST',
+})
+const fwebTestResult = ref<any>(null)
+const fwebTestError = ref<string | null>(null)
 const penguinTestResults = ref<Record<PenguinToolType, any | null>>({
   siem_kowalski: null,
   xdr_rico: null,
@@ -89,8 +99,17 @@ const penguinTools: Array<{
 const canSubmitFortigate = computed(() => {
   return fgForm.value.host.trim().length > 0 && fgForm.value.apiKey.trim().length > 0
 })
+const canSubmitFortiweb = computed(() => {
+  return fwebForm.value.host.trim().length > 0
+    && fwebForm.value.apiKey.trim().length > 0
+    && fwebForm.value.targetServerPolicy.trim().length > 0
+    && fwebForm.value.managedIpListPolicy.trim().length > 0
+})
 const fortigateIntegrations = computed(() => {
   return integrationsStore.integrations.filter(integration => integration.type === 'fortigate')
+})
+const fortiwebIntegrations = computed(() => {
+  return integrationsStore.integrations.filter(integration => integration.type === 'fortiweb')
 })
 const isAdmin = computed(() => authStore.user?.roles.includes('admin') ?? false)
 const auditScope = computed<'admin' | 'mine'>(() => isAdmin.value ? 'admin' : 'mine')
@@ -195,11 +214,46 @@ async function handleSaveFortigate() {
   }
 }
 
+async function handleTestFortiweb() {
+  fwebTestResult.value = null
+  fwebTestError.value = null
+  const res = await integrationsStore.testFortiweb(
+    fwebForm.value.host,
+    fwebForm.value.apiKey,
+    fwebForm.value.verifyTls,
+  )
+  if (res.success) {
+    fwebTestResult.value = res.data
+  } else {
+    fwebTestError.value = res.error ?? 'Connection failed'
+  }
+}
+
+async function handleSaveFortiweb() {
+  const res = await integrationsStore.addFortiweb(
+    fwebForm.value.name,
+    fwebForm.value.host,
+    fwebForm.value.apiKey,
+    fwebForm.value.verifyTls,
+    fwebForm.value.targetServerPolicy,
+    fwebForm.value.managedIpListPolicy,
+  )
+  if (res.success) {
+    fwebTestResult.value = null
+    fwebTestError.value = null
+    fwebForm.value.apiKey = ''
+  } else {
+    fwebTestError.value = res.error ?? 'Failed to add integration'
+  }
+}
+
 async function handleRemoveIntegration(integrationId: string) {
   fgTestError.value = null
+  fwebTestError.value = null
   const res = await integrationsStore.removeIntegration(integrationId)
   if (!res.success) {
     fgTestError.value = res.error ?? 'Failed to remove integration'
+    fwebTestError.value = res.error ?? 'Failed to remove integration'
   }
 }
 
@@ -636,14 +690,14 @@ async function handleChatSubmit() {
               </div>
               <span
                 class="shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium"
-                :class="fortigateIntegrations.length > 0 ? 'border-green-500/30 bg-green-500/20 text-green-400' : 'border-theme-border bg-theme-panel text-theme-text-muted'"
+                :class="(fortigateIntegrations.length + fortiwebIntegrations.length) > 0 ? 'border-green-500/30 bg-green-500/20 text-green-400' : 'border-theme-border bg-theme-panel text-theme-text-muted'"
               >
-                {{ fortigateIntegrations.length > 0 ? t('integrations.connected') : t('integrations.notConnected') }}
+                {{ (fortigateIntegrations.length + fortiwebIntegrations.length) > 0 ? t('integrations.connected') : t('integrations.notConnected') }}
               </span>
             </button>
 
             <div v-if="integrationGroupsOpen.fortinet" class="mb-3 flex flex-col gap-2">
-              <div v-if="!integrationsStore.isLoading && fortigateIntegrations.length === 0" class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted">
+              <div v-if="!integrationsStore.isLoading && fortigateIntegrations.length === 0 && fortiwebIntegrations.length === 0" class="rounded border border-dashed border-theme-border px-3 py-2 text-xs text-theme-text-muted">
                 {{ t('integrations.noFortinet') }}
               </div>
 
@@ -709,9 +763,48 @@ async function handleChatSubmit() {
                 </div>
                 <LabPolicyWizard :integration-id="intg.id" />
               </div>
+
+              <div v-for="intg in fortiwebIntegrations" :key="intg.id" class="rounded border border-theme-border bg-theme-panel p-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-theme-text">{{ intg.name }}</span>
+                    <div v-if="intg.host" class="truncate font-mono text-xs text-theme-text-muted" :title="intg.host">
+                      {{ intg.host }}
+                    </div>
+                    <div class="text-xs text-theme-text-muted">fortiweb</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span class="rounded border border-green-500/30 bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
+                      {{ intg.status }}
+                    </span>
+                    <button
+                      type="button"
+                      class="rounded p-1 text-theme-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                      :disabled="integrationsStore.isDeleting[intg.id]"
+                      :title="t('integrations.remove')"
+                      @click="handleRemoveIntegration(intg.id)"
+                    >
+                      <Trash2 :size="14" />
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div class="rounded border border-theme-border bg-theme-bg/70 p-2">
+                    <div class="text-theme-text-muted">{{ t('integrations.fortiweb.targetPolicy') }}</div>
+                    <div class="mt-1 truncate font-mono text-theme-text">{{ intg.targetServerPolicy || '—' }}</div>
+                  </div>
+                  <div class="rounded border border-theme-border bg-theme-bg/70 p-2">
+                    <div class="text-theme-text-muted">{{ t('integrations.fortiweb.ipListPolicy') }}</div>
+                    <div class="mt-1 truncate font-mono text-theme-text">{{ intg.managedIpListPolicy || '—' }}</div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div v-if="integrationGroupsOpen.fortinet" class="grid grid-cols-2 gap-2">
+              <div class="col-span-2 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
+                {{ t('integrations.fortigate.title') }}
+              </div>
               <div class="flex flex-col gap-1">
                 <label class="text-xs text-theme-text">{{ t('integrations.name') }}</label>
                 <input v-model="fgForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
@@ -755,6 +848,68 @@ async function handleChatSubmit() {
                   @click="handleSaveFortigate"
                   class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   :disabled="!canSubmitFortigate"
+                >
+                  {{ t('integrations.save') }}
+                </button>
+              </div>
+
+              <div class="col-span-2 mt-3 border-t border-theme-border pt-3 text-xs font-semibold uppercase tracking-wider text-theme-text-muted">
+                {{ t('integrations.fortiweb.title') }}
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">{{ t('integrations.name') }}</label>
+                <input v-model="fwebForm.name" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">{{ t('integrations.host') }}</label>
+                <input v-model="fwebForm.host" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="col-span-2 flex flex-col gap-1">
+                <label class="text-xs text-theme-text">{{ t('integrations.apiKey') }}</label>
+                <input v-model="fwebForm.apiKey" type="password" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">{{ t('integrations.fortiweb.targetPolicy') }}</label>
+                <input v-model="fwebForm.targetServerPolicy" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs text-theme-text">{{ t('integrations.fortiweb.ipListPolicy') }}</label>
+                <input v-model="fwebForm.managedIpListPolicy" type="text" class="w-full rounded border border-theme-border bg-theme-panel px-2 py-1.5 text-sm text-theme-text outline-none focus:border-theme-primary" />
+              </div>
+
+              <label class="col-span-2 flex cursor-pointer items-center gap-2">
+                <input v-model="fwebForm.verifyTls" type="checkbox" class="rounded border-theme-border bg-theme-bg" />
+                <span class="text-xs text-theme-text">{{ t('integrations.verifyTls') }}</span>
+              </label>
+
+              <div v-if="fwebTestResult" class="col-span-2 rounded border border-green-500/20 bg-green-500/10 p-2 text-xs">
+                <div class="mb-1 font-medium text-green-400">{{ t('integrations.connectionSuccess') }}</div>
+                <div class="text-theme-text-muted">{{ t('integrations.hostname', { hostname: fwebTestResult.device?.hostname }) }}</div>
+                <div class="text-theme-text-muted">{{ t('integrations.model', { model: fwebTestResult.device?.model }) }}</div>
+              </div>
+
+              <div v-if="fwebTestError" class="col-span-2 rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-400">
+                {{ fwebTestError }}
+              </div>
+
+              <div class="col-span-2 flex gap-2">
+                <button
+                  @click="handleTestFortiweb"
+                  class="flex-1 rounded border border-theme-border px-3 py-1.5 text-sm font-medium text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text disabled:opacity-50"
+                  :disabled="integrationsStore.isTesting || !canSubmitFortiweb"
+                >
+                  <span v-if="integrationsStore.isTesting">{{ t('integrations.testing') }}</span>
+                  <span v-else>{{ t('integrations.testConnection') }}</span>
+                </button>
+                <button
+                  @click="handleSaveFortiweb"
+                  class="flex-1 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  :disabled="!canSubmitFortiweb"
                 >
                   {{ t('integrations.save') }}
                 </button>

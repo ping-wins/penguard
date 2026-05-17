@@ -167,6 +167,91 @@ class FortiGatePolicyChangeRequestModel(Base):
     )
 
 
+class FortiWebIntegrationModel(Base):
+    __tablename__ = "fortiweb_integrations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    host: Mapped[str] = mapped_column(String(2048), nullable=False)
+    verify_tls: Mapped[bool] = mapped_column(default=True, nullable=False)
+    api_key_blob: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="connected", index=True)
+    capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    target_server_policy: Mapped[str] = mapped_column(String(255), nullable=False)
+    managed_ip_list_policy: Mapped[str] = mapped_column(String(255), nullable=False)
+    device_identifiers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    last_checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
+class FortiWebHealthCheckModel(Base):
+    __tablename__ = "fortiweb_health_checks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    integration_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    device: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+
+
+class FortiWebBlockRequestModel(Base):
+    __tablename__ = "fortiweb_block_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    integration_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_ip: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    incident_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="pending_review",
+        index=True,
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    preflight_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    proposed_changes_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    review_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    applied_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    removed_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
 class PenguinToolIntegrationModel(Base):
     __tablename__ = "penguin_tool_integrations"
 
