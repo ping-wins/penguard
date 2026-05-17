@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Bot, ChevronDown, ChevronRight, LayoutDashboard, Settings, Menu, MessageSquare, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw, Workflow } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, LayoutDashboard, Settings, Send, LogOut, Plug, Trash2, History, FolderTree, Ticket as TicketIcon, Server, RefreshCcw, Workflow } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useAuthStore } from '../../stores/useAuthStore'
@@ -35,7 +35,8 @@ const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
 const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'chat' | 'agent' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
+const activeTab = ref<'none' | 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
+const assistantMode = ref<'chat' | 'agent'>('chat')
 
 const fgForm = ref({
   name: 'FortiGate Lab',
@@ -129,7 +130,7 @@ async function refreshProviderStatus() {
     providerStatus.value = null
   }
 }
-function toggleTab(tab: 'chat' | 'agent' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks') {
+function toggleTab(tab: 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -141,7 +142,7 @@ function toggleTab(tab: 'chat' | 'agent' | 'settings' | 'integrations' | 'audit'
   if (activeTab.value !== tab && tab === 'integrations') {
     integrationsStore.fetchIntegrations()
   }
-  if (activeTab.value !== tab && tab === 'chat') {
+  if (activeTab.value !== tab && tab === 'assistant' && assistantMode.value === 'chat') {
     refreshProviderStatus()
   }
   if (activeTab.value !== tab && tab === 'audit') {
@@ -154,6 +155,12 @@ function toggleTab(tab: 'chat' | 'agent' | 'settings' | 'integrations' | 'audit'
     ticketsStore.startRealtime()
   }
   activeTab.value = isClosingCurrentTab ? 'none' : tab
+}
+
+function setAssistantMode(mode: 'chat' | 'agent') {
+  if (assistantMode.value === mode) return
+  assistantMode.value = mode
+  if (mode === 'chat') refreshProviderStatus()
 }
 
 function refreshAuditTrail() {
@@ -376,10 +383,6 @@ async function handleChatSubmit() {
   <div class="flex h-full relative z-50">
     <!-- Icon Bar -->
     <aside class="w-16 h-full bg-theme-panel flex flex-col items-center py-4 border-r border-theme-border shrink-0 z-20">
-      <div class="mb-8 cursor-pointer hover:opacity-80 text-theme-text transition-colors">
-        <Menu :size="24" />
-      </div>
-      
       <nav class="flex flex-col gap-4 flex-1">
         <div 
           class="p-3 rounded-lg cursor-pointer transition-colors"
@@ -392,19 +395,10 @@ async function handleChatSubmit() {
 
         <div
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
-          :class="activeTab === 'chat' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
-          @click="toggleTab('chat')"
+          :class="activeTab === 'assistant' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="toggleTab('assistant')"
           :title="t('sidebar.assistant')"
-        >
-          <MessageSquare :size="20" />
-        </div>
-
-        <div
-          class="p-3 rounded-lg cursor-pointer transition-colors relative"
-          :class="activeTab === 'agent' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
-          @click="toggleTab('agent')"
-          title="Agente IA (multi-step)"
-          data-testid="sidebar-agent-tab"
+          data-testid="sidebar-assistant-tab"
         >
           <Bot :size="20" />
         </div>
@@ -484,12 +478,31 @@ async function handleChatSubmit() {
       :class="{ 'transition-all duration-300': !drawerResizer.isDragging.value }"
       :style="{ width: drawerWidth, opacity: activeTab !== 'none' ? 1 : 0 }"
     >
-      <!-- Chat Tab -->
-      <div v-if="activeTab === 'chat'" class="p-4 flex flex-col h-full shrink-0" :style="{ width: `${drawerPx}px` }">
-        <div class="mb-4 flex items-center justify-between gap-2">
-          <h2 class="font-bold text-lg text-theme-text">{{ t('chat.header') }}</h2>
+      <!-- Assistant Tab (chat + agent unified) -->
+      <div v-if="activeTab === 'assistant'" class="flex flex-col h-full shrink-0" :style="{ width: `${drawerPx}px` }">
+        <div class="flex items-center justify-between gap-2 border-b border-theme-border px-4 pt-4 pb-2">
+          <div class="inline-flex rounded-md border border-theme-border bg-theme-bg p-0.5">
+            <button
+              type="button"
+              class="px-3 py-1 text-xs font-medium rounded transition-colors"
+              :class="assistantMode === 'chat' ? 'bg-theme-primary/15 text-theme-primary' : 'text-theme-text-muted hover:text-theme-text'"
+              data-testid="assistant-mode-chat"
+              @click="setAssistantMode('chat')"
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1 text-xs font-medium rounded transition-colors"
+              :class="assistantMode === 'agent' ? 'bg-theme-primary/15 text-theme-primary' : 'text-theme-text-muted hover:text-theme-text'"
+              data-testid="assistant-mode-agent"
+              @click="setAssistantMode('agent')"
+            >
+              Agente
+            </button>
+          </div>
           <span
-            v-if="providerStatus"
+            v-if="assistantMode === 'chat' && providerStatus"
             class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border"
             :class="providerStatus.ready
               ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
@@ -500,6 +513,8 @@ async function handleChatSubmit() {
           </span>
         </div>
 
+        <!-- Chat sub-mode -->
+        <div v-if="assistantMode === 'chat'" class="p-4 flex flex-col flex-1 min-h-0">
         <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-2 mb-4">
           <div
             v-for="(msg, i) in chatMessages"
@@ -572,19 +587,20 @@ async function handleChatSubmit() {
             class="w-full bg-theme-bg border border-theme-border rounded-lg pl-3 pr-10 py-2.5 text-sm focus:outline-none focus:border-theme-primary focus:ring-1 focus:ring-theme-primary text-theme-text"
             :disabled="isThinking"
           />
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             class="absolute right-2 top-2.5 text-theme-text-muted hover:text-theme-text disabled:opacity-50"
             :disabled="isThinking || !chatInput.trim()"
           >
             <Send :size="18" />
           </button>
         </form>
-      </div>
+        </div>
 
-      <!-- Agent Tab (multi-step tool-use) -->
-      <div v-if="activeTab === 'agent'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
-        <AgentPanel />
+        <!-- Agent sub-mode (multi-step tool-use) -->
+        <div v-else-if="assistantMode === 'agent'" class="flex-1 min-h-0">
+          <AgentPanel />
+        </div>
       </div>
 
       <!-- Integrations Tab -->
