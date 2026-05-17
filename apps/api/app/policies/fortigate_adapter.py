@@ -111,14 +111,19 @@ class FortiGatePolicyAdapter:
 
         request_payload: PolicyReviewCreateRequest = stored["payload"]
         client = self._client(review.integration_id, owner_user_id=owner_user_id)
-        native_id = _native_policy_id(request_payload.policy_id)
-        if request_payload.action == "disable":
+        if request_payload.action == "create":
+            result = client.create_firewall_policy(request_payload.payload)
+        elif request_payload.action == "disable":
+            native_id = _native_policy_id(request_payload.policy_id)
             result = client.update_firewall_policy(native_id, {"status": "disable"})
         elif request_payload.action == "enable":
+            native_id = _native_policy_id(request_payload.policy_id)
             result = client.update_firewall_policy(native_id, {"status": "enable"})
         elif request_payload.action == "delete":
+            native_id = _native_policy_id(request_payload.policy_id)
             result = client.delete_firewall_policy(native_id)
         elif request_payload.action == "edit":
+            native_id = _native_policy_id(request_payload.policy_id)
             result = client.update_firewall_policy(native_id, request_payload.payload)
         else:
             raise ValueError(f"Unsupported FortiGate policy action: {request_payload.action}")

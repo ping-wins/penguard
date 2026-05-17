@@ -161,6 +161,7 @@ def test_policy_manager_review_and_apply_require_admin_confirmation() -> None:
 
 class FakeFortiGatePolicyClient:
     def __init__(self) -> None:
+        self.created: list[dict] = []
         self.updated: list[tuple[str, dict]] = []
         self.deleted: list[str] = []
 
@@ -182,6 +183,10 @@ class FakeFortiGatePolicyClient:
     def update_firewall_policy(self, policy_id: str, payload: dict) -> dict:
         self.updated.append((policy_id, payload))
         return {"updated": policy_id}
+
+    def create_firewall_policy(self, payload: dict) -> dict:
+        self.created.append(payload)
+        return {"created": payload.get("name")}
 
     def delete_firewall_policy(self, policy_id: str) -> dict:
         self.deleted.append(policy_id)
@@ -241,3 +246,50 @@ def test_fortigate_policy_adapter_creates_disable_review_and_apply() -> None:
     assert client.updated == [("10", {"status": "disable"})]
     assert applied["status"] == "applied"
     assert applied["appliedResult"] == {"updated": "10"}
+
+
+def test_fortigate_policy_adapter_creates_firewall_policy() -> None:
+    client = FakeFortiGatePolicyClient()
+    adapter = FortiGatePolicyAdapter(FakeFortiGatePolicyService(client))
+
+    review = adapter.create_review(
+        owner_user_id="usr_admin",
+        payload=PolicyReviewCreateRequest(
+            providerType="fortigate",
+            integrationId="int_fgt_01",
+            action="create",
+            payload={
+                "name": "FD_ALLOW_SOC_TO_WAF",
+                "srcintf": [{"name": "port2"}],
+                "dstintf": [{"name": "port3"}],
+                "srcaddr": [{"name": "all"}],
+                "dstaddr": [{"name": "all"}],
+                "service": [{"name": "HTTPS"}],
+                "action": "accept",
+                "schedule": "always",
+                "logtraffic": "all",
+                "status": "enable",
+            },
+        ),
+    )
+    applied = adapter.apply_review(
+        owner_user_id="usr_admin",
+        review_id=review.id,
+        payload=PolicyReviewApplyRequest(reviewHash=review.review_hash, confirmed=True),
+    )
+
+    assert client.created == [
+        {
+            "name": "FD_ALLOW_SOC_TO_WAF",
+            "srcintf": [{"name": "port2"}],
+            "dstintf": [{"name": "port3"}],
+            "srcaddr": [{"name": "all"}],
+            "dstaddr": [{"name": "all"}],
+            "service": [{"name": "HTTPS"}],
+            "action": "accept",
+            "schedule": "always",
+            "logtraffic": "all",
+            "status": "enable",
+        }
+    ]
+    assert applied["appliedResult"] == {"created": "FD_ALLOW_SOC_TO_WAF"}
