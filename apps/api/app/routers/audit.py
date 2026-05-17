@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.auth.dependencies import (
     get_auth_audit_store,
     get_current_api_user,
-    require_admin_user,
 )
+from app.auth.permissions import require_permission
 
 router = APIRouter(tags=["audit"])
 
@@ -49,7 +49,7 @@ def list_audit_events(
 @router.get("/admin/audit/events")
 def list_admin_audit_events(
     request: Request,
-    current_user: Annotated[dict, Depends(require_admin_user)],
+    current_user: Annotated[dict, Depends(require_permission("audit.read"))],
     audit_store: Annotated[AuditEventStore, Depends(get_auth_audit_store)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     actor_user_id: Annotated[str | None, Query(alias="actorUserId")] = None,

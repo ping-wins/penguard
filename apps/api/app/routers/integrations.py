@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.csrf_dependency import require_csrf
-from app.auth.dependencies import get_auth_audit_store, get_current_api_user, require_admin_user
+from app.auth.dependencies import get_auth_audit_store, get_current_api_user
+from app.auth.permissions import require_permission
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.db.session import SessionLocal
@@ -854,7 +855,7 @@ def apply_fortigate_log_forwarding(
     payload: FortiGateLogForwardingRequest,
     request: Request,
     service: Annotated[FortiGateService, Depends(get_fortigate_integration_service)],
-    current_user: Annotated[dict, Depends(require_admin_user)],
+    current_user: Annotated[dict, Depends(require_permission("integrations.write"))],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict[str, Any]:

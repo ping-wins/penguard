@@ -48,9 +48,11 @@ const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => {
     { id: 'profile', label: t('settings.tabs.profile'), icon: UserCog },
     { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
     { id: 'language', label: t('settings.tabs.language'), icon: Languages },
-    { id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes },
-    { id: 'ai', label: t('settings.tabs.ai'), icon: Bot },
   ]
+  if (authStore.hasPermission('marketplace.install')) {
+    base.push({ id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes })
+  }
+  base.push({ id: 'ai', label: t('settings.tabs.ai'), icon: Bot })
   if (authStore.hasPermission('roles.manage')) {
     base.push({ id: 'roles', label: tabLabel('settings.tabs.roles', 'Cargos & Membros'), icon: UsersIcon })
   }
