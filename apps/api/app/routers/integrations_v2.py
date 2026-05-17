@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -16,6 +17,7 @@ from app.integrations.connect_persistence import (
     persist_integration,
     validate_auth,
 )
+from app.integrations.wiring import apply_wiring, get_soar_actions
 from app.routers.integrations import (
     get_fortigate_integration_service,
     get_fortiweb_integration_service,
@@ -115,4 +117,33 @@ def connect(
         )
     except UnsupportedProviderType as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"integration": integration, "wiring": {"siem": None, "soar": None}}
+    integration_id = str(integration["id"])
+    wire = body.get("wire") or {"siem": False, "soar": False}
+    connector = get_connector_registry().get(
+        entry["addonId"],
+        integration_id=integration_id,
+        config=auth,
+    )
+    with SessionLocal() as session:
+        wiring = apply_wiring(
+            session,
+            integration_id=integration_id,
+            provider_type=entry["providerType"],
+            capabilities=entry["capabilities"],
+            wire={"siem": bool(wire.get("siem")), "soar": bool(wire.get("soar"))},
+            connector=connector,
+            now=datetime.now(UTC),
+        )
+    return {"integration": integration, "wiring": wiring}
+
+
+@router.get("/{integration_id}/soar-actions")
+def soar_actions(
+    integration_id: str,
+    _user: Annotated[dict[str, Any], Depends(get_current_api_user)],
+    _perm: Annotated[
+        dict[str, Any], Depends(require_permission("integrations.write"))
+    ],
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        return {"items": get_soar_actions(session, integration_id)}
