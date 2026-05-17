@@ -1,6 +1,6 @@
 # Unified SOC Integration — Design
 
-**Status:** Draft (awaiting user approval)
+**Status:** Planned — see [`../plans/2026-05-17-unified-soc-integration.md`](../plans/2026-05-17-unified-soc-integration.md)
 **Date:** 2026-05-17
 **Owner:** luskotav-cloud
 **Related:** [`2026-05-14-marketplace-addon-packages-design.md`](2026-05-14-marketplace-addon-packages-design.md), [`2026-05-17-roles-permissions-manager-design.md`](2026-05-17-roles-permissions-manager-design.md)
