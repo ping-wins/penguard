@@ -3,7 +3,7 @@ import { computed, type Component } from 'vue'
 import { ChevronRight, Maximize2, Minimize2, Activity } from 'lucide-vue-next'
 import { useWidgetDrill } from '../../../composables/useWidgetDrill'
 import { ageMs, formatAge } from '../../../composables/useSocMetrics'
-import { useWidgetCompactStore } from '../../../stores/useWidgetCompactStore'
+import { useWorkspaceModeStore } from '../../../stores/useWorkspaceModeStore'
 import WidgetDrillModal from './WidgetDrillModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -22,8 +22,8 @@ const props = withDefaults(defineProps<{
 })
 
 const drill = useWidgetDrill()
-const compactStore = useWidgetCompactStore()
-const isCompact = computed(() => compactStore.isCompact)
+const workspaceModeStore = useWorkspaceModeStore()
+const isCompact = computed(() => workspaceModeStore.mode === 'grid')
 
 const updatedAgeLabel = computed(() => {
   const ms = ageMs(props.lastUpdated ?? null)

@@ -5,7 +5,7 @@ import catalogFixture from '@fortidashboard/contracts/fixtures/widget_catalog_fo
 import { useAuthStore } from './useAuthStore'
 import { visualTemplatesById } from '../constants/visualTemplates'
 import { createWidgetInstance, normalizeWorkspaceWidgets } from '../utils/widgetLayout'
-import type { WidgetCatalogItem, WidgetFieldBinding, WorkspaceWidget } from '../types/dashboard'
+import type { WidgetCatalogItem, WidgetFieldBinding, WidgetLayout, WorkspaceWidget } from '../types/dashboard'
 import {
   deleteWorkspace as apiDeleteWorkspace,
   listWorkspaces as apiListWorkspaces,
@@ -365,6 +365,72 @@ export const useDashboardStore = defineStore('dashboard', () => {
     debouncedSave()
   }
 
+  // --- workspace mode helpers (grid vs canvas) ---
+  const canvasSnapshot = ref<Record<string, WidgetLayout>>({})
+
+  function snapshotCanvasLayout() {
+    const next: Record<string, WidgetLayout> = {}
+    for (const widget of activeWidgets.value) {
+      next[widget.instanceId] = { ...widget.layout }
+    }
+    canvasSnapshot.value = next
+  }
+
+  function restoreCanvasLayout() {
+    const snap = canvasSnapshot.value
+    let changed = false
+    for (const widget of activeWidgets.value) {
+      const saved = snap[widget.instanceId]
+      if (!saved) continue
+      widget.layout.x = saved.x
+      widget.layout.y = saved.y
+      widget.layout.w = saved.w
+      widget.layout.h = saved.h
+      widget.layout.z = saved.z
+      changed = true
+    }
+    canvasSnapshot.value = {}
+    if (changed) debouncedSave()
+  }
+
+  function packToGrid(viewportWidth: number) {
+    const GAP = 16
+    const PADDING = 24
+    const usable = Math.max(360, viewportWidth - PADDING * 2)
+    const sorted = [...activeWidgets.value].sort((a, b) => {
+      if (a.layout.y !== b.layout.y) return a.layout.y - b.layout.y
+      return a.layout.x - b.layout.x
+    })
+    let x = 0
+    let y = 0
+    let rowHeight = 0
+    let changed = false
+    for (const widget of sorted) {
+      const ww = Math.min(widget.layout.w, usable)
+      if (x > 0 && x + ww > usable) {
+        x = 0
+        y += rowHeight + GAP
+        rowHeight = 0
+      }
+      const nextX = x
+      const nextY = y
+      const nextW = ww
+      if (
+        widget.layout.x !== nextX
+        || widget.layout.y !== nextY
+        || widget.layout.w !== nextW
+      ) {
+        widget.layout.x = nextX
+        widget.layout.y = nextY
+        widget.layout.w = nextW
+        changed = true
+      }
+      x += ww + GAP
+      rowHeight = Math.max(rowHeight, widget.layout.h)
+    }
+    if (changed) debouncedSave()
+  }
+
   return {
     activeWidgets,
     workspaceName,
@@ -392,6 +458,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
     addVisualTemplate,
     addWidgetDraft,
     bindFieldToWidget,
-    removeWidget
+    removeWidget,
+    canvasSnapshot,
+    snapshotCanvasLayout,
+    restoreCanvasLayout,
+    packToGrid,
   }
 })

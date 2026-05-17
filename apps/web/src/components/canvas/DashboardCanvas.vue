@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useProviderDataStore } from '../../stores/useProviderDataStore'
-import { useWidgetCompactStore } from '../../stores/useWidgetCompactStore'
+import { useWorkspaceModeStore } from '../../stores/useWorkspaceModeStore'
 import { useWidgetSeriesStore } from '../../stores/useWidgetSeriesStore'
 import {
   useCockpitLayoutStore,
@@ -16,8 +16,8 @@ import { storeToRefs } from 'pinia'
 import {
   PanelRightClose,
   PanelRightOpen,
-  Minimize2,
   Maximize2,
+  LayoutGrid,
   Filter,
   BarChart2,
   Database,
@@ -68,7 +68,8 @@ const dashboardStore = useDashboardStore()
 const integrationsStore = useIntegrationsStore()
 const providerDataStore = useProviderDataStore()
 const layoutStore = useCockpitLayoutStore()
-const compactStore = useWidgetCompactStore()
+const workspaceModeStore = useWorkspaceModeStore()
+const isGridMode = computed(() => workspaceModeStore.mode === 'grid')
 const widgetSeriesStore = useWidgetSeriesStore()
 const { t } = useI18n()
 const { activeWidgets, workspaceName, catalogItems, workspaceSaveError } = storeToRefs(dashboardStore)
@@ -413,18 +414,40 @@ function handleFieldDrop(payload: { instanceId: string, binding: WidgetFieldBind
   dashboardStore.bindFieldToWidget(payload.instanceId, payload.binding)
 }
 
-const workspaceSurfaceStyle = computed(() => ({
-  width: `${WORKSPACE_WIDTH_PX * dashboardStore.zoom}px`,
-  height: `${WORKSPACE_HEIGHT_PX * dashboardStore.zoom}px`,
-}))
+const GRID_STAGE_PADDING_PX = 24
 
-const workspaceStageStyle = computed(() => ({
-  left: `${WORKSPACE_ORIGIN_X_PX * dashboardStore.zoom}px`,
-  top: `${WORKSPACE_ORIGIN_Y_PX * dashboardStore.zoom}px`,
-  width: '1px',
-  height: '1px',
-  transform: `scale(${dashboardStore.zoom})`,
-}))
+const workspaceSurfaceStyle = computed(() => {
+  if (isGridMode.value) {
+    const viewport = workspaceViewport.value
+    return {
+      width: `${viewport?.clientWidth ?? 1200}px`,
+      height: 'auto',
+    }
+  }
+  return {
+    width: `${WORKSPACE_WIDTH_PX * dashboardStore.zoom}px`,
+    height: `${WORKSPACE_HEIGHT_PX * dashboardStore.zoom}px`,
+  }
+})
+
+const workspaceStageStyle = computed(() => {
+  if (isGridMode.value) {
+    return {
+      left: `${GRID_STAGE_PADDING_PX}px`,
+      top: `${GRID_STAGE_PADDING_PX}px`,
+      width: '1px',
+      height: '1px',
+      transform: 'scale(1)',
+    }
+  }
+  return {
+    left: `${WORKSPACE_ORIGIN_X_PX * dashboardStore.zoom}px`,
+    top: `${WORKSPACE_ORIGIN_Y_PX * dashboardStore.zoom}px`,
+    width: '1px',
+    height: '1px',
+    transform: `scale(${dashboardStore.zoom})`,
+  }
+})
 
 const workspaceDotCanvasStyle = computed(() => ({
   backgroundImage: 'radial-gradient(circle at center, rgba(148, 163, 184, 0.26) 1px, transparent 1.3px)',
@@ -580,6 +603,8 @@ function handleWheel(e: WheelEvent) {
   const viewport = workspaceViewport.value
   if (!viewport) return
 
+  if (isGridMode.value) return
+
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault()
     const previousZoom = dashboardStore.zoom
@@ -613,16 +638,33 @@ function handleWheel(e: WheelEvent) {
   syncViewportScroll()
 }
 
+function toggleWorkspaceMode() {
+  const goingToGrid = workspaceModeStore.mode === 'canvas'
+  if (goingToGrid) {
+    dashboardStore.snapshotCanvasLayout()
+    dashboardStore.setZoom(1)
+    workspaceModeStore.setMode('grid')
+    nextTick(() => {
+      const width = workspaceViewport.value?.clientWidth ?? 1200
+      dashboardStore.packToGrid(width)
+    })
+  } else {
+    workspaceModeStore.setMode('canvas')
+    dashboardStore.restoreCanvasLayout()
+  }
+}
+
 function handleViewportKeyDown(event: KeyboardEvent) {
   if (isEditableTarget(event.target)) return
   if (event.code === 'Space') {
+    if (isGridMode.value) return
     event.preventDefault()
     isSpacePanning.value = true
     return
   }
   if (event.code === 'KeyC' && !event.ctrlKey && !event.metaKey && !event.altKey) {
     event.preventDefault()
-    compactStore.toggle()
+    toggleWorkspaceMode()
   }
 }
 
@@ -638,6 +680,7 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 function startViewportPan(event: PointerEvent) {
+  if (isGridMode.value) return
   const viewport = workspaceViewport.value
   if (!viewport || (!isSpacePanning.value && event.button !== 1)) return
 
@@ -671,6 +714,17 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleViewportKeyDown)
   window.removeEventListener('keyup', handleViewportKeyUp)
 })
+
+watch(
+  () => activeWidgets.value.length,
+  () => {
+    if (!isGridMode.value) return
+    nextTick(() => {
+      const width = workspaceViewport.value?.clientWidth ?? 1200
+      dashboardStore.packToGrid(width)
+    })
+  },
+)
 </script>
 
 <template>
@@ -761,14 +815,14 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          data-test="widget-compact-toggle"
-          @click="compactStore.toggle()"
+          data-test="workspace-mode-toggle"
+          @click="toggleWorkspaceMode"
           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          :class="compactStore.isCompact ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
-          :title="compactStore.isCompact ? 'Switch to comfortable widget density' : 'Switch to compact widget density'"
+          :class="isGridMode ? 'bg-theme-primary text-white' : 'bg-theme-border text-theme-text-muted hover:text-theme-text hover:bg-theme-text/10'"
+          :title="isGridMode ? 'Switch to infinite canvas workspace' : 'Switch to compact grid workspace'"
         >
-          <component :is="compactStore.isCompact ? Maximize2 : Minimize2" :size="14" />
-          {{ compactStore.isCompact ? 'Compact' : 'Comfort' }}
+          <component :is="isGridMode ? LayoutGrid : Maximize2" :size="14" />
+          {{ isGridMode ? 'Grid' : 'Canvas' }}
         </button>
 
         <button
@@ -854,6 +908,7 @@ onBeforeUnmount(() => {
       </main>
 
       <div
+        v-if="!isGridMode"
         data-test="workspace-minimap"
         class="absolute bottom-4 left-4 z-40 rounded-md border border-theme-border bg-theme-panel/90 p-2 shadow-2xl backdrop-blur-sm"
       >
