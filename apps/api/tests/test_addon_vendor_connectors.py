@@ -2,6 +2,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 # The external packages repo sits next to the dashboard checkout.
@@ -9,7 +10,7 @@ PKGS = Path(__file__).resolve().parents[4] / "fortidashboard-addons"
 
 CASES = [
     ("fortigate-core", "0.2.0"),
-    ("fortiweb-core", "8.0.5.1"),
+    ("fortiweb-core", "8.0.5.2"),
     ("penguin-siem", "1.0.0"),
     ("penguin-xdr", "1.0.0"),
     ("penguin-soar", "1.0.0"),
@@ -57,10 +58,31 @@ def test_soar_package_exposes_playbook_actions() -> None:
 
 
 def test_fortiweb_package_uses_dashboard_managed_credentials() -> None:
-    manifest = (PKGS / "fortiweb-core" / "8.0.5.1" / "addon.json").read_text(
+    manifest = (PKGS / "fortiweb-core" / "8.0.5.2" / "addon.json").read_text(
         encoding="utf-8"
     )
     assert '"username"' in manifest
     assert '"password"' in manifest
     assert '"vdom"' in manifest
     assert '"id": "apiKey"' not in manifest
+
+
+def test_fortiweb_package_uses_supported_system_status_endpoint() -> None:
+    module = _load("fortiweb-core", "8.0.5.2")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v2.0/system/status"
+        return httpx.Response(
+            200,
+            content=b"{ cpu: 30 memory: 30 }",
+            headers={"Content-Type": "application/json"},
+        )
+
+    client = module.FortiWebApiClient(
+        host="https://fortiweb.local",
+        api_key="fortiweb-auth",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.get_system_status() == {"cpu": 30, "memory": 30}

@@ -1,4 +1,5 @@
 import json as jsonlib
+import re
 from typing import Any
 
 import httpx
@@ -48,7 +49,7 @@ class FortiWebApiClient:
         self.transport = transport
 
     def get_system_status(self) -> dict[str, Any]:
-        results = self._get("/api/v2.0/monitor/system/status", include_metadata=True)
+        results = self._get("/api/v2.0/system/status", include_metadata=True)
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb system status response was not an object")
         return results
@@ -167,6 +168,9 @@ class FortiWebApiClient:
         try:
             return response.json()
         except ValueError as exc:
+            loose_payload = _decode_loose_status_payload(response.text)
+            if loose_payload is not None:
+                return loose_payload
             raise FortiWebApiError("FortiWeb API returned non-JSON response") from exc
 
     def _merge_envelope_metadata(self, payload: dict[str, Any]) -> Any:
@@ -178,3 +182,29 @@ class FortiWebApiClient:
             if key in payload and key not in merged:
                 merged[key] = payload[key]
         return merged
+
+
+def _decode_loose_status_payload(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    pairs = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^{}\s]+)", stripped)
+    if not pairs:
+        return None
+    return {key: _coerce_loose_value(value) for key, value in pairs}
+
+
+def _coerce_loose_value(value: str) -> Any:
+    cleaned = value.strip().strip(",").strip("\"'")
+    if cleaned.lower() == "true":
+        return True
+    if cleaned.lower() == "false":
+        return False
+    try:
+        return int(cleaned)
+    except ValueError:
+        pass
+    try:
+        return float(cleaned)
+    except ValueError:
+        return cleaned
