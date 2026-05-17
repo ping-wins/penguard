@@ -11,10 +11,13 @@ import { useDashboardStore } from '../../../stores/useDashboardStore'
 import { usePlaybooksStore } from '../../../stores/usePlaybooksStore'
 import { usePlaybookCanvasStore } from '../../../stores/usePlaybookCanvasStore'
 import {
+  defaultNodeConfig,
   PLAYBOOK_NODE_DRAG_MIME,
   parsePlaybookNodeDragPayload,
+  serializePlaybookNodeDragPayload,
   type PlaybookCanvasNodeData,
 } from '../../../utils/playbookGraph'
+import type { PlaybookNodeType } from '../../../services/playbooksClient'
 import PlaybookFlowNode from './PlaybookFlowNode.vue'
 import PlaybookFlowEdge from './PlaybookFlowEdge.vue'
 import PlaybookNodePropertiesPanel from './PlaybookNodePropertiesPanel.vue'
@@ -48,10 +51,11 @@ const selectedRun = computed(() => {
   const runId = playbooksStore.latestRunByPlaybook[selectedPlaybookId.value]
   return runId ? playbooksStore.runs[runId] ?? null : null
 })
+const automationNodeTypes = computed(() => playbooksStore.nodeTypes.filter((nodeType) => nodeType.category !== 'trigger'))
 const layerClass = computed(() => (
   isFullscreen.value
     ? 'fixed inset-4 z-[900] h-auto w-auto rounded-lg'
-    : 'absolute z-[160] h-[620px] w-[980px] rounded'
+    : 'absolute z-[160] h-[680px] w-[1180px] rounded'
 ))
 const layerStyle = computed(() => (
   isFullscreen.value
@@ -60,8 +64,8 @@ const layerStyle = computed(() => (
 ))
 const bodyGridClass = computed(() => (
   isFullscreen.value
-    ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px]'
-    : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_260px]'
+    ? 'grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_320px]'
+    : 'grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_260px]'
 ))
 const fullscreenLabel = computed(() => (
   isFullscreen.value ? t('playbooks.canvas.exitFullscreen') : t('playbooks.canvas.enterFullscreen')
@@ -118,6 +122,19 @@ function handleDragOver(event: DragEvent) {
   if (!event.dataTransfer || !Array.from(event.dataTransfer.types).includes(PLAYBOOK_NODE_DRAG_MIME)) return
   event.preventDefault()
   event.dataTransfer.dropEffect = 'copy'
+}
+
+function handleNodeDrawerDragStart(event: DragEvent, nodeType: PlaybookNodeType) {
+  if (!event.dataTransfer) return
+  event.dataTransfer.setData(
+    PLAYBOOK_NODE_DRAG_MIME,
+    serializePlaybookNodeDragPayload({
+      nodeType: nodeType.id,
+      config: defaultNodeConfig(nodeType.id),
+    }),
+  )
+  event.dataTransfer.setData('text/plain', nodeType.id)
+  event.dataTransfer.effectAllowed = 'copy'
 }
 
 function selectNode(node: { id: string }) {
@@ -272,6 +289,67 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
       </div>
 
       <div :class="bodyGridClass">
+        <aside
+          data-test="playbook-node-drawer"
+          class="flex min-h-0 flex-col border-r border-theme-border bg-theme-panel/80"
+        >
+          <div class="border-b border-theme-border px-3 py-2">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="truncate text-[11px] font-semibold uppercase tracking-wide text-theme-text">
+                {{ t('playbooks.canvas.automationNodes') }}
+              </h3>
+              <span class="shrink-0 rounded border border-theme-border bg-theme-bg px-1.5 py-0.5 text-[10px] text-theme-text-muted">
+                {{ playbooksStore.isLoading ? t('common.loading') : t('playbooks.canvas.nodeCount', { count: automationNodeTypes.length }) }}
+              </span>
+            </div>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto p-2">
+            <div v-if="playbooksStore.error" class="rounded border border-red-500/30 bg-red-500/10 p-2 text-[11px] text-red-200">
+              {{ playbooksStore.error }}
+            </div>
+            <div v-else-if="playbooksStore.isLoading" class="rounded border border-theme-border bg-theme-bg p-2 text-[11px] text-theme-text-muted">
+              {{ t('playbooks.canvas.loadingNodes') }}
+            </div>
+            <div v-else-if="automationNodeTypes.length === 0" class="rounded border border-theme-border bg-theme-bg p-2 text-[11px] text-theme-text-muted">
+              {{ t('playbooks.canvas.emptyNodes') }}
+            </div>
+            <div v-else class="grid grid-cols-1 gap-2">
+              <div
+                v-for="nodeType in automationNodeTypes"
+                :key="nodeType.id"
+                draggable="true"
+                class="cursor-grab rounded border border-theme-border bg-theme-bg p-2 text-left transition-colors hover:border-theme-primary/50 hover:bg-theme-border/50 active:cursor-grabbing"
+                :class="nodeType.sensitive ? 'border-red-400/30 bg-red-500/5' : ''"
+                :data-test="`playbook-node-drawer-node-${nodeType.id}`"
+                :title="nodeType.boundary"
+                @dragstart="handleNodeDrawerDragStart($event, nodeType)"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="truncate text-xs font-semibold text-theme-text">{{ nodeType.label }}</div>
+                    <div class="mt-0.5 truncate font-mono text-[10px] text-theme-text-muted">{{ nodeType.id }}</div>
+                  </div>
+                  <span
+                    class="shrink-0 rounded border px-1 py-0.5 text-[9px]"
+                    :class="nodeType.liveAvailable ? 'border-amber-400/40 text-amber-100' : 'border-sky-400/30 text-sky-100'"
+                  >
+                    {{ nodeType.liveAvailable ? t('playbooks.liveCapable') : t('playbooks.dryRunOnly') }}
+                  </span>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <span class="rounded border border-theme-border bg-theme-panel/70 px-1.5 py-0.5 text-[10px] text-theme-text-muted">
+                    {{ nodeType.category }}
+                  </span>
+                  <span class="max-w-full truncate rounded border border-theme-border bg-theme-panel/70 px-1.5 py-0.5 text-[10px] text-theme-text-muted">
+                    {{ nodeType.boundary }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
         <div
           data-test="playbook-canvas-drop-zone"
           class="relative min-h-0"
