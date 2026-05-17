@@ -1,7 +1,17 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -426,6 +436,23 @@ class UserRoleModel(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+
+class IntegrationWiringModel(Base):
+    __tablename__ = "integration_wiring"
+
+    integration_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    siem_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    soar_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SoarTargetModel(Base):
+    __tablename__ = "soar_targets"
+
+    integration_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 from app.addons.installed_store import InstalledAddonModel  # noqa: E402,F401
