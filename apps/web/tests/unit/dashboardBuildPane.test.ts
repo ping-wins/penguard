@@ -18,6 +18,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 
 describe('DashboardCanvas build pane', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
   })
 
