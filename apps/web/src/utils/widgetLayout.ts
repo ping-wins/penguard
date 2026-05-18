@@ -40,7 +40,6 @@ const WIDGET_SIZE_CONSTRAINTS: Record<string, WidgetSizeConstraints> = {
   'fortigate-anomaly-highlights': { minW: 420, minH: 320, maxW: 840, maxH: 680 },
   'soar-active-playbook-runs': { minW: 440, minH: 320, maxW: 900, maxH: 700 },
   'soar-playbook-run-history': { minW: 520, minH: 380, maxW: 980, maxH: 760 },
-  'soar-playbook-builder': { minW: 760, minH: 520, maxW: 1280, maxH: 920 },
   'soc-sla-breach': { minW: 420, minH: 300, maxW: 880, maxH: 660 },
   'soc-mttd-mttr': { minW: 380, minH: 260, maxW: 760, maxH: 560 },
   'soc-policy-manager': { minW: 640, minH: 460, maxW: 1100, maxH: 820 },

@@ -1269,6 +1269,26 @@ def update_playbook(
     return response
 
 
+@router.delete("/soc/playbooks/{playbook_id}")
+def delete_playbook(
+    playbook_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_soar_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    response = client.request("DELETE", f"/playbooks/{playbook_id}")
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.playbook.deleted",
+        details={"playbookId": playbook_id, "service": "soar_skipper"},
+    )
+    return response
+
+
 @router.post("/soc/playbooks/{playbook_id}/simulate")
 def simulate_playbook(
     playbook_id: str,

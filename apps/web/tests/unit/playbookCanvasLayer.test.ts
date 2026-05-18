@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlaybookCanvasLayer from '../../src/components/playbooks/canvas/PlaybookCanvasLayer.vue'
 import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
-import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { usePlaybooksStore } from '../../src/stores/usePlaybooksStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -58,6 +57,15 @@ describe('PlaybookCanvasLayer', () => {
         id: 'pb_canvas',
         name: 'Canvas playbook',
         enabled: false,
+        system: false,
+        nodes: [{ id: 'trigger', type: 'trigger.incident_created', config: {} }],
+        edges: [],
+      },
+      {
+        id: 'pb_port_scan_triage',
+        name: 'Port Scan Triage',
+        enabled: false,
+        system: true,
         nodes: [{ id: 'trigger', type: 'trigger.incident_created', config: {} }],
         edges: [],
       },
@@ -73,6 +81,7 @@ describe('PlaybookCanvasLayer', () => {
     vi.stubGlobal('fetch', vi.fn())
 
     const wrapper = mount(PlaybookCanvasLayer, {
+      props: { surface: true },
       global: {
         plugins: [i18n],
         stubs: {
@@ -132,6 +141,7 @@ describe('PlaybookCanvasLayer', () => {
     vi.stubGlobal('fetch', fetcher)
 
     const wrapper = mount(PlaybookCanvasLayer, {
+      props: { surface: true },
       global: {
         plugins: [i18n],
         stubs: {
@@ -182,6 +192,51 @@ describe('PlaybookCanvasLayer', () => {
     }))
   })
 
+  it('lists existing playbooks and deletes only custom playbooks', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/soc/playbooks/pb_canvas' && init?.method === 'DELETE') {
+        return jsonResponse({ id: 'pb_canvas', deleted: true })
+      }
+      throw new Error(`unexpected ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+
+    const wrapper = mount(PlaybookCanvasLayer, {
+      props: { surface: true },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          VueFlow: {
+            props: ['nodes', 'edges'],
+            template: '<div data-test="vue-flow-stub"><slot /></div>',
+          },
+          Background: { template: '<div />' },
+          Controls: { template: '<div />' },
+          MiniMap: { template: '<div />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="playbook-library-card-pb_canvas"]').text()).toContain('Canvas playbook')
+    expect(wrapper.get('[data-test="playbook-library-card-pb_port_scan_triage"]').text()).toContain('System')
+    expect(wrapper.find('[data-test="playbook-delete-pb_port_scan_triage"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="playbook-delete-pb_canvas"]').trigger('click')
+    await flushPromises()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/soc/playbooks/pb_canvas', expect.objectContaining({
+      method: 'DELETE',
+      headers: expect.objectContaining({
+        'X-CSRF-Token': 'csrf_01',
+      }),
+    }))
+    expect(usePlaybooksStore().playbooks.map((playbook) => playbook.id)).not.toContain('pb_canvas')
+  })
+
   it('can expand the builder to fullscreen and restore it with Escape', async () => {
     vi.stubGlobal('fetch', vi.fn())
     const host = document.createElement('div')
@@ -189,6 +244,7 @@ describe('PlaybookCanvasLayer', () => {
 
     const wrapper = mount(PlaybookCanvasLayer, {
       attachTo: host,
+      props: { surface: true },
       global: {
         plugins: [i18n],
         stubs: {
@@ -206,7 +262,7 @@ describe('PlaybookCanvasLayer', () => {
     await flushPromises()
 
     const layerBefore = document.querySelector('[data-test="playbook-canvas-layer"]')
-    expect(layerBefore?.className).toContain('absolute')
+    expect(layerBefore?.className).toContain('relative')
     expect(layerBefore?.className).not.toContain('fixed')
 
     await wrapper.get('[data-test="playbook-canvas-fullscreen-toggle"]').trigger('click')
@@ -223,7 +279,7 @@ describe('PlaybookCanvasLayer', () => {
 
     const restoredLayer = document.querySelector('[data-test="playbook-canvas-layer"]')
     const restoredToggle = document.querySelector<HTMLButtonElement>('[data-test="playbook-canvas-fullscreen-toggle"]')
-    expect(restoredLayer?.className).toContain('absolute')
+    expect(restoredLayer?.className).toContain('relative')
     expect(restoredLayer?.className).not.toContain('fixed')
     expect(restoredToggle?.title).toBe('Enter fullscreen')
 
@@ -231,11 +287,11 @@ describe('PlaybookCanvasLayer', () => {
     host.remove()
   })
 
-  it('embeds inside a workspace widget without its own canvas move handle', async () => {
+  it('renders as a main surface without a workspace move handle', async () => {
     vi.stubGlobal('fetch', vi.fn())
 
     const wrapper = mount(PlaybookCanvasLayer, {
-      props: { embedded: true },
+      props: { surface: true },
       global: {
         plugins: [i18n],
         stubs: {
@@ -257,45 +313,5 @@ describe('PlaybookCanvasLayer', () => {
     expect(layer.classes()).toContain('h-full')
     expect(layer.attributes('style')).toBeUndefined()
     expect(wrapper.find('[data-test="playbook-canvas-drag-handle"]').exists()).toBe(false)
-  })
-
-  it('moves as a special widget on the workspace canvas', async () => {
-    vi.stubGlobal('fetch', vi.fn())
-    useDashboardStore().setZoom(2)
-
-    const wrapper = mount(PlaybookCanvasLayer, {
-      global: {
-        plugins: [i18n],
-        stubs: {
-          VueFlow: {
-            props: ['nodes', 'edges'],
-            template: '<div data-test="vue-flow-stub"><slot /></div>',
-          },
-          Background: { template: '<div />' },
-          Controls: { template: '<div />' },
-          MiniMap: { template: '<div />' },
-        },
-      },
-    })
-
-    await flushPromises()
-
-    const layerBefore = wrapper.get('[data-test="playbook-canvas-layer"]')
-    expect(layerBefore.attributes('style')).toContain('translate(840px, 120px)')
-
-    await wrapper.get('[data-test="playbook-canvas-drag-handle"]').trigger('pointerdown', {
-      clientX: 100,
-      clientY: 100,
-      preventDefault: vi.fn(),
-      stopPropagation: vi.fn(),
-    })
-    window.dispatchEvent(new MouseEvent('pointermove', {
-      clientX: 180,
-      clientY: 140,
-    }))
-    window.dispatchEvent(new MouseEvent('pointerup'))
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="playbook-canvas-layer"]').attributes('style')).toContain('translate(880px, 140px)')
   })
 })

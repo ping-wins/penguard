@@ -314,7 +314,7 @@ describe('SOAR playbooks console', () => {
     wrapper.unmount()
   })
 
-  it('keeps the drawer as management surface and points building to the canvas', async () => {
+  it('keeps the legacy panel read-only and points building to the dedicated surface', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/soc/playbooks' && init?.method === 'POST') {
@@ -332,7 +332,7 @@ describe('SOAR playbooks console', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="playbook-builder-save"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="playbook-canvas-builder-hint"]').text()).toContain('workspace canvas')
+    expect(wrapper.get('[data-test="playbook-canvas-builder-hint"]').text()).toContain('dedicated SOAR Playbooks surface')
     wrapper.unmount()
   })
 })

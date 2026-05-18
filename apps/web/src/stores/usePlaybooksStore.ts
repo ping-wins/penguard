@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   approvePlaybookRun,
   createPlaybookWebhookDestination,
+  deletePlaybook,
   createPlaybook,
   listPlaybookRuns,
   listPlaybookNodeTypes,
@@ -34,6 +35,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
   const isSimulating = ref<Record<string, boolean>>({})
   const isRunning = ref<Record<string, boolean>>({})
   const isApproving = ref<Record<string, boolean>>({})
+  const isDeleting = ref<Record<string, boolean>>({})
   const isCreating = ref(false)
   const error = ref<string | null>(null)
 
@@ -179,6 +181,22 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     }
   }
 
+  async function remove(playbookId: string) {
+    isDeleting.value[playbookId] = true
+    error.value = null
+    try {
+      const result = await deletePlaybook(playbookId)
+      playbooks.value = playbooks.value.filter((playbook) => playbook.id !== playbookId)
+      delete simulations.value[playbookId]
+      return result
+    } catch (e: any) {
+      error.value = e?.message ?? 'Failed to delete playbook'
+      throw e
+    } finally {
+      isDeleting.value[playbookId] = false
+    }
+  }
+
   return {
     playbooks,
     runHistory,
@@ -191,6 +209,7 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     isSimulating,
     isRunning,
     isApproving,
+    isDeleting,
     isCreating,
     error,
     isEmpty,
@@ -205,5 +224,6 @@ export const usePlaybooksStore = defineStore('playbooks', () => {
     approve,
     create,
     update,
+    remove,
   }
 })

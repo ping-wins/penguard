@@ -41,7 +41,6 @@ WAF_WIDGET_IDS = {
 }
 SELF_MANAGED_WIDGET_SOURCES = {
     "soc-policy-manager": "soc",
-    "soar-playbook-builder": "soar_skipper",
 }
 
 

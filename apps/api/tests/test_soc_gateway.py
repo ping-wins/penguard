@@ -687,6 +687,33 @@ def test_soar_playbook_run_gateway_forwards_and_audits():
     assert audit["items"][0]["details"]["runId"] == "pbr_01"
 
 
+def test_soar_playbook_delete_forwards_and_audits():
+    client = TestClient(app)
+    fake_soar = FakeSocClient({"id": "pb_custom", "deleted": True})
+    app.dependency_overrides[soc.get_soar_client] = lambda: fake_soar
+
+    response = client.delete(
+        "/api/soc/playbooks/pb_custom",
+        headers=csrf_headers(client),
+    )
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="soc.playbook.deleted")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "pb_custom", "deleted": True}
+    assert fake_soar.calls[0] == {
+        "method": "DELETE",
+        "path": "/playbooks/pb_custom",
+        "json": None,
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+    assert audit["items"][0]["details"] == {
+        "playbookId": "pb_custom",
+        "service": "soar_skipper",
+    }
+
+
 def test_soar_node_types_gateway_forwards_builder_catalog():
     client = TestClient(app)
     fake_soar = FakeSocClient(

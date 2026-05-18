@@ -200,22 +200,14 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.find('[data-test="fortigate-lab-policy-wizard-int_fgt_01"]').exists()).toBe(false)
   })
 
-  it('opens the SOAR playbooks drawer from the sidebar', async () => {
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/soc/playbooks') {
-        return Promise.resolve(jsonResponse([{ id: 'pb_01', name: 'Port scan triage', enabled: false, nodes: [], edges: [] }]))
-      }
-      return Promise.resolve(jsonResponse({ items: [] }))
-    }))
-
+  it('selects the SOAR playbooks main surface from the sidebar', async () => {
     const wrapper = mountSidebar()
 
     await wrapper.get('[title="Playbooks SOAR"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Playbooks SOAR')
-    expect(wrapper.text()).toContain('Port scan triage')
+    expect(wrapper.emitted('select-surface')).toEqual([['playbooks']])
+    expect(wrapper.text()).not.toContain('Port scan triage')
     wrapper.unmount()
   })
 

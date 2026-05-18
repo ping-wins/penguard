@@ -105,6 +105,7 @@ class Playbook(BaseModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     enabled: bool = False
+    system: bool = False
     nodes: list[PlaybookNode] = Field(min_length=1)
     edges: list[PlaybookEdge] = Field(default_factory=list)
     runtime_policy: dict[str, Any] = Field(default_factory=dict, alias="runtimePolicy")

@@ -11,8 +11,61 @@ def test_default_playbooks_are_disabled_and_available():
     assert response.status_code == 200
     playbooks = response.json()
     playbook_ids = {playbook["id"] for playbook in playbooks}
-    assert {"pb_port_scan_triage", "pb_suspicious_endpoint_triage"} <= playbook_ids
+    assert {
+        "pb_port_scan_triage",
+        "pb_suspicious_endpoint_triage",
+        "pb_auth_bruteforce_triage",
+    } <= playbook_ids
     assert all(playbook["enabled"] is False for playbook in playbooks)
+    default_playbooks = [
+        playbook for playbook in playbooks
+        if playbook["id"] in {
+            "pb_port_scan_triage",
+            "pb_suspicious_endpoint_triage",
+            "pb_auth_bruteforce_triage",
+        }
+    ]
+    assert all(playbook["system"] is True for playbook in default_playbooks)
+
+
+def test_system_playbooks_cannot_be_updated_or_deleted():
+    original = client.get("/playbooks/pb_port_scan_triage").json()
+
+    update_response = client.put(
+        "/playbooks/pb_port_scan_triage",
+        json={**original, "name": "Edited system template"},
+    )
+    delete_response = client.delete("/playbooks/pb_port_scan_triage")
+
+    assert update_response.status_code == 409
+    assert update_response.json()["detail"] == "system playbooks are read-only"
+    assert delete_response.status_code == 409
+    assert delete_response.json()["detail"] == "system playbooks cannot be deleted"
+
+
+def test_custom_playbooks_can_be_deleted():
+    create_response = client.post(
+        "/playbooks",
+        json={
+            "id": "pb_delete_me",
+            "name": "Delete me",
+            "enabled": False,
+            "nodes": [
+                {"id": "trigger", "type": "trigger.incident_created", "config": {}},
+                {"id": "note", "type": "case.note", "config": {"template": "Review"}},
+            ],
+            "edges": [{"from": "trigger", "to": "note"}],
+        },
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["system"] is False
+
+    delete_response = client.delete("/playbooks/pb_delete_me")
+    get_response = client.get("/playbooks/pb_delete_me")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"id": "pb_delete_me", "deleted": True}
+    assert get_response.status_code == 404
 
 
 def test_lists_playbook_node_types_for_visual_builder():
@@ -78,7 +131,10 @@ def test_every_node_type_exposes_self_explaining_builder_metadata():
             assert {"key", "label", "description"} <= set(required_input)
 
     notify = next(item for item in response.json()["items"] if item["id"] == "notify.webhook")
-    assert notify["effectSummary"] == "Sends a real outbound notification through a configured webhook destination."
+    assert (
+        notify["effectSummary"]
+        == "Sends a real outbound notification through a configured webhook destination."
+    )
     assert notify["exampleConfig"] == {
         "destinationId": "pwd_discord_soc",
         "content": "Critical incident {incident.id} from {entities.sourceIp}",

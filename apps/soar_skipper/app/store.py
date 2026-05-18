@@ -92,6 +92,12 @@ class SoarStore:
                 .values(payload=payload)
             )
 
+    def delete_playbook(self, playbook_id: str) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                playbooks_table.delete().where(playbooks_table.c.id == playbook_id)
+            )
+
     def count_playbooks(self) -> int:
         statement = select(func.count()).select_from(playbooks_table)
         with self.engine.begin() as connection:

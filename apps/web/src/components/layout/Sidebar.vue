@@ -20,12 +20,20 @@ import AgentPanel from '../ai/AgentPanel.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
-import PlaybooksPanel from '../playbooks/PlaybooksPanel.vue'
 import ConnectWizard from '../integrations/ConnectWizard.vue'
 import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
-const emit = defineEmits<{ 'open-settings': [tab?: 'profile' | 'marketplace'] }>()
+type MainSurface = 'workspace' | 'playbooks'
+const props = withDefaults(defineProps<{
+  activeSurface?: MainSurface
+}>(), {
+  activeSurface: 'workspace',
+})
+const emit = defineEmits<{
+  'open-settings': [tab?: 'profile' | 'marketplace']
+  'select-surface': [surface: MainSurface]
+}>()
 
 const store = useDashboardStore()
 const authStore = useAuthStore()
@@ -34,7 +42,7 @@ const auditStore = useAuditStore()
 const ticketsStore = useTicketsStore()
 const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
-const activeTab = ref<'none' | 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks'>('none')
+const activeTab = ref<'none' | 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints'>('none')
 const assistantMode = ref<'chat' | 'agent'>('chat')
 
 const showWizard = ref(false)
@@ -95,7 +103,18 @@ async function refreshProviderStatus() {
     providerStatus.value = null
   }
 }
-function toggleTab(tab: 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints' | 'playbooks') {
+function stopActiveRealtime() {
+  if (activeTab.value === 'audit') auditStore.stopPolling()
+  if (activeTab.value === 'tickets') ticketsStore.stopRealtime()
+}
+
+function selectSurface(surface: MainSurface) {
+  stopActiveRealtime()
+  activeTab.value = 'none'
+  emit('select-surface', surface)
+}
+
+function toggleTab(tab: 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints') {
   const isClosingCurrentTab = activeTab.value === tab
   if (activeTab.value === 'audit' && (isClosingCurrentTab || tab !== 'audit')) {
     auditStore.stopPolling()
@@ -304,8 +323,8 @@ async function handleChatSubmit() {
       <nav class="flex flex-col gap-4 flex-1">
         <div 
           class="p-3 rounded-lg cursor-pointer transition-colors"
-          :class="activeTab === 'none' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
-          @click="activeTab = 'none'"
+          :class="activeTab === 'none' && props.activeSurface === 'workspace' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="selectSurface('workspace')"
           :title="t('sidebar.dashboard')"
         >
           <LayoutDashboard :size="20" />
@@ -363,8 +382,8 @@ async function handleChatSubmit() {
         <div
           v-if="authStore.hasPermission('playbooks.execute')"
           class="p-3 rounded-lg cursor-pointer transition-colors relative"
-          :class="activeTab === 'playbooks' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
-          @click="toggleTab('playbooks')"
+          :class="activeTab === 'none' && props.activeSurface === 'playbooks' ? 'bg-theme-primary/10 text-theme-primary' : 'hover:bg-theme-border text-theme-text-muted hover:text-theme-text'"
+          @click="selectSurface('playbooks')"
           :title="t('sidebar.playbooks')"
         >
           <Workflow :size="20" />
@@ -798,12 +817,6 @@ async function handleChatSubmit() {
       <div v-if="activeTab === 'endpoints'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <EndpointsPanel />
       </div>
-
-      <!-- Playbooks Tab -->
-      <div v-if="activeTab === 'playbooks'" class="h-full shrink-0" :style="{ width: `${drawerPx}px` }">
-        <PlaybooksPanel />
-      </div>
-
 
       <!-- Audit Tab -->
       <div v-if="activeTab === 'audit'" class="h-full shrink-0 p-4" :style="{ width: `${drawerPx}px` }">
