@@ -122,6 +122,56 @@ def _fortigate_realtime_widget_snapshots(
     return snapshots
 
 
+def _syslog_realtime_events(
+    *,
+    owner_user_id: str,
+    integration_id: str,
+    event_id: str | None,
+    event: dict[str, Any] | None,
+    ticket: dict[str, Any] | None,
+    received_at: datetime,
+    widget_snapshots: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    received_at_iso = received_at.isoformat(timespec="milliseconds").replace(
+        "+00:00",
+        "Z",
+    )
+    legacy_event = {
+        "type": "fortigate.syslog.event",
+        "ownerUserId": owner_user_id,
+        "integrationId": integration_id,
+        "eventId": event_id,
+        "receivedAt": received_at_iso,
+        "ticket": ticket,
+        "widgets": widget_snapshots,
+    }
+    events = [legacy_event]
+    if event:
+        events.append(
+            {
+                "type": "soc.event.created",
+                "ownerUserId": owner_user_id,
+                "integrationId": integration_id,
+                "eventId": event_id,
+                "event": event,
+                "receivedAt": received_at_iso,
+            }
+        )
+    if ticket:
+        events.append(
+            {
+                "type": "soc.incident.created",
+                "ownerUserId": owner_user_id,
+                "integrationId": integration_id,
+                "eventId": event_id,
+                "event": event,
+                "ticket": ticket,
+                "receivedAt": received_at_iso,
+            }
+        )
+    return events
+
+
 async def _start_fortigate_syslog_collector() -> asyncio.DatagramTransport:
     fortigate_service = integrations.get_fortigate_integration_service()
     fortigate_widget_service = widgets.get_fortigate_widget_service()
@@ -139,6 +189,7 @@ async def _start_fortigate_syslog_collector() -> asyncio.DatagramTransport:
         owner_user_id: str,
         integration_id: str,
         event_id: str | None,
+        event: dict | None = None,
         ticket: dict | None = None,
     ) -> None:
         received_at = datetime.now(UTC)
@@ -154,20 +205,16 @@ async def _start_fortigate_syslog_collector() -> asyncio.DatagramTransport:
             integration_id=integration_id,
             now=received_at,
         )
-        realtime_broker.publish(
-            {
-                "type": "fortigate.syslog.event",
-                "ownerUserId": owner_user_id,
-                "integrationId": integration_id,
-                "eventId": event_id,
-                "receivedAt": received_at.isoformat(timespec="milliseconds").replace(
-                    "+00:00",
-                    "Z",
-                ),
-                "ticket": ticket,
-                "widgets": widget_snapshots,
-            }
-        )
+        for realtime_event in _syslog_realtime_events(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            event_id=event_id,
+            event=event,
+            ticket=ticket,
+            received_at=received_at,
+            widget_snapshots=widget_snapshots,
+        ):
+            realtime_broker.publish(realtime_event)
 
     forwarder = FortiGateSyslogForwarder(
         siem_client=soc.get_siem_client(),

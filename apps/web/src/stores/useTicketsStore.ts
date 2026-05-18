@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useRealtimeStore } from './useRealtimeStore'
+import { queryClient } from '../services/queryClient'
+import { socTicketsKey } from '../services/queryKeys'
 import {
   listTickets,
   updateTicket as apiUpdateTicket,
@@ -15,11 +17,18 @@ export const useTicketsStore = defineStore('tickets', () => {
   const error = ref<string | null>(null)
   let unsubscribeRealtime: (() => void) | null = null
 
+  function syncTicketsFromQueryCache() {
+    const cached = queryClient.getQueryData<Ticket[]>(socTicketsKey())
+    if (Array.isArray(cached)) tickets.value = cached
+  }
+
   async function refresh() {
     isLoading.value = true
     error.value = null
     try {
-      tickets.value = await listTickets()
+      const nextTickets = await listTickets()
+      queryClient.setQueryData(socTicketsKey(), nextTickets)
+      tickets.value = nextTickets
     } catch (e: any) {
       error.value = e?.message ?? 'Failed to load tickets'
     } finally {
@@ -28,20 +37,24 @@ export const useTicketsStore = defineStore('tickets', () => {
   }
 
   function upsertTicket(ticket: Ticket) {
-    const idx = tickets.value.findIndex((existing) => existing.id === ticket.id)
-    if (idx >= 0) {
-      tickets.value[idx] = ticket
-      return
-    }
-    tickets.value = [ticket, ...tickets.value]
+    queryClient.setQueryData<Ticket[]>(socTicketsKey(), (current = []) => {
+      const idx = current.findIndex((existing) => existing.id === ticket.id)
+      if (idx >= 0) return current.map((existing) => existing.id === ticket.id ? ticket : existing)
+      return [ticket, ...current]
+    })
+    syncTicketsFromQueryCache()
   }
 
   function startRealtime() {
     refresh()
     if (unsubscribeRealtime !== null) return
     unsubscribeRealtime = useRealtimeStore().subscribe((event) => {
-      if (event.ticket) upsertTicket(event.ticket)
+      if (event.ticket) {
+        syncTicketsFromQueryCache()
+        upsertTicket(event.ticket)
+      }
       else if (event.refresh?.includes('tickets')) void refresh()
+      else if (event.type === 'soc.incidents.reset') syncTicketsFromQueryCache()
     })
   }
 

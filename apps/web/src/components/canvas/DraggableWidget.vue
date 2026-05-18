@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import { useDashboardStore } from '../../stores/useDashboardStore'
 import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
 import { useRealtimeStore } from '../../stores/useRealtimeStore'
@@ -9,6 +10,8 @@ import type { RealtimeWidgetSnapshot } from '../../stores/useRealtimeStore'
 import { X, GripHorizontal, Loader2, AlertCircle, AlertTriangle, Clock3, WifiOff, Plug, ChevronDown, Check } from 'lucide-vue-next'
 import WidgetSkeleton from '../widgets/shell/WidgetSkeleton.vue'
 import { fetchWidgetData } from '../../services/widgetDataClient'
+import { queryClient } from '../../services/queryClient'
+import { widgetDataKey } from '../../services/queryKeys'
 import type { WidgetDataErrorKind, WidgetDataResponse, WidgetFieldBinding, WidgetLayout } from '../../types/dashboard'
 import { visualTemplatesById } from '../../constants/visualTemplates'
 import { parseFieldBindingTransfer } from '../../utils/fieldDrag'
@@ -54,11 +57,63 @@ const rendererOwnsEmptyState = computed(() => {
   return source === 'siem_kowalski' || source === 'xdr_rico' || source === 'soar_skipper' || source === 'soc'
 })
 
-let currentController: AbortController | null = null
-let requestId = 0
 let refreshTimeout: ReturnType<typeof setTimeout> | null = null
 let realtimeRefreshTimeout: ReturnType<typeof setTimeout> | null = null
 let unsubscribeRealtime: (() => void) | null = null
+
+type WidgetQueryError = Error & {
+  errorKind?: WidgetDataErrorKind
+  response?: WidgetDataResponse
+}
+
+const widgetQueryKey = computed(() => widgetDataKey(props.catalogId, {
+  integrationId: props.integrationId,
+  dataEndpoint: catalogItem.value?.dataEndpoint ?? null,
+}))
+
+const isWidgetQueryEnabled = computed(() =>
+  !isVisualTemplate.value
+  && Boolean(catalogItem.value?.dataEndpoint)
+  && Boolean(props.integrationId)
+)
+
+function snapshotToWidgetResponse(snapshot: RealtimeWidgetSnapshot): WidgetDataResponse | null {
+  if (!snapshot.widgetId || !snapshot.integrationId || !snapshot.data) return null
+  return {
+    widgetId: snapshot.widgetId,
+    integrationId: snapshot.integrationId,
+    refreshedAt: snapshot.refreshedAt || new Date().toISOString(),
+    status: snapshot.status === 'error' ? 'error' : 'ready',
+    data: snapshot.data,
+    meta: snapshot.meta,
+  }
+}
+
+const widgetQuery = useQuery<WidgetDataResponse, WidgetQueryError>({
+  queryKey: widgetQueryKey,
+  enabled: isWidgetQueryEnabled,
+  retry: false,
+  refetchInterval: false,
+  refetchOnWindowFocus: false,
+  initialData: () => {
+    const snapshot = sharedWidgetSnapshot.value
+    return snapshot ? snapshotToWidgetResponse(snapshot) ?? undefined : undefined
+  },
+  queryFn: async ({ signal }) => {
+    const endpoint = catalogItem.value?.dataEndpoint
+    if (!endpoint) throw new Error('Catalog item or endpoint not found')
+    const result = await fetchWidgetData({
+      dataEndpoint: endpoint,
+      integrationId: props.integrationId,
+      signal,
+    })
+    if (result.state === 'ready') return result.response
+    const error = new Error(result.errorMessage) as WidgetQueryError
+    error.errorKind = result.errorKind
+    error.response = result.response
+    throw error
+  },
+}, queryClient)
 
 function clearRefreshTimeout() {
   if (refreshTimeout) {
@@ -160,6 +215,24 @@ function applyRealtimeWidgetData(nextData: any, snapshot?: RealtimeWidgetSnapsho
   widgetSeriesStore.recordSample(props.instanceId, props.catalogId, nextData, props.integrationId)
 }
 
+function applyWidgetResponse(response: WidgetDataResponse) {
+  if (response.status === 'ready') {
+    widgetData.value = response.data || {}
+    widgetResponse.value = response
+    fetchError.value = null
+    fetchErrorKind.value = null
+    widgetRealtimeStore.upsertSnapshot(response)
+    widgetSeriesStore.recordSample(props.instanceId, props.catalogId, response.data || {}, props.integrationId)
+  } else {
+    fetchError.value = response.meta?.error?.message || 'Widget error occurred'
+    fetchErrorKind.value = 'widget_error'
+    if (!widgetResponse.value) widgetResponse.value = response
+  }
+  isLoading.value = false
+  isRefreshing.value = false
+  scheduleRefresh(response)
+}
+
 function applySharedWidgetSnapshot() {
   const snapshot = sharedWidgetSnapshot.value
   if (!snapshot) return false
@@ -250,10 +323,6 @@ const lastUpdatedAge = computed(() => {
 
 async function loadWidgetData(options: { showLoading?: boolean } = {}) {
   const showLoading = options.showLoading ?? true
-  requestId += 1
-  const currentRequestId = requestId
-  currentController?.abort()
-  currentController = null
   clearRefreshTimeout()
 
   fetchError.value = null
@@ -288,52 +357,73 @@ async function loadWidgetData(options: { showLoading?: boolean } = {}) {
 
   if (showLoading && applySharedWidgetSnapshot()) return
 
-  const controller = new AbortController()
-  currentController = controller
   if (showLoading) {
     isLoading.value = true
   }
 
   try {
-    const result = await fetchWidgetData({
-      dataEndpoint: catalogItem.value.dataEndpoint,
-      integrationId: props.integrationId,
-      signal: controller.signal,
-    })
-
-    if (currentRequestId !== requestId || controller.signal.aborted) return
-
-    if (result.state === 'ready') {
-      widgetData.value = result.data
-      widgetResponse.value = result.response
-      widgetRealtimeStore.upsertSnapshot(result.response)
-      widgetSeriesStore.recordSample(props.instanceId, props.catalogId, result.data, props.integrationId)
-    } else {
-      fetchError.value = result.errorMessage
-      fetchErrorKind.value = result.errorKind
-      if (!widgetResponse.value && result.response) {
-        widgetResponse.value = result.response
-      }
-    }
-    scheduleRefresh(result.response || widgetResponse.value || undefined)
+    const result = await widgetQuery.refetch()
+    if (result.data) applyWidgetResponse(result.data)
+    if (result.error) throw result.error
   } catch (e: any) {
-    if (controller.signal.aborted) return
     fetchError.value = e.message || 'Network Error'
-    fetchErrorKind.value = 'network'
+    fetchErrorKind.value = e.errorKind || 'network'
+    if (!widgetResponse.value && e.response) widgetResponse.value = e.response
     scheduleRefresh(widgetResponse.value || undefined)
   } finally {
-    if (currentRequestId === requestId) {
-      isLoading.value = false
-      isRefreshing.value = false
-      currentController = null
-    }
+    isLoading.value = false
+    isRefreshing.value = false
   }
 }
 
 watch(
-  [catalogItem, visualTemplate, () => props.integrationId, () => store.catalogItems.length],
+  () => widgetQuery.data.value,
+  (response) => {
+    if (response) applyWidgetResponse(response)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => widgetQuery.error.value,
+  (error) => {
+    if (!error) return
+    fetchError.value = error.message || 'Network Error'
+    fetchErrorKind.value = error.errorKind || 'network'
+    if (!widgetResponse.value && error.response) widgetResponse.value = error.response
+    isLoading.value = false
+    isRefreshing.value = false
+  },
+)
+
+watch(
+  [isWidgetQueryEnabled, () => store.catalogItems.length, () => store.isCatalogLoaded],
   () => {
-    loadWidgetData()
+    if (isVisualTemplate.value) {
+      isLoading.value = false
+      isRefreshing.value = false
+      return
+    }
+    if (isWidgetQueryEnabled.value || isVisualTemplate.value) return
+    if (!catalogItem.value?.dataEndpoint && !store.isCatalogLoaded && store.catalogItems.length === 0) {
+      isLoading.value = true
+      return
+    }
+    if (!catalogItem.value?.dataEndpoint && store.isCatalogLoaded) {
+      isLoading.value = false
+      fetchError.value = 'Catalog item or endpoint not found'
+      fetchErrorKind.value = 'widget_error'
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => widgetQuery.isFetching.value,
+  (fetching) => {
+    if (!fetching) return
+    if (hasWidgetData.value) isRefreshing.value = true
+    else isLoading.value = true
   },
   { immediate: true },
 )
@@ -342,13 +432,18 @@ watch(
   () => props.integrationId,
   (next, previous) => {
     if (previous !== undefined && next !== previous) {
+      widgetData.value = null
+      widgetResponse.value = null
+      fetchError.value = null
+      fetchErrorKind.value = null
+      isLoading.value = true
+      isRefreshing.value = false
       widgetSeriesStore.clearInstance(props.instanceId)
     }
   },
 )
 
 onBeforeUnmount(() => {
-  requestId += 1
   clearRefreshTimeout()
   if (realtimeRefreshTimeout) {
     clearTimeout(realtimeRefreshTimeout)
@@ -356,7 +451,6 @@ onBeforeUnmount(() => {
   }
   unsubscribeRealtime?.()
   unsubscribeRealtime = null
-  currentController?.abort()
   widgetSeriesStore.clearInstance(props.instanceId)
   if (ageInterval) clearInterval(ageInterval)
 })

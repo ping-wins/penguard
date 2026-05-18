@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import DraggableWidget from '../../src/components/canvas/DraggableWidget.vue'
 import { useDashboardStore } from '../../src/stores/useDashboardStore'
 import { useWorkspaceModeStore } from '../../src/stores/useWorkspaceModeStore'
+import { queryClient } from '../../src/services/queryClient'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -44,6 +45,7 @@ describe('DraggableWidget', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    queryClient.clear()
     FakeEventSource.instances = []
   })
 

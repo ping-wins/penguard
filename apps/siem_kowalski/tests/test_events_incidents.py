@@ -296,6 +296,21 @@ def test_fortigate_http_flow_burst_creates_waf_dos_incident():
         ]
     ) == 1
 
+    payload["occurredAt"] = "2026-05-17T20:35:30.000Z"
+    for _index in range(100):
+        response = client.post("/events/ingest", json=payload)
+        assert response.status_code == 200
+
+    incidents_after_second_burst = client.get("/incidents").json()
+    matching_after_second_burst = [
+        incident
+        for incident in incidents_after_second_burst
+        if incident["ruleId"] == "fortiweb_dos_activity"
+        and incident["attributes"].get("sourceIp") == "10.10.10.10"
+        and incident["attributes"].get("destinationIp") == "10.10.20.30"
+    ]
+    assert len(matching_after_second_burst) == 1
+
 
 def test_incidents_preserve_event_provenance_for_demo_badges():
     event = client.post(

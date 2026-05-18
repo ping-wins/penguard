@@ -26,6 +26,8 @@ class SocClient(Protocol):
 
 SyslogIntegrationRef = str | dict[str, str | None] | None
 IntegrationResolver = Callable[[tuple[str, int] | None, dict[str, str]], SyslogIntegrationRef]
+
+
 class StatusRecorder(Protocol):
     def __call__(
         self,
@@ -33,6 +35,7 @@ class StatusRecorder(Protocol):
         owner_user_id: str,
         integration_id: str,
         event_id: str | None,
+        event: dict[str, Any] | None = None,
         ticket: dict[str, Any] | None = None,
     ) -> None:
         pass
@@ -179,12 +182,14 @@ class FortiGateSyslogForwarder:
                 owner_user_id=owner_user_id,
                 integration_id=integration_id,
                 event_id=event_id,
+                event=created_event if isinstance(created_event, dict) else None,
                 ticket=ticket,
             )
         return {
             "status": "forwarded",
             "integrationId": integration_id,
             "eventId": event_id,
+            "event": created_event if isinstance(created_event, dict) else None,
             "ticket": ticket,
             "eventType": event["eventType"],
         }

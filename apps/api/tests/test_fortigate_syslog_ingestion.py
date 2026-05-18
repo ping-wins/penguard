@@ -53,6 +53,7 @@ class RecordingSyslogStatusRecorder:
         owner_user_id: str,
         integration_id: str,
         event_id: str | None,
+        event: dict | None = None,
         ticket: dict | None = None,
     ):
         self.calls.append(
@@ -60,6 +61,7 @@ class RecordingSyslogStatusRecorder:
                 "ownerUserId": owner_user_id,
                 "integrationId": integration_id,
                 "eventId": event_id,
+                "event": event,
                 "ticket": ticket,
             }
         )
@@ -147,6 +149,7 @@ def test_syslog_forwarder_posts_each_datagram_to_siem_without_polling():
     assert result["status"] == "forwarded"
     assert result["integrationId"] == "int_fgt_01"
     assert result["eventId"] == "evt_siem_01"
+    assert result["event"]["id"] == "evt_siem_01"
     assert len(siem.requests) == 1
     method, path, kwargs = siem.requests[0]
     assert (method, path) == ("POST", "/events/ingest")
@@ -160,6 +163,10 @@ def test_syslog_forwarder_posts_each_datagram_to_siem_without_polling():
             "ownerUserId": "user_01",
             "integrationId": "int_fgt_01",
             "eventId": "evt_siem_01",
+            "event": {
+                "id": "evt_siem_01",
+                **posted,
+            },
             "ticket": {
                 "id": "inc_siem_01",
                 "title": "FortiGate denied traffic burst",
@@ -260,6 +267,10 @@ def test_udp_collector_self_probe_exercises_parser_forwarder_and_status_recorder
             "ownerUserId": "user_01",
             "integrationId": "int_fgt_01",
             "eventId": "evt_siem_01",
+            "event": {
+                "id": "evt_siem_01",
+                **posted,
+            },
             "ticket": {
                 "id": "inc_siem_01",
                 "title": "FortiGate denied traffic burst",

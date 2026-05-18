@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Ticket } from '../services/ticketsClient'
+import { queryClient } from '../services/queryClient'
+import { applyRealtimeQueryEvent, resyncRealtimeQueries } from '../services/realtimeQueryBridge'
 
 type RealtimeHandler = (event: RealtimeEvent) => void
 
@@ -27,6 +29,7 @@ export interface RealtimeEvent {
   eventId?: string | null
   receivedAt?: string
   refresh?: string[]
+  event?: Record<string, any>
   ticket?: Ticket
   widgets?: RealtimeWidgetSnapshot[]
 }
@@ -38,6 +41,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
   const lastEvent = ref<RealtimeEvent | null>(null)
   const lastErrorAt = ref<string | null>(null)
   const eventCount = ref(0)
+  let resyncPending = false
 
   function connect() {
     if (source || typeof window === 'undefined' || typeof EventSource === 'undefined') return
@@ -46,12 +50,15 @@ export const useRealtimeStore = defineStore('realtime', () => {
     source.onmessage = handleMessage
     source.addEventListener('connected', handleMessage)
     source.addEventListener('fortigate.syslog.event', handleMessage)
+    source.addEventListener('soc.event.created', handleMessage)
+    source.addEventListener('soc.incident.created', handleMessage)
     source.addEventListener('fortigate.ingestion.events', handleMessage)
     source.addEventListener('audit.siem.event', handleMessage)
     source.addEventListener('soc.incidents.reset', handleMessage)
     source.onerror = () => {
       connectionState.value = 'error'
       lastErrorAt.value = new Date().toISOString()
+      resyncPending = true
       // EventSource retries automatically. Keep the singleton open so the
       // browser can reconnect without every widget creating its own loop.
     }
@@ -64,6 +71,11 @@ export const useRealtimeStore = defineStore('realtime', () => {
       connectionState.value = 'connected'
       lastEvent.value = event
       eventCount.value += 1
+      applyRealtimeQueryEvent(queryClient, event)
+      if (resyncPending && event.type !== 'connected') {
+        resyncPending = false
+        resyncRealtimeQueries(queryClient)
+      }
       for (const handler of handlers) handler(event)
     } catch {
       // Ignore malformed keep-alive/proxy noise.

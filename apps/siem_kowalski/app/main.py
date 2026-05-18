@@ -241,6 +241,8 @@ def _detect_incident(event: SecurityEvent) -> Incident | None:
     rule = next((rule for rule in DETECTION_RULES if _matches_rule(event, rule)), None)
     if rule is None:
         return None
+    if _has_open_duplicate_incident(event, rule):
+        return None
 
     incident_severity = rule.severity or event.severity
     return Incident(
@@ -322,6 +324,37 @@ def _incident_attributes(event: SecurityEvent, rule: DetectionRule) -> dict[str,
         if value is not None and value != "":
             attributes[key] = value
     return attributes
+
+
+def _has_open_duplicate_incident(event: SecurityEvent, rule: DetectionRule) -> bool:
+    if rule.id != "fortiweb_dos_activity":
+        return False
+    if event.attributes.get("attackType") != "http_flood":
+        return False
+    source_ip = event.attributes.get("sourceIp") or event.entities.get("sourceIp")
+    destination_ip = event.attributes.get("destinationIp") or event.entities.get("destinationIp")
+    destination_port = _coerce_int(event.attributes.get("destinationPort"))
+    integration_id = event.attributes.get("integrationId") or event.entities.get("integrationId")
+    if not source_ip or not destination_ip or destination_port is None:
+        return False
+    for payload in store.list_incidents(status="open"):
+        if payload.get("ruleId") != rule.id:
+            continue
+        attrs = payload.get("attributes")
+        if not isinstance(attrs, dict):
+            continue
+        if attrs.get("attackType") != "http_flood":
+            continue
+        if integration_id and attrs.get("integrationId") != integration_id:
+            continue
+        if attrs.get("sourceIp") != source_ip:
+            continue
+        if attrs.get("destinationIp") != destination_ip:
+            continue
+        if _coerce_int(attrs.get("destinationPort")) != destination_port:
+            continue
+        return True
+    return False
 
 
 def _matches_rule(event: SecurityEvent, rule: DetectionRule) -> bool:

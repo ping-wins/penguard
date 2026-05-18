@@ -394,6 +394,21 @@ def _waf_dos_events(
     return [e for e in raw if _parse_dt(e.get("occurredAt")) >= since]
 
 
+def _event_attributes(record: dict[str, Any]) -> dict[str, Any]:
+    attrs = record.get("attributes")
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def _is_blocked_action(record: dict[str, Any]) -> bool:
+    attrs = _event_attributes(record)
+    return str(attrs.get("action", "")).lower() in {
+        "block",
+        "blocked",
+        "deny",
+        "dropped",
+    }
+
+
 def _waf_dos_rate(
     source: str,
     *,
@@ -416,16 +431,7 @@ def _waf_dos_rate(
         bucket_key = dt.strftime("%Y-%m-%dT%H:%M:00Z")
         if bucket_key not in buckets:
             buckets[bucket_key] = {"blocked": 0, "allowed": 0}
-        if use_raw:
-            attrs = record.get("attributes") or {}
-            blocked = str(attrs.get("action", "")).lower() in {
-                "block",
-                "blocked",
-                "deny",
-                "dropped",
-            }
-        else:
-            blocked = True
+        blocked = _is_blocked_action(record)
         if blocked:
             buckets[bucket_key]["blocked"] += 1
         else:
@@ -456,20 +462,13 @@ def _waf_dos_top_ips(
 
     ip_data: dict[str, dict[str, Any]] = {}
     for record in records:
+        is_blocked = _is_blocked_action(record)
         if use_raw:
             ip = str(record.get("entities", {}).get("sourceIp") or "")
             ts = str(record.get("occurredAt") or "")
-            attrs = record.get("attributes") or {}
-            is_blocked = str(attrs.get("action", "")).lower() in {
-                "block",
-                "blocked",
-                "deny",
-                "dropped",
-            }
         else:
             ip = str(record.get("entities", {}).get("sourceIp") or "")
             ts = str(record.get("createdAt") or "")
-            is_blocked = True
         if not ip:
             continue
         if ip not in ip_data:
@@ -504,10 +503,10 @@ def _waf_dos_feed(
                 "id": r.get("id") or "",
                 "ts": r.get("occurredAt") or "",
                 "sourceIp": r.get("entities", {}).get("sourceIp") or "",
-                "action": r.get("attributes", {}).get("action") or "",
+                "action": _event_attributes(r).get("action") or "",
                 "severity": r.get("severity") or "medium",
                 "message": r.get("message") or "DoS event",
-                "policy": r.get("attributes", {}).get("policy") or "",
+                "policy": _event_attributes(r).get("policy") or "",
             }
             for r in records[:limit]
         ]
@@ -519,10 +518,10 @@ def _waf_dos_feed(
                 "id": r.get("id") or "",
                 "ts": r.get("createdAt") or "",
                 "sourceIp": r.get("entities", {}).get("sourceIp") or "",
-                "action": "block",
+                "action": _event_attributes(r).get("action") or "",
                 "severity": r.get("severity") or "critical",
                 "message": r.get("summary") or r.get("title") or "DoS activity detected",
-                "policy": r.get("attributes", {}).get("policy") or "",
+                "policy": _event_attributes(r).get("policy") or "",
             }
             for r in records[:limit]
         ]

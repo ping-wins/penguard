@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRealtimeStore } from '../../src/stores/useRealtimeStore'
 import { useTicketsStore } from '../../src/stores/useTicketsStore'
+import { queryClient } from '../../src/services/queryClient'
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -45,6 +46,7 @@ class FakeEventSource {
 describe('tickets realtime store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    queryClient.clear()
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
   })
