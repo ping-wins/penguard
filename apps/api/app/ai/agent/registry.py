@@ -14,6 +14,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.auth.permissions import VALID_PERMISSION_SLUGS, WILDCARD
+
 
 @dataclass
 class ToolContext:
@@ -34,6 +36,7 @@ class ToolContext:
     fortigate_integration_service: Any = None
     workspace_store: Any = None
     audit_store: Any = None
+    effective_permissions: frozenset[str] = field(default_factory=frozenset)
     extras: dict[str, Any] = field(default_factory=dict)
 
 
@@ -48,6 +51,7 @@ class AgentTool:
     impl: ToolImpl
     category: Literal["read", "draft", "write"] = "read"
     requires_approval: bool = False
+    required_permissions: frozenset[str] = field(default_factory=frozenset)
     timeout_seconds: int = 5
 
 
@@ -61,6 +65,13 @@ def register_tool(tool: AgentTool) -> AgentTool:
         raise ValueError(f"Unsupported agent tool category: {tool.category}")
     if tool.category == "write" and not tool.requires_approval:
         raise ValueError("write agent tools must set requires_approval=True")
+    unknown_permissions = sorted(
+        permission
+        for permission in tool.required_permissions
+        if permission != WILDCARD and permission not in VALID_PERMISSION_SLUGS
+    )
+    if unknown_permissions:
+        raise ValueError(f"Unknown permission slug: {unknown_permissions[0]}")
     REGISTRY[tool.name] = tool
     return tool
 
@@ -71,6 +82,24 @@ def get_tool(name: str) -> AgentTool | None:
 
 def list_tools() -> list[AgentTool]:
     return list(REGISTRY.values())
+
+
+def missing_required_permissions(
+    tool: AgentTool,
+    effective_permissions: frozenset[str],
+) -> list[str]:
+    """Return tool permission slugs not granted to this request context."""
+
+    if not tool.required_permissions or WILDCARD in effective_permissions:
+        return []
+    return sorted(tool.required_permissions - effective_permissions)
+
+
+def tool_allowed_by_permissions(
+    tool: AgentTool,
+    effective_permissions: frozenset[str],
+) -> bool:
+    return not missing_required_permissions(tool, effective_permissions)
 
 
 def reset_registry_for_tests() -> None:

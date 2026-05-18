@@ -146,7 +146,7 @@ Introduce a singleton enterprise configuration, for example
 Suggested fields:
 
 - `id`: constant singleton id, such as `default`.
-- `provider`: `anthropic` or `openai` initially.
+- `provider`: `anthropic`, `gemini` or `openai` initially.
 - `model`: model string.
 - `api_key_blob`: encrypted with the existing token cipher pattern.
 - `last_tested_at`.
@@ -366,7 +366,7 @@ Frontend:
 
 Integration:
 
-- Configure Anthropic/OpenAI provider, start assistant session, ask read-only
+- Configure Anthropic/Gemini/OpenAI provider, start assistant session, ask read-only
   dashboard question, verify streamed answer.
 - Ask assistant to create a playbook; verify draft graph, validation,
   confirmation, persistence, and disabled default.

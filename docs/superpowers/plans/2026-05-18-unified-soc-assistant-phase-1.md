@@ -617,7 +617,7 @@ def test_admin_can_save_and_read_ai_agent_settings_redacted():
     assert "apiKey" not in body
 
 
-def test_update_ai_agent_settings_rejects_unsupported_provider():
+def test_update_ai_agent_settings_accepts_gemini_provider():
     client = TestClient(app)
 
     response = client.put(
@@ -626,8 +626,8 @@ def test_update_ai_agent_settings_rejects_unsupported_provider():
         json={"provider": "gemini", "model": "gemini-flash-latest", "apiKey": "k"},
     )
 
-    assert response.status_code == 400
-    assert "provider" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["provider"] == "gemini"
 
 
 def test_test_ai_agent_settings_marks_missing_config_failure():

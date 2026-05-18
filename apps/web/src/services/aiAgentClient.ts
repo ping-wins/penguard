@@ -7,6 +7,7 @@ export type AgentTool = {
   inputSchema: Record<string, unknown>
   category: string
   requiresApproval: boolean
+  requiredPermissions: string[]
   timeoutSeconds: number
 }
 

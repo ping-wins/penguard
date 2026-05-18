@@ -15,7 +15,7 @@ Today `app/ai/agent/` only ships a `ScriptedBackend`; the real LLM code lives in
 
 | Question | Decision |
 |---|---|
-| Which providers first | **Anthropic + OpenAI** (Gemini and CLI-passthrough deferred). |
+| Which providers first | **Anthropic + Gemini + OpenAI** (CLI-passthrough deferred). |
 | Model selection | **Auto-routing by task** (a role declares a tier; tier → model table picks). |
 | How the router knows the task | **Explicit role per session.** Frontend picks at chat open. |
 | Streaming | **Real token-a-token** streaming, not single block. |

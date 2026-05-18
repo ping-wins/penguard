@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Bot, Check, Hammer, Play, Send, Trash2, X } from 'lucide-vue-next'
+import { Bot, Check, Hammer, Play, Send, ShieldAlert, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useAiAgentStore } from '../../stores/useAiAgentStore'
 
@@ -40,6 +40,25 @@ function previewResult(value: unknown, limit = 320): string {
     return String(value)
   }
 }
+
+const pendingApprovalTool = computed(() => {
+  if (!store.pendingApproval) return null
+  return store.tools.find((tool) => tool.name === store.pendingApproval?.toolName) ?? null
+})
+
+const pendingApprovalRisk = computed(() => {
+  const tool = pendingApprovalTool.value
+  if (tool?.category === 'write' || tool?.requiresApproval) return t('aiAgent.approvalRiskWrite')
+  if (tool?.category === 'draft') return t('aiAgent.approvalRiskDraft')
+  return t('aiAgent.approvalRiskRead')
+})
+
+const pendingApprovalPermissions = computed(() => {
+  const permissions = pendingApprovalTool.value?.requiredPermissions ?? []
+  return permissions.length ? permissions.join(', ') : t('aiAgent.noRequiredPermissions')
+})
+
+const pendingApprovalArgs = computed(() => previewResult(store.pendingApproval?.args ?? {}, 420))
 
 const modelBadge = computed(() => {
   const model = store.session?.model || t('aiAgent.noModel')
@@ -97,30 +116,55 @@ function formatTokens(value: number): string {
 
     <div
       v-if="store.pendingApproval"
-      class="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100"
+      class="flex flex-col gap-3 rounded border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-100"
     >
-      <div class="min-w-0">
-        <p class="font-semibold">{{ t('aiAgent.approvalTitle') }}</p>
-        <p class="truncate font-mono text-[11px]">{{ store.pendingApproval.toolName }}</p>
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <ShieldAlert class="h-3.5 w-3.5 shrink-0 text-amber-200" />
+            <p class="font-semibold">{{ t('aiAgent.approvalTitle') }}</p>
+          </div>
+          <p class="mt-1 break-all font-mono text-[11px]">{{ store.pendingApproval.toolName }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded bg-emerald-500 px-2 py-1 font-medium text-white"
+            @click="store.approve(store.pendingApproval.callId, true)"
+          >
+            <Check class="h-3 w-3" />
+            {{ t('aiAgent.approve') }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded border border-amber-300/60 px-2 py-1 font-medium"
+            @click="store.approve(store.pendingApproval.callId, false)"
+          >
+            <X class="h-3 w-3" />
+            {{ t('aiAgent.deny') }}
+          </button>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 rounded bg-emerald-500 px-2 py-1 font-medium text-white"
-          @click="store.approve(store.pendingApproval.callId, true)"
-        >
-          <Check class="h-3 w-3" />
-          {{ t('aiAgent.approve') }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 rounded border border-amber-300/60 px-2 py-1 font-medium"
-          @click="store.approve(store.pendingApproval.callId, false)"
-        >
-          <X class="h-3 w-3" />
-          {{ t('aiAgent.deny') }}
-        </button>
-      </div>
+      <dl class="grid gap-2 sm:grid-cols-2">
+        <div>
+          <dt class="text-[10px] font-medium uppercase text-amber-200/80">{{ t('aiAgent.approvalRiskLabel') }}</dt>
+          <dd class="mt-0.5 text-theme-text">{{ pendingApprovalRisk }}</dd>
+        </div>
+        <div>
+          <dt class="text-[10px] font-medium uppercase text-amber-200/80">{{ t('aiAgent.approvalPermissionsLabel') }}</dt>
+          <dd class="mt-0.5 break-words font-mono text-[11px] text-theme-text">{{ pendingApprovalPermissions }}</dd>
+        </div>
+        <div class="sm:col-span-2">
+          <dt class="text-[10px] font-medium uppercase text-amber-200/80">{{ t('aiAgent.approvalReasonLabel') }}</dt>
+          <dd class="mt-0.5 break-words text-theme-text">{{ store.pendingApproval.reason }}</dd>
+        </div>
+        <div class="sm:col-span-2">
+          <dt class="text-[10px] font-medium uppercase text-amber-200/80">{{ t('aiAgent.approvalArgsLabel') }}</dt>
+          <dd class="mt-0.5 overflow-x-auto rounded bg-black/30 p-2 font-mono text-[11px] text-theme-text">
+            {{ pendingApprovalArgs }}
+          </dd>
+        </div>
+      </dl>
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto rounded border border-theme-border bg-theme-surface/40 p-2">

@@ -22,7 +22,7 @@ from app.db.models import AiAgentSettingsModel
 logger = logging.getLogger(__name__)
 
 SETTINGS_ID = "default"
-SUPPORTED_PROVIDERS = {"anthropic", "openai"}
+SUPPORTED_PROVIDERS = {"anthropic", "gemini", "openai"}
 
 
 def _format_dt(value: datetime | None) -> str | None:
@@ -35,6 +35,8 @@ def normalize_provider(provider: str) -> str:
     normalized = provider.lower().strip().replace("-", "_")
     if normalized in {"openai", "openai_compat", "openai_compatible"}:
         return "openai"
+    if normalized in {"gemini", "google", "google_ai", "google_gemini"}:
+        return "gemini"
     if normalized == "anthropic":
         return "anthropic"
     return normalized

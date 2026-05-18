@@ -43,6 +43,14 @@ def pick_backend(role: RoleConfig, user_id: str | None) -> AgentBackend:
             model=credential.model,
             base_url=credential.base_url or "https://api.openai.com/v1",
         )
+    if provider == "gemini":
+        from app.ai.agent.backends.gemini import GeminiBackend
+
+        return GeminiBackend(
+            api_key=credential.api_key,
+            model=credential.model,
+            base_url=credential.base_url or "https://generativelanguage.googleapis.com",
+        )
     raise AgentNotConfiguredError("SOC Assistant provider is not configured")
 
 

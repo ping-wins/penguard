@@ -5,13 +5,14 @@ import { useI18n } from 'vue-i18n'
 import { useSocAssistantSettingsStore } from '../../stores/useSocAssistantSettingsStore'
 
 type ProviderOption = {
-  id: 'anthropic' | 'openai'
+  id: 'anthropic' | 'gemini' | 'openai'
   label: string
   defaultModel: string
 }
 
 const PROVIDERS: ProviderOption[] = [
   { id: 'anthropic', label: 'Anthropic', defaultModel: 'claude-sonnet-4-6' },
+  { id: 'gemini', label: 'Gemini', defaultModel: 'gemini-flash-latest' },
   { id: 'openai', label: 'OpenAI', defaultModel: 'gpt-4o' },
 ]
 
@@ -170,7 +171,7 @@ onMounted(async () => {
         <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">
           {{ t('settings.ai.providerLegend') }}
         </legend>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <label
             v-for="option in PROVIDERS"
             :key="option.id"

@@ -32,7 +32,14 @@ from app.ai.agent.events import (
     ToolCallEvent,
     ToolResultEvent,
 )
-from app.ai.agent.registry import AgentTool, ToolContext, get_tool, list_tools
+from app.ai.agent.registry import (
+    AgentTool,
+    ToolContext,
+    get_tool,
+    list_tools,
+    missing_required_permissions,
+    tool_allowed_by_permissions,
+)
 from app.ai.agent.roles import RoleConfig, get_role, render_system_prompt
 from app.ai.agent.router import AgentNotConfiguredError
 from app.ai.agent.session import AgentMessage, AgentSession, SessionStore
@@ -102,7 +109,10 @@ class AgentRunner:
         session.model = backend.model
 
         allowed_tools = [
-            tool for tool in list_tools() if tool.category in role.allowed_tool_categories
+            tool
+            for tool in list_tools()
+            if tool.category in role.allowed_tool_categories
+            and tool_allowed_by_permissions(tool, tool_context.effective_permissions)
         ]
         allowed_names = {tool.name for tool in allowed_tools}
         used_tools: list[str] = []
@@ -229,7 +239,21 @@ class AgentRunner:
             for call in pending_tool_calls:
                 tool = get_tool(call.tool_name)
                 if tool is None or tool.name not in allowed_names:
-                    error_msg = "tool not allowed for this role"
+                    missing_permissions = (
+                        missing_required_permissions(
+                            tool,
+                            tool_context.effective_permissions,
+                        )
+                        if tool is not None
+                        and tool.category in role.allowed_tool_categories
+                        else []
+                    )
+                    error_msg = (
+                        "missing required permission: "
+                        + ", ".join(missing_permissions)
+                        if missing_permissions
+                        else "tool not allowed for this role"
+                    )
                     yield ToolResultEvent(
                         step=step,
                         call_id=call.call_id,
@@ -451,5 +475,5 @@ def _history_snapshot(session: AgentSession) -> list[dict[str, Any]]:
 
 def _role_for_session(role_id: str) -> RoleConfig | None:
     if role_id == "soc-assistant":
-        return get_role("chat")
+        return get_role("soc-investigation")
     return get_role(role_id)

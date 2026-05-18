@@ -95,7 +95,7 @@ def upgrade() -> None:
     )
 
     rows = []
-    for index, preset in enumerate(_load_presets()):
+    for preset in _load_presets():
         slug = preset["slug"]
         rows.append(
             {

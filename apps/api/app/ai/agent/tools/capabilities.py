@@ -12,7 +12,12 @@ from typing import Any
 
 from app.ai.agent.registry import AgentTool, ToolContext, register_tool
 from app.ai.agent.settings import get_ai_agent_settings_store, normalize_provider
-from app.ai.provider import AnthropicAIProvider, IncidentContext, OpenAICompatibleAIProvider
+from app.ai.provider import (
+    AnthropicAIProvider,
+    GeminiAIProvider,
+    IncidentContext,
+    OpenAICompatibleAIProvider,
+)
 from app.ai.tools import (
     DraftWidgetRequest,
     WidgetDraftValidationError,
@@ -38,7 +43,9 @@ def _incident_context(payload: dict[str, Any], *, incident_id: str) -> IncidentC
     )
 
 
-def _enterprise_ai_provider() -> AnthropicAIProvider | OpenAICompatibleAIProvider:
+def _enterprise_ai_provider() -> (
+    AnthropicAIProvider | GeminiAIProvider | OpenAICompatibleAIProvider
+):
     settings = get_ai_agent_settings_store().get()
     if settings is None or not settings.configured:
         raise RuntimeError("SOC Assistant provider is not configured")
@@ -46,6 +53,8 @@ def _enterprise_ai_provider() -> AnthropicAIProvider | OpenAICompatibleAIProvide
     provider = normalize_provider(settings.provider)
     if provider == "anthropic":
         return AnthropicAIProvider(api_key=settings.api_key, model=settings.model)
+    if provider == "gemini":
+        return GeminiAIProvider(api_key=settings.api_key, model=settings.model)
     if provider == "openai":
         return OpenAICompatibleAIProvider(api_key=settings.api_key, model=settings.model)
     raise RuntimeError("SOC Assistant provider is not configured")
@@ -221,6 +230,7 @@ register_tool(
         },
         impl=_draft_playbook,
         category="draft",
+        required_permissions=frozenset({"playbooks.manage"}),
         timeout_seconds=30,
     )
 )

@@ -1129,7 +1129,9 @@ def _string_list(value: Any) -> list[str]:
 @lru_cache
 def get_ai_provider() -> AIProvider:
     settings = get_settings()
-    provider_name = (getattr(settings, "ai_provider", None) or "").lower().strip()
+    provider_name = (
+        (getattr(settings, "ai_provider", None) or "").lower().strip().replace("-", "_")
+    )
     api_key = getattr(settings, "ai_api_key", "") or ""
     model = getattr(settings, "ai_model", "") or ""
     base_url = getattr(settings, "ai_base_url", "") or ""
@@ -1137,7 +1139,7 @@ def get_ai_provider() -> AIProvider:
     if not provider_name:
         raise AIConfigurationError(
             "AI provider is not configured. Set FORTIDASHBOARD_AI_PROVIDER to "
-            "anthropic or openai-compatible and provide FORTIDASHBOARD_AI_API_KEY."
+            "anthropic, gemini or openai-compatible and provide FORTIDASHBOARD_AI_API_KEY."
         )
 
     if provider_name == "scripted":
@@ -1159,7 +1161,17 @@ def get_ai_provider() -> AIProvider:
             model=model or "claude-3-5-haiku-latest",
             base_url=base_url or "https://api.anthropic.com",
         )
-    if provider_name in {"openai", "openai_compat", "openai-compatible"}:
+    if provider_name in {"gemini", "google", "google_ai", "google_gemini"}:
+        if not api_key:
+            raise AIConfigurationError(
+                "FORTIDASHBOARD_AI_API_KEY is required when FORTIDASHBOARD_AI_PROVIDER=gemini."
+            )
+        return GeminiAIProvider(
+            api_key=api_key,
+            model=model or "gemini-flash-latest",
+            base_url=base_url or "https://generativelanguage.googleapis.com",
+        )
+    if provider_name in {"openai", "openai_compat", "openai_compatible"}:
         if not api_key:
             raise AIConfigurationError(
                 "FORTIDASHBOARD_AI_API_KEY is required when "
@@ -1171,5 +1183,6 @@ def get_ai_provider() -> AIProvider:
             base_url=base_url or "https://api.openai.com/v1",
         )
     raise AIConfigurationError(
-        f"Unsupported AI provider '{provider_name}'. Configure anthropic or openai-compatible."
+        f"Unsupported AI provider '{provider_name}'. Configure anthropic, "
+        "gemini or openai-compatible."
     )

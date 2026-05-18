@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.agent.backends.base import BackendError, Final, TextDelta
 from app.ai.agent.roles import get_role
 from app.ai.agent.router import AgentNotConfiguredError, pick_backend
 from app.ai.agent.settings import (
@@ -109,6 +110,25 @@ def test_agent_router_uses_enterprise_settings(monkeypatch):
     assert backend.model == "gpt-4o"
 
 
+def test_agent_router_uses_gemini_enterprise_settings(monkeypatch):
+    store = InMemoryAiAgentSettingsStore()
+    store.upsert(
+        provider="gemini",
+        model="gemini-flash-latest",
+        api_key="sk-test",
+        updated_by="admin@example.com",
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
+
+    backend = pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
+
+    assert backend.name == "gemini"
+    assert backend.model == "gemini-flash-latest"
+
+
 def test_agent_router_raises_without_enterprise_settings(monkeypatch):
     store = InMemoryAiAgentSettingsStore()
     monkeypatch.setattr(
@@ -183,7 +203,7 @@ def test_admin_can_save_and_read_ai_agent_settings_redacted():
     assert "apiKey" not in str(update_audit["items"][0]["details"])
 
 
-def test_update_ai_agent_settings_rejects_unsupported_provider():
+def test_update_ai_agent_settings_accepts_gemini_provider():
     override_user(ADMIN_USER)
     client = TestClient(app)
 
@@ -193,8 +213,12 @@ def test_update_ai_agent_settings_rejects_unsupported_provider():
         json={"provider": "gemini", "model": "gemini-flash-latest", "apiKey": "k"},
     )
 
-    assert response.status_code == 400
-    assert "provider" in response.json()["detail"]
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "gemini"
+    assert payload["model"] == "gemini-flash-latest"
+    assert payload["apiKeySet"] is True
+    assert payload["configured"] is True
 
 
 def test_update_ai_agent_settings_rejects_overlong_key_without_echoing_secret():
@@ -279,7 +303,7 @@ def test_test_ai_agent_settings_marks_missing_config_failure():
     }
 
 
-def test_test_ai_agent_settings_reports_configured_without_remote_success():
+def test_test_ai_agent_settings_calls_provider_probe_success(monkeypatch):
     override_user(ADMIN_USER)
     client = TestClient(app)
     headers = csrf_headers(client)
@@ -288,17 +312,28 @@ def test_test_ai_agent_settings_reports_configured_without_remote_success():
         headers=headers,
         json={"provider": "openai", "model": "gpt-4o", "apiKey": "sk-openai-secret"},
     )
+    calls = []
+
+    async def _probe(self, **kwargs):
+        calls.append({"model": self.model, **kwargs})
+        yield TextDelta(text="OK")
+        yield Final(stop_reason="end_turn", tokens_in=5, tokens_out=1)
+
+    monkeypatch.setattr("app.ai.agent.backends.openai.OpenAIBackend.stream_decide", _probe)
 
     response = client.post("/api/ai/agent/settings/test", headers=headers)
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["status"] == "configured"
+    assert payload["status"] == "success"
     assert payload["error"] is None
+    assert calls
+    assert calls[0]["model"] == "gpt-4o"
+    assert calls[0]["tools"] == []
     settings = get_ai_agent_settings_store().get()
     assert settings is not None
-    assert settings.last_test_status == "configured"
+    assert settings.last_test_status == "success"
     audit = auth_dependencies.get_auth_audit_store().list_events(
         action="ai.agent.settings.tested"
     )
@@ -307,5 +342,45 @@ def test_test_ai_agent_settings_reports_configured_without_remote_success():
         "model": "gpt-4o",
         "credentialSet": True,
         "configured": True,
-        "status": "configured",
+        "status": "success",
+    }
+
+
+def test_test_ai_agent_settings_persists_provider_probe_failure(monkeypatch):
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+    headers = csrf_headers(client)
+    secret = "sk-openai-secret"
+    client.put(
+        "/api/ai/agent/settings",
+        headers=headers,
+        json={"provider": "openai", "model": "gpt-4o", "apiKey": secret},
+    )
+
+    async def _probe(_self, **_kwargs):
+        yield BackendError(message="OpenAI auth failed", code="auth", retryable=False)
+
+    monkeypatch.setattr("app.ai.agent.backends.openai.OpenAIBackend.stream_decide", _probe)
+
+    response = client.post("/api/ai/agent/settings/test", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["status"] == "failed"
+    assert payload["error"] == "OpenAI auth failed"
+    assert secret not in response.text
+    settings = get_ai_agent_settings_store().get()
+    assert settings is not None
+    assert settings.last_test_status == "failed"
+    assert settings.last_test_error == "OpenAI auth failed"
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="ai.agent.settings.tested"
+    )
+    assert audit["items"][0]["details"] == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "credentialSet": True,
+        "configured": True,
+        "status": "failed",
     }

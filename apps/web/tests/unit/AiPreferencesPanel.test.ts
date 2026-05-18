@@ -65,7 +65,7 @@ describe('AiPreferencesPanel', () => {
 
     expect(wrapper.get('[data-test="soc-assistant-save"]').attributes('disabled')).toBeDefined()
 
-    resolveTest(jsonResponse({ ok: true, status: 'configured', error: null }))
+    resolveTest(jsonResponse({ ok: true, status: 'success', error: null }))
     await flushPromises()
 
     expect((wrapper.get('[data-test="soc-assistant-model"]').element as HTMLInputElement).value).toBe('claude-custom')

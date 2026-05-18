@@ -39,5 +39,6 @@ register_tool(
             "additionalProperties": False,
         },
         impl=_search_audit,
+        required_permissions=frozenset({"audit.read"}),
     )
 )

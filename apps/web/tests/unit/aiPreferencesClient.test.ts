@@ -81,10 +81,10 @@ describe('socAssistantSettingsClient', () => {
     expect(result.apiKeySet).toBe(true)
   })
 
-  it('testSocAssistantSettings POSTs with CSRF and parses configured status', async () => {
+  it('testSocAssistantSettings POSTs with CSRF and parses success status', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf_z' }))
-      .mockResolvedValueOnce(jsonResponse({ ok: true, status: 'configured', error: null }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, status: 'success', error: null }))
     vi.stubGlobal('fetch', fetcher)
 
     const result = await testSocAssistantSettings()
@@ -94,7 +94,7 @@ describe('socAssistantSettingsClient', () => {
     expect(postCall[1].method).toBe('POST')
     expect(postCall[1].credentials).toBe('include')
     expect(postCall[1].headers['X-CSRF-Token']).toBe('csrf_z')
-    expect(result.status).toBe('configured')
+    expect(result.status).toBe('success')
   })
 
   it('throws string detail from server errors', async () => {

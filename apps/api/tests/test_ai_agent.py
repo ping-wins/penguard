@@ -27,6 +27,7 @@ from app.ai.agent.tools import (  # noqa: F401
     incidents,
     integrations,
     playbook_runs,
+    playbooks,
     widgets,
     workspace,
     xdr_endpoints,
@@ -81,7 +82,8 @@ def test_registry_lists_nine_read_tools():
         "search_events",
     }
     assert expected.issubset(REGISTRY.keys())
-    for tool in REGISTRY.values():
+    for name in expected:
+        tool = REGISTRY[name]
         assert tool.requires_approval is False
         assert tool.input_schema["type"] == "object"
 
@@ -89,6 +91,15 @@ def test_registry_lists_nine_read_tools():
 def test_registry_marks_draft_tools_and_rejects_unapproved_write_tools():
     assert REGISTRY["draft_widget"].category == "draft"
     assert REGISTRY["draft_containment_playbook"].category == "draft"
+    assert REGISTRY["draft_playbook_graph"].category == "draft"
+    assert REGISTRY["draft_playbook_graph"].required_permissions == frozenset(
+        {"playbooks.manage"}
+    )
+    assert REGISTRY["apply_playbook_patch"].category == "write"
+    assert REGISTRY["apply_playbook_patch"].requires_approval is True
+    assert REGISTRY["apply_playbook_patch"].required_permissions == frozenset(
+        {"playbooks.manage"}
+    )
 
     async def _noop(_ctx: ToolContext, _args: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
@@ -102,6 +113,22 @@ def test_registry_marks_draft_tools_and_rejects_unapproved_write_tools():
                 impl=_noop,
                 category="write",
                 requires_approval=False,
+            )
+        )
+
+
+def test_registry_rejects_unknown_required_permissions():
+    async def _noop(_ctx: ToolContext, _args: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True}
+
+    with pytest.raises(ValueError, match="Unknown permission"):
+        register_tool(
+            AgentTool(
+                name="unknown_permission_for_test",
+                description="Tool with an invalid permission slug.",
+                input_schema={"type": "object", "properties": {}},
+                impl=_noop,
+                required_permissions=frozenset({"does.not.exist"}),
             )
         )
 
@@ -190,6 +217,146 @@ def test_ai_capability_tools_use_enterprise_provider(monkeypatch):
         ("sk-enterprise", "gpt-enterprise"),
         ("sk-enterprise", "gpt-enterprise"),
     ]
+
+
+def test_ai_capability_tools_can_build_gemini_enterprise_provider(monkeypatch):
+    from app.ai.agent.tools import capabilities as capability_tools
+
+    store = configured_settings_store(
+        provider="gemini",
+        model="gemini-flash-latest",
+        api_key="sk-gemini",
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.tools.capabilities.get_ai_agent_settings_store",
+        lambda: store,
+    )
+    created: list[tuple[str, str]] = []
+
+    class EnterpriseProvider:
+        def __init__(self, *, api_key: str, model: str, **_: Any) -> None:
+            created.append((api_key, model))
+
+    monkeypatch.setattr(
+        "app.ai.agent.tools.capabilities.GeminiAIProvider",
+        EnterpriseProvider,
+    )
+
+    provider = capability_tools._enterprise_ai_provider()
+
+    assert isinstance(provider, EnterpriseProvider)
+    assert created == [("sk-gemini", "gemini-flash-latest")]
+
+
+class _StubSoarPlaybooks:
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, str, dict[str, Any]]] = []
+
+    def request(self, method: str, path: str, **kwargs):
+        self.requests.append((method, path, kwargs))
+        if path == "/node-types":
+            return {
+                "items": [
+                    {
+                        "id": "trigger.incident_created",
+                        "label": "Incident Created",
+                        "configSchema": {"type": "object", "properties": {}},
+                    },
+                    {
+                        "id": "case.note",
+                        "label": "Create Case Note",
+                        "configSchema": {
+                            "type": "object",
+                            "required": ["template"],
+                            "properties": {"template": {"type": "string"}},
+                        },
+                    },
+                ]
+            }
+        if path == "/playbooks/pb_agent":
+            return {
+                "schemaVersion": 1,
+                "id": "pb_agent",
+                "name": "Agent playbook",
+                "enabled": False,
+                "system": False,
+                "nodes": [{"id": "trigger", "type": "trigger.incident_created", "config": {}}],
+                "edges": [],
+            }
+        if path == "/playbooks/pb_agent/simulate":
+            return {"dryRun": True, "valid": True, "steps": []}
+        if method == "POST" and path == "/playbooks":
+            return kwargs["json"] | {"system": False}
+        if method == "PUT" and path == "/playbooks/pb_agent":
+            return kwargs["json"] | {"system": False}
+        raise AssertionError(f"unexpected SOAR request {method} {path}")
+
+
+def _valid_playbook_payload() -> dict[str, Any]:
+    return {
+        "id": "pb_agent",
+        "name": "Agent playbook",
+        "nodes": [
+            {"id": "trigger", "type": "trigger.incident_created", "config": {}},
+            {
+                "id": "note",
+                "type": "case.note",
+                "config": {"template": "Review {incident.id}"},
+            },
+        ],
+        "edges": [{"from": "trigger", "to": "note", "condition": "success"}],
+    }
+
+
+def test_playbook_graph_tools_draft_disabled_and_validate_schema():
+    soar = _StubSoarPlaybooks()
+    ctx = ToolContext(user_id="analyst-1", soar_client=soar)
+
+    draft = asyncio.run(REGISTRY["draft_playbook_graph"].impl(ctx, _valid_playbook_payload()))
+    assert draft["playbook"]["enabled"] is False
+    assert draft["validation"]["valid"] is True
+    assert draft["playbook"]["nodes"][1]["config"]["template"] == "Review {incident.id}"
+
+    invalid = asyncio.run(
+        REGISTRY["validate_playbook_graph"].impl(
+            ctx,
+            {
+                "playbook": {
+                    "id": "pb_bad",
+                    "name": "Bad",
+                    "nodes": [{"id": "note", "type": "case.note", "config": {}}],
+                }
+            },
+        )
+    )
+    assert invalid["valid"] is False
+    assert "playbook must include at least one trigger node" in invalid["errors"]
+    assert "node note missing required config: template" in invalid["errors"]
+
+
+def test_playbook_apply_tool_creates_disabled_playbook_and_simulates_saved_graph():
+    soar = _StubSoarPlaybooks()
+    ctx = ToolContext(user_id="analyst-1", soar_client=soar)
+
+    applied = asyncio.run(
+        REGISTRY["apply_playbook_patch"].impl(
+            ctx,
+            {"mode": "create", "playbook": _valid_playbook_payload() | {"enabled": True}},
+        )
+    )
+    assert applied["operation"] == "create"
+    assert applied["playbook"]["enabled"] is False
+    create_request = next(
+        request for request in soar.requests if request[0] == "POST" and request[1] == "/playbooks"
+    )
+    assert create_request[2]["json"]["enabled"] is False
+    assert create_request[2]["json"]["id"] == "pb_agent"
+
+    simulated = asyncio.run(
+        REGISTRY["simulate_playbook"].impl(ctx, {"playbookId": "pb_agent"})
+    )
+    assert simulated["valid"] is True
+    assert ("POST", "/playbooks/pb_agent/simulate", {"json": {}}) in soar.requests
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +589,71 @@ def test_openai_backend_parses_text_stream_with_usage():
     assert events[1].tokens_out == 2
 
 
+def test_gemini_backend_parses_text_and_tool_call():
+    from app.ai.agent.backends.gemini import GeminiBackend
+
+    requests: list[httpx.Request] = []
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [
+                                {"text": "Vou consultar os incidentes."},
+                                {
+                                    "functionCall": {
+                                        "name": "list_incidents",
+                                        "args": {"severity": "high"},
+                                    }
+                                },
+                            ],
+                        },
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 9,
+                    "candidatesTokenCount": 4,
+                },
+            },
+        )
+
+    backend = GeminiBackend(
+        api_key="sk-test",
+        model="gemini-flash-latest",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_handler)),
+    )
+
+    events = asyncio.run(
+        _collect_backend(
+            backend,
+            history=[{"role": "user", "content": "liste incidentes high"}],
+            tools=[REGISTRY["list_incidents"]],
+            system_prompt="system",
+            locale="pt-BR",
+            max_output_tokens=512,
+        )
+    )
+
+    assert [event.kind for event in events] == ["text_delta", "tool_call", "final"]
+    assert events[0].text == "Vou consultar os incidentes."
+    assert events[1].tool_name == "list_incidents"
+    assert events[1].args == {"severity": "high"}
+    assert events[2].stop_reason == "tool_use"
+    assert events[2].tokens_in == 9
+    assert events[2].tokens_out == 4
+    assert requests[0].headers["x-goog-api-key"] == "sk-test"
+    assert requests[0].url.path.endswith("/v1beta/models/gemini-flash-latest:generateContent")
+    body = json.loads(requests[0].content)
+    assert body["tools"][0]["functionDeclarations"][0]["name"] == "list_incidents"
+    assert body["tools"][0]["functionDeclarations"][0]["parameters"]["type"] == "OBJECT"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -514,6 +746,185 @@ def test_runner_returns_tool_result_error_for_unallowed_tool():
     blocked = next(e for e in events if e["kind"] == "tool_result")
     assert blocked["status"] == "error"
     assert blocked["error"] == "tool not allowed for this role"
+    assert events[-1]["kind"] == "done"
+
+
+def test_runner_blocks_tool_when_required_permission_is_missing():
+    calls: list[dict[str, Any]] = []
+
+    async def _restricted_tool(_ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+        calls.append(args)
+        return {"secret": "audit"}
+
+    tool = AgentTool(
+        name="restricted_audit_for_test",
+        description="Restricted read tool used by permission tests.",
+        input_schema={"type": "object", "properties": {}},
+        impl=_restricted_tool,
+        required_permissions=frozenset({"audit.read"}),
+    )
+    original = REGISTRY.get(tool.name)
+    REGISTRY[tool.name] = tool
+
+    class RestrictedBackend:
+        name = "restricted"
+        model = ""
+
+        async def stream_decide(self, **kwargs):
+            if kwargs["history"] and kwargs["history"][-1].get("role") == "tool":
+                yield TextDelta(text="blocked")
+                yield Final(stop_reason="end_turn", tokens_in=8, tokens_out=2)
+                return
+            yield ToolCall(
+                call_id="call_restricted",
+                tool_name="restricted_audit_for_test",
+                args={},
+            )
+            yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=3)
+
+    try:
+        store = SessionStore()
+        session = store.create(user_id="user-1", backend="restricted", role_id="chat")
+        runner = AgentRunner(backend=RestrictedBackend(), session_store=store)
+        events = asyncio.run(
+            _collect(
+                runner,
+                session=session,
+                user_message="read audit",
+                tool_context=ToolContext(user_id="user-1", effective_permissions=frozenset()),
+            )
+        )
+    finally:
+        if original is None:
+            REGISTRY.pop(tool.name, None)
+        else:
+            REGISTRY[tool.name] = original
+
+    blocked = next(e for e in events if e["kind"] == "tool_result")
+    assert blocked["status"] == "error"
+    assert blocked["error"] == "missing required permission: audit.read"
+    assert calls == []
+    assert events[-1]["kind"] == "done"
+
+
+def test_runner_invokes_tool_when_required_permission_is_present():
+    calls: list[dict[str, Any]] = []
+
+    async def _restricted_tool(_ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+        calls.append(args)
+        return {"secret": "audit"}
+
+    tool = AgentTool(
+        name="allowed_audit_for_test",
+        description="Restricted read tool used by permission tests.",
+        input_schema={"type": "object", "properties": {}},
+        impl=_restricted_tool,
+        required_permissions=frozenset({"audit.read"}),
+    )
+    original = REGISTRY.get(tool.name)
+    REGISTRY[tool.name] = tool
+
+    class RestrictedBackend:
+        name = "restricted"
+        model = ""
+
+        async def stream_decide(self, **kwargs):
+            if kwargs["history"] and kwargs["history"][-1].get("role") == "tool":
+                yield TextDelta(text="allowed")
+                yield Final(stop_reason="end_turn", tokens_in=8, tokens_out=2)
+                return
+            yield ToolCall(
+                call_id="call_allowed",
+                tool_name="allowed_audit_for_test",
+                args={"scope": "recent"},
+            )
+            yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=3)
+
+    try:
+        store = SessionStore()
+        session = store.create(user_id="user-1", backend="restricted", role_id="chat")
+        runner = AgentRunner(backend=RestrictedBackend(), session_store=store)
+        events = asyncio.run(
+            _collect(
+                runner,
+                session=session,
+                user_message="read audit",
+                tool_context=ToolContext(
+                    user_id="user-1",
+                    effective_permissions=frozenset({"audit.read"}),
+                ),
+            )
+        )
+    finally:
+        if original is None:
+            REGISTRY.pop(tool.name, None)
+        else:
+            REGISTRY[tool.name] = original
+
+    result = next(e for e in events if e["kind"] == "tool_result")
+    assert result["status"] == "ok"
+    assert calls == [{"scope": "recent"}]
+    assert events[-1]["kind"] == "done"
+
+
+def test_soc_assistant_session_allows_permission_gated_draft_tools():
+    calls: list[dict[str, Any]] = []
+
+    async def _draft_tool(_ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+        calls.append(args)
+        return {"draft": True}
+
+    tool = AgentTool(
+        name="draft_playbook_for_test",
+        description="Draft tool used by permission-derived SOC Assistant tests.",
+        input_schema={"type": "object", "properties": {}},
+        impl=_draft_tool,
+        category="draft",
+        required_permissions=frozenset({"playbooks.manage"}),
+    )
+    original = REGISTRY.get(tool.name)
+    REGISTRY[tool.name] = tool
+
+    class DraftBackend:
+        name = "draft"
+        model = ""
+
+        async def stream_decide(self, **kwargs):
+            if kwargs["history"] and kwargs["history"][-1].get("role") == "tool":
+                yield TextDelta(text="drafted")
+                yield Final(stop_reason="end_turn", tokens_in=8, tokens_out=2)
+                return
+            yield ToolCall(
+                call_id="call_draft",
+                tool_name="draft_playbook_for_test",
+                args={"intent": "triage high severity incidents"},
+            )
+            yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=3)
+
+    try:
+        store = SessionStore()
+        session = store.create(user_id="user-1", backend="draft", role_id="soc-assistant")
+        runner = AgentRunner(backend=DraftBackend(), session_store=store)
+        events = asyncio.run(
+            _collect(
+                runner,
+                session=session,
+                user_message="draft a playbook",
+                tool_context=ToolContext(
+                    user_id="user-1",
+                    effective_permissions=frozenset({"playbooks.manage"}),
+                ),
+            )
+        )
+    finally:
+        if original is None:
+            REGISTRY.pop(tool.name, None)
+        else:
+            REGISTRY[tool.name] = original
+
+    result = next(e for e in events if e["kind"] == "tool_result")
+    assert result["status"] == "ok"
+    assert calls == [{"intent": "triage high severity incidents"}]
     assert events[-1]["kind"] == "done"
 
 
@@ -656,6 +1067,34 @@ def test_list_tools_endpoint_returns_input_schemas():
     assert "list_incidents" in names
     list_incidents = next(item for item in payload["items"] if item["name"] == "list_incidents")
     assert list_incidents["inputSchema"]["type"] == "object"
+
+
+def test_list_tools_endpoint_hides_permission_gated_tools_for_default_analyst():
+    client = TestClient(app)
+    response = client.get("/api/ai/agent/tools")
+
+    assert response.status_code == 200
+    payload = response.json()
+    names = {item["name"] for item in payload["items"]}
+    assert "search_audit" not in names
+
+
+def test_list_tools_endpoint_exposes_required_permissions():
+    client = TestClient(app)
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "admin-1",
+        "email": "admin@example.test",
+        "roles": ["admin"],
+    }
+    try:
+        response = client.get("/api/ai/agent/tools")
+    finally:
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    search_audit = next(item for item in payload["items"] if item["name"] == "search_audit")
+    assert search_audit["requiredPermissions"] == ["audit.read"]
 
 
 def test_list_roles_endpoint_is_not_public():
