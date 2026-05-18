@@ -746,10 +746,9 @@ def list_integrations(
     penguin_service: Annotated[PenguinToolService, Depends(get_penguin_tool_integration_service)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
 ) -> dict:
-    owner_user_id = str(current_user["id"])
-    fortigate_items = fortigate_service.list(owner_user_id=owner_user_id).get("items", [])
-    fortiweb_items = fortiweb_service.list(owner_user_id=owner_user_id).get("items", [])
-    penguin_items = penguin_service.list(owner_user_id=owner_user_id).get("items", [])
+    fortigate_items = fortigate_service.list().get("items", [])
+    fortiweb_items = fortiweb_service.list().get("items", [])
+    penguin_items = penguin_service.list().get("items", [])
     return {"items": [*fortigate_items, *fortiweb_items, *penguin_items]}
 
 
