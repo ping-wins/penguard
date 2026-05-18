@@ -17,7 +17,10 @@ from app.integrations.connect_persistence import (
     persist_integration,
     validate_auth,
 )
+from app.integrations.fortigate.service import FortiGateConnectionFailed
 from app.integrations.fortiweb.auth import fortiweb_runtime_auth
+from app.integrations.fortiweb.service import FortiWebConnectionFailed
+from app.integrations.penguin_tools import PenguinToolConnectionFailed
 from app.integrations.wiring import apply_wiring, get_soar_actions
 from app.routers.integrations import (
     get_fortigate_integration_service,
@@ -125,6 +128,14 @@ def connect(
         )
     except UnsupportedProviderType as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (
+        PenguinToolConnectionFailed,
+        FortiWebConnectionFailed,
+        FortiGateConnectionFailed,
+    ) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Connection failed: {exc}"
+        ) from exc
     integration_id = str(integration["id"])
     wire = body.get("wire") or {"siem": False, "soar": False}
     connector = get_connector_registry().get(

@@ -98,8 +98,29 @@ def test_persist_penguin_routes_to_legacy_service() -> None:
     )
     assert result == {"id": "penguin-1"}
     assert service.calls == [
-        {"owner_user_id": "u1", "tool_type": "soar_skipper", "name": "Skipper"}
+        {
+            "owner_user_id": "u1",
+            "tool_type": "soar_skipper",
+            "name": "Skipper",
+            "host": "http://soar",
+        }
     ]
+
+
+def test_persist_penguin_passes_empty_host_when_wizard_omits_field() -> None:
+    """The wizard's URL field is the source of truth; missing/blank host
+    must be forwarded as empty so the service falls back to its env client
+    rather than silently using the wrong base URL."""
+    service = _FakePenguinService()
+    persist_integration(
+        provider_type="siem_kowalski",
+        owner_user_id="u1",
+        name="Kowalski",
+        auth={},
+        device={},
+        services={"penguin": service},
+    )
+    assert service.calls[0]["host"] == ""
 
 
 def test_persist_unknown_provider_type_raises() -> None:

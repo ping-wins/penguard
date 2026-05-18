@@ -84,9 +84,11 @@ class PenguinToolIntegrationService:
         self.clients = clients
         self.clock = clock or (lambda: datetime.now(UTC))
 
-    def test_connection(self, *, tool_type: str) -> dict[str, Any]:
+    def test_connection(
+        self, *, tool_type: str, host: str | None = None
+    ) -> dict[str, Any]:
         definition = _definition(tool_type)
-        client = self._client(tool_type)
+        client = self._resolve_client(tool_type, host=host)
         try:
             payload = client.request("GET", "/health")
         except HTTPException as exc:
@@ -113,13 +115,14 @@ class PenguinToolIntegrationService:
         owner_user_id: str,
         tool_type: str,
         name: str | None = None,
+        host: str | None = None,
     ) -> dict[str, Any]:
-        result = self.test_connection(tool_type=tool_type)
+        result = self.test_connection(tool_type=tool_type, host=host)
         if not result["ok"]:
             message = (result.get("error") or {}).get("message") or "Penguin tool unavailable"
             raise PenguinToolConnectionFailed(message)
         definition = _definition(tool_type)
-        client = self._client(tool_type)
+        client = self._resolve_client(tool_type, host=host)
         return self.store.create(
             owner_user_id=owner_user_id,
             tool_type=tool_type,
@@ -145,13 +148,32 @@ class PenguinToolIntegrationService:
         except KeyError as exc:
             raise ValueError(f"Missing configured client for {tool_type}") from exc
 
+    def _resolve_client(
+        self, tool_type: str, *, host: str | None
+    ) -> PenguinToolClient:
+        """When the wizard provides an explicit host, build an ad-hoc client
+        so the user's URL is what gets probed AND persisted. Falls back to the
+        env-configured client when host is missing or blank."""
+        env_client = self._client(tool_type)
+        candidate = (host or "").strip()
+        if not candidate or candidate.rstrip("/") == env_client.base_url:
+            return env_client
+        return SocServiceClient(
+            base_url=candidate,
+            service_name=tool_type,
+            timeout_seconds=env_client.timeout_seconds,
+        )
+
 
 class MockPenguinToolIntegrationService:
     def __init__(self) -> None:
         self._items: dict[str, dict[str, Any]] = {}
 
-    def test_connection(self, *, tool_type: str) -> dict[str, Any]:
+    def test_connection(
+        self, *, tool_type: str, host: str | None = None
+    ) -> dict[str, Any]:
         definition = _definition(tool_type)
+        _ = host
         return {
             "ok": True,
             "status": "connected",
@@ -166,6 +188,7 @@ class MockPenguinToolIntegrationService:
         owner_user_id: str,
         tool_type: str,
         name: str | None = None,
+        host: str | None = None,
     ) -> dict[str, Any]:
         definition = _definition(tool_type)
         integration_id = f"{definition['prefix']}_01"
@@ -173,7 +196,7 @@ class MockPenguinToolIntegrationService:
             "id": integration_id,
             "type": tool_type,
             "name": name or definition["name"],
-            "host": f"mock://{tool_type}",
+            "host": (host or "").strip() or f"mock://{tool_type}",
             "status": "connected",
             "capabilities": definition["capabilities"],
             "lastCheckedAt": _format_datetime(datetime.now(UTC)),

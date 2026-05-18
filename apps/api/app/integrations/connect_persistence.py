@@ -67,5 +67,6 @@ def persist_integration(
             owner_user_id=owner_user_id,
             tool_type=provider_type,
             name=name,
+            host=str(auth.get("host") or "").strip(),
         )
     raise UnsupportedProviderType(f"No persistence for provider type: {provider_type}")
