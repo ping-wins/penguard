@@ -35,6 +35,31 @@ def _http_status_error_message(response: httpx.Response) -> str:
     return message
 
 
+def _auth_error_message(status_code: int, response: httpx.Response) -> str:
+    """401 and 403 both surface as a single 'rejected' error today; FortiGate
+    treats them differently. 401 ⇒ token invalid/expired. 403 ⇒ token accepted
+    but the request is forbidden, almost always because the FortiDashboard
+    source IP is not in the api-user's trusthost list. Include FortiGate's
+    response body so the operator can see the real reason ("trusted host
+    check failed", etc.)."""
+    if status_code == 401:
+        hint = (
+            "FortiGate rejected the API key (HTTP 401 — token invalid, "
+            "expired, or not an api-user token). Verify "
+            "`config system api-user` has the key enabled and `status enable`."
+        )
+    else:
+        hint = (
+            "FortiGate refused the request (HTTP 403 — token accepted but "
+            "request forbidden). Most common cause: FortiDashboard's source "
+            "IP is not in the api-user's `trusthost` allowlist; check "
+            "`config system api-user / edit <name> / set trusthost1 ...`. "
+            "Less common: api-user profile lacks read scope for the path."
+        )
+    detail = _response_error_excerpt(response)
+    return f"{hint} FortiGate response: {detail}" if detail else hint
+
+
 class FortiGateApiClient:
     def __init__(
         self,
@@ -203,7 +228,7 @@ class FortiGateApiClient:
             status_code = exc.response.status_code
             if status_code in (401, 403):
                 raise FortiGateApiError(
-                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                    _auth_error_message(status_code, exc.response)
                 ) from exc
             if status_code == 404:
                 raise FortiGateApiError(
@@ -242,7 +267,7 @@ class FortiGateApiClient:
             status_code = exc.response.status_code
             if status_code in (401, 403):
                 raise FortiGateApiError(
-                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                    _auth_error_message(status_code, exc.response)
                 ) from exc
             if status_code == 404:
                 raise FortiGateApiError(
@@ -279,7 +304,7 @@ class FortiGateApiClient:
             status_code = exc.response.status_code
             if status_code in (401, 403):
                 raise FortiGateApiError(
-                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                    _auth_error_message(status_code, exc.response)
                 ) from exc
             if status_code == 404:
                 raise FortiGateApiError(
@@ -315,7 +340,7 @@ class FortiGateApiClient:
             status_code = exc.response.status_code
             if status_code in (401, 403):
                 raise FortiGateApiError(
-                    "FortiGate rejected the API key (invalid or insufficient permissions)"
+                    _auth_error_message(status_code, exc.response)
                 ) from exc
             if status_code == 404:
                 raise FortiGateApiError(
