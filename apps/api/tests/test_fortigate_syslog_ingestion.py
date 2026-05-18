@@ -1,8 +1,10 @@
 import asyncio
+import time
 from datetime import UTC, datetime
 
 from app.integrations.fortigate.syslog import (
     FortiGateSyslogForwarder,
+    FortiGateSyslogProtocol,
     parse_fortigate_syslog,
     send_fortigate_syslog_probe,
     start_fortigate_syslog_udp_collector,
@@ -29,6 +31,16 @@ class RecordingSiemClient:
                 },
             }
         return event
+
+
+class SlowSiemClient(RecordingSiemClient):
+    def __init__(self, *, delay_seconds: float):
+        super().__init__()
+        self.delay_seconds = delay_seconds
+
+    def request(self, method: str, path: str, **kwargs):
+        time.sleep(self.delay_seconds)
+        return super().request(method, path, **kwargs)
 
 
 class RecordingSyslogStatusRecorder:
@@ -158,6 +170,45 @@ def test_syslog_forwarder_posts_each_datagram_to_siem_without_polling():
             },
         }
     ]
+
+
+def test_syslog_protocol_does_not_block_socket_callback_on_siem_request():
+    async def scenario():
+        siem = SlowSiemClient(delay_seconds=0.2)
+        recorder = RecordingSyslogStatusRecorder()
+        forwarder = FortiGateSyslogForwarder(
+            siem_client=siem,
+            integration_resolver=lambda _addr, _fields: {
+                "integrationId": "int_fgt_01",
+                "ownerUserId": "user_01",
+            },
+            status_recorder=recorder,
+            now=lambda: datetime(2026, 5, 14, 22, 33, tzinfo=UTC),
+        )
+        protocol = FortiGateSyslogProtocol(forwarder)
+        protocol.connection_made(None)
+        line = (
+            'date=2026-05-14 time=22:33:00 type="traffic" subtype="forward" '
+            'level="information" srcip=10.10.10.10 dstip=10.10.20.10 '
+            'action="accept" service="PING" msg="Allowed by policy"'
+        )
+
+        started_at = time.perf_counter()
+        protocol.datagram_received(line.encode(), ("192.0.2.118", 54123))
+        callback_elapsed = time.perf_counter() - started_at
+        for _ in range(50):
+            if recorder.calls:
+                break
+            await asyncio.sleep(0.01)
+        protocol.connection_lost(None)
+
+        return callback_elapsed, siem.requests, recorder.calls
+
+    callback_elapsed, requests, calls = asyncio.run(scenario())
+
+    assert callback_elapsed < 0.05
+    assert len(requests) == 1
+    assert calls[0]["eventId"] == "evt_siem_01"
 
 
 def test_udp_collector_self_probe_exercises_parser_forwarder_and_status_recorder():

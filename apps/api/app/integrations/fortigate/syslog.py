@@ -3,6 +3,7 @@ import logging
 import re
 import shlex
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -190,10 +191,58 @@ class FortiGateSyslogForwarder:
 
 
 class FortiGateSyslogProtocol(asyncio.DatagramProtocol):
-    def __init__(self, forwarder: FortiGateSyslogForwarder) -> None:
+    def __init__(
+        self,
+        forwarder: FortiGateSyslogForwarder,
+        *,
+        queue_max_size: int = 1000,
+    ) -> None:
         self.forwarder = forwarder
+        self.queue: asyncio.Queue[tuple[bytes, tuple[str, int]]] = asyncio.Queue(
+            maxsize=max(1, queue_max_size),
+        )
+        self.worker_task: asyncio.Task[None] | None = None
+        self.dropped_datagrams = 0
+        self.closed = False
+
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        self._ensure_worker()
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        self.closed = True
+        if self.worker_task is not None:
+            self.worker_task.cancel()
+
+    def _ensure_worker(self) -> None:
+        if self.worker_task is not None and not self.worker_task.done():
+            return
+        self.worker_task = asyncio.create_task(self._forward_loop())
+        self.worker_task.add_done_callback(self._log_worker_failure)
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        if self.closed:
+            return
+        self._ensure_worker()
+        try:
+            self.queue.put_nowait((bytes(data), addr))
+        except asyncio.QueueFull:
+            self.dropped_datagrams += 1
+            if self.dropped_datagrams == 1 or self.dropped_datagrams % 100 == 0:
+                logger.warning(
+                    "fortigate_syslog_queue_full dropped_datagrams=%s queue_size=%s",
+                    self.dropped_datagrams,
+                    self.queue.qsize(),
+                )
+
+    async def _forward_loop(self) -> None:
+        while True:
+            data, addr = await self.queue.get()
+            try:
+                await asyncio.to_thread(self._forward_datagram, data, addr)
+            finally:
+                self.queue.task_done()
+
+    def _forward_datagram(self, data: bytes, addr: tuple[str, int]) -> None:
         try:
             result = self.forwarder.handle_datagram(data, addr=addr)
             logger.info(
@@ -208,16 +257,27 @@ class FortiGateSyslogProtocol(asyncio.DatagramProtocol):
                 addr[0] if addr else "unknown",
             )
 
+    def _log_worker_failure(self, task: asyncio.Task[None]) -> None:
+        exc: BaseException | None = None
+        with suppress(asyncio.CancelledError):
+            exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "fortigate_syslog_worker_failed",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+
 
 async def start_fortigate_syslog_udp_collector(
     *,
     host: str,
     port: int,
     forwarder: FortiGateSyslogForwarder,
+    queue_max_size: int = 1000,
 ) -> asyncio.DatagramTransport:
     loop = asyncio.get_running_loop()
     transport, _protocol = await loop.create_datagram_endpoint(
-        lambda: FortiGateSyslogProtocol(forwarder),
+        lambda: FortiGateSyslogProtocol(forwarder, queue_max_size=queue_max_size),
         local_addr=(host, port),
     )
     logger.info("fortigate_syslog_collector_started host=%s port=%s transport=udp", host, port)
