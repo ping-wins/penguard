@@ -70,7 +70,9 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     error.value = null
     isLoading.value = true
     try {
-      session.value = await createAgentSession(options)
+      session.value = await createAgentSession({
+        locale: options.locale ?? String(i18n.global.locale.value || 'pt-BR'),
+      })
       trace.value = []
       lastReply.value = ''
       pendingApproval.value = null

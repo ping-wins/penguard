@@ -31,6 +31,7 @@ from app.ai.agent.tools import (  # noqa: F401
     workspace,
     xdr_endpoints,
 )
+from app.ai.provider import ContainmentStep, ContainmentSuggestion, IncidentAnalysis
 from app.auth import dependencies as auth_dependencies
 from app.main import app
 
@@ -103,6 +104,92 @@ def test_registry_marks_draft_tools_and_rejects_unapproved_write_tools():
                 requires_approval=False,
             )
         )
+
+
+def test_ai_capability_tools_use_enterprise_provider(monkeypatch):
+    store = configured_settings_store(
+        provider="openai",
+        model="gpt-enterprise",
+        api_key="sk-enterprise",
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.tools.capabilities.get_ai_agent_settings_store",
+        lambda: store,
+    )
+    created: list[tuple[str, str]] = []
+
+    class EnterpriseProvider:
+        def __init__(self, *, api_key: str, model: str, **_: Any) -> None:
+            created.append((api_key, model))
+
+        def analyze_incident(self, context, *, locale: str = "pt-BR"):
+            assert context.incident_id == "inc_1"
+            assert locale == "en-US"
+            return IncidentAnalysis(
+                incident_id=context.incident_id,
+                headline="Enterprise analysis",
+                summary="Analyzed through enterprise settings.",
+                risk_score=42,
+                suggested_triage="T2",
+                suggested_ticket_status="investigating",
+                indicators_of_compromise=["10.0.0.1"],
+                next_steps=["Review scope"],
+                references=[],
+            )
+
+        def suggest_containment(self, context, *, locale: str = "pt-BR"):
+            assert context.incident_id == "inc_1"
+            assert locale == "en-US"
+            return ContainmentSuggestion(
+                incident_id=context.incident_id,
+                summary="Enterprise containment",
+                steps=[
+                    ContainmentStep(
+                        title="Review",
+                        description="Review the incident.",
+                        playbook_node_type="manual_review",
+                        severity="medium",
+                        requires_approval=False,
+                    )
+                ],
+            )
+
+    class FakeSiemClient:
+        def request(self, method: str, path: str, **_: Any) -> dict[str, Any]:
+            assert method == "GET"
+            if path == "/tickets/tkt_1":
+                return {"id": "tkt_1", "incidentId": "inc_1"}
+            if path == "/incidents/inc_1":
+                return {
+                    "id": "inc_1",
+                    "title": "Denied traffic burst",
+                    "severity": "medium",
+                    "summary": "Many denies from 10.0.0.1.",
+                    "entities": {"sourceIp": "10.0.0.1"},
+                    "timeline": [],
+                    "ruleId": "rule_1",
+                }
+            raise AssertionError(f"unexpected SIEM path {path}")
+
+    monkeypatch.setattr(
+        "app.ai.agent.tools.capabilities.OpenAICompatibleAIProvider",
+        EnterpriseProvider,
+    )
+    ctx = ToolContext(user_id="analyst-1", locale="en-US", siem_client=FakeSiemClient())
+
+    analysis = asyncio.run(
+        REGISTRY["analyze_incident"].impl(ctx, {"incidentId": "inc_1"})
+    )
+    playbook = asyncio.run(
+        REGISTRY["draft_containment_playbook"].impl(ctx, {"ticketId": "tkt_1"})
+    )
+
+    assert analysis["headline"] == "Enterprise analysis"
+    assert playbook["summary"] == "Enterprise containment"
+    assert created == [
+        ("sk-enterprise", "gpt-enterprise"),
+        ("sk-enterprise", "gpt-enterprise"),
+    ]
 
 
 # ---------------------------------------------------------------------------

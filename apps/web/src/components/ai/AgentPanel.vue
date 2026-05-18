@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useAiAgentStore } from '../../stores/useAiAgentStore'
 
 const store = useAiAgentStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const draft = ref('')
 
 onMounted(async () => {
@@ -21,7 +21,7 @@ const canSend = computed(
 )
 
 async function start() {
-  await store.startSession()
+  await store.startSession({ locale: locale.value })
 }
 
 async function submit() {
