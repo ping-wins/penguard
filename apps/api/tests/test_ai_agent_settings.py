@@ -26,6 +26,7 @@ def override_user(user: dict):
 
 def teardown_function():
     get_ai_agent_settings_store.cache_clear()
+    auth_dependencies.get_auth_audit_store.cache_clear()
     app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
 
@@ -95,6 +96,7 @@ def test_get_ai_agent_settings_requires_permission():
 
 
 def test_admin_can_save_and_read_ai_agent_settings_redacted():
+    auth_dependencies.get_auth_audit_store.cache_clear()
     override_user(ADMIN_USER)
     client = TestClient(app)
     headers = csrf_headers(client)
@@ -123,6 +125,30 @@ def test_admin_can_save_and_read_ai_agent_settings_redacted():
     assert body["apiKeySet"] is True
     assert "apiKey" not in body
 
+    update_audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="ai.agent.settings.updated"
+    )
+    read_audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="ai.agent.settings.read"
+    )
+    assert update_audit["items"][0]["actor"] == {
+        "id": "usr_admin",
+        "email": "admin@example.com",
+    }
+    assert update_audit["items"][0]["details"] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "credentialSet": True,
+    }
+    assert read_audit["items"][0]["details"] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "credentialSet": True,
+        "configured": True,
+    }
+    assert "sk-ant-secret" not in str(update_audit["items"][0]["details"])
+    assert "apiKey" not in str(update_audit["items"][0]["details"])
+
 
 def test_update_ai_agent_settings_rejects_unsupported_provider():
     override_user(ADMIN_USER)
@@ -138,7 +164,24 @@ def test_update_ai_agent_settings_rejects_unsupported_provider():
     assert "provider" in response.json()["detail"]
 
 
+def test_update_ai_agent_settings_rejects_overlong_key_without_echoing_secret():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+    secret = "s" * 1100
+
+    response = client.put(
+        "/api/ai/agent/settings",
+        headers=csrf_headers(client),
+        json={"provider": "openai", "model": "gpt-4o", "apiKey": secret},
+    )
+
+    assert response.status_code == 400
+    assert "apiKey" in response.json()["detail"]
+    assert secret not in response.text
+
+
 def test_test_ai_agent_settings_marks_missing_config_failure():
+    auth_dependencies.get_auth_audit_store.cache_clear()
     override_user(ADMIN_USER)
     client = TestClient(app)
 
@@ -148,3 +191,46 @@ def test_test_ai_agent_settings_marks_missing_config_failure():
     payload = response.json()
     assert payload["ok"] is False
     assert payload["status"] == "not_configured"
+
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="ai.agent.settings.tested"
+    )
+    assert audit["items"][0]["details"] == {
+        "provider": "",
+        "model": "",
+        "credentialSet": False,
+        "configured": False,
+        "status": "not_configured",
+    }
+
+
+def test_test_ai_agent_settings_reports_configured_without_remote_success():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+    headers = csrf_headers(client)
+    client.put(
+        "/api/ai/agent/settings",
+        headers=headers,
+        json={"provider": "openai", "model": "gpt-4o", "apiKey": "sk-openai-secret"},
+    )
+
+    response = client.post("/api/ai/agent/settings/test", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "configured"
+    assert payload["error"] is None
+    settings = get_ai_agent_settings_store().get()
+    assert settings is not None
+    assert settings.last_test_status == "configured"
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="ai.agent.settings.tested"
+    )
+    assert audit["items"][0]["details"] == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "credentialSet": True,
+        "configured": True,
+        "status": "configured",
+    }

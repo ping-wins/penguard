@@ -55,6 +55,7 @@ router = APIRouter(tags=["ai-agent"], prefix="/ai/agent")
 
 
 _AVAILABLE_BACKENDS = ("scripted", "anthropic", "openai")
+_API_KEY_MAX_LENGTH = 1024
 
 
 class CreateSessionRequest(BaseModel):
@@ -106,7 +107,7 @@ class AiAgentSettingsUpdate(BaseModel):
 
     provider: str | None = Field(default=None, max_length=32)
     model: str | None = Field(default=None, max_length=128)
-    api_key: str | None = Field(default=None, alias="apiKey", max_length=1024)
+    api_key: str | None = Field(default=None, alias="apiKey")
 
 
 class AiAgentSettingsTestResponse(BaseModel):
@@ -131,6 +132,55 @@ def _client_ip(request: Request) -> str | None:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _default_settings_payload() -> dict[str, Any]:
+    return {
+        "provider": "",
+        "model": "",
+        "apiKeySet": False,
+        "configured": False,
+        "lastTestedAt": None,
+        "lastTestStatus": None,
+        "lastTestError": None,
+        "updatedBy": None,
+        "updatedAt": None,
+    }
+
+
+def _settings_audit_details(
+    settings_payload: dict[str, Any],
+    *,
+    status: str | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "provider": settings_payload.get("provider") or "",
+        "model": settings_payload.get("model") or "",
+        "credentialSet": bool(settings_payload.get("apiKeySet")),
+        "configured": bool(settings_payload.get("configured")),
+    }
+    if status is not None:
+        details["status"] = status
+    return details
+
+
+def _record_settings_audit(
+    *,
+    audit_store: Any,
+    action: str,
+    request: Request,
+    current_user: dict,
+    details: dict[str, Any],
+) -> None:
+    audit_store.record(
+        action=action,
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=current_user.get("id"),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details=details,
+    )
 
 
 def _build_tool_context(*, user: dict, locale: str, audit_store: Any) -> ToolContext:
@@ -209,22 +259,20 @@ def list_agent_tools(
 
 @router.get("/settings")
 def get_ai_agent_settings(
-    _admin: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    request: Request,
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
 ) -> dict[str, Any]:
     settings = get_ai_agent_settings_store().get()
-    if settings is None:
-        return {
-            "provider": "",
-            "model": "",
-            "apiKeySet": False,
-            "configured": False,
-            "lastTestedAt": None,
-            "lastTestStatus": None,
-            "lastTestError": None,
-            "updatedBy": None,
-            "updatedAt": None,
-        }
-    return settings.to_dict(redact=True)
+    payload = _default_settings_payload() if settings is None else settings.to_dict(redact=True)
+    _record_settings_audit(
+        audit_store=audit_store,
+        action="ai.agent.settings.read",
+        request=request,
+        current_user=current_user,
+        details=_settings_audit_details(payload),
+    )
+    return payload
 
 
 @router.put("/settings")
@@ -247,51 +295,73 @@ def update_ai_agent_settings(
     if payload.model is not None:
         fields["model"] = payload.model.strip()
     if payload.api_key is not None:
+        if len(payload.api_key) > _API_KEY_MAX_LENGTH:
+            raise HTTPException(status_code=400, detail="apiKey exceeds maximum length")
         fields["api_key"] = payload.api_key
+    if any(name in fields for name in ("provider", "model", "api_key")):
+        fields["last_tested_at"] = None
+        fields["last_test_status"] = None
+        fields["last_test_error"] = None
     fields["updated_by"] = current_user.get("email") or str(current_user.get("id") or "")
     settings = get_ai_agent_settings_store().upsert(**fields)
-    audit_store.record(
+    payload = settings.to_dict(redact=True)
+    _record_settings_audit(
+        audit_store=audit_store,
         action="ai.agent.settings.updated",
-        outcome="success",
-        email=current_user.get("email"),
-        user_id=current_user.get("id"),
-        client_ip=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
+        request=request,
+        current_user=current_user,
         details={
-            "provider": settings.provider,
-            "model": settings.model,
-            "apiKeySet": settings.api_key_set,
+            key: value
+            for key, value in _settings_audit_details(payload).items()
+            if key != "configured"
         },
     )
-    return settings.to_dict(redact=True)
+    return payload
 
 
 @router.post("/settings/test", response_model=AiAgentSettingsTestResponse)
 def test_ai_agent_settings(
+    request: Request,
     current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> AiAgentSettingsTestResponse:
     store = get_ai_agent_settings_store()
     settings = store.get()
     if settings is None or not settings.configured:
-        store.upsert(
+        settings = store.upsert(
             last_tested_at=datetime.now(UTC),
             last_test_status="not_configured",
             last_test_error="SOC Assistant provider is not configured",
             updated_by=current_user.get("email") or str(current_user.get("id") or ""),
+        )
+        payload = settings.to_dict(redact=True)
+        _record_settings_audit(
+            audit_store=audit_store,
+            action="ai.agent.settings.tested",
+            request=request,
+            current_user=current_user,
+            details=_settings_audit_details(payload, status="not_configured"),
         )
         return AiAgentSettingsTestResponse(
             ok=False,
             status="not_configured",
             error="SOC Assistant provider is not configured",
         )
-    store.upsert(
+    settings = store.upsert(
         last_tested_at=datetime.now(UTC),
-        last_test_status="success",
+        last_test_status="configured",
         last_test_error=None,
         updated_by=current_user.get("email") or str(current_user.get("id") or ""),
     )
-    return AiAgentSettingsTestResponse(ok=True, status="success", error=None)
+    _record_settings_audit(
+        audit_store=audit_store,
+        action="ai.agent.settings.tested",
+        request=request,
+        current_user=current_user,
+        details=_settings_audit_details(settings.to_dict(redact=True), status="configured"),
+    )
+    return AiAgentSettingsTestResponse(ok=True, status="configured", error=None)
 
 
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)
