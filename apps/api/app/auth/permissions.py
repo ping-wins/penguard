@@ -69,6 +69,12 @@ PERMISSION_CATALOG: tuple[PermissionDef, ...] = (
         description_key="settings.roles.permission.playbooks.execute.description",
     ),
     PermissionDef(
+        slug="playbooks.manage",
+        category="playbooks",
+        label_key="settings.roles.permission.playbooks.manage.label",
+        description_key="settings.roles.permission.playbooks.manage.description",
+    ),
+    PermissionDef(
         slug="tickets.manage",
         category="tickets",
         label_key="settings.roles.permission.tickets.manage.label",
@@ -85,6 +91,12 @@ PERMISSION_CATALOG: tuple[PermissionDef, ...] = (
         category="ai",
         label_key="settings.roles.permission.ai.agent.approve.label",
         description_key="settings.roles.permission.ai.agent.approve.description",
+    ),
+    PermissionDef(
+        slug="ai.agent.manage",
+        category="ai",
+        label_key="settings.roles.permission.ai.agent.manage.label",
+        description_key="settings.roles.permission.ai.agent.manage.description",
     ),
 )
 

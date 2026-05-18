@@ -70,7 +70,18 @@ def make_client(db_session, monkeypatch):
     def _override_db():
         yield db_session
 
-    def _client(user: dict):
+    def _client(
+        user: dict | None = None,
+        *,
+        user_id: str | None = None,
+        roles: list[str] | None = None,
+    ):
+        if user is None:
+            user = {
+                "id": user_id or "usr_test",
+                "email": f"{user_id or 'test'}@example.com",
+                "roles": roles or [],
+            }
         app.dependency_overrides[get_db_session] = _override_db
         app.dependency_overrides[get_current_api_user] = lambda: user
         return TestClient(app)
@@ -140,6 +151,17 @@ def test_reject_unknown_permission_slug(make_client):
         json={"name": "Bad", "permissions": ["does.not.exist"]},
     )
     assert r.status_code == 422
+
+
+def test_permission_catalog_includes_soc_assistant_management(make_client, db_session):
+    client = make_client(user_id="admin-user", roles=["admin"])
+
+    response = client.get("/api/roles/permissions/catalog")
+
+    assert response.status_code == 200
+    slugs = {item["slug"] for item in response.json()}
+    assert "ai.agent.manage" in slugs
+    assert "playbooks.manage" in slugs
 
 
 def test_wildcard_permission_rejected_on_custom_role(make_client):

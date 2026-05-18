@@ -673,6 +673,10 @@ export default {
           label: 'Executar playbooks',
           description: 'Disparar playbooks de SOAR (dry-run e execução real).',
         },
+        'playbooks.manage': {
+          label: 'Gerenciar playbooks',
+          description: 'Criar, editar e validar definições de playbooks SOAR.',
+        },
         'tickets.manage': {
           label: 'Gerenciar tickets',
           description: 'Fechar, reatribuir e editar tickets em massa.',
@@ -684,6 +688,10 @@ export default {
         'ai.agent.approve': {
           label: 'Aprovar escritas do agente',
           description: 'Aprovar chamadas de tools de escrita do agente IA.',
+        },
+        'ai.agent.manage': {
+          label: 'Configurar Assistente SOC',
+          description: 'Configurar provider, modelo e chave de API do Assistente SOC da empresa.',
         },
       },
       members: {

@@ -673,6 +673,10 @@ export default {
           label: 'Execute playbooks',
           description: 'Trigger SOAR playbooks (dry-run and live).',
         },
+        'playbooks.manage': {
+          label: 'Manage playbooks',
+          description: 'Create, edit and validate SOAR playbook definitions.',
+        },
         'tickets.manage': {
           label: 'Manage tickets',
           description: 'Close, reassign and bulk-edit tickets.',
@@ -684,6 +688,10 @@ export default {
         'ai.agent.approve': {
           label: 'Approve agent writes',
           description: 'Approve write-category AI agent tool calls.',
+        },
+        'ai.agent.manage': {
+          label: 'Configure SOC Assistant',
+          description: 'Configure the enterprise SOC Assistant provider, model and API key.',
         },
       },
       members: {
