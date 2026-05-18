@@ -53,8 +53,6 @@ describe('useAiAgentStore', () => {
 
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(fetcher).toHaveBeenCalledWith('/api/ai/agent/tools', { credentials: 'include' })
-    expect(store.roles).toEqual([])
-    expect(store.backends).toEqual([])
     expect(store.tools).toHaveLength(1)
     expect(store.tools[0].name).toBe('list_incidents')
   })

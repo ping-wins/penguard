@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
-  type AgentBackend,
-  type AgentRole,
   type AgentSessionResponse,
   type AgentStreamEvent,
   type AgentTool,
@@ -37,8 +35,6 @@ export type PendingAgentApproval = {
 }
 
 export const useAiAgentStore = defineStore('aiAgent', () => {
-  const roles = ref<AgentRole[]>([])
-  const backends = ref<AgentBackend[]>([])
   const tools = ref<AgentTool[]>([])
   const session = ref<AgentSessionResponse | null>(null)
   const trace = ref<AgentTraceEntry[]>([])
@@ -51,8 +47,6 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   const tokensOut = ref(0)
 
   async function ensureCatalog() {
-    roles.value = []
-    backends.value = []
     if (tools.value.length > 0) return
     isLoading.value = true
     try {
@@ -192,8 +186,6 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   }
 
   function reset() {
-    roles.value = []
-    backends.value = []
     tools.value = []
     session.value = null
     trace.value = []
@@ -207,8 +199,6 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   }
 
   return {
-    roles,
-    backends,
     tools,
     session,
     trace,

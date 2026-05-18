@@ -1,22 +1,5 @@
 import { useAuthStore } from '../stores/useAuthStore'
 
-export type AgentBackend = {
-  name: string
-  ready: boolean
-  default: boolean
-}
-
-export type AgentRole = {
-  id: string
-  label: string
-  description: string
-  tier: 'fast' | 'balanced' | 'deep'
-  localeDefault: string
-  tokenBudget: number
-  maxSteps: number
-  allowedToolCategories: string[]
-}
-
 export type AgentTool = {
   name: string
   description: string
@@ -101,18 +84,6 @@ async function parseOrThrow<T>(response: Response, fallback: string): Promise<T>
   const data = await response.json().catch(() => ({}))
   const message = typeof (data as any)?.detail === 'string' ? (data as any).detail : fallback
   throw new Error(message)
-}
-
-export async function listBackends(): Promise<AgentBackend[]> {
-  const response = await fetch('/api/ai/agent/backends', { credentials: 'include' })
-  const payload = await parseOrThrow<{ items: AgentBackend[] }>(response, 'Falha ao listar backends')
-  return payload.items
-}
-
-export async function listAgentRoles(): Promise<AgentRole[]> {
-  const response = await fetch('/api/ai/agent/roles', { credentials: 'include' })
-  const payload = await parseOrThrow<{ items: AgentRole[] }>(response, 'Falha ao listar roles')
-  return payload.items
 }
 
 export async function listAgentTools(): Promise<AgentTool[]> {
