@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { AlertCircle, Boxes, ChevronRight, Plug, RefreshCcw, Search, X } from 'lucide-vue-next'
+import { AlertCircle, Boxes, ChevronRight, Plug, RefreshCcw, Search, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useMarketplaceStore } from '../../stores/useMarketplaceStore'
 import type { AddonManifest } from '../../services/marketplaceClient'
 
 const { t } = useI18n()
-const emit = defineEmits<{ install: [addon: AddonManifest] }>()
+const emit = defineEmits<{
+  install: [addon: AddonManifest]
+  uninstall: [addon: AddonManifest]
+}>()
 
 const store = useMarketplaceStore()
 const search = ref('')
@@ -54,6 +57,21 @@ async function installAddon(addon: AddonManifest) {
   try {
     await store.install(addon)
     emit('install', addon)
+  } catch {
+    // store.error already set; swallow to keep UI responsive
+  }
+}
+
+async function uninstallAddon(addon: AddonManifest) {
+  if (!addon.installed) return
+  const confirmed = window.confirm(
+    t('marketplace.uninstallConfirm', { name: addon.name }),
+  )
+  if (!confirmed) return
+  try {
+    await store.uninstall(addon)
+    if (selected.value?.id === addon.id) selected.value = null
+    emit('uninstall', addon)
   } catch {
     // store.error already set; swallow to keep UI responsive
   }
@@ -151,6 +169,17 @@ onMounted(() => {
                 {{ isCurrentVersion(addon) ? t('marketplace.installed') : t('marketplace.install') }}
               </button>
               <button
+                v-if="addon.installed"
+                type="button"
+                :data-test="`marketplace-uninstall-${addon.id}`"
+                class="flex items-center gap-1 rounded border border-red-400/40 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="store.uninstallingId === addon.id"
+                @click="uninstallAddon(addon)"
+              >
+                <Trash2 :size="12" />
+                {{ store.uninstallingId === addon.id ? t('marketplace.uninstalling') : t('marketplace.uninstall') }}
+              </button>
+              <button
                 type="button"
                 class="flex items-center justify-center gap-1 rounded border border-theme-border bg-theme-bg/40 px-2 py-1 text-[11px] text-theme-text-muted hover:text-theme-text"
                 @click="selected = addon"
@@ -167,7 +196,7 @@ onMounted(() => {
     <Teleport to="body">
       <div
         v-if="selected"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
         @click.self="selected = null"
       >
         <div class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-theme-border bg-theme-panel shadow-xl">
@@ -235,12 +264,23 @@ onMounted(() => {
               </div>
             </section>
           </div>
-          <footer class="flex justify-end gap-2 border-t border-theme-border px-4 py-3">
+          <footer class="flex flex-wrap justify-end gap-2 border-t border-theme-border px-4 py-3">
             <button
               type="button"
               class="rounded border border-theme-border bg-theme-bg/40 px-3 py-1 text-xs text-theme-text-muted hover:text-theme-text"
               @click="selected = null"
             >{{ t('marketplace.close') }}</button>
+            <button
+              v-if="selected.installed"
+              type="button"
+              :data-test="`marketplace-detail-uninstall-${selected.id}`"
+              class="flex items-center gap-1 rounded border border-red-400/40 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="store.uninstallingId === selected.id"
+              @click="uninstallAddon(selected)"
+            >
+              <Trash2 :size="12" />
+              {{ store.uninstallingId === selected.id ? t('marketplace.uninstalling') : t('marketplace.uninstall') }}
+            </button>
             <button
               type="button"
               class="flex items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-3 py-1 text-xs font-medium text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"

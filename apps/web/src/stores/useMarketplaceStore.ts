@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   installMarketplaceAddon,
   listMarketplaceAddons,
+  uninstallMarketplaceAddon,
   type AddonManifest,
 } from '../services/marketplaceClient'
 
@@ -12,6 +13,7 @@ export const useMarketplaceStore = defineStore('marketplace', () => {
   const error = ref<string | null>(null)
   const hasLoadedOnce = ref(false)
   const installingId = ref<string | null>(null)
+  const uninstallingId = ref<string | null>(null)
 
   const byCategory = computed(() => {
     const groups: Record<string, AddonManifest[]> = {}
@@ -55,14 +57,30 @@ export const useMarketplaceStore = defineStore('marketplace', () => {
     }
   }
 
+  async function uninstall(addon: AddonManifest): Promise<void> {
+    uninstallingId.value = addon.id
+    error.value = null
+    try {
+      await uninstallMarketplaceAddon(addon.id)
+      await refresh()
+    } catch (err: any) {
+      error.value = err?.message ?? 'Failed to uninstall marketplace add-on'
+      throw err
+    } finally {
+      uninstallingId.value = null
+    }
+  }
+
   return {
     addons,
     isLoading,
     error,
     hasLoadedOnce,
     installingId,
+    uninstallingId,
     byCategory,
     refresh,
     install,
+    uninstall,
   }
 })

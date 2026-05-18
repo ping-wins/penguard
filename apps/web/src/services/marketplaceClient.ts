@@ -74,3 +74,14 @@ export async function installMarketplaceAddon(
     throw new Error(payload?.detail ?? 'Failed to install add-on')
   }
 }
+
+export async function uninstallMarketplaceAddon(addonId: string): Promise<void> {
+  const response = await fetch(
+    `/api/marketplace/addons/${encodeURIComponent(addonId)}`,
+    { method: 'DELETE', credentials: 'include' },
+  )
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.detail ?? 'Failed to uninstall add-on')
+  }
+}

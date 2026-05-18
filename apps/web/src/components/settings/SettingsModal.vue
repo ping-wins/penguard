@@ -61,9 +61,10 @@ const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => {
 })
 
 function onMarketplaceInstall(_addon: AddonManifest) {
-  // Close the settings modal so the user can finish provisioning the
-  // integration in the existing sidebar flow.
-  close()
+  // Stay on the Marketplace tab — the user usually wants to install or
+  // uninstall a few add-ons in one sitting. The connect wizard flow now
+  // reads the catalog from installed records on demand, so there is no
+  // reason to bounce them back to the sidebar after every install.
 }
 
 function close() {
