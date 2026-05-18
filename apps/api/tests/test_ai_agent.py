@@ -120,10 +120,15 @@ def test_role_registry_matches_real_runtime_spec():
 def test_router_falls_back_to_scripted_without_credentials(monkeypatch):
     monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "")
     monkeypatch.setenv("FORTIDASHBOARD_AI_API_KEY", "")
+    monkeypatch.setenv("FORTIDASHBOARD_AI_BASE_URL", "")
+    # get_settings() is @lru_cache; env mutation alone doesn't invalidate it.
+    from app.core.config import get_settings
+    get_settings.cache_clear()
 
     backend = pick_backend(get_role("incident-triage"), "user-no-pref")  # type: ignore[arg-type]
 
     assert backend.name == "scripted"
+    get_settings.cache_clear()
 
 
 def test_router_uses_user_preference_and_tier_model(monkeypatch):
