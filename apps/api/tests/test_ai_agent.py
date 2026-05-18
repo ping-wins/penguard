@@ -687,6 +687,42 @@ def test_send_message_streams_steps_and_records_audit(monkeypatch):
     assert "items" in audit
 
 
+def test_send_message_returns_step_error_when_assistant_unconfigured(monkeypatch):
+    store = configured_settings_store()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
+    client = TestClient(app)
+    headers = csrf_headers(client)
+    create = client.post(
+        "/api/ai/agent/sessions",
+        headers=headers,
+        json={"locale": "pt-BR"},
+    )
+    assert create.status_code == 201
+    session_id = create.json()["sessionId"]
+    store.upsert(api_key="", updated_by="admin@example.com")
+
+    with client.stream(
+        "POST",
+        f"/api/ai/agent/sessions/{session_id}/messages",
+        headers=headers,
+        json={"content": "olá agente"},
+    ) as response:
+        assert response.status_code == 200
+        events = []
+        for line in response.iter_lines():
+            if not line:
+                continue
+            if line.startswith("data: "):
+                events.append(json.loads(line[len("data: "):]))
+
+    error = next(e for e in events if e.get("type") == "step" and e.get("kind") == "error")
+    assert error["code"] == "agent_not_configured"
+    assert "not configured" in error["message"]
+
+
 def test_approval_endpoint_resolves_pending_future(monkeypatch):
     store = configured_settings_store()
     monkeypatch.setattr(

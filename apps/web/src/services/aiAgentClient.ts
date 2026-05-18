@@ -130,10 +130,7 @@ export async function createAgentSession(
     credentials: 'include',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      role: options.role ?? 'chat',
-      ...(options.backend ? { backend: options.backend } : {}),
       locale: options.locale ?? 'pt-BR',
-      model: options.model ?? '',
     }),
   })
   return parseOrThrow<AgentSessionResponse>(response, 'Falha ao criar sessão de agente')

@@ -85,6 +85,14 @@ describe('useAiAgentStore', () => {
     await store.startSession({ role: 'incident-triage', backend: 'scripted' })
     await store.sendMessage('liste incidentes')
 
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      '/api/ai/agent/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ locale: 'pt-BR' }),
+      }),
+    )
     const toolCalls = store.trace.filter((entry) => entry.kind === 'tool_call')
     expect(toolCalls).toHaveLength(1)
     const call = toolCalls[0] as { toolName: string; status?: string; result?: unknown }

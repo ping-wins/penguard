@@ -34,6 +34,7 @@ from app.ai.agent.events import (
 )
 from app.ai.agent.registry import AgentTool, ToolContext, get_tool, list_tools
 from app.ai.agent.roles import RoleConfig, get_role, render_system_prompt
+from app.ai.agent.router import AgentNotConfiguredError
 from app.ai.agent.session import AgentMessage, AgentSession, SessionStore
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,11 @@ class AgentRunner:
             yield ErrorEvent(step=0, message="agent role registry unavailable", code="role_error")
             return
 
-        backend = self._resolve_backend(role, session.user_id)
+        try:
+            backend = self._resolve_backend(role, session.user_id)
+        except AgentNotConfiguredError as exc:
+            yield ErrorEvent(step=0, message=str(exc), code="agent_not_configured")
+            return
         session.backend = backend.name
         session.model = backend.model
 
