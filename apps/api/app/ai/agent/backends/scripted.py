@@ -9,12 +9,11 @@ pipeline end-to-end without an LLM key.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from typing import Any
+from uuid import uuid4
 
-from app.ai.agent.backends.base import AgentBackend, BackendDecision
+from app.ai.agent.backends.base import Final, TextDelta, ToolCall
 from app.ai.agent.registry import AgentTool
-
 
 _KEYWORDS: list[tuple[tuple[str, ...], str, dict[str, Any]]] = [
     (("analisa", "analise", "analyze"), "analyze_incident", {"incidentId": "demo"}),
@@ -37,13 +36,17 @@ class ScriptedBackend:
     name = "scripted"
     model = "scripted-cockpit-agent"
 
-    def decide(
+    async def stream_decide(
         self,
         *,
         history: list[dict[str, Any]],
-        tools: Iterable[AgentTool],
+        tools: list[AgentTool],
+        system_prompt: str,
         locale: str,
-    ) -> BackendDecision:
+        max_output_tokens: int,
+    ):
+        del system_prompt, max_output_tokens
+
         # If the most recent entry is a tool result, the agent has the
         # data it needs — wrap it into a final reply.
         if history and history[-1].get("role") == "tool":
@@ -56,24 +59,40 @@ class ScriptedBackend:
                 text = (
                     f"Agente scripted executou `{tool_name}`. Prévia do resultado: {preview}"
                 )
-            return BackendDecision(kind="final", text=text)
+            yield TextDelta(text=text)
+            yield Final(
+                stop_reason="end_turn",
+                tokens_in=_estimate_tokens(history),
+                tokens_out=_estimate_tokens(text),
+            )
+            return
 
         prompt = _latest_user_prompt(history).lower()
         if not prompt:
-            return BackendDecision(
-                kind="final",
-                text=(
-                    "Scripted agent: send a question about incidents, "
-                    "integrations, widgets or playbooks."
-                ),
+            text = (
+                "Scripted agent: send a question about incidents, "
+                "integrations, widgets or playbooks."
             )
+            yield TextDelta(text=text)
+            yield Final(
+                stop_reason="end_turn",
+                tokens_in=_estimate_tokens(history),
+                tokens_out=_estimate_tokens(text),
+            )
+            return
 
         tool_names = {tool.name for tool in tools}
         for keywords, name, args in _KEYWORDS:
             if name not in tool_names:
                 continue
             if any(token in prompt for token in keywords):
-                return BackendDecision(kind="tool_call", tool_name=name, args=dict(args))
+                yield ToolCall(call_id=uuid4().hex, tool_name=name, args=dict(args))
+                yield Final(
+                    stop_reason="tool_use",
+                    tokens_in=_estimate_tokens(history),
+                    tokens_out=_estimate_tokens(args) + 1,
+                )
+                return
 
         # No keyword match — answer directly.
         if (locale or "").lower().startswith("en"):
@@ -88,7 +107,12 @@ class ScriptedBackend:
                 'perguntar sobre "incidentes", "integrações", "widgets" '
                 'ou "playbook runs".'
             )
-        return BackendDecision(kind="final", text=text)
+        yield TextDelta(text=text)
+        yield Final(
+            stop_reason="end_turn",
+            tokens_in=_estimate_tokens(history),
+            tokens_out=_estimate_tokens(text),
+        )
 
 
 def _latest_user_prompt(history: list[dict[str, Any]]) -> str:
@@ -106,3 +130,11 @@ def _summarize(value: Any, *, limit: int = 240) -> str:
     if len(text) > limit:
         return text[: limit - 1] + "…"
     return text
+
+
+def _estimate_tokens(value: Any) -> int:
+    try:
+        text = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+    except (TypeError, ValueError):
+        text = str(value)
+    return max(1, len(text) // 4)

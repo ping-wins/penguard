@@ -19,9 +19,14 @@ from app.ai.agent import (
     AgentSession,
     ToolContext,
     get_session_store,
+    list_roles,
     list_tools,
 )
 from app.ai.agent.backends import ScriptedBackend
+from app.ai.agent.roles import get_role
+from app.ai.agent.router import pick_backend
+from app.ai.agent.runner import AgentRunner
+
 # Importing this module side-effect registers the 9 read tools.
 from app.ai.agent.tools import (  # noqa: F401
     audit_tool,
@@ -33,9 +38,9 @@ from app.ai.agent.tools import (  # noqa: F401
     workspace,
     xdr_endpoints,
 )
-from app.ai.agent.runner import AgentRunner
 from app.auth.csrf_dependency import require_csrf
 from app.auth.dependencies import get_auth_audit_store, get_current_api_user
+from app.auth.permissions import require_permission
 from app.realtime import sse_message
 
 logger = logging.getLogger(__name__)
@@ -43,13 +48,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ai-agent"], prefix="/ai/agent")
 
 
-_AVAILABLE_BACKENDS = ("scripted",)
+_AVAILABLE_BACKENDS = ("scripted", "anthropic", "openai")
 
 
 class CreateSessionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    backend: str = Field(default="scripted", min_length=1, max_length=32)
+    role: str = Field(default="chat", min_length=1, max_length=64)
+    backend: str | None = Field(default=None, min_length=1, max_length=32)
     locale: str = Field(default="pt-BR", min_length=2, max_length=16)
     model: str = Field(default="", max_length=128)
 
@@ -60,15 +66,38 @@ class SessionResponse(BaseModel):
     session_id: str = Field(alias="sessionId")
     backend: str
     model: str
+    role: str
     locale: str
     created_at: float = Field(alias="createdAt")
+    tokens_in: int = Field(alias="tokensIn")
+    tokens_out: int = Field(alias="tokensOut")
+
+
+class AgentRoleResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    label: str
+    description: str
+    tier: str
+    locale_default: str = Field(alias="localeDefault")
+    token_budget: int = Field(alias="tokenBudget")
+    max_steps: int = Field(alias="maxSteps")
+    allowed_tool_categories: list[str] = Field(alias="allowedToolCategories")
 
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
 
 
-def _resolve_backend(name: str) -> Any:
+class ApprovalRequest(BaseModel):
+    granted: bool
+    reason: str = Field(default="", max_length=500)
+
+
+def _resolve_forced_backend(name: str | None) -> Any | None:
+    if name is None:
+        return None
     if name == "scripted":
         return ScriptedBackend()
     raise HTTPException(
@@ -112,8 +141,29 @@ def list_backends(
 ) -> dict[str, list[dict[str, Any]]]:
     return {
         "items": [
-            {"name": name, "ready": True, "default": name == "scripted"}
+            {"name": name, "ready": name == "scripted", "default": name == "scripted"}
             for name in _AVAILABLE_BACKENDS
+        ]
+    }
+
+
+@router.get("/roles")
+def list_agent_roles(
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict[str, list[AgentRoleResponse]]:
+    return {
+        "items": [
+            AgentRoleResponse(
+                id=role.id,
+                label=role.label,
+                description=role.description,
+                tier=role.tier,
+                locale_default=role.locale_default,
+                token_budget=role.token_budget,
+                max_steps=role.max_steps,
+                allowed_tool_categories=sorted(role.allowed_tool_categories),
+            )
+            for role in list_roles()
         ]
     }
 
@@ -143,24 +193,28 @@ def create_session(
     current_user: Annotated[dict, Depends(get_current_api_user)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> SessionResponse:
-    if payload.backend not in _AVAILABLE_BACKENDS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"backend '{payload.backend}' not available",
-        )
+    role = get_role(payload.role)
+    if role is None:
+        raise HTTPException(status_code=400, detail=f"unknown agent role: {payload.role}")
+    forced_backend = _resolve_forced_backend(payload.backend)
+    backend = forced_backend or pick_backend(role, str(current_user["id"]))
     store = get_session_store()
     session = store.create(
         user_id=str(current_user["id"]),
-        backend=payload.backend,
-        model=payload.model,
+        backend=backend.name,
+        model=payload.model or backend.model,
+        role_id=role.id,
         locale=payload.locale,
     )
     return SessionResponse(
         session_id=session.id,
         backend=session.backend,
         model=session.model,
+        role=session.role_id,
         locale=session.locale,
         created_at=session.created_at,
+        tokens_in=session.tokens_in_total,
+        tokens_out=session.tokens_out_total,
     )
 
 
@@ -201,11 +255,14 @@ async def send_message(
     session = store.get(session_id, user_id=str(current_user["id"]))
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
+    if session.turn_lock.locked():
+        raise HTTPException(status_code=409, detail="session already has an active turn")
 
-    backend = _resolve_backend(session.backend)
+    backend = ScriptedBackend() if session.backend == "scripted" else None
     runner = AgentRunner(
-        backend=backend,
         session_store=store,
+        backend=backend,
+        backend_picker=pick_backend,
         audit_recorder=lambda *, action, outcome, details: audit_store.record(
             action=action,
             outcome=outcome,
@@ -246,15 +303,40 @@ async def send_message(
     )
 
 
+@router.post("/sessions/{session_id}/approvals/{call_id}")
+async def approve_tool_call(
+    session_id: str,
+    call_id: str,
+    payload: Annotated[ApprovalRequest, Body(...)],
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.approve"))],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    store = get_session_store()
+    session = store.get(session_id, user_id=str(current_user["id"]))
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    future = session.pending_approvals.get(call_id)
+    if future is None:
+        raise HTTPException(status_code=404, detail="approval not found")
+    if future.done():
+        raise HTTPException(status_code=409, detail="approval already resolved")
+    future.set_result({"granted": payload.granted, "reason": payload.reason})
+    return {"sessionId": session.id, "callId": call_id, "granted": payload.granted}
+
+
 def _serialize_session(session: AgentSession) -> dict[str, Any]:
     return {
         "sessionId": session.id,
         "backend": session.backend,
         "model": session.model,
+        "role": session.role_id,
         "locale": session.locale,
         "createdAt": session.created_at,
         "lastUsedAt": session.last_used_at,
         "usedTools": list(session.used_tools),
+        "tokensIn": session.tokens_in_total,
+        "tokensOut": session.tokens_out_total,
+        "pendingApprovals": sorted(session.pending_approvals.keys()),
         "history": [
             {
                 "role": m.role,
@@ -263,6 +345,7 @@ def _serialize_session(session: AgentSession) -> dict[str, Any]:
                 "toolName": m.tool_name,
                 "toolArgs": m.tool_args,
                 "toolResult": m.tool_result,
+                "toolCalls": m.tool_calls,
                 "createdAt": m.created_at,
             }
             for m in session.history

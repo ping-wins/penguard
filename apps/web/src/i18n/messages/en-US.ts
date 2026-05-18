@@ -26,6 +26,7 @@ export default {
     upload: 'Upload',
     none: 'None',
     all: 'All',
+    you: 'You',
   },
   auth: {
     login: {
@@ -76,6 +77,32 @@ export default {
     playbooks: 'SOAR Playbooks',
     audit: 'Audit trail',
     settings: 'Settings',
+  },
+  aiAgent: {
+    title: 'AI Agent',
+    start: 'Start',
+    end: 'End',
+    send: 'Send',
+    roleLabel: 'Role',
+    backendLabel: 'Backend',
+    defaultSuffix: 'default',
+    empty: 'Send a message to the agent, for example "list incidents" or "show integrations".',
+    backendHint: 'Backend: {backend}',
+    streaming: 'Streaming...',
+    placeholder: 'Ask the agent something',
+    resultEmpty: 'empty',
+    approvalTitle: 'Approval required',
+    approve: 'Approve',
+    deny: 'Deny',
+    modelBadge: '{model} · {used} / {budget} tokens',
+    noModel: 'Model pending',
+    roles: {
+      chat: { label: 'Chat' },
+      widget_builder: { label: 'Widget builder' },
+      incident_triage: { label: 'Incident triage' },
+      playbook_draft: { label: 'Playbook draft' },
+      soc_investigation: { label: 'SOC investigation' },
+    },
   },
   marketplace: {
     title: 'Marketplace',
@@ -620,6 +647,7 @@ export default {
           playbooks: 'Playbooks',
           tickets: 'Tickets',
           policies: 'Policies',
+          ai: 'AI',
         },
         'integrations.write': {
           label: 'Add/remove providers',
@@ -652,6 +680,10 @@ export default {
         'policies.manage': {
           label: 'Manage SOC policies',
           description: 'Create, edit, disable, enable and remove provider policies.',
+        },
+        'ai.agent.approve': {
+          label: 'Approve agent writes',
+          description: 'Approve write-category AI agent tool calls.',
         },
       },
       members: {

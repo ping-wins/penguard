@@ -355,6 +355,7 @@ class UserAiPreferenceModel(Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False, default="gemini")
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     api_key_blob: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_keys_blob: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     cli_binary: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
