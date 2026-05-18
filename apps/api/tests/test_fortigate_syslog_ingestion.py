@@ -71,7 +71,7 @@ def test_parse_fortigate_traffic_syslog_maps_to_siem_event():
     line = (
         '<189>date=2026-05-14 time=22:32:01 devname="FGVMEVJAOUIR5F07" '
         'devid="FGVM01" type="traffic" subtype="forward" level="notice" '
-        'srcip=10.10.10.10 dstip=10.10.20.10 srcport=43822 dstport=22 '
+        'srcip=192.0.2.10 dstip=10.10.20.10 srcport=43822 dstport=22 '
         'proto=6 service="SSH" action="deny" policyid=12 '
         'msg="Denied by forward policy check"'
     )
@@ -84,7 +84,7 @@ def test_parse_fortigate_traffic_syslog_maps_to_siem_event():
         "severity": "medium",
         "occurredAt": "2026-05-14T22:32:01Z",
         "entities": {
-            "sourceIp": "10.10.10.10",
+            "sourceIp": "192.0.2.10",
             "destinationIp": "10.10.20.10",
             "integrationId": "int_fgt_01",
             "deviceName": "FGVMEVJAOUIR5F07",
@@ -105,6 +105,33 @@ def test_parse_fortigate_traffic_syslog_maps_to_siem_event():
             "raw": line,
         },
     }
+
+
+def test_parse_fortigate_syslog_prefers_eventtime_for_utc_occurrence():
+    line = (
+        '<189>date=2026-05-17 time=21:37:24 tz="-0700" '
+        'eventtime=1779079044198123665 devname="FGVMEVJAOUIR5F07" '
+        'devid="FGVM01" type="traffic" subtype="forward" level="notice" '
+        'srcip=192.0.2.10 dstip=198.51.100.30 srcport=39336 dstport=80 '
+        'proto=6 service="HTTP" action="close" policyid=2'
+    )
+
+    event = parse_fortigate_syslog(line, integration_id="int_fgt_01")
+
+    assert event["occurredAt"] == "2026-05-18T04:37:24Z"
+
+
+def test_parse_fortigate_syslog_applies_timezone_offset_without_eventtime():
+    line = (
+        '<189>date=2026-05-17 time=21:37:24 tz="-0700" '
+        'devname="FGVMEVJAOUIR5F07" devid="FGVM01" type="traffic" '
+        'subtype="forward" level="notice" srcip=192.0.2.10 '
+        'dstip=198.51.100.30 service="HTTP" action="close"'
+    )
+
+    event = parse_fortigate_syslog(line, integration_id="int_fgt_01")
+
+    assert event["occurredAt"] == "2026-05-18T04:37:24Z"
 
 
 def test_parse_fortigate_event_lockout_maps_to_failed_login_burst():
@@ -140,7 +167,7 @@ def test_syslog_forwarder_posts_each_datagram_to_siem_without_polling():
     )
     line = (
         'date=2026-05-14 time=22:33:00 type="traffic" subtype="forward" '
-        'level="information" srcip=10.10.10.10 dstip=10.10.20.10 '
+        'level="information" srcip=192.0.2.10 dstip=10.10.20.10 '
         'action="accept" service="PING" msg="Allowed by policy"'
     )
 
@@ -196,7 +223,7 @@ def test_syslog_protocol_does_not_block_socket_callback_on_siem_request():
         protocol.connection_made(None)
         line = (
             'date=2026-05-14 time=22:33:00 type="traffic" subtype="forward" '
-            'level="information" srcip=10.10.10.10 dstip=10.10.20.10 '
+            'level="information" srcip=192.0.2.10 dstip=10.10.20.10 '
             'action="accept" service="PING" msg="Allowed by policy"'
         )
 

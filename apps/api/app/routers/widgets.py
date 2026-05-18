@@ -39,6 +39,8 @@ WAF_WIDGET_IDS = {
     "waf-dos-top-ips",
     "waf-dos-feed",
 }
+WAF_HTTP_FLOW_PORTS = {"80", "443", "8080", "8443"}
+WAF_HTTP_FLOW_SERVICES = {"http", "https"}
 SELF_MANAGED_WIDGET_SOURCES = {
     "soc-policy-manager": "soc",
 }
@@ -394,9 +396,53 @@ def _waf_dos_events(
     return [e for e in raw if _parse_dt(e.get("occurredAt")) >= since]
 
 
+def _waf_http_flow_events(
+    siem_client: SocWidgetClient,
+    *,
+    since: "datetime",
+    limit: int,
+) -> list[dict[str, Any]]:
+    raw = _items(
+        siem_client.request(
+            "GET",
+            "/events",
+            params={"eventType": "network.event", "limit": limit},
+        )
+    )
+    return [
+        event
+        for event in raw
+        if _parse_dt(event.get("occurredAt")) >= since and _is_http_flow_event(event)
+    ]
+
+
 def _event_attributes(record: dict[str, Any]) -> dict[str, Any]:
     attrs = record.get("attributes")
     return attrs if isinstance(attrs, dict) else {}
+
+
+def _event_entities(record: dict[str, Any]) -> dict[str, Any]:
+    entities = record.get("entities")
+    return entities if isinstance(entities, dict) else {}
+
+
+def _is_http_flow_event(record: dict[str, Any]) -> bool:
+    if record.get("eventType") != "network.event":
+        return False
+    attrs = _event_attributes(record)
+    entities = _event_entities(record)
+    source_ip = attrs.get("sourceIp") or entities.get("sourceIp")
+    destination_ip = attrs.get("destinationIp") or entities.get("destinationIp")
+    if not source_ip or not destination_ip:
+        return False
+    service = str(attrs.get("service") or attrs.get("application") or "").lower()
+    destination_port = str(
+        attrs.get("destinationPort")
+        or attrs.get("dstPort")
+        or attrs.get("destPort")
+        or "",
+    )
+    return service in WAF_HTTP_FLOW_SERVICES or destination_port in WAF_HTTP_FLOW_PORTS
 
 
 def _is_blocked_action(record: dict[str, Any]) -> bool:
@@ -407,6 +453,50 @@ def _is_blocked_action(record: dict[str, Any]) -> bool:
         "deny",
         "dropped",
     }
+
+
+def _waf_siem_records(
+    siem_client: SocWidgetClient,
+    *,
+    since: datetime,
+    limit: int,
+) -> list[dict[str, Any]]:
+    return [
+        *_waf_dos_incidents(siem_client, since=since),
+        *_waf_http_flow_events(siem_client, since=since, limit=limit),
+    ]
+
+
+def _waf_record_time(record: dict[str, Any]) -> datetime:
+    return _parse_dt(record.get("occurredAt") or record.get("createdAt"))
+
+
+def _waf_record_time_value(record: dict[str, Any]) -> str:
+    return str(record.get("occurredAt") or record.get("createdAt") or "")
+
+
+def _waf_record_message(record: dict[str, Any], *, default: str) -> str:
+    attrs = _event_attributes(record)
+    if _is_http_flow_event(record):
+        return str(
+            record.get("message")
+            or attrs.get("message")
+            or attrs.get("summary")
+            or "HTTP flow observed"
+        )
+    return str(
+        record.get("message")
+        or record.get("summary")
+        or record.get("title")
+        or attrs.get("message")
+        or attrs.get("summary")
+        or default
+    )
+
+
+def _waf_record_policy(record: dict[str, Any]) -> str:
+    attrs = _event_attributes(record)
+    return str(attrs.get("policy") or attrs.get("policyName") or attrs.get("policyId") or "")
 
 
 def _waf_dos_rate(
@@ -422,12 +512,11 @@ def _waf_dos_rate(
     if use_raw:
         records = _waf_dos_events(siem_client, since=since, limit=500)
     else:
-        records = _waf_dos_incidents(siem_client, since=since)
+        records = _waf_siem_records(siem_client, since=since, limit=500)
 
     buckets: dict[str, dict[str, int]] = {}
     for record in records:
-        ts_key = "occurredAt" if use_raw else "createdAt"
-        dt = _parse_dt(record.get(ts_key))
+        dt = _waf_record_time(record)
         bucket_key = dt.strftime("%Y-%m-%dT%H:%M:00Z")
         if bucket_key not in buckets:
             buckets[bucket_key] = {"blocked": 0, "allowed": 0}
@@ -458,17 +547,15 @@ def _waf_dos_top_ips(
     if use_raw:
         records = _waf_dos_events(siem_client, since=since, limit=500)
     else:
-        records = _waf_dos_incidents(siem_client, since=since)
+        records = _waf_siem_records(siem_client, since=since, limit=500)
 
     ip_data: dict[str, dict[str, Any]] = {}
     for record in records:
         is_blocked = _is_blocked_action(record)
-        if use_raw:
-            ip = str(record.get("entities", {}).get("sourceIp") or "")
-            ts = str(record.get("occurredAt") or "")
-        else:
-            ip = str(record.get("entities", {}).get("sourceIp") or "")
-            ts = str(record.get("createdAt") or "")
+        entities = _event_entities(record)
+        attrs = _event_attributes(record)
+        ip = str(attrs.get("sourceIp") or entities.get("sourceIp") or "")
+        ts = _waf_record_time_value(record)
         if not ip:
             continue
         if ip not in ip_data:
@@ -502,26 +589,30 @@ def _waf_dos_feed(
             {
                 "id": r.get("id") or "",
                 "ts": r.get("occurredAt") or "",
-                "sourceIp": r.get("entities", {}).get("sourceIp") or "",
+                "sourceIp": _event_entities(r).get("sourceIp") or "",
                 "action": _event_attributes(r).get("action") or "",
                 "severity": r.get("severity") or "medium",
-                "message": r.get("message") or "DoS event",
-                "policy": _event_attributes(r).get("policy") or "",
+                "message": _waf_record_message(r, default="DoS event"),
+                "policy": _waf_record_policy(r),
             }
             for r in records[:limit]
         ]
     else:
-        records = _waf_dos_incidents(siem_client, since=since)
-        records.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+        records = _waf_siem_records(siem_client, since=since, limit=500)
+        records.sort(key=_waf_record_time_value, reverse=True)
         items_out = [
             {
                 "id": r.get("id") or "",
-                "ts": r.get("createdAt") or "",
-                "sourceIp": r.get("entities", {}).get("sourceIp") or "",
+                "ts": _waf_record_time_value(r),
+                "sourceIp": (
+                    _event_attributes(r).get("sourceIp")
+                    or _event_entities(r).get("sourceIp")
+                    or ""
+                ),
                 "action": _event_attributes(r).get("action") or "",
                 "severity": r.get("severity") or "critical",
-                "message": r.get("summary") or r.get("title") or "DoS activity detected",
-                "policy": _event_attributes(r).get("policy") or "",
+                "message": _waf_record_message(r, default="DoS activity detected"),
+                "policy": _waf_record_policy(r),
             }
             for r in records[:limit]
         ]

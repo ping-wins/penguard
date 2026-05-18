@@ -84,7 +84,7 @@ describe('realtimeQueryBridge', () => {
         eventType: 'waf.dos',
         severity: 'critical',
         occurredAt: '2026-05-18T03:30:05.000Z',
-        entities: { sourceIp: '10.10.10.10' },
+        entities: { sourceIp: '192.0.2.10' },
         attributes: {
           action: 'close',
           count: 100,
@@ -109,14 +109,79 @@ describe('realtimeQueryBridge', () => {
       { ts: '2026-05-18T03:30:00.000Z', blocked: 0, allowed: 100 },
     ])
     expect(topIps?.data.rows).toEqual([
-      { ip: '10.10.10.10', count: 100, lastSeen: '2026-05-18T03:30:05.000Z', blocked: false },
+      { ip: '192.0.2.10', count: 100, lastSeen: '2026-05-18T03:30:05.000Z', blocked: false },
     ])
     expect(feed?.data.items).toEqual([
       expect.objectContaining({
         id: 'evt_waf_dos_01',
-        sourceIp: '10.10.10.10',
+        sourceIp: '192.0.2.10',
         action: 'close',
         severity: 'critical',
+      }),
+    ])
+  })
+
+  it('updates WAF widgets from live network HTTP flow events', () => {
+    const queryClient = makeClient()
+    queryClient.setQueryData(
+      widgetDataKey('waf-dos-rate', { integrationId: 'int_siem_01', source: 'siem' }),
+      widgetResponse('waf-dos-rate', { source: 'siem', buckets: [] }),
+    )
+    queryClient.setQueryData(
+      widgetDataKey('waf-dos-top-ips', { integrationId: 'int_siem_01', source: 'siem' }),
+      widgetResponse('waf-dos-top-ips', { source: 'siem', rows: [] }),
+    )
+    queryClient.setQueryData(
+      widgetDataKey('waf-dos-feed', { integrationId: 'int_siem_01', source: 'siem' }),
+      widgetResponse('waf-dos-feed', { source: 'siem', items: [] }),
+    )
+
+    applyRealtimeQueryEvent(queryClient, {
+      type: 'soc.event.created',
+      integrationId: 'int_fgt_01',
+      eventId: 'evt_network_http_01',
+      receivedAt: '2026-05-18T03:31:05.000Z',
+      event: {
+        id: 'evt_network_http_01',
+        eventType: 'network.event',
+        severity: 'medium',
+        occurredAt: '2026-05-18T03:31:05.000Z',
+        entities: {
+          sourceIp: '192.0.2.10',
+          destinationIp: '198.51.100.30',
+        },
+        attributes: {
+          action: 'close',
+          service: 'HTTP',
+          destinationPort: 80,
+          policyId: '2',
+        },
+      },
+    })
+
+    const rate = queryClient.getQueryData<WidgetDataResponse>(
+      widgetDataKey('waf-dos-rate', { integrationId: 'int_siem_01', source: 'siem' }),
+    )
+    const topIps = queryClient.getQueryData<WidgetDataResponse>(
+      widgetDataKey('waf-dos-top-ips', { integrationId: 'int_siem_01', source: 'siem' }),
+    )
+    const feed = queryClient.getQueryData<WidgetDataResponse>(
+      widgetDataKey('waf-dos-feed', { integrationId: 'int_siem_01', source: 'siem' }),
+    )
+
+    expect(rate?.data.buckets).toEqual([
+      { ts: '2026-05-18T03:31:00.000Z', blocked: 0, allowed: 1 },
+    ])
+    expect(topIps?.data.rows).toEqual([
+      { ip: '192.0.2.10', count: 1, lastSeen: '2026-05-18T03:31:05.000Z', blocked: false },
+    ])
+    expect(feed?.data.items).toEqual([
+      expect.objectContaining({
+        id: 'evt_network_http_01',
+        sourceIp: '192.0.2.10',
+        action: 'close',
+        message: 'HTTP flow observed',
+        policy: '2',
       }),
     ])
   })

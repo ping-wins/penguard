@@ -9,6 +9,8 @@ type ServerRecordWithId = ServerRecord & { id: string }
 
 const BLOCKED_ACTIONS = new Set(['block', 'blocked', 'deny', 'dropped'])
 const WAF_DOS_RULE_ID = 'fortiweb_dos_activity'
+const WAF_HTTP_FLOW_PORTS = new Set(['80', '443', '8080', '8443'])
+const WAF_HTTP_FLOW_SERVICES = new Set(['http', 'https'])
 
 function asRecord(value: unknown): ServerRecord {
   return value && typeof value === 'object' ? value as ServerRecord : {}
@@ -158,8 +160,27 @@ function isBlockedAction(action: unknown): boolean {
   return BLOCKED_ACTIONS.has(String(action || '').toLowerCase())
 }
 
+function isLiveHttpFlowPayload(event: ServerRecord | null | undefined): boolean {
+  if (event?.eventType !== 'network.event') return false
+  const attributes = asRecord(event.attributes)
+  const entities = asRecord(event.entities)
+  const sourceIp = attributes.sourceIp || entities.sourceIp
+  const destinationIp = attributes.destinationIp || entities.destinationIp
+  if (!sourceIp || !destinationIp) return false
+  const service = String(attributes.service || attributes.application || '').toLowerCase()
+  const destinationPort = String(
+    attributes.destinationPort
+      || attributes.dstPort
+      || attributes.destPort
+      || '',
+  )
+  return WAF_HTTP_FLOW_SERVICES.has(service) || WAF_HTTP_FLOW_PORTS.has(destinationPort)
+}
+
 function isWafDosPayload(event: ServerRecord | null | undefined, ticket?: Ticket): boolean {
-  return event?.eventType === 'waf.dos' || ticket?.ruleId === WAF_DOS_RULE_ID
+  return event?.eventType === 'waf.dos'
+    || ticket?.ruleId === WAF_DOS_RULE_ID
+    || isLiveHttpFlowPayload(event)
 }
 
 function payloadCount(attributes: ServerRecord): number {
@@ -188,10 +209,12 @@ function wafPayload(event: ServerRecord | null | undefined, ticket: Ticket | und
   const sourceIp = String(attributes.sourceIp || entities.sourceIp || '')
   const policy = String(attributes.policy || attributes.policyName || attributes.policyId || '')
   const severity = String(event?.severity || ticket?.severity || 'medium')
+  const liveHttpFlow = isLiveHttpFlowPayload(event)
   const message = String(
     attributes.message
       || attributes.summary
       || ticket?.title
+      || (liveHttpFlow ? 'HTTP flow observed' : '')
       || (attributes.attackType === 'http_flood' ? 'HTTP flood detected' : 'WAF DoS event detected'),
   )
   return {

@@ -83,10 +83,42 @@ def test_waf_dos_rate_siem_inferred_close_counts_as_allowed():
                 "ruleId": "fortiweb_dos_activity",
                 "createdAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {
                     "action": "close",
                     "ingestionMode": "fortigate_flow_inference",
+                },
+            },
+        ]
+    )
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-rate/data", params={"source": "siem", "window": "1h"})
+
+    assert resp.status_code == 200
+    buckets = resp.json()["data"]["buckets"]
+    assert sum(b["blocked"] for b in buckets) == 0
+    assert sum(b["allowed"] for b in buckets) == 1
+
+
+def test_waf_dos_rate_siem_source_counts_live_http_flow_events():
+    fake = FakeSiemClient(
+        events=[
+            {
+                "id": "evt_http_1",
+                "eventType": "network.event",
+                "occurredAt": _now_iso(),
+                "severity": "medium",
+                "entities": {
+                    "sourceIp": "192.0.2.10",
+                    "destinationIp": "198.51.100.30",
+                },
+                "attributes": {
+                    "action": "close",
+                    "service": "HTTP",
+                    "destinationPort": 80,
+                    "policyId": "2",
                 },
             },
         ]
@@ -110,7 +142,7 @@ def test_waf_dos_rate_raw_source_returns_buckets():
                 "eventType": "waf.dos",
                 "occurredAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block"},
             },
         ]
@@ -193,7 +225,7 @@ def test_waf_dos_top_ips_siem_source_aggregates_by_ip():
                 "ruleId": "fortiweb_dos_activity",
                 "createdAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block"},
             },
             {
@@ -201,7 +233,7 @@ def test_waf_dos_top_ips_siem_source_aggregates_by_ip():
                 "ruleId": "fortiweb_dos_activity",
                 "createdAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "deny"},
             },
             {
@@ -221,7 +253,7 @@ def test_waf_dos_top_ips_siem_source_aggregates_by_ip():
 
     assert resp.status_code == 200
     rows = resp.json()["data"]["rows"]
-    assert rows[0]["ip"] == "10.10.10.10"
+    assert rows[0]["ip"] == "192.0.2.10"
     assert rows[0]["count"] == 2
     assert rows[0]["blocked"] is True
     assert rows[1]["ip"] == "10.10.10.20"
@@ -237,7 +269,7 @@ def test_waf_dos_top_ips_raw_source_aggregates_by_ip():
                 "eventType": "waf.dos",
                 "occurredAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block"},
             },
             {
@@ -245,7 +277,7 @@ def test_waf_dos_top_ips_raw_source_aggregates_by_ip():
                 "eventType": "waf.dos",
                 "occurredAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "deny"},
             },
             {
@@ -265,10 +297,58 @@ def test_waf_dos_top_ips_raw_source_aggregates_by_ip():
 
     assert resp.status_code == 200
     rows = resp.json()["data"]["rows"]
-    assert rows[0]["ip"] == "10.10.10.10"
+    assert rows[0]["ip"] == "192.0.2.10"
     assert rows[0]["blocked"] is True
     assert rows[1]["ip"] == "10.10.10.30"
     assert rows[1]["blocked"] is False
+
+
+def test_waf_dos_top_ips_siem_source_counts_live_http_flow_events():
+    fake = FakeSiemClient(
+        events=[
+            {
+                "id": "evt_http_1",
+                "eventType": "network.event",
+                "occurredAt": _now_iso(),
+                "severity": "medium",
+                "entities": {
+                    "sourceIp": "192.0.2.10",
+                    "destinationIp": "198.51.100.30",
+                },
+                "attributes": {
+                    "action": "close",
+                    "service": "HTTP",
+                    "destinationPort": 80,
+                },
+            },
+            {
+                "id": "evt_http_2",
+                "eventType": "network.event",
+                "occurredAt": _now_iso(),
+                "severity": "medium",
+                "entities": {
+                    "sourceIp": "192.0.2.10",
+                    "destinationIp": "198.51.100.30",
+                },
+                "attributes": {
+                    "action": "close",
+                    "service": "HTTP",
+                    "destinationPort": 80,
+                },
+            },
+        ]
+    )
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-top-ips/data", params={"source": "siem"})
+
+    assert resp.status_code == 200
+    rows = resp.json()["data"]["rows"]
+    assert len(rows) == 1
+    assert rows[0]["ip"] == "192.0.2.10"
+    assert rows[0]["count"] == 2
+    assert rows[0]["blocked"] is False
 
 
 def test_waf_dos_top_ips_respects_limit():
@@ -302,7 +382,7 @@ def test_waf_dos_top_ips_window_param_excludes_old_events():
                 "ruleId": "fortiweb_dos_activity",
                 "createdAt": old_ts,
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {},
             },
         ]
@@ -332,7 +412,7 @@ def test_waf_dos_feed_siem_source_returns_items_desc():
                 "createdAt": ts1,
                 "severity": "critical",
                 "summary": "DoS 1",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block"},
             },
             {
@@ -341,7 +421,7 @@ def test_waf_dos_feed_siem_source_returns_items_desc():
                 "createdAt": ts2,
                 "severity": "critical",
                 "summary": "DoS 2",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "close", "ingestionMode": "fortigate_flow_inference"},
             },
         ]
@@ -359,6 +439,42 @@ def test_waf_dos_feed_siem_source_returns_items_desc():
     assert items[0]["message"] == "DoS 2"
 
 
+def test_waf_dos_feed_siem_source_includes_live_http_flow_events():
+    fake = FakeSiemClient(
+        events=[
+            {
+                "id": "evt_http_1",
+                "eventType": "network.event",
+                "occurredAt": _now_iso(),
+                "severity": "medium",
+                "entities": {
+                    "sourceIp": "192.0.2.10",
+                    "destinationIp": "198.51.100.30",
+                },
+                "attributes": {
+                    "action": "close",
+                    "service": "HTTP",
+                    "destinationPort": 80,
+                    "policyId": "2",
+                },
+            },
+        ]
+    )
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake
+    client = TestClient(app)
+
+    resp = client.get("/api/widgets/waf-dos-feed/data", params={"source": "siem"})
+
+    assert resp.status_code == 200
+    items = resp.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == "evt_http_1"
+    assert items[0]["sourceIp"] == "192.0.2.10"
+    assert items[0]["action"] == "close"
+    assert items[0]["message"] == "HTTP flow observed"
+    assert items[0]["policy"] == "2"
+
+
 def test_waf_dos_feed_raw_source_returns_items():
     fake = FakeSiemClient(
         events=[
@@ -368,7 +484,7 @@ def test_waf_dos_feed_raw_source_returns_items():
                 "occurredAt": _now_iso(),
                 "severity": "critical",
                 "message": "HTTP flood",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block", "policy": "lab-dos"},
             },
         ]
@@ -392,7 +508,7 @@ def test_waf_dos_feed_respects_limit():
             "eventType": "waf.dos",
             "occurredAt": _now_iso(),
             "severity": "critical",
-            "entities": {"sourceIp": "10.10.10.10"},
+            "entities": {"sourceIp": "192.0.2.10"},
             "attributes": {"action": "block"},
         }
         for i in range(30)
@@ -451,7 +567,7 @@ def test_waf_dos_top_ips_blocked_updates_on_any_blocked_hit():
                 "eventType": "waf.dos",
                 "occurredAt": _now_iso(),
                 "severity": "medium",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "allow"},
             },
             # second hit is blocked — should flip blocked=True
@@ -460,7 +576,7 @@ def test_waf_dos_top_ips_blocked_updates_on_any_blocked_hit():
                 "eventType": "waf.dos",
                 "occurredAt": _now_iso(),
                 "severity": "critical",
-                "entities": {"sourceIp": "10.10.10.10"},
+                "entities": {"sourceIp": "192.0.2.10"},
                 "attributes": {"action": "block"},
             },
         ]
@@ -472,6 +588,6 @@ def test_waf_dos_top_ips_blocked_updates_on_any_blocked_hit():
 
     assert resp.status_code == 200
     rows = resp.json()["data"]["rows"]
-    assert rows[0]["ip"] == "10.10.10.10"
+    assert rows[0]["ip"] == "192.0.2.10"
     assert rows[0]["count"] == 2
     assert rows[0]["blocked"] is True

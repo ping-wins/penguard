@@ -405,20 +405,42 @@ def _severity(*, level: str, action: str) -> str:
 def _occurred_at(fields: dict[str, str], *, now: NowFactory) -> str:
     date_value = fields.get("date")
     time_value = fields.get("time")
+    timezone_value = fields.get("tz")
     event_time = fields.get("eventtime")
+    if event_time and event_time.isdigit():
+        try:
+            timestamp = _eventtime_timestamp(event_time)
+            parsed = datetime.fromtimestamp(timestamp, tz=UTC)
+            return parsed.isoformat(timespec="seconds").replace("+00:00", "Z")
+        except (OverflowError, OSError, ValueError):
+            pass
+    if date_value and time_value and timezone_value:
+        try:
+            parsed = datetime.strptime(
+                f"{date_value} {time_value} {timezone_value}",
+                "%Y-%m-%d %H:%M:%S %z",
+            )
+            return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        except ValueError:
+            pass
     if date_value and time_value:
         try:
             parsed = datetime.strptime(f"{date_value} {time_value}", "%Y-%m-%d %H:%M:%S")
             return parsed.replace(tzinfo=UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         except ValueError:
             pass
-    if event_time and event_time.isdigit():
-        try:
-            parsed = datetime.fromtimestamp(int(event_time) / 1_000_000_000, tz=UTC)
-            return parsed.isoformat(timespec="seconds").replace("+00:00", "Z")
-        except (OverflowError, OSError, ValueError):
-            pass
     return now().astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _eventtime_timestamp(value: str) -> float:
+    timestamp = int(value)
+    if timestamp > 10_000_000_000_000_000:
+        return timestamp / 1_000_000_000
+    if timestamp > 10_000_000_000_000:
+        return timestamp / 1_000_000
+    if timestamp > 10_000_000_000:
+        return timestamp / 1_000
+    return float(timestamp)
 
 
 def _maybe_int(value: str | None) -> int | None:
