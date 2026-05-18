@@ -54,14 +54,18 @@ class CockpitAgentRuntime:
                 content = provider.chat(messages, locale=locale)
             return ModelResponse(
                 parts=[TextPart(content=content)],
-                model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
+                model_name=getattr(provider, "model", "")
+                or settings.ai_model
+                or f"{provider.name}-cockpit",
                 provider_name=f"pydantic_ai.{provider.name}",
                 metadata={"toolCount": len(info.function_tools)},
             )
 
         agent = _build_agent(
             model_function=model_function,
-            model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
+            model_name=getattr(provider, "model", "")
+            or settings.ai_model
+            or f"{provider.name}-cockpit",
             locale=locale,
         )
         result = agent.run_sync(_latest_user_prompt(messages))
@@ -184,9 +188,7 @@ def _draft_widget_request_from_prompt(prompt: str) -> DraftWidgetRequest | None:
     elif "gauge" in lowered or "medidor" in lowered:
         visual_type = "gauge"
     provider = (
-        "fortigate"
-        if "fortigate" in lowered or field_ids[0].startswith("system.")
-        else "soc"
+        "fortigate" if "fortigate" in lowered or field_ids[0].startswith("system.") else "soc"
     )
     return DraftWidgetRequest(
         provider=provider,

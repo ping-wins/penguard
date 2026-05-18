@@ -484,7 +484,7 @@ export default {
       patchError: 'Failed to update ticket',
     },
     ai: {
-      header: 'AI assistant',
+      header: 'SOC Assistant',
       analyze: 'Analyze',
       suggestContainment: 'Suggest containment',
       draftPlaybook: 'Draft playbook',
@@ -765,7 +765,7 @@ export default {
     dismiss: 'Dismiss',
   },
   chat: {
-    header: 'AI assistant',
+    header: 'SOC Assistant',
     greeting: 'Hi! I am your virtual SOC analyst. Ask anything or request a panel ("Add System Status").',
     thinking: 'Analyzing...',
     inputPlaceholder: 'Ask the assistant or request a panel...',
@@ -780,7 +780,7 @@ export default {
     widgetDraftAdded: 'Added the "{title}" visual to the workspace.',
     widgetDraftNeedsIntegration: 'Connect a {provider} integration before adding this visual.',
     widgetDraftUnsupported: 'I cannot add the "{visualType}" visual automatically yet.',
-    error: 'Failed to reach the AI assistant. Check the provider via /api/ai/status.',
+    error: 'Failed to reach the SOC Assistant. Check the enterprise AI configuration.',
     providerTooltip: 'Provider: {provider} · Model: {model}',
   },
   playbooks: {

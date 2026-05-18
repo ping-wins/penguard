@@ -484,7 +484,7 @@ export default {
       patchError: 'Falha ao atualizar ticket',
     },
     ai: {
-      header: 'Assistente IA',
+      header: 'Assistente SOC',
       analyze: 'Analisar',
       suggestContainment: 'Sugerir contenção',
       draftPlaybook: 'Gerar playbook',
@@ -765,7 +765,7 @@ export default {
     dismiss: 'Dispensar',
   },
   chat: {
-    header: 'Assistente IA',
+    header: 'Assistente SOC',
     greeting: 'Olá! Sou sua analista de SOC virtual. Pergunte qualquer coisa ou peça um painel ("Adicione System Status").',
     thinking: 'Analisando...',
     inputPlaceholder: 'Pergunte ao assistente ou peça um painel...',
@@ -780,7 +780,7 @@ export default {
     widgetDraftAdded: 'Adicionei o visual "{title}" na workspace.',
     widgetDraftNeedsIntegration: 'Conecte uma integração {provider} antes de adicionar esse visual.',
     widgetDraftUnsupported: 'Ainda não consigo adicionar o visual "{visualType}" automaticamente.',
-    error: 'Falha ao falar com o assistente IA. Verifique o provider em /api/ai/status.',
+    error: 'Falha ao falar com o Assistente SOC. Verifique a configuração empresarial de IA.',
     providerTooltip: 'Provider: {provider} · Modelo: {model}',
   },
   playbooks: {

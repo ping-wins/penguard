@@ -92,7 +92,7 @@ export async function aiChat(messages: ChatTurn[]): Promise<ChatReply> {
     },
     body: JSON.stringify({ messages }),
   })
-  return parseOrThrow<ChatReply>(response, 'Falha ao falar com o assistente IA')
+  return parseOrThrow<ChatReply>(response, 'Falha ao falar com o Assistente SOC')
 }
 
 export async function aiStatus(): Promise<AIStatus> {

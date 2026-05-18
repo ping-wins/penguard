@@ -1,4 +1,4 @@
-// Tiny markdown renderer scoped to AI assistant chat replies. Produces a safe
+// Tiny markdown renderer scoped to SOC Assistant chat replies. Produces a safe
 // HTML string by escaping input first, restricting URL schemes, and never
 // inlining arbitrary attributes from the source. Intentionally narrow: handles
 // headers, bold, italic, inline code, fenced code blocks, links, ordered and
