@@ -5,6 +5,7 @@ import {
   saveSocAssistantSettings,
   testSocAssistantSettings,
 } from '../../src/services/socAssistantSettingsClient'
+import { i18n } from '../../src/i18n'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -16,6 +17,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 describe('socAssistantSettingsClient', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    i18n.global.locale.value = 'pt-BR'
   })
 
   it('getSocAssistantSettings sends credentials and parses response', async () => {
@@ -105,5 +107,19 @@ describe('socAssistantSettingsClient', () => {
     vi.stubGlobal('fetch', fetcher)
 
     await expect(getSocAssistantSettings()).rejects.toThrow('forbidden')
+  })
+
+  it('uses localized fallback when server errors have no detail', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({}), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(getSocAssistantSettings()).rejects.toThrow(
+      'Falha ao carregar configurações do Assistente SOC.',
+    )
   })
 })

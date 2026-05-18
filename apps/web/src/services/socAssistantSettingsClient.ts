@@ -1,4 +1,5 @@
 import { useAuthStore } from '../stores/useAuthStore'
+import { i18n } from '../i18n'
 
 export type SocAssistantSettings = {
   provider: string
@@ -41,7 +42,7 @@ export async function getSocAssistantSettings(): Promise<SocAssistantSettings> {
   const response = await fetch('/api/ai/agent/settings', { credentials: 'include' })
   return parseOrThrow<SocAssistantSettings>(
     response,
-    'Failed to load SOC Assistant settings',
+    i18n.global.t('settings.ai.errorLoad'),
   )
 }
 
@@ -57,7 +58,7 @@ export async function saveSocAssistantSettings(
   })
   return parseOrThrow<SocAssistantSettings>(
     response,
-    'Failed to save SOC Assistant settings',
+    i18n.global.t('settings.ai.errorSave'),
   )
 }
 
@@ -70,6 +71,6 @@ export async function testSocAssistantSettings(): Promise<SocAssistantSettingsTe
   })
   return parseOrThrow<SocAssistantSettingsTestResult>(
     response,
-    'Failed to test SOC Assistant settings',
+    i18n.global.t('settings.ai.errorTest'),
   )
 }
