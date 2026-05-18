@@ -38,8 +38,37 @@ def test_create_fortiweb_integration_never_returns_api_key():
         "targetServerPolicy": "lab-waf-policy",
         "managedIpListPolicy": "FD_IP_BLOCKLIST",
         "lastCheckedAt": "2026-05-17T12:00:00.000Z",
+        "telemetry": {
+            "status": "pending",
+            "endpointPath": "/api/soc/ingest/fortiweb/int_fweb_01",
+            "token": "fweb_native_token_01",
+            "lastEventAt": None,
+            "lastError": None,
+            "eventsReceived": 0,
+        },
     }
     assert "apiKey" not in payload
+    assert "password" not in payload
+
+
+def test_rotate_fortiweb_telemetry_token_returns_one_time_secret():
+    response = client.post(
+        "/api/integrations/fortiweb/int_fweb_01/telemetry-token/rotate",
+        headers=csrf_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "integrationId": "int_fweb_01",
+        "telemetry": {
+            "status": "pending",
+            "endpointPath": "/api/soc/ingest/fortiweb/int_fweb_01",
+            "token": "fweb_native_token_02",
+            "lastEventAt": None,
+            "lastError": None,
+            "eventsReceived": 0,
+        },
+    }
 
 
 def test_test_fortiweb_connection_returns_device_metadata():

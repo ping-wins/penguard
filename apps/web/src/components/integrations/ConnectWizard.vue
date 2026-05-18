@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useIntegrationConnectStore, type CatalogEntry } from '../../stores/useIntegrationConnectStore'
-import { useIntegrationsStore } from '../../stores/useIntegrationsStore'
+import { useIntegrationsStore, type FortiWebTelemetryStatus } from '../../stores/useIntegrationsStore'
 
 const { t } = useI18n()
 const connectStore = useIntegrationConnectStore()
@@ -28,6 +28,7 @@ const wiringResult = ref<{
   siem?: { ok: boolean; detail?: string } | null
   soar?: { ok: boolean; detail?: string } | null
 } | null>(null)
+const telemetryResult = ref<FortiWebTelemetryStatus | null>(null)
 const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 
@@ -46,6 +47,7 @@ function pick(entry: CatalogEntry) {
   errorMsg.value = null
   testResult.value = null
   wiringResult.value = null
+  telemetryResult.value = null
   for (const field of entry.authFields) {
     auth[field.id] = field.default ?? (field.type === 'boolean' ? false : '')
   }
@@ -93,6 +95,7 @@ async function finish() {
   busy.value = false
   if (res.success) {
     wiringResult.value = res.data.wiring ?? null
+    telemetryResult.value = res.data.integration?.telemetry ?? null
     await integrationsStore.fetchIntegrations()
     step.value = 5
   } else {
@@ -228,6 +231,15 @@ async function finish() {
     </section>
 
     <section v-else-if="step === 5" class="connect-wizard__step">
+      <div
+        v-if="telemetryResult?.token"
+        class="connect-wizard__result connect-wizard__result--ok"
+        data-test="telemetry-token"
+      >
+        <strong>{{ t('integrations.wizard.telemetryReady') }}</strong>
+        <div class="connect-wizard__mono">{{ telemetryResult.endpointPath }}</div>
+        <div class="connect-wizard__mono">{{ telemetryResult.token }}</div>
+      </div>
       <p
         v-if="wiringResult?.siem"
         class="connect-wizard__result"
@@ -371,5 +383,13 @@ async function finish() {
 .connect-wizard__result--amber {
   border-color: rgb(245 158 11 / 0.65);
   color: rgb(253 230 138);
+}
+
+.connect-wizard__mono {
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.72rem;
+  color: rgb(226 232 240);
 }
 </style>

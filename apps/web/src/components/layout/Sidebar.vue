@@ -47,6 +47,7 @@ const assistantMode = ref<'chat' | 'agent'>('chat')
 
 const showWizard = ref(false)
 const integrationError = ref<string | null>(null)
+const fortiwebTelemetryTokens = ref<Record<string, string>>({})
 const integrationGroupsOpen = ref({
   fortinet: true,
   penguin: true,
@@ -183,6 +184,17 @@ async function handleToggleFortigateIngestion(integrationId: string) {
   if (!res.success) {
     integrationError.value = res.error ?? 'Failed to configure FortiGate ingestion'
   }
+}
+
+async function handleRotateFortiwebTelemetryToken(integrationId: string) {
+  integrationError.value = null
+  const res = await integrationsStore.rotateFortiwebTelemetryToken(integrationId)
+  if (!res.success) {
+    integrationError.value = res.error ?? 'Failed to rotate FortiWeb telemetry token'
+    return
+  }
+  const token = res.data.telemetry.token
+  if (token) fortiwebTelemetryTokens.value[integrationId] = token
 }
 
 function fortigateIngestionStatus(integrationId: string) {
@@ -703,6 +715,35 @@ async function handleChatSubmit() {
                   <div class="rounded border border-theme-border bg-theme-bg/70 p-2">
                     <div class="text-theme-text-muted">{{ t('integrations.fortiweb.ipListPolicy') }}</div>
                     <div class="mt-1 truncate font-mono text-theme-text">{{ intg.managedIpListPolicy || '—' }}</div>
+                  </div>
+                </div>
+                <div v-if="intg.telemetry" class="mt-3 rounded border border-theme-border bg-theme-bg/70 p-2 text-xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <div>
+                      <div class="text-theme-text-muted">{{ t('integrations.fortiweb.telemetry') }}</div>
+                      <div class="mt-1 font-medium text-theme-text">{{ intg.telemetry.status }}</div>
+                    </div>
+                    <button
+                      type="button"
+                      class="rounded p-1 text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text"
+                      :title="t('integrations.fortiweb.rotateTelemetryToken')"
+                      @click="handleRotateFortiwebTelemetryToken(intg.id)"
+                    >
+                      <RefreshCcw :size="13" />
+                    </button>
+                  </div>
+                  <div class="mt-2 break-all font-mono text-[11px] text-theme-text-muted">
+                    {{ intg.telemetry.endpointPath }}
+                  </div>
+                  <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-theme-text-muted">
+                    <span>{{ t('integrations.fortiweb.telemetryEvents', { count: intg.telemetry.eventsReceived ?? 0 }) }}</span>
+                    <span v-if="intg.telemetry.lastEventAt">{{ intg.telemetry.lastEventAt }}</span>
+                  </div>
+                  <div v-if="intg.telemetry.lastError" class="mt-1 text-red-400">
+                    {{ intg.telemetry.lastError }}
+                  </div>
+                  <div v-if="fortiwebTelemetryTokens[intg.id]" class="mt-2 break-all rounded border border-green-500/30 bg-green-500/10 p-2 font-mono text-[11px] text-green-100">
+                    {{ fortiwebTelemetryTokens[intg.id] }}
                   </div>
                 </div>
               </div>

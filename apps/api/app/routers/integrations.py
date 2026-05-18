@@ -467,6 +467,47 @@ def test_fortiweb_connection(
     )
 
 
+@router.post("/integrations/fortiweb/{integration_id}/telemetry-token/rotate")
+def rotate_fortiweb_telemetry_token(
+    integration_id: str,
+    request: Request,
+    service: Annotated[FortiWebService, Depends(get_fortiweb_integration_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    owner_user_id = str(current_user["id"])
+    try:
+        rotated = service.rotate_telemetry_token(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+    except KeyError as exc:
+        audit_store.record(
+            action="integration.fortiweb.telemetry_token_rotated",
+            outcome="failed",
+            email=current_user.get("email"),
+            user_id=owner_user_id,
+            client_ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+            details={
+                "integrationId": integration_id,
+                "error": "Integration not found",
+            },
+        )
+        raise HTTPException(status_code=404, detail="Integration not found") from exc
+    audit_store.record(
+        action="integration.fortiweb.telemetry_token_rotated",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=owner_user_id,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={"integrationId": integration_id},
+    )
+    return rotated
+
+
 @router.post(
     "/integrations/fortiweb/{integration_id}/blocks/review",
     status_code=status.HTTP_201_CREATED,

@@ -30,6 +30,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, st
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.dependencies import get_auth_audit_store
 from app.core.config import get_settings
+from app.routers.integrations import get_fortiweb_integration_service
 from app.routers.soc import get_siem_client
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,19 @@ class SocClient(Protocol):
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         pass_through_statuses: set[int] | None = None,
+    ) -> dict[str, Any]: ...
+
+
+class FortiWebTelemetryService(Protocol):
+    def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool: ...
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: str,
     ) -> dict[str, Any]: ...
 
 
@@ -159,6 +173,15 @@ def _client_ip(request: Request) -> str:
     if request.client is None:
         return "unknown"
     return request.client.host
+
+
+def _bearer_token(authorization: str | None) -> str:
+    if not authorization:
+        return ""
+    parts = authorization.strip().split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return ""
 
 
 def _now_dt() -> datetime:
@@ -534,6 +557,76 @@ def ingest_fortiweb_event(
         },
     )
     return {"received": len(raw_items), "emitted": emitted}
+
+
+@router.post("/soc/ingest/fortiweb/{integration_id}")
+def ingest_native_fortiweb_event(
+    integration_id: str,
+    request: Request,
+    payload: Annotated[Any, Body()],
+    siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    fortiweb_service: Annotated[
+        FortiWebTelemetryService,
+        Depends(get_fortiweb_integration_service),
+    ],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> dict[str, Any]:
+    token = _bearer_token(authorization)
+    if not token or not fortiweb_service.verify_telemetry_token(
+        integration_id=integration_id,
+        token=token,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid FortiWeb telemetry token",
+        )
+
+    raw_items = payload if isinstance(payload, list) else [payload]
+    emitted = 0
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        event = _normalize_fortiweb_event(item, integration_id=integration_id)
+        try:
+            response = siem_client.request("POST", "/events", json=event)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "soc_ingest_fortiweb_forward_failed event_type=%s error=%s",
+                event["eventType"],
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to forward to siem-kowalski: {exc}",
+            ) from exc
+        emitted += 1
+        fortiweb_service.record_telemetry_event(
+            integration_id=integration_id,
+            event_id=_coerce_str(response.get("id")) or None,
+            event_type=str(event["eventType"]),
+            occurred_at=str(event["occurredAt"]),
+        )
+
+    audit_store.record(
+        action="soc.fortiweb_events.ingested",
+        outcome="success",
+        email=None,
+        user_id=None,
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "integrationId": integration_id,
+            "received": len(raw_items),
+            "emitted": emitted,
+            "service": "siem_kowalski",
+            "tokenScope": "integration",
+        },
+    )
+    return {"received": len(raw_items), "emitted": emitted, "integrationId": integration_id}
 
 
 @router.get("/soc/ingest/health")

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app.auth import dependencies as auth_dependencies
 from app.core.config import get_settings
 from app.main import app
-from app.routers import soc, soc_ingest
+from app.routers import integrations, soc, soc_ingest
 from app.routers.soc_ingest import BruteForceAggregator
 
 
@@ -27,6 +27,31 @@ class FakeSiemClient:
             "id": f"evt_{len(self.calls):03d}",
             "eventType": (json or {}).get("eventType"),
         }
+
+
+class FakeFortiWebTelemetryService:
+    def __init__(self) -> None:
+        self.recorded_events: list[dict] = []
+
+    def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool:
+        return integration_id == "int_fweb_lab" and token == "native-token"
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: str,
+    ) -> dict:
+        event = {
+            "integrationId": integration_id,
+            "eventId": event_id,
+            "eventType": event_type,
+            "occurredAt": occurred_at,
+        }
+        self.recorded_events.append(event)
+        return event
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +81,41 @@ def test_missing_token_when_disabled_returns_503(monkeypatch):
 
     assert response.status_code == 503
     assert "disabled" in response.json()["detail"].lower()
+
+
+def test_fortiweb_native_ingest_uses_integration_token_without_global_env(monkeypatch):
+    monkeypatch.delenv("FORTIDASHBOARD_SOC_INGEST_TOKEN", raising=False)
+    get_settings.cache_clear()
+    fake_siem = FakeSiemClient()
+    fake_fortiweb = FakeFortiWebTelemetryService()
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[integrations.get_fortiweb_integration_service] = (
+        lambda: fake_fortiweb
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/soc/ingest/fortiweb/int_fweb_lab",
+        headers={"Authorization": "Bearer native-token"},
+        json={
+            "type": "attack",
+            "subtype": "dos",
+            "src": "10.10.10.10",
+            "dst": "10.10.20.30",
+            "msg": "HTTP flood detected",
+            "action": "block",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "received": 1,
+        "emitted": 1,
+        "integrationId": "int_fweb_lab",
+    }
+    assert fake_siem.calls[0]["json"]["eventType"] == "waf.dos"
+    assert fake_siem.calls[0]["json"]["entities"]["integrationId"] == "int_fweb_lab"
+    assert fake_fortiweb.recorded_events[0]["eventType"] == "waf.dos"
 
 
 def test_invalid_token_returns_401():

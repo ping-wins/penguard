@@ -110,16 +110,18 @@ FortiWeb pode recusar `next` quando `replacemsg` fica vazio.
 
 ## FortiWeb: Log Push Para FortiDashboard
 
-Quando o caminho FortiWeb provider/add-on estiver habilitado, configure o push
-para o endpoint de ingestao do FortiDashboard. O FortiWeb deve usar a rede de
-gestao bridged (`port2`) para alcancar o host.
+Ao conectar o FortiWeb no FortiDashboard, o BFF cria um canal de telemetria da
+propria integracao. Nao configure `FORTIDASHBOARD_SOC_INGEST_TOKEN` para esse
+fluxo. Use o endpoint e o token exibidos no wizard de conexao ou no botao de
+rotacao de token da integracao FortiWeb.
+
+O FortiWeb deve usar a rede de gestao bridged (`port2`) para alcancar o host.
 
 Endpoint:
 
 ```txt
-POST http://<HOST_MGMT_IP>:8000/api/soc/ingest/fortiweb
-Authorization: Bearer <SOC_INGEST_TOKEN>
-X-FortiDashboard-Integration-Id: fortiweb-lab
+POST http://<HOST_MGMT_IP>:8000/api/soc/ingest/fortiweb/<INTEGRATION_ID>
+Authorization: Bearer <FORTIWEB_TELEMETRY_TOKEN>
 Content-Type: application/json
 ```
 
@@ -129,11 +131,11 @@ No host:
 docker compose logs -f api siem_kowalski
 ```
 
-Teste manual do endpoint, sem FortiWeb:
+Teste manual do canal nativo, sem FortiWeb:
 
 ```bash
-curl -X POST http://localhost:8000/api/soc/ingest/fortiweb \
-  -H "Authorization: Bearer <SOC_INGEST_TOKEN>" \
+curl -X POST http://localhost:8000/api/soc/ingest/fortiweb/<INTEGRATION_ID> \
+  -H "Authorization: Bearer <FORTIWEB_TELEMETRY_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"type":"attack","subtype":"dos","src":"10.10.10.10","msg":"HTTP flood detected","action":"block"}'
 ```

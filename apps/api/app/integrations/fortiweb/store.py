@@ -79,6 +79,7 @@ class SqlAlchemyFortiWebIntegrationStore:
         verify_tls: bool,
         target_server_policy: str,
         managed_ip_list_policy: str,
+        telemetry_token_hash: str | None = None,
         device: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         checked_at = datetime.now(UTC)
@@ -94,6 +95,9 @@ class SqlAlchemyFortiWebIntegrationStore:
             target_server_policy=target_server_policy,
             managed_ip_list_policy=managed_ip_list_policy,
             device_identifiers=_device_identifiers(device),
+            telemetry_token_hash=telemetry_token_hash,
+            telemetry_token_created_at=checked_at if telemetry_token_hash else None,
+            telemetry_events_received=0,
             last_checked_at=checked_at,
             created_at=checked_at,
             updated_at=checked_at,
@@ -125,6 +129,61 @@ class SqlAlchemyFortiWebIntegrationStore:
                 "verify_tls": model.verify_tls,
                 "target_server_policy": model.target_server_policy,
                 "managed_ip_list_policy": model.managed_ip_list_policy,
+            }
+
+    def get_telemetry_token_hash(self, integration_id: str) -> str | None:
+        with self.session_factory() as db:
+            model = db.get(FortiWebIntegrationModel, integration_id)
+            if model is None:
+                return None
+            return model.telemetry_token_hash
+
+    def rotate_telemetry_token(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        telemetry_token_hash: str,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        with self.session_factory() as db:
+            model = db.get(FortiWebIntegrationModel, integration_id)
+            if model is None or model.owner_user_id != owner_user_id:
+                raise KeyError("Integration not found")
+            model.telemetry_token_hash = telemetry_token_hash
+            model.telemetry_token_created_at = now
+            model.telemetry_last_error = None
+            model.updated_at = now
+            db.commit()
+            db.refresh(model)
+            return {
+                "integrationId": model.id,
+                "telemetry": self._telemetry_payload(model),
+            }
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: datetime,
+    ) -> dict[str, Any]:
+        _ = (event_id, event_type)
+        occurred_at = self._as_utc(occurred_at)
+        with self.session_factory() as db:
+            model = db.get(FortiWebIntegrationModel, integration_id)
+            if model is None:
+                raise KeyError("Integration not found")
+            model.telemetry_last_event_at = occurred_at
+            model.telemetry_last_error = None
+            model.telemetry_events_received = (model.telemetry_events_received or 0) + 1
+            model.updated_at = datetime.now(UTC)
+            db.commit()
+            db.refresh(model)
+            return {
+                "integrationId": model.id,
+                "telemetry": self._telemetry_payload(model),
             }
 
     def find_public_by_host(self, source_host: str) -> dict[str, Any] | None:
@@ -301,6 +360,7 @@ class SqlAlchemyFortiWebIntegrationStore:
             "targetServerPolicy": model.target_server_policy,
             "managedIpListPolicy": model.managed_ip_list_policy,
             "lastCheckedAt": self._format_datetime(model.last_checked_at),
+            "telemetry": self._telemetry_payload(model),
         }
 
     def _list_item(self, model: FortiWebIntegrationModel) -> dict[str, Any]:
@@ -313,6 +373,27 @@ class SqlAlchemyFortiWebIntegrationStore:
             "targetServerPolicy": model.target_server_policy,
             "managedIpListPolicy": model.managed_ip_list_policy,
             "lastCheckedAt": self._format_datetime(model.last_checked_at),
+            "telemetry": self._telemetry_payload(model),
+        }
+
+    def _telemetry_payload(self, model: FortiWebIntegrationModel) -> dict[str, Any]:
+        status = "pending"
+        if not model.telemetry_token_hash:
+            status = "setup_required"
+        elif model.telemetry_last_error:
+            status = "error"
+        elif model.telemetry_last_event_at:
+            status = "active"
+        return {
+            "status": status,
+            "endpointPath": f"/api/soc/ingest/fortiweb/{model.id}",
+            "lastEventAt": (
+                self._format_datetime(model.telemetry_last_event_at)
+                if model.telemetry_last_event_at
+                else None
+            ),
+            "lastError": model.telemetry_last_error,
+            "eventsReceived": model.telemetry_events_received or 0,
         }
 
     def _health_check_payload(self, model: FortiWebHealthCheckModel) -> dict[str, Any]:

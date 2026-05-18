@@ -191,6 +191,17 @@ class FortiWebIntegrationModel(Base):
     target_server_policy: Mapped[str] = mapped_column(String(255), nullable=False)
     managed_ip_list_policy: Mapped[str] = mapped_column(String(255), nullable=False)
     device_identifiers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    telemetry_token_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    telemetry_token_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    telemetry_last_event_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    telemetry_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telemetry_events_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_checked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

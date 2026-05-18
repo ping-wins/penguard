@@ -885,6 +885,9 @@ export default {
       title: 'FortiWeb',
       targetPolicy: 'Server policy',
       ipListPolicy: 'IP list',
+      telemetry: 'Telemetry',
+      telemetryEvents: '{count} WAF events',
+      rotateTelemetryToken: 'Generate new telemetry token',
     },
     wizard: {
       title: 'Connect a machine',
@@ -900,6 +903,7 @@ export default {
       wireSoar: 'Enable SOAR playbooks',
       wiringSiem: 'SIEM',
       wiringSoar: 'SOAR',
+      telemetryReady: 'FortiWeb telemetry channel created',
       done: 'Done',
     },
   },

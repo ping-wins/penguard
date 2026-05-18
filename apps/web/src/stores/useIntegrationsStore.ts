@@ -129,6 +129,20 @@ export type FortiWebBlockReviewResponse = {
   updatedAt?: string
 }
 
+export type FortiWebTelemetryStatus = {
+  status: 'pending' | 'active' | 'error' | 'setup_required' | string
+  endpointPath: string
+  token?: string | null
+  lastEventAt: string | null
+  lastError: string | null
+  eventsReceived: number
+}
+
+export type FortiWebTelemetryTokenResponse = {
+  integrationId: string
+  telemetry: FortiWebTelemetryStatus
+}
+
 export const useIntegrationsStore = defineStore('integrations', () => {
   const integrations = ref<any[]>([])
   const isLoading = ref(false)
@@ -564,6 +578,38 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     }
   }
 
+  async function rotateFortiwebTelemetryToken(
+    integrationId: string,
+  ): Promise<{ success: true, data: FortiWebTelemetryTokenResponse } | { success: false, error: string }> {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.csrfToken) await authStore.fetchCsrf()
+
+      const res = await fetch(`/api/integrations/fortiweb/${encodeURIComponent(integrationId)}/telemetry-token/rotate`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': authStore.csrfToken },
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        return { success: false, error: await responseErrorMessage(res, 'Failed to rotate FortiWeb telemetry token') }
+      }
+      const data = await res.json()
+      const idx = integrations.value.findIndex(item => item.id === integrationId)
+      if (idx >= 0) {
+        integrations.value[idx] = {
+          ...integrations.value[idx],
+          telemetry: {
+            ...(integrations.value[idx].telemetry ?? {}),
+            ...(data.telemetry ?? {}),
+          },
+        }
+      }
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: 'Network error' }
+    }
+  }
+
   async function postFortiwebBlock<T>(
     integrationId: string,
     actionOrBlockId: 'review' | string,
@@ -698,6 +744,7 @@ export const useIntegrationsStore = defineStore('integrations', () => {
     reviewFortiwebSourceBlock,
     applyFortiwebSourceBlock,
     removeFortiwebSourceBlock,
+    rotateFortiwebTelemetryToken,
   }
 })
 

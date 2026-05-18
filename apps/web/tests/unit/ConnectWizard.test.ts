@@ -70,7 +70,17 @@ describe('ConnectWizard', () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            integration: { id: 'int_fweb_1' },
+            integration: {
+              id: 'int_fweb_1',
+              telemetry: {
+                status: 'pending',
+                endpointPath: '/api/soc/ingest/fortiweb/int_fweb_1',
+                token: 'fweb_native_token',
+                lastEventAt: null,
+                lastError: null,
+                eventsReceived: 0,
+              },
+            },
             wiring: {
               siem: { ok: true, detail: 'Managed source registered' },
               soar: { ok: false, detail: 'no actions' },
@@ -93,6 +103,7 @@ describe('ConnectWizard', () => {
     await flushPromises()
 
     expect(calls.some(url => url.endsWith('/connect'))).toBe(true)
+    expect(wrapper.get('[data-test="telemetry-token"]').text()).toContain('fweb_native_token')
     expect(wrapper.get('[data-test="wiring-siem"]').text()).toContain('Managed source registered')
     expect(wrapper.get('[data-test="wiring-soar"]').text()).toContain('no actions')
   })

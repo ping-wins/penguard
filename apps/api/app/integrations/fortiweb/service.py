@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
 from ipaddress import ip_address
@@ -22,6 +24,7 @@ class FortiWebIntegrationStore(Protocol):
         verify_tls: bool,
         target_server_policy: str,
         managed_ip_list_policy: str,
+        telemetry_token_hash: str | None = None,
         device: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         pass
@@ -46,6 +49,28 @@ class FortiWebIntegrationStore(Protocol):
         message: str | None,
         latency_ms: int | None,
         checked_at: datetime,
+    ) -> dict[str, Any]:
+        pass
+
+    def get_telemetry_token_hash(self, integration_id: str) -> str | None:
+        pass
+
+    def rotate_telemetry_token(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        telemetry_token_hash: str,
+    ) -> dict[str, Any]:
+        pass
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: datetime,
     ) -> dict[str, Any]:
         pass
 
@@ -147,6 +172,14 @@ class MockFortiWebIntegrationService:
             "targetServerPolicy": target_server_policy,
             "managedIpListPolicy": managed_ip_list_policy,
             "lastCheckedAt": "2026-05-17T12:00:00.000Z",
+            "telemetry": {
+                "status": "pending",
+                "endpointPath": "/api/soc/ingest/fortiweb/int_fweb_01",
+                "token": "fweb_native_token_01",
+                "lastEventAt": None,
+                "lastError": None,
+                "eventsReceived": 0,
+            },
         }
 
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
@@ -169,6 +202,47 @@ class MockFortiWebIntegrationService:
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
         _ = owner_user_id
         return integration_id == "int_fweb_01"
+
+    def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool:
+        _ = token
+        return integration_id == "int_fweb_01"
+
+    def rotate_telemetry_token(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
+        _ = owner_user_id
+        if integration_id != "int_fweb_01":
+            raise KeyError("Integration not found")
+        return {
+            "integrationId": integration_id,
+            "telemetry": {
+                "status": "pending",
+                "endpointPath": f"/api/soc/ingest/fortiweb/{integration_id}",
+                "token": "fweb_native_token_02",
+                "lastEventAt": None,
+                "lastError": None,
+                "eventsReceived": 0,
+            },
+        }
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: str,
+    ) -> dict[str, Any]:
+        _ = (event_id, event_type, occurred_at)
+        return {
+            "integrationId": integration_id,
+            "telemetry": {
+                "status": "active",
+                "endpointPath": f"/api/soc/ingest/fortiweb/{integration_id}",
+                "token": None,
+                "lastEventAt": "2026-05-17T12:00:00.000Z",
+                "lastError": None,
+                "eventsReceived": 1,
+            },
+        }
 
     def run_health_check(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
         _ = owner_user_id
@@ -290,11 +364,12 @@ class FortiWebIntegrationService:
         target_server_policy: str = "lab-waf-policy",
         managed_ip_list_policy: str = "FD_IP_BLOCKLIST",
     ) -> dict[str, Any]:
+        telemetry_token = _generate_telemetry_token()
         probe = self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
         if not probe["ok"]:
             error = probe.get("error") or {}
             raise FortiWebConnectionFailed(error.get("message") or "FortiWeb connection failed")
-        return self.store.create(
+        created = self.store.create(
             owner_user_id=owner_user_id,
             name=name,
             host=host,
@@ -302,8 +377,10 @@ class FortiWebIntegrationService:
             verify_tls=verify_tls,
             target_server_policy=target_server_policy,
             managed_ip_list_policy=managed_ip_list_policy,
+            telemetry_token_hash=_telemetry_token_hash(telemetry_token),
             device=dict(probe.get("device") or {}),
         )
+        return _with_one_time_telemetry_token(created, telemetry_token)
 
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         return self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
@@ -313,6 +390,36 @@ class FortiWebIntegrationService:
 
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
         return self.store.delete(owner_user_id=owner_user_id, integration_id=integration_id)
+
+    def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool:
+        expected = self.store.get_telemetry_token_hash(integration_id)
+        if not expected:
+            return False
+        return hmac.compare_digest(expected, _telemetry_token_hash(token))
+
+    def rotate_telemetry_token(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
+        telemetry_token = _generate_telemetry_token()
+        rotated = self.store.rotate_telemetry_token(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            telemetry_token_hash=_telemetry_token_hash(telemetry_token),
+        )
+        return _with_one_time_telemetry_token(rotated, telemetry_token)
+
+    def record_telemetry_event(
+        self,
+        *,
+        integration_id: str,
+        event_id: str | None,
+        event_type: str,
+        occurred_at: str,
+    ) -> dict[str, Any]:
+        return self.store.record_telemetry_event(
+            integration_id=integration_id,
+            event_id=event_id,
+            event_type=event_type,
+            occurred_at=_parse_telemetry_timestamp(occurred_at),
+        )
 
     def run_health_check(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
         connection = self.store.get_connection(integration_id, owner_user_id=owner_user_id)
@@ -647,6 +754,32 @@ def _review_hash(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _generate_telemetry_token() -> str:
+    return f"fweb_{secrets.token_urlsafe(32)}"
+
+
+def _telemetry_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _with_one_time_telemetry_token(payload: dict[str, Any], token: str) -> dict[str, Any]:
+    copied = dict(payload)
+    telemetry = dict(copied.get("telemetry") or {})
+    telemetry["token"] = token
+    copied["telemetry"] = telemetry
+    return copied
+
+
+def _parse_telemetry_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(UTC)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _inline_profile_name(server_policy: dict[str, Any]) -> str | None:
