@@ -365,6 +365,28 @@ class UserAiPreferenceModel(Base):
     )
 
 
+class AiAgentSettingsModel(Base):
+    __tablename__ = "ai_agent_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    api_key_blob: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_test_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+
 class AiAgentToolCallModel(Base):
     __tablename__ = "ai_agent_tool_calls"
 
