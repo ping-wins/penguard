@@ -111,10 +111,10 @@ def _recommended_triage_level(incident: dict[str, Any]) -> str:
         return current
     severity = str(incident.get("severity") or "").lower()
     if severity in {"critical", "high"}:
-        return "T1"
+        return "T3"
     if severity == "medium":
         return "T2"
-    return "T3"
+    return "T1"
 
 
 def _recommended_ticket_status(incident: dict[str, Any]) -> str:

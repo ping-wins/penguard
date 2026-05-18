@@ -25,7 +25,7 @@ function severityColor(severity: string) {
 }
 
 function triageColor(level: string) {
-  if (level === 'T1') return 'border-red-500/50 text-red-300'
+  if (level === 'T3') return 'border-red-500/50 text-red-300'
   if (level === 'T2') return 'border-amber-500/50 text-amber-300'
   return 'border-sky-500/50 text-sky-300'
 }
