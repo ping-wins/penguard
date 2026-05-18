@@ -325,6 +325,15 @@ function resetCreatePayload(providerType: PolicyProviderType) {
 
 function defaultPayload(policy: PolicyRow, action: PolicyAction): Record<string, unknown> {
   if (action === 'edit') {
+    if (policy.providerType === 'fortiweb' && policy.kind === 'server_policy') {
+      return {
+        operation: 'prepare_waf_dos_policy',
+        targetServerPolicy: policy.nativeId,
+        inlineProtectionProfile: 'FD Inline DoS Protection',
+        dosPreventionPolicy: 'Predefined',
+        reason: 'Prepare FortiWeb policy for WAF/DoS lab validation',
+      }
+    }
     return {
       name: policy.name,
       status: policy.status === 'enabled' ? 'enable' : 'disable',

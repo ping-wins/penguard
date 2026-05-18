@@ -16,6 +16,7 @@ from app.policies.models import (
 )
 
 _REVIEWS: dict[str, dict[str, Any]] = {}
+DEFAULT_WAF_DOS_INLINE_PROFILE = "FD Inline DoS Protection"
 
 
 class FortiWebPolicyAdapter:
@@ -30,7 +31,7 @@ class FortiWebPolicyAdapter:
                 providerType="fortiweb",
                 integrationId=item["id"],
                 name=item.get("name") or item.get("host") or item["id"],
-                capabilities=["list", "create", "delete"],
+                capabilities=["list", "create", "edit", "delete"],
                 policyKinds=["server_policy", "ip_blocklist", "source_block"],
             )
             for item in self._integrations(owner_user_id=owner_user_id)
@@ -71,6 +72,30 @@ class FortiWebPolicyAdapter:
             _REVIEWS[response.id] = {
                 "action": "create",
                 "blockId": review["id"],
+                "review": response,
+            }
+            return response
+        if (
+            payload.action == "edit"
+            and payload.payload.get("operation") == "prepare_waf_dos_policy"
+        ):
+            review = self.fortiweb_service.review_waf_dos_policy(
+                owner_user_id=owner_user_id,
+                integration_id=payload.integration_id,
+                target_server_policy=_target_server_policy(payload),
+                inline_protection_profile=str(
+                    payload.payload.get("inlineProtectionProfile")
+                    or DEFAULT_WAF_DOS_INLINE_PROFILE
+                ),
+                dos_prevention_policy=str(
+                    payload.payload.get("dosPreventionPolicy") or "Predefined"
+                ),
+                reason=_nullable_string(payload.payload.get("reason")),
+            )
+            response = _create_waf_dos_review_response(review, policy_id=payload.policy_id)
+            _REVIEWS[response.id] = {
+                "action": "prepare_waf_dos_policy",
+                "reviewPayload": review,
                 "review": response,
             }
             return response
@@ -131,15 +156,23 @@ class FortiWebPolicyAdapter:
         if not payload.confirmed:
             raise PermissionError("Explicit confirmation is required")
 
-        block_id = str(stored["blockId"])
         if stored["action"] == "create":
+            block_id = str(stored["blockId"])
             result = self.fortiweb_service.apply_source_block(
                 owner_user_id=owner_user_id,
                 block_id=block_id,
                 review_hash=payload.review_hash,
                 confirmed=True,
             )
+        elif stored["action"] == "prepare_waf_dos_policy":
+            result = self.fortiweb_service.apply_waf_dos_policy(
+                owner_user_id=owner_user_id,
+                review=stored["reviewPayload"],
+                review_hash=payload.review_hash,
+                confirmed=True,
+            )
         elif stored["action"] == "delete":
+            block_id = str(stored["blockId"])
             result = self.fortiweb_service.remove_source_block(
                 owner_user_id=owner_user_id,
                 block_id=block_id,
@@ -182,8 +215,8 @@ def _configured_policy_rows(integration: dict[str, Any]) -> list[PolicyRow]:
                 scope={"serverPolicy": target_policy},
                 ownership=PolicyOwnership.EXTERNAL,
                 managedByFortiDashboard=False,
-                isMutable=False,
-                supports=[],
+                isMutable=True,
+                supports=["edit"],
                 risk={"level": "medium", "reasons": ["WAF policy controls protected traffic"]},
                 summary=f"FortiWeb server policy {target_policy}",
                 lastObservedAt=observed_at,
@@ -294,11 +327,74 @@ def _create_block_review_response(review: dict[str, Any]) -> PolicyReviewRespons
     )
 
 
+def _create_waf_dos_review_response(
+    review: dict[str, Any],
+    *,
+    policy_id: str | None,
+) -> PolicyReviewResponse:
+    proposed_changes = review.get("proposedChanges")
+    if not isinstance(proposed_changes, list):
+        proposed_changes = []
+    preflight = review.get("preflightSummary")
+    if not isinstance(preflight, dict):
+        preflight = {}
+    no_changes = not proposed_changes
+    warnings = []
+    if no_changes:
+        warnings.append(
+            {
+                "severity": "info",
+                "message": "FortiWeb WAF/DoS policy is already prepared",
+            }
+        )
+    return PolicyReviewResponse(
+        id=f"fortiweb:waf-dos:{review['id']}",
+        providerType="fortiweb",
+        integrationId=review["integrationId"],
+        policyId=policy_id,
+        action="edit",
+        status="pending_review",
+        title="Prepare FortiWeb WAF/DoS policy",
+        before={"summary": "current FortiWeb WAF/DoS policy state", **preflight},
+        after={
+            "summary": "FortiWeb server policy will use inline WAF protection and DoS prevention",
+            "targetServerPolicy": preflight.get("serverPolicy"),
+            "inlineProtectionProfile": preflight.get("desiredInlineProtectionProfile"),
+            "dosPreventionPolicy": preflight.get("desiredDosPreventionPolicy"),
+        },
+        diff=[
+            {
+                "field": str(change.get("operation") or change.get("field") or "policy"),
+                "before": change.get("before"),
+                "after": change.get("after") or change.get("summary") or change,
+                "risk": "FortiWeb WAF/DoS policy behavior changes",
+            }
+            for change in proposed_changes
+            if isinstance(change, dict)
+        ],
+        warnings=warnings,
+        rollback=[
+            "Run a new FortiDashboard policy review restoring the previous FortiWeb profile fields."
+        ],
+        reviewHash=review["reviewHash"],
+    )
+
+
 def _source_ip(payload: dict[str, Any]) -> str:
     value = payload.get("sourceIp") or payload.get("source_ip")
     if not isinstance(value, str) or not value.strip():
         raise ValueError("sourceIp is required for FortiWeb source-block reviews")
     return value.strip()
+
+
+def _target_server_policy(payload: PolicyReviewCreateRequest) -> str | None:
+    value = payload.payload.get("targetServerPolicy")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    policy_id = payload.policy_id
+    if policy_id and ":server-policy:" in policy_id:
+        return policy_id.rsplit(":server-policy:", 1)[-1]
+    return None
 
 
 def _nullable_string(value: Any) -> str | None:

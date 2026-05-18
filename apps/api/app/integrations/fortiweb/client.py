@@ -55,13 +55,32 @@ class FortiWebApiClient:
         return results
 
     def get_server_policy(self, name: str) -> dict[str, Any]:
-        results = self._get(f"/api/v2.0/cmdb/server-policy/policy/{name}")
+        results = self._get(
+            "/api/v2.0/cmdb/server-policy/policy",
+            params={"mkey": name},
+        )
+        results = self._named_object(results, name, "FortiWeb server policy")
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb server policy response was not an object")
         return results
 
+    def update_server_policy(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        results = self._put(
+            "/api/v2.0/cmdb/server-policy/policy",
+            params={"mkey": name},
+            json={"data": payload},
+        )
+        results = self._single_object(results, "FortiWeb server policy update")
+        if not isinstance(results, dict):
+            raise FortiWebApiError("FortiWeb server policy update response was not an object")
+        return results
+
     def get_inline_protection_profile(self, name: str) -> dict[str, Any]:
-        results = self._get(f"/api/v2.0/cmdb/waf/web-protection-profile/inline-protection/{name}")
+        results = self._get(
+            "/api/v2.0/cmdb/waf/web-protection-profile.inline-protection",
+            params={"mkey": name},
+        )
+        results = self._named_object(results, name, "FortiWeb inline protection")
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb inline protection response was not an object")
         return results
@@ -72,11 +91,33 @@ class FortiWebApiClient:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         results = self._put(
-            f"/api/v2.0/cmdb/waf/web-protection-profile/inline-protection/{name}",
-            json=payload,
+            "/api/v2.0/cmdb/waf/web-protection-profile.inline-protection",
+            params={"mkey": name},
+            json={"data": payload},
         )
+        results = self._single_object(results, "FortiWeb inline protection update")
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb inline protection update response was not an object")
+        return results
+
+    def create_inline_protection_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        results = self._post(
+            "/api/v2.0/cmdb/waf/web-protection-profile.inline-protection",
+            json={"data": payload},
+        )
+        results = self._single_object(results, "FortiWeb inline protection create")
+        if not isinstance(results, dict):
+            raise FortiWebApiError("FortiWeb inline protection create response was not an object")
+        return results
+
+    def get_application_layer_dos_prevention(self, name: str) -> dict[str, Any]:
+        results = self._get(
+            "/api/v2.0/cmdb/waf/application-layer-dos-prevention",
+            params={"mkey": name},
+        )
+        results = self._named_object(results, name, "FortiWeb DoS prevention policy")
+        if not isinstance(results, dict):
+            raise FortiWebApiError("FortiWeb DoS prevention response was not an object")
         return results
 
     def get_ip_list(self, name: str) -> dict[str, Any]:
@@ -106,11 +147,23 @@ class FortiWebApiClient:
     ) -> Any:
         return self._request("GET", path, params=params, include_metadata=include_metadata)
 
-    def _post(self, path: str, *, json: dict[str, Any]) -> Any:
-        return self._request("POST", path, json=json)
+    def _post(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
+        json: dict[str, Any],
+    ) -> Any:
+        return self._request("POST", path, params=params, json=json)
 
-    def _put(self, path: str, *, json: dict[str, Any]) -> Any:
-        return self._request("PUT", path, json=json)
+    def _put(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
+        json: dict[str, Any],
+    ) -> Any:
+        return self._request("PUT", path, params=params, json=json)
 
     def _request(
         self,
@@ -182,6 +235,28 @@ class FortiWebApiClient:
             if key in payload and key not in merged:
                 merged[key] = payload[key]
         return merged
+
+    def _single_object(self, payload: Any, label: str) -> Any:
+        if isinstance(payload, list):
+            if len(payload) == 1 and isinstance(payload[0], dict):
+                return payload[0]
+            raise FortiWebApiError(f"{label} response did not contain exactly one object")
+        return payload
+
+    def _named_object(self, payload: Any, name: str, label: str) -> Any:
+        if isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict) and _matches_fortiweb_name(item, name):
+                    return item
+            if len(payload) == 1 and isinstance(payload[0], dict):
+                return payload[0]
+            raise FortiWebApiError(f"{label} response did not contain object named {name}")
+        return payload
+
+
+def _matches_fortiweb_name(item: dict[str, Any], name: str) -> bool:
+    candidate = item.get("name") or item.get("q_origin_key")
+    return str(candidate) == name
 
 
 def _decode_loose_status_payload(text: str) -> dict[str, Any] | None:

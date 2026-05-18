@@ -12,6 +12,8 @@ from typing import Any, Protocol
 from app.integrations.fortiweb.client import FortiWebApiClient, FortiWebApiError
 from app.integrations.fortiweb.store import FORTIWEB_CAPABILITIES
 
+FORTIDASHBOARD_WAF_DOS_INLINE_PROFILE = "FD Inline DoS Protection"
+
 
 class FortiWebIntegrationStore(Protocol):
     def create(
@@ -121,6 +123,9 @@ class FortiWebClient(Protocol):
     def get_server_policy(self, name: str) -> dict[str, Any]:
         pass
 
+    def update_server_policy(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
     def get_inline_protection_profile(self, name: str) -> dict[str, Any]:
         pass
 
@@ -129,6 +134,12 @@ class FortiWebClient(Protocol):
         name: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        pass
+
+    def create_inline_protection_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+    def get_application_layer_dos_prevention(self, name: str) -> dict[str, Any]:
         pass
 
     def get_ip_list(self, name: str) -> dict[str, Any]:
@@ -582,6 +593,151 @@ class FortiWebIntegrationService:
             removed_result=removed_result,
         )
 
+    def review_waf_dos_policy(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        target_server_policy: str | None = None,
+        inline_protection_profile: str = FORTIDASHBOARD_WAF_DOS_INLINE_PROFILE,
+        dos_prevention_policy: str = "Predefined",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        connection, client = self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        target_policy = (target_server_policy or str(connection["target_server_policy"])).strip()
+        inline_profile = inline_protection_profile.strip()
+        dos_policy = dos_prevention_policy.strip()
+        if not target_policy:
+            raise ValueError("targetServerPolicy is required")
+        if not inline_profile:
+            raise ValueError("inlineProtectionProfile is required")
+        if not dos_policy:
+            raise ValueError("dosPreventionPolicy is required")
+
+        server_policy = client.get_server_policy(target_policy)
+        profile_exists = True
+        try:
+            desired_profile = client.get_inline_protection_profile(inline_profile)
+        except FortiWebApiError as exc:
+            if not _is_fortiweb_not_found_error(exc):
+                raise
+            desired_profile = {}
+            profile_exists = False
+        client.get_application_layer_dos_prevention(dos_policy)
+
+        current_profile = _inline_profile_name(server_policy)
+        current_dos_policy = _profile_dos_policy(desired_profile)
+        preflight_summary = {
+            "integrationId": integration_id,
+            "serverPolicy": target_policy,
+            "currentInlineProtectionProfile": current_profile,
+            "desiredInlineProtectionProfile": inline_profile,
+            "desiredInlineProtectionProfileExists": profile_exists,
+            "currentDosPreventionPolicy": current_dos_policy,
+            "desiredDosPreventionPolicy": dos_policy,
+        }
+        proposed_changes = _waf_dos_policy_changes(
+            target_policy=target_policy,
+            current_profile=current_profile,
+            inline_profile=inline_profile,
+            inline_profile_exists=profile_exists,
+            current_dos_policy=current_dos_policy,
+            dos_policy=dos_policy,
+        )
+        intent = {
+            "action": "prepare_waf_dos_policy",
+            "targetServerPolicy": target_policy,
+            "inlineProtectionProfile": inline_profile,
+            "dosPreventionPolicy": dos_policy,
+            "reason": reason,
+        }
+        review_hash = _review_hash(intent, preflight_summary, proposed_changes)
+        return {
+            "id": f"fweb_waf_dos_{review_hash[:12]}",
+            "integrationId": integration_id,
+            "status": "pending_review",
+            "intent": intent,
+            "preflightSummary": preflight_summary,
+            "proposedChanges": proposed_changes,
+            "reviewHash": review_hash,
+        }
+
+    def apply_waf_dos_policy(
+        self,
+        *,
+        owner_user_id: str,
+        review: dict[str, Any],
+        review_hash: str,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        if not confirmed:
+            raise PermissionError(
+                "Explicit confirmation is required to prepare FortiWeb WAF/DoS policy"
+            )
+        if review.get("reviewHash") != review_hash:
+            raise PermissionError("FortiWeb WAF/DoS policy review hash mismatch")
+        integration_id = str(review["integrationId"])
+        intent = review.get("intent") if isinstance(review.get("intent"), dict) else {}
+        target_policy = str(intent.get("targetServerPolicy") or "").strip()
+        inline_profile_name = str(intent.get("inlineProtectionProfile") or "").strip()
+        dos_policy = str(intent.get("dosPreventionPolicy") or "").strip()
+        if not target_policy or not inline_profile_name or not dos_policy:
+            raise ValueError("FortiWeb WAF/DoS review is missing required intent fields")
+
+        _, client = self._client_for_integration(
+            integration_id=integration_id,
+            owner_user_id=owner_user_id,
+        )
+        server_policy = client.get_server_policy(target_policy)
+        profile_created = False
+        try:
+            inline_profile = client.get_inline_protection_profile(inline_profile_name)
+        except FortiWebApiError as exc:
+            if not _is_fortiweb_not_found_error(exc):
+                raise
+            inline_profile = client.create_inline_protection_profile(
+                _inline_profile_create_payload(
+                    name=inline_profile_name,
+                    dos_policy=dos_policy,
+                )
+            )
+            profile_created = True
+        server_updated = False
+        profile_updated = False
+
+        if not profile_created and _profile_dos_policy(inline_profile) != dos_policy:
+            if _is_read_only_fortiweb_object(inline_profile):
+                raise PermissionError(
+                    "FortiWeb inline protection profile is read-only; "
+                    "choose a FortiDashboard-owned profile"
+                )
+            client.update_inline_protection_profile(
+                inline_profile_name,
+                {"application-layer-dos-prevention": dos_policy},
+            )
+            profile_updated = True
+
+        if _inline_profile_name(server_policy) != inline_profile_name:
+            client.update_server_policy(
+                target_policy,
+                {"web-protection-profile": inline_profile_name},
+            )
+            server_updated = True
+
+        return {
+            "applied": True,
+            "integrationId": integration_id,
+            "targetServerPolicy": target_policy,
+            "inlineProtectionProfile": inline_profile_name,
+            "dosPreventionPolicy": dos_policy,
+            "inlineProtectionProfileCreated": profile_created,
+            "serverPolicyUpdated": server_updated,
+            "inlineProtectionProfileUpdated": profile_updated,
+        }
+
     def _probe_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         try:
             client = self.client_factory(host=host, api_key=api_key, verify_tls=verify_tls)
@@ -811,6 +967,99 @@ def _profile_ip_list_policy(profile: dict[str, Any]) -> str | None:
             if isinstance(nested, str) and nested.strip():
                 return nested.strip()
     return None
+
+
+def _profile_dos_policy(profile: dict[str, Any]) -> str | None:
+    for key in (
+        "application-layer-dos-prevention",
+        "application_layer_dos_prevention",
+        "applicationLayerDosPrevention",
+    ):
+        value = profile.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = value.get("name") or value.get("q_origin_key")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return None
+
+
+def _is_fortiweb_not_found_error(error: FortiWebApiError) -> bool:
+    return "entry is not found" in str(error).lower()
+
+
+def _is_read_only_fortiweb_object(payload: dict[str, Any]) -> bool:
+    return payload.get("q_type") == 1 and payload.get("can_view") == 1
+
+
+def _inline_profile_create_payload(*, name: str, dos_policy: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "client-management": "enable",
+        "amf3-protocol-detection": "disable",
+        "mobile-app-identification": "",
+        "ip-intelligence": "enable",
+        "fortigate-quarantined-ips": "disable",
+        "quarantined-ip-action": "alert",
+        "quarantined-ip-severity": "High",
+        "rdt-reason": "disable",
+        "jwt-token-location": "token-location-header",
+        "application-layer-dos-prevention": dos_policy,
+        "comment": "Created by FortiDashboard for WAF/DoS lab validation",
+    }
+
+
+def _waf_dos_policy_changes(
+    *,
+    target_policy: str,
+    current_profile: str | None,
+    inline_profile: str,
+    inline_profile_exists: bool,
+    current_dos_policy: str | None,
+    dos_policy: str,
+) -> list[dict[str, Any]]:
+    changes: list[dict[str, Any]] = []
+    if not inline_profile_exists:
+        changes.append(
+            {
+                "operation": "create_inline_protection_profile",
+                "target": inline_profile,
+                "field": "application-layer-dos-prevention",
+                "before": None,
+                "after": dos_policy,
+                "summary": (
+                    f"Create FortiDashboard-owned FortiWeb profile {inline_profile} "
+                    f"with {dos_policy} DoS prevention"
+                ),
+            }
+        )
+    if current_profile != inline_profile:
+        changes.append(
+            {
+                "operation": "attach_inline_protection_profile",
+                "target": target_policy,
+                "field": "web-protection-profile",
+                "before": current_profile,
+                "after": inline_profile,
+                "summary": (
+                    f"Attach {inline_profile} to FortiWeb server policy "
+                    f"{target_policy}"
+                ),
+            }
+        )
+    if inline_profile_exists and current_dos_policy != dos_policy:
+        changes.append(
+            {
+                "operation": "attach_dos_prevention_policy",
+                "target": inline_profile,
+                "field": "application-layer-dos-prevention",
+                "before": current_dos_policy,
+                "after": dos_policy,
+                "summary": f"Attach {dos_policy} DoS prevention to {inline_profile}",
+            }
+        )
+    return changes
 
 
 def _ip_list_members(ip_list: dict[str, Any]) -> list[dict[str, Any]]:

@@ -299,6 +299,8 @@ def test_fortigate_policy_adapter_creates_firewall_policy() -> None:
 class FakeFortiWebPolicyService:
     def __init__(self) -> None:
         self.applied: list[tuple[str, str, bool]] = []
+        self.waf_reviews: list[tuple[str, str, str, str | None]] = []
+        self.waf_applied: list[tuple[str, bool]] = []
         self.removed: list[str] = []
 
     def list(self, *, owner_user_id: str) -> dict:
@@ -399,6 +401,82 @@ class FakeFortiWebPolicyService:
             "appliedResult": {"applied": True},
         }
 
+    def review_waf_dos_policy(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        target_server_policy: str | None = None,
+        inline_protection_profile: str = "FD Inline DoS Protection",
+        dos_prevention_policy: str = "Predefined",
+        reason: str | None = None,
+    ) -> dict:
+        assert owner_user_id == "usr_admin"
+        assert integration_id == "int_fweb_01"
+        self.waf_reviews.append(
+            (
+                target_server_policy or "lab-waf-policy",
+                inline_protection_profile,
+                dos_prevention_policy,
+                reason,
+            )
+        )
+        return {
+            "id": "fortiweb_waf_dos_review_01",
+            "integrationId": integration_id,
+            "status": "pending_review",
+            "intent": {
+                "action": "prepare_waf_dos_policy",
+                "targetServerPolicy": target_server_policy or "lab-waf-policy",
+                "inlineProtectionProfile": inline_protection_profile,
+                "dosPreventionPolicy": dos_prevention_policy,
+                "reason": reason,
+            },
+            "preflightSummary": {
+                "serverPolicy": "lab-waf-policy",
+                "currentInlineProtectionProfile": None,
+                "desiredInlineProtectionProfile": inline_protection_profile,
+                "desiredInlineProtectionProfileExists": False,
+                "currentDosPreventionPolicy": None,
+                "desiredDosPreventionPolicy": dos_prevention_policy,
+            },
+            "proposedChanges": [
+                {
+                    "operation": "create_inline_protection_profile",
+                    "summary": (
+                        "Create FortiDashboard-owned FortiWeb profile "
+                        f"{inline_protection_profile} with {dos_prevention_policy} DoS prevention"
+                    ),
+                },
+                {
+                    "operation": "attach_inline_protection_profile",
+                    "summary": (
+                        f"Attach {inline_protection_profile} to FortiWeb "
+                        "server policy lab-waf-policy"
+                    ),
+                },
+            ],
+            "reviewHash": "waf_dos_hash_01",
+        }
+
+    def apply_waf_dos_policy(
+        self,
+        *,
+        owner_user_id: str,
+        review: dict,
+        review_hash: str,
+        confirmed: bool = False,
+    ) -> dict:
+        assert owner_user_id == "usr_admin"
+        self.waf_applied.append((review_hash, confirmed))
+        return {
+            "applied": True,
+            "integrationId": "int_fweb_01",
+            "targetServerPolicy": review["intent"]["targetServerPolicy"],
+            "inlineProtectionProfile": review["intent"]["inlineProtectionProfile"],
+            "dosPreventionPolicy": review["intent"]["dosPreventionPolicy"],
+        }
+
     def remove_source_block(self, *, owner_user_id: str, block_id: str) -> dict:
         assert owner_user_id == "usr_admin"
         self.removed.append(block_id)
@@ -422,7 +500,7 @@ def test_fortiweb_policy_adapter_lists_configured_policy_and_blocks() -> None:
         "providerType": "fortiweb",
         "integrationId": "int_fweb_01",
         "name": "FortiWeb Lab",
-        "capabilities": ["list", "create", "delete"],
+        "capabilities": ["list", "create", "edit", "delete"],
         "policyKinds": ["server_policy", "ip_blocklist", "source_block"],
     }
     assert [row["kind"] for row in rows] == ["server_policy", "ip_blocklist", "source_block"]
@@ -459,6 +537,49 @@ def test_fortiweb_policy_adapter_creates_source_block_review_and_apply() -> None
     assert service.applied == [("fweb_block_02", "fweb_hash_02", True)]
     assert applied["status"] == "applied"
     assert applied["appliedResult"]["appliedResult"] == {"applied": True}
+
+
+def test_fortiweb_policy_adapter_reviews_and_applies_waf_dos_policy_edit() -> None:
+    service = FakeFortiWebPolicyService()
+    adapter = FortiWebPolicyAdapter(service)
+
+    review = adapter.create_review(
+        owner_user_id="usr_admin",
+        payload=PolicyReviewCreateRequest(
+            providerType="fortiweb",
+            integrationId="int_fweb_01",
+            policyId="fortiweb:int_fweb_01:server-policy:lab-waf-policy",
+            action="edit",
+            payload={
+                "operation": "prepare_waf_dos_policy",
+                "inlineProtectionProfile": "FD Inline DoS Protection",
+                "dosPreventionPolicy": "Predefined",
+                "reason": "Lab DoS validation",
+            },
+        ),
+    )
+    applied = adapter.apply_review(
+        owner_user_id="usr_admin",
+        review_id=review.id,
+        payload=PolicyReviewApplyRequest(reviewHash=review.review_hash, confirmed=True),
+    )
+
+    assert review.id.startswith("fortiweb:waf-dos:")
+    assert review.action == "edit"
+    assert [entry["field"] for entry in review.diff] == [
+        "create_inline_protection_profile",
+        "attach_inline_protection_profile",
+    ]
+    assert service.waf_reviews == [
+        (
+            "lab-waf-policy",
+            "FD Inline DoS Protection",
+            "Predefined",
+            "Lab DoS validation",
+        )
+    ]
+    assert service.waf_applied == [("waf_dos_hash_01", True)]
+    assert applied["appliedResult"]["applied"] is True
 
 
 def test_fortiweb_policy_adapter_reviews_and_removes_source_block() -> None:

@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.integrations.fortiweb.client import FortiWebApiError
 from app.integrations.fortiweb.service import FortiWebIntegrationService
 
 
@@ -101,10 +102,24 @@ class FortiWebBlockClient:
             "name": "lab-inline-protection",
             "ip-list-policy": "FD_IP_BLOCKLIST",
         }
+        self.standard_inline_profile = {
+            "name": "Inline Standard Protection",
+            "ip-list-policy": "",
+            "application-layer-dos-prevention": "",
+            "q_type": 1,
+            "can_view": 1,
+        }
+        self.extra_inline_profiles: dict[str, dict[str, Any]] = {}
+        self.dos_prevention = {
+            "name": "Predefined",
+            "enable-http-session-based-prevention": "enable",
+            "enable-layer4-dos-prevention": "enable",
+        }
         self.ip_list = {
             "name": "FD_IP_BLOCKLIST",
             "members": [],
         }
+        self.server_updates: list[dict[str, Any]] = []
         self.ip_list_updates: list[dict[str, Any]] = []
         self.inline_updates: list[dict[str, Any]] = []
 
@@ -121,14 +136,43 @@ class FortiWebBlockClient:
         return dict(self.server_policy)
 
     def get_inline_protection_profile(self, name: str):
-        assert name == "lab-inline-protection"
-        return dict(self.inline_profile)
+        if name == "lab-inline-protection":
+            return dict(self.inline_profile)
+        if name == "Inline Standard Protection":
+            return dict(self.standard_inline_profile)
+        if name in self.extra_inline_profiles:
+            return dict(self.extra_inline_profiles[name])
+        if name == "FD Inline DoS Protection":
+            raise FortiWebApiError("The entry is not found.")
+        raise AssertionError(f"unexpected profile {name}")
 
     def update_inline_protection_profile(self, name: str, payload: dict[str, Any]):
-        assert name == "lab-inline-protection"
-        self.inline_profile.update(payload)
+        if name == "lab-inline-protection":
+            self.inline_profile.update(payload)
+        elif name == "Inline Standard Protection":
+            self.standard_inline_profile.update(payload)
+        elif name in self.extra_inline_profiles:
+            self.extra_inline_profiles[name].update(payload)
+        else:
+            raise AssertionError(f"unexpected profile {name}")
         self.inline_updates.append(dict(payload))
-        return dict(self.inline_profile)
+        return self.get_inline_protection_profile(name)
+
+    def create_inline_protection_profile(self, payload: dict[str, Any]):
+        name = str(payload["name"])
+        self.extra_inline_profiles[name] = dict(payload)
+        self.inline_updates.append(dict(payload))
+        return dict(payload)
+
+    def get_application_layer_dos_prevention(self, name: str):
+        assert name == "Predefined"
+        return dict(self.dos_prevention)
+
+    def update_server_policy(self, name: str, payload: dict[str, Any]):
+        assert name == "lab-waf-policy"
+        self.server_policy.update(payload)
+        self.server_updates.append(dict(payload))
+        return dict(self.server_policy)
 
     def get_ip_list(self, name: str):
         assert name == "FD_IP_BLOCKLIST"
@@ -251,3 +295,83 @@ def test_remove_source_block_removes_ip_member_after_explicit_delete():
 
     assert removed["status"] == "removed"
     assert fake_client.ip_list["members"] == []
+
+
+def test_review_waf_dos_policy_prepares_server_policy_and_profile_changes():
+    fake_client = FortiWebBlockClient()
+    fake_client.server_policy["web-protection-profile"] = ""
+    service = service_with_client(fake_client)
+
+    review = service.review_waf_dos_policy(
+        owner_user_id="usr_admin",
+        integration_id="int_fweb_lab",
+        reason="Lab DoS validation",
+    )
+
+    assert review["status"] == "pending_review"
+    assert review["intent"] == {
+        "action": "prepare_waf_dos_policy",
+        "targetServerPolicy": "lab-waf-policy",
+        "inlineProtectionProfile": "FD Inline DoS Protection",
+        "dosPreventionPolicy": "Predefined",
+        "reason": "Lab DoS validation",
+    }
+    assert review["preflightSummary"] == {
+        "integrationId": "int_fweb_lab",
+        "serverPolicy": "lab-waf-policy",
+        "currentInlineProtectionProfile": None,
+        "desiredInlineProtectionProfile": "FD Inline DoS Protection",
+        "desiredInlineProtectionProfileExists": False,
+        "currentDosPreventionPolicy": None,
+        "desiredDosPreventionPolicy": "Predefined",
+    }
+    assert [change["operation"] for change in review["proposedChanges"]] == [
+        "create_inline_protection_profile",
+        "attach_inline_protection_profile",
+    ]
+
+
+def test_apply_waf_dos_policy_updates_fortiweb_through_confirmed_review():
+    fake_client = FortiWebBlockClient()
+    fake_client.server_policy["web-protection-profile"] = ""
+    service = service_with_client(fake_client)
+    review = service.review_waf_dos_policy(
+        owner_user_id="usr_admin",
+        integration_id="int_fweb_lab",
+        reason="Lab DoS validation",
+    )
+
+    applied = service.apply_waf_dos_policy(
+        owner_user_id="usr_admin",
+        review=review,
+        review_hash=review["reviewHash"],
+        confirmed=True,
+    )
+
+    assert applied["applied"] is True
+    assert fake_client.server_policy["web-protection-profile"] == "FD Inline DoS Protection"
+    assert (
+        fake_client.extra_inline_profiles["FD Inline DoS Protection"][
+            "application-layer-dos-prevention"
+        ]
+        == "Predefined"
+    )
+    assert fake_client.server_updates == [
+        {"web-protection-profile": "FD Inline DoS Protection"}
+    ]
+    assert fake_client.inline_updates == [
+        {
+            "name": "FD Inline DoS Protection",
+            "client-management": "enable",
+            "amf3-protocol-detection": "disable",
+            "mobile-app-identification": "",
+            "ip-intelligence": "enable",
+            "fortigate-quarantined-ips": "disable",
+            "quarantined-ip-action": "alert",
+            "quarantined-ip-severity": "High",
+            "rdt-reason": "disable",
+            "jwt-token-location": "token-location-header",
+            "application-layer-dos-prevention": "Predefined",
+            "comment": "Created by FortiDashboard for WAF/DoS lab validation",
+        }
+    ]
