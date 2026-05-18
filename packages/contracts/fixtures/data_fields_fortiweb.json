@@ -1,0 +1,85 @@
+{
+  "provider": "fortiweb",
+  "groups": [
+    {
+      "id": "waf",
+      "name": "FortiWeb WAF Data",
+      "category": "WAF / FortiWeb",
+      "fields": [
+        {
+          "id": "dos.buckets",
+          "label": "DoS Traffic Buckets",
+          "type": "array",
+          "source": "waf-dos-rate",
+          "recommendedVisuals": ["line", "table"]
+        },
+        {
+          "id": "dos.blocked",
+          "label": "Blocked Requests",
+          "type": "number",
+          "unit": "count",
+          "source": "waf-dos-rate",
+          "recommendedVisuals": ["line", "card", "gauge"]
+        },
+        {
+          "id": "dos.allowed",
+          "label": "Allowed Requests",
+          "type": "number",
+          "unit": "count",
+          "source": "waf-dos-rate",
+          "recommendedVisuals": ["line", "card"]
+        },
+        {
+          "id": "attackers.rows",
+          "label": "Top Attacking IPs",
+          "type": "array",
+          "source": "waf-dos-top-ips",
+          "recommendedVisuals": ["table", "bar"]
+        },
+        {
+          "id": "attackers.ip",
+          "label": "Attacker IP",
+          "type": "ip",
+          "source": "waf-dos-top-ips",
+          "recommendedVisuals": ["table", "feed"]
+        },
+        {
+          "id": "attackers.count",
+          "label": "Attack Count",
+          "type": "number",
+          "unit": "count",
+          "source": "waf-dos-top-ips",
+          "recommendedVisuals": ["table", "bar", "card"]
+        },
+        {
+          "id": "events.items",
+          "label": "WAF DoS Events",
+          "type": "array",
+          "source": "waf-dos-feed",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "events.severity",
+          "label": "Event Severity",
+          "type": "category",
+          "source": "waf-dos-feed",
+          "recommendedVisuals": ["feed", "bar"]
+        },
+        {
+          "id": "events.action",
+          "label": "WAF Action",
+          "type": "category",
+          "source": "waf-dos-feed",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "events.policy",
+          "label": "Matched Policy",
+          "type": "string",
+          "source": "waf-dos-feed",
+          "recommendedVisuals": ["feed", "table"]
+        }
+      ]
+    }
+  ]
+}

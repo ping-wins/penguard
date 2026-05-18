@@ -11,6 +11,7 @@ PROVIDER_DATA_FIELD_FIXTURES = {
     "siem_kowalski": "data_fields_siem_kowalski",
     "xdr_rico": "data_fields_xdr_rico",
     "soar_skipper": "data_fields_soar_skipper",
+    "fortiweb": "data_fields_fortiweb",
 }
 
 

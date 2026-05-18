@@ -171,6 +171,23 @@ def test_penguin_provider_data_fields_are_grouped_for_custom_visuals():
     }
 
 
+def test_fortiweb_provider_data_fields_describe_waf_dos_widgets():
+    response = client.get("/api/providers/fortiweb/data-fields")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "fortiweb"
+    assert payload["groups"][0]["id"] == "waf"
+    assert payload["groups"][0]["category"] == "WAF / FortiWeb"
+    assert payload["groups"][0]["fields"][0] == {
+        "id": "dos.buckets",
+        "label": "DoS Traffic Buckets",
+        "type": "array",
+        "source": "waf-dos-rate",
+        "recommendedVisuals": ["line", "table"],
+    }
+
+
 def test_soc_provider_data_fields_aggregate_penguin_categories():
     response = client.get("/api/providers/soc/data-fields")
 
