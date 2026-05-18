@@ -92,6 +92,11 @@ export default {
     deny: 'Deny',
     modelBadge: '{model} · {used} tokens',
     noModel: 'Model pending',
+    errorNotConfigured: 'Configure the SOC Assistant provider, model and API key before starting.',
+    errorListTools: 'Failed to list SOC Assistant tools.',
+    errorCreateSession: 'Failed to start the SOC Assistant session.',
+    errorApprove: 'Failed to approve the SOC Assistant call.',
+    errorStream: 'SOC Assistant failed (HTTP {status}).',
   },
   marketplace: {
     title: 'Marketplace',

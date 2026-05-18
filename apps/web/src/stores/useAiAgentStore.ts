@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { i18n } from '../i18n'
 import {
   type AgentSessionResponse,
   type AgentStreamEvent,
@@ -32,6 +33,13 @@ export type PendingAgentApproval = {
   toolName: string
   args: Record<string, unknown>
   reason: string
+}
+
+function localizedError(message: string, code?: string): string {
+  if (code === 'agent_not_configured' || message === 'SOC Assistant provider is not configured') {
+    return i18n.global.t('aiAgent.errorNotConfigured')
+  }
+  return message
 }
 
 export const useAiAgentStore = defineStore('aiAgent', () => {
@@ -173,7 +181,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
       trace.value.push({
         kind: 'error',
         step: event.step,
-        message: event.message,
+        message: localizedError(event.message, event.code),
         code: event.code,
       })
     }

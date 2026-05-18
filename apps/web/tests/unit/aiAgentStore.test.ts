@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '../../src/i18n'
 import { useAiAgentStore } from '../../src/stores/useAiAgentStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -32,6 +33,7 @@ function sseEvent(data: object): string {
 describe('useAiAgentStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('pt-BR')
   })
 
   it('loads only tools via ensureCatalog', async () => {
@@ -80,6 +82,26 @@ describe('useAiAgentStore', () => {
       }),
     )
     expect(store.session?.role).toBe('soc-assistant')
+  })
+
+  it('localizes the not-configured session error', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const response = new Response(
+      JSON.stringify({ detail: 'SOC Assistant provider is not configured' }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    )
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(response)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+
+    expect(store.session).toBeNull()
+    expect(store.error).toBe(
+      'Configure o provider, modelo e chave de API do Assistente SOC antes de iniciar.',
+    )
   })
 
   it('records tool_call + tool_result events in the trace', async () => {
@@ -173,6 +195,32 @@ describe('useAiAgentStore', () => {
     expect(errors).toHaveLength(1)
     const errEntry = errors[0] as { code: string; message: string }
     expect(errEntry.code).toBe('unknown_tool')
+  })
+
+  it('localizes not-configured stream events', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const sessionPayload = jsonResponse(
+      { sessionId: 'sess_1', backend: 'anthropic', model: 'claude-sonnet-4-6', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { status: 201 },
+    )
+    const stream = sseResponse([
+      sseEvent({ type: 'step', kind: 'error', step: 1, message: 'SOC Assistant provider is not configured', code: 'agent_not_configured' }),
+    ])
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(sessionPayload)
+      .mockResolvedValueOnce(stream)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+    await store.sendMessage('oi')
+
+    const errors = store.trace.filter((entry) => entry.kind === 'error')
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as { message: string }).message).toBe(
+      'Configure o provider, modelo e chave de API do Assistente SOC antes de iniciar.',
+    )
   })
 
   it('tracks awaiting approvals and posts an approval decision', async () => {

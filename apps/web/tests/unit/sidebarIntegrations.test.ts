@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Sidebar from '../../src/components/layout/Sidebar.vue'
 import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
-import { useDashboardStore } from '../../src/stores/useDashboardStore'
-import { useIntegrationsStore } from '../../src/stores/useIntegrationsStore'
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -374,103 +372,28 @@ describe('Sidebar integrations panel', () => {
     expect(wrapper.text()).toContain('FortiWeb Core')
   })
 
-  it('renders AI widget drafts and inserts them into the workspace after confirmation', async () => {
-    const authStore = useAuthStore()
-    authStore.csrfToken = 'csrf_01'
-    const integrationsStore = useIntegrationsStore()
-    integrationsStore.integrations = [
-      {
-        id: 'int_fgt_01',
-        type: 'fortigate',
-        name: 'FortiGate Lab',
-        status: 'connected',
-      },
-    ]
-    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+  it('opens one SOC Assistant panel without the legacy chat mode', async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/api/ai/status') {
-        return Promise.resolve(jsonResponse({
-          provider: 'scripted',
-          model: 'scripted-cockpit',
-          ready: true,
-          runtime: 'pydantic_ai',
-        }))
-      }
-      if (url === '/api/ai/chat') {
-        expect(init?.method).toBe('POST')
-        return Promise.resolve(jsonResponse({
-          reply: 'draft_widget criou um rascunho card para CPU Usage. Revise o preview e confirme antes de adicionar na workspace.',
-          provider: 'pydantic_ai.scripted',
-          model: 'scripted-cockpit',
-          runtime: 'pydantic_ai',
-          widgetDrafts: [
-            {
-              toolName: 'draft_widget',
-              status: 'draft',
-              requiresConfirmation: true,
-              draft: {
-                status: 'draft',
-                provider: 'fortigate',
-                integrationId: null,
-                visualType: 'card',
-                title: 'CPU Usage',
-                fieldBindings: [
-                  {
-                    fieldId: 'system.cpu',
-                    label: 'CPU Usage',
-                    type: 'number',
-                    unit: 'percent',
-                    source: 'fortigate-system-status',
-                    provider: 'fortigate',
-                    integrationId: null,
-                  },
-                ],
-                layout: { w: 2, h: 2 },
-                settings: { aggregation: 'latest' },
-              },
-              preview: {
-                source: 'simulation',
-                values: { 'system.cpu': 0 },
-              },
-              validation: { valid: true, warnings: [], errors: [] },
-            },
-          ],
-        }))
-      }
-      if (url === '/api/workspaces/ws_default') {
-        return Promise.resolve(jsonResponse({ ok: true }))
+      if (url === '/api/ai/agent/tools') {
+        return Promise.resolve(jsonResponse({ items: [] }))
       }
       return Promise.resolve(jsonResponse({ items: [] }))
     })
     vi.stubGlobal('fetch', fetcher)
 
-    const dashboardStore = useDashboardStore()
     const wrapper = mountSidebar()
 
     await wrapper.get('[title="Assistente SOC"]').trigger('click')
     await flushPromises()
-    await wrapper.get('input[placeholder="Pergunte ao assistente ou peça um painel..."]').setValue('crie um card usando system.cpu')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
 
-    expect(wrapper.get('[data-test="ai-widget-draft"]').text()).toContain('CPU Usage')
-    expect(wrapper.get('[data-test="ai-widget-draft"]').text()).toContain('system.cpu')
-
-    await wrapper.get('[data-test="ai-widget-draft-add"]').trigger('click')
-
-    expect(dashboardStore.activeWidgets).toHaveLength(1)
-    expect(dashboardStore.activeWidgets[0]).toMatchObject({
-      catalogId: 'visual-template-card',
-      integrationId: 'int_fgt_01',
-      fieldBindings: [
-        {
-          fieldId: 'system.cpu',
-          integrationId: 'int_fgt_01',
-          integrationType: 'fortigate',
-        },
-      ],
-    })
-    expect(wrapper.text()).toContain('Adicionei o visual "CPU Usage" na workspace.')
+    expect(wrapper.text()).toContain('Assistente SOC')
+    expect(wrapper.find('[data-testid="assistant-mode-chat"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="assistant-mode-agent"]').exists()).toBe(false)
+    expect(wrapper.find('input[placeholder="Pergunte ao Assistente SOC"]').exists()).toBe(true)
+    expect(fetcher).toHaveBeenCalledWith('/api/ai/agent/tools', { credentials: 'include' })
+    expect(fetcher.mock.calls.some(([url]) => String(url) === '/api/ai/chat')).toBe(false)
+    expect(fetcher.mock.calls.some(([url]) => String(url) === '/api/ai/status')).toBe(false)
   })
 })
 

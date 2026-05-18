@@ -554,13 +554,10 @@ def test_runner_emits_backend_error_without_exception():
 # ---------------------------------------------------------------------------
 
 
-def test_list_backends_endpoint_lists_scripted():
+def test_list_backends_endpoint_is_not_public():
     client = TestClient(app)
     response = client.get("/api/ai/agent/backends")
-    assert response.status_code == 200
-    payload = response.json()
-    names = {item["name"] for item in payload["items"]}
-    assert "scripted" in names
+    assert response.status_code == 404
 
 
 def test_list_tools_endpoint_returns_input_schemas():
@@ -574,15 +571,10 @@ def test_list_tools_endpoint_returns_input_schemas():
     assert list_incidents["inputSchema"]["type"] == "object"
 
 
-def test_list_roles_endpoint_returns_runtime_roles():
+def test_list_roles_endpoint_is_not_public():
     client = TestClient(app)
     response = client.get("/api/ai/agent/roles")
-    assert response.status_code == 200
-    payload = response.json()
-    roles = {item["id"]: item for item in payload["items"]}
-    assert roles["incident-triage"]["tier"] == "balanced"
-    assert roles["incident-triage"]["tokenBudget"] == 150_000
-    assert roles["soc-investigation"]["allowedToolCategories"] == ["draft", "read", "write"]
+    assert response.status_code == 404
 
 
 def test_create_session_returns_session_id(monkeypatch):

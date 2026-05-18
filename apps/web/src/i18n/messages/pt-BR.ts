@@ -92,6 +92,11 @@ export default {
     deny: 'Negar',
     modelBadge: '{model} · {used} tokens',
     noModel: 'Modelo pendente',
+    errorNotConfigured: 'Configure o provider, modelo e chave de API do Assistente SOC antes de iniciar.',
+    errorListTools: 'Falha ao listar tools do Assistente SOC.',
+    errorCreateSession: 'Falha ao iniciar sessão do Assistente SOC.',
+    errorApprove: 'Falha ao aprovar chamada do Assistente SOC.',
+    errorStream: 'Falha no Assistente SOC (HTTP {status}).',
   },
   marketplace: {
     title: 'Marketplace',

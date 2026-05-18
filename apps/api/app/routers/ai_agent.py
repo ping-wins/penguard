@@ -20,7 +20,6 @@ from app.ai.agent import (
     AgentSession,
     ToolContext,
     get_session_store,
-    list_roles,
     list_tools,
 )
 from app.ai.agent.roles import get_role
@@ -53,7 +52,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ai-agent"], prefix="/ai/agent")
 
 
-_AVAILABLE_BACKENDS = ("scripted", "anthropic", "openai")
 _API_KEY_MAX_LENGTH = 1024
 
 
@@ -74,19 +72,6 @@ class SessionResponse(BaseModel):
     created_at: float = Field(alias="createdAt")
     tokens_in: int = Field(alias="tokensIn")
     tokens_out: int = Field(alias="tokensOut")
-
-
-class AgentRoleResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: str
-    label: str
-    description: str
-    tier: str
-    locale_default: str = Field(alias="localeDefault")
-    token_budget: int = Field(alias="tokenBudget")
-    max_steps: int = Field(alias="maxSteps")
-    allowed_tool_categories: list[str] = Field(alias="allowedToolCategories")
 
 
 class SendMessageRequest(BaseModel):
@@ -196,39 +181,6 @@ def _build_tool_context(*, user: dict, locale: str, audit_store: Any) -> ToolCon
         workspace_store=get_workspace_store(),
         audit_store=audit_store,
     )
-
-
-@router.get("/backends")
-def list_backends(
-    _current_user: Annotated[dict, Depends(get_current_api_user)],
-) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "items": [
-            {"name": name, "ready": name == "scripted", "default": name == "scripted"}
-            for name in _AVAILABLE_BACKENDS
-        ]
-    }
-
-
-@router.get("/roles")
-def list_agent_roles(
-    _current_user: Annotated[dict, Depends(get_current_api_user)],
-) -> dict[str, list[AgentRoleResponse]]:
-    return {
-        "items": [
-            AgentRoleResponse(
-                id=role.id,
-                label=role.label,
-                description=role.description,
-                tier=role.tier,
-                locale_default=role.locale_default,
-                token_budget=role.token_budget,
-                max_steps=role.max_steps,
-                allowed_tool_categories=sorted(role.allowed_tool_categories),
-            )
-            for role in list_roles()
-        ]
-    }
 
 
 @router.get("/tools")

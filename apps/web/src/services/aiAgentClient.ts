@@ -1,4 +1,5 @@
 import { useAuthStore } from '../stores/useAuthStore'
+import { i18n } from '../i18n'
 
 export type AgentTool = {
   name: string
@@ -82,13 +83,27 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 async function parseOrThrow<T>(response: Response, fallback: string): Promise<T> {
   if (response.ok) return response.json() as Promise<T>
   const data = await response.json().catch(() => ({}))
-  const message = typeof (data as any)?.detail === 'string' ? (data as any).detail : fallback
+  const detail = (data as any)?.detail
+  const message =
+    typeof detail === 'string'
+      ? localizeAgentError(detail)
+      : fallback
   throw new Error(message)
+}
+
+function localizeAgentError(message: string): string {
+  if (message === 'SOC Assistant provider is not configured') {
+    return i18n.global.t('aiAgent.errorNotConfigured')
+  }
+  return message
 }
 
 export async function listAgentTools(): Promise<AgentTool[]> {
   const response = await fetch('/api/ai/agent/tools', { credentials: 'include' })
-  const payload = await parseOrThrow<{ items: AgentTool[] }>(response, 'Falha ao listar tools')
+  const payload = await parseOrThrow<{ items: AgentTool[] }>(
+    response,
+    i18n.global.t('aiAgent.errorListTools'),
+  )
   return payload.items
 }
 
@@ -104,7 +119,10 @@ export async function createAgentSession(
       locale: options.locale ?? 'pt-BR',
     }),
   })
-  return parseOrThrow<AgentSessionResponse>(response, 'Falha ao criar sessão de agente')
+  return parseOrThrow<AgentSessionResponse>(
+    response,
+    i18n.global.t('aiAgent.errorCreateSession'),
+  )
 }
 
 export async function approveAgentToolCall(
@@ -123,7 +141,7 @@ export async function approveAgentToolCall(
       body: JSON.stringify({ granted, reason }),
     },
   )
-  await parseOrThrow(response, 'Falha ao aprovar chamada do agente')
+  await parseOrThrow(response, i18n.global.t('aiAgent.errorApprove'))
 }
 
 export async function deleteAgentSession(sessionId: string): Promise<void> {
@@ -156,8 +174,8 @@ export async function* streamAgentMessage(
     const data = await response.json().catch(() => ({}))
     const message =
       typeof (data as any)?.detail === 'string'
-        ? (data as any).detail
-        : `Falha no agente (HTTP ${response.status})`
+        ? localizeAgentError((data as any).detail)
+        : i18n.global.t('aiAgent.errorStream', { status: response.status })
     throw new Error(message)
   }
 
