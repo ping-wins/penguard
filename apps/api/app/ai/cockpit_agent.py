@@ -17,7 +17,6 @@ from app.ai.tools import (
     list_data_fields,
     list_incidents,
     list_tool_specs,
-    update_incident_status,
 )
 from app.ai.tools.schemas import WidgetDraftResponse
 from app.core.config import get_settings
@@ -60,14 +59,18 @@ class CockpitAgentRuntime:
                 content = provider.chat(messages, locale=locale)
             return ModelResponse(
                 parts=[TextPart(content=content)],
-                model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
+                model_name=getattr(provider, "model", "")
+                or settings.ai_model
+                or f"{provider.name}-cockpit",
                 provider_name=f"pydantic_ai.{provider.name}",
                 metadata={"toolCount": len(info.function_tools)},
             )
 
         agent = _build_agent(
             model_function=model_function,
-            model_name=getattr(provider, "model", "") or settings.ai_model or f"{provider.name}-cockpit",
+            model_name=getattr(provider, "model", "")
+            or settings.ai_model
+            or f"{provider.name}-cockpit",
             locale=locale,
         )
         result = agent.run_sync(_latest_user_prompt(messages))
@@ -189,7 +192,11 @@ def _try_incident_intent(
         if ticket:
             result = draft_containment_playbook(user_id=user_id, ticket_id=ticket)
             if result.get("error"):
-                return _tool_error_reply(result["error"], locale), ["draft_containment_playbook"], []
+                return (
+                    _tool_error_reply(result["error"], locale),
+                    ["draft_containment_playbook"],
+                    [],
+                )
             return (
                 _containment_reply(result, ticket, locale),
                 ["draft_containment_playbook"],
@@ -198,14 +205,27 @@ def _try_incident_intent(
 
     # 2) Incident lookup / list.
     incident_id = _extract_incident_id(prompt)
-    if incident_id and any(k in normalized for k in ("detalh", "abre", "abrir", "show", "open", "detail", "ver ", "view")):
+    detail_terms = ("detalh", "abre", "abrir", "show", "open", "detail", "ver ", "view")
+    if incident_id and any(k in normalized for k in detail_terms):
         result = get_incident(incident_id, user_id=user_id)
         if result.get("error"):
             return _tool_error_reply(result["error"], locale), ["get_incident"], []
         return _incident_detail_reply(result, locale), ["get_incident"], []
 
     severity = None
-    for sev in ("critical", "critico", "high", "alta", "alto", "medium", "media", "medio", "low", "baixo"):
+    severity_terms = (
+        "critical",
+        "critico",
+        "high",
+        "alta",
+        "alto",
+        "medium",
+        "media",
+        "medio",
+        "low",
+        "baixo",
+    )
+    for sev in severity_terms:
         if sev in normalized:
             severity = _normalize_severity(sev)
             break
@@ -240,9 +260,18 @@ def _try_incident_intent(
         return _incident_list_reply(result, locale, severity), ["list_incidents"], []
 
     # 3) Status change (returns DRAFT — user must confirm via UI).
-    if incident_id and any(k in normalized for k in (
-        "fechar", "fechado", "resolver", "resolvido", "marcar", "close", "resolve", "acknowledge", "ack"
-    )):
+    status_change_terms = (
+        "fechar",
+        "fechado",
+        "resolver",
+        "resolvido",
+        "marcar",
+        "close",
+        "resolve",
+        "acknowledge",
+        "ack",
+    )
+    if incident_id and any(k in normalized for k in status_change_terms):
         status = "closed"
         if "resolv" in normalized or "resolve" in normalized:
             status = "resolved"
@@ -281,8 +310,14 @@ def _incident_list_reply(result: dict[str, Any], locale: str, severity: str | No
     items = result.get("items") or []
     if not items:
         if locale.lower().startswith("en"):
-            return "No incidents matched. Try without a severity filter or run the brute-force smoke test."
-        return "Nenhum incidente encontrado. Tira o filtro de severidade ou roda o teste de brute-force."
+            return (
+                "No incidents matched. Try without a severity filter or run the "
+                "brute-force smoke test."
+            )
+        return (
+            "Nenhum incidente encontrado. Tira o filtro de severidade ou roda o "
+            "teste de brute-force."
+        )
     lines = []
     for item in items[:10]:
         iid = item.get("id", "?")
@@ -294,7 +329,10 @@ def _incident_list_reply(result: dict[str, Any], locale: str, severity: str | No
     header = (
         f"Found {len(items)} incident(s){' filtered by ' + severity if severity else ''}:"
         if locale.lower().startswith("en")
-        else f"Encontrei {len(items)} incidente(s){' filtrados por ' + severity if severity else ''}:"
+        else (
+            f"Encontrei {len(items)} incidente(s)"
+            f"{' filtrados por ' + severity if severity else ''}:"
+        )
     )
     hint = (
         "\n\nAsk for one with `inc_...` id to see full detail."
@@ -348,7 +386,8 @@ def _confirm_status_change_reply(incident_id: str, status: str, locale: str) -> 
     if locale.lower().startswith("en"):
         return (
             f"Draft: change `{incident_id}` status to **{status}**. "
-            "Confirm by opening the incident in the SOC pane (status changes still need a human click)."
+            "Confirm by opening the incident in the SOC pane "
+            "(status changes still need a human click)."
         )
     return (
         f"Rascunho: mudar status de `{incident_id}` para **{status}**. "
@@ -390,9 +429,7 @@ def _draft_widget_request_from_prompt(prompt: str) -> DraftWidgetRequest | None:
     elif "gauge" in lowered or "medidor" in lowered:
         visual_type = "gauge"
     provider = (
-        "fortigate"
-        if "fortigate" in lowered or field_ids[0].startswith("system.")
-        else "soc"
+        "fortigate" if "fortigate" in lowered or field_ids[0].startswith("system.") else "soc"
     )
     return DraftWidgetRequest(
         provider=provider,

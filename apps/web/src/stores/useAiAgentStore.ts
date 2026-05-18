@@ -1,17 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { i18n } from '../i18n'
 import {
-  type AgentBackend,
-  type AgentRole,
   type AgentSessionResponse,
   type AgentStreamEvent,
   type AgentTool,
   approveAgentToolCall,
   createAgentSession,
   deleteAgentSession,
-  listAgentRoles,
   listAgentTools,
-  listBackends,
   streamAgentMessage,
 } from '../services/aiAgentClient'
 
@@ -38,9 +35,14 @@ export type PendingAgentApproval = {
   reason: string
 }
 
+function localizedError(message: string, code?: string): string {
+  if (code === 'agent_not_configured' || message === 'SOC Assistant provider is not configured') {
+    return i18n.global.t('aiAgent.errorNotConfigured')
+  }
+  return message
+}
+
 export const useAiAgentStore = defineStore('aiAgent', () => {
-  const roles = ref<AgentRole[]>([])
-  const backends = ref<AgentBackend[]>([])
   const tools = ref<AgentTool[]>([])
   const session = ref<AgentSessionResponse | null>(null)
   const trace = ref<AgentTraceEntry[]>([])
@@ -53,13 +55,10 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   const tokensOut = ref(0)
 
   async function ensureCatalog() {
-    if (roles.value.length > 0 && backends.value.length > 0 && tools.value.length > 0) return
+    if (tools.value.length > 0) return
     isLoading.value = true
     try {
-      const [r, b, t] = await Promise.all([listAgentRoles(), listBackends(), listAgentTools()])
-      roles.value = r
-      backends.value = b
-      tools.value = t
+      tools.value = await listAgentTools()
     } catch (e) {
       error.value = (e as Error).message
     } finally {
@@ -67,13 +66,13 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     }
   }
 
-  async function startSession(
-    options: { role?: string; backend?: string; locale?: string; model?: string } = {},
-  ) {
+  async function startSession(options: { locale?: string } = {}) {
     error.value = null
     isLoading.value = true
     try {
-      session.value = await createAgentSession(options)
+      session.value = await createAgentSession({
+        locale: options.locale ?? String(i18n.global.locale.value || 'pt-BR'),
+      })
       trace.value = []
       lastReply.value = ''
       pendingApproval.value = null
@@ -101,7 +100,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
 
   async function sendMessage(content: string) {
     if (!session.value) {
-      await startSession({ role: 'chat' })
+      await startSession()
       if (!session.value) return
     }
     error.value = null
@@ -128,6 +127,11 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   function consumeEvent(event: AgentStreamEvent) {
     if (event.type === 'connected') return
     if (event.kind === 'text_delta') {
+      const lastEntry = trace.value[trace.value.length - 1]
+      if (lastEntry?.kind === 'text' && lastEntry.step === event.step) {
+        lastEntry.text += event.text
+        return
+      }
       trace.value.push({ kind: 'text', step: event.step, text: event.text })
       return
     }
@@ -179,7 +183,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
       trace.value.push({
         kind: 'error',
         step: event.step,
-        message: event.message,
+        message: localizedError(event.message, event.code),
         code: event.code,
       })
     }
@@ -192,8 +196,6 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   }
 
   function reset() {
-    roles.value = []
-    backends.value = []
     tools.value = []
     session.value = null
     trace.value = []
@@ -207,8 +209,6 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   }
 
   return {
-    roles,
-    backends,
     tools,
     session,
     trace,

@@ -177,6 +177,11 @@ def probe_cli_binary(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict:
+    """Legacy diagnostic for per-user CLI preferences.
+
+    The product SOC Assistant no longer exposes CLI mode. Keep this endpoint only
+    for legacy per-user AI preference callers until `/api/ai/chat` is migrated.
+    """
     return describe_cli_invocation(payload.binary_path, model=payload.model or "")
 
 

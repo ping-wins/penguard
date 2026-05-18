@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '../../src/i18n'
 import { useAiAgentStore } from '../../src/stores/useAiAgentStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -32,41 +33,81 @@ function sseEvent(data: object): string {
 describe('useAiAgentStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('pt-BR')
   })
 
-  it('loads backends and tools via ensureCatalog', async () => {
+  it('loads only tools via ensureCatalog', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ items: [
         {
-          id: 'incident-triage',
-          label: 'Incident triage',
-          description: 'Analyze incidents',
-          tier: 'balanced',
-          localeDefault: 'pt-BR',
-          tokenBudget: 150000,
-          maxSteps: 20,
-          allowedToolCategories: ['read', 'draft'],
+          name: 'list_incidents',
+          description: 'x',
+          inputSchema: { type: 'object' },
+          category: 'read',
+          requiresApproval: false,
+          timeoutSeconds: 5,
         },
       ] }))
-      .mockResolvedValueOnce(jsonResponse({ items: [{ name: 'scripted', ready: true, default: true }] }))
-      .mockResolvedValueOnce(jsonResponse({ items: [{ name: 'list_incidents', description: 'x', inputSchema: { type: 'object' }, category: 'read', requiresApproval: false, timeoutSeconds: 5 }] }))
     vi.stubGlobal('fetch', fetcher)
 
     const store = useAiAgentStore()
     await store.ensureCatalog()
 
-    expect(store.roles).toHaveLength(1)
-    expect(store.roles[0].id).toBe('incident-triage')
-    expect(store.backends).toHaveLength(1)
-    expect(store.backends[0].name).toBe('scripted')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledWith('/api/ai/agent/tools', { credentials: 'include' })
     expect(store.tools).toHaveLength(1)
     expect(store.tools[0].name).toBe('list_incidents')
+  })
+
+  it('starts a SOC Assistant session without role or backend', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const sessionPayload = jsonResponse(
+      { sessionId: 'sess_1', backend: 'anthropic', model: 'claude-sonnet-4-6', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { status: 201 },
+    )
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(sessionPayload)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      '/api/ai/agent/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ locale: 'pt-BR' }),
+      }),
+    )
+    expect(store.session?.role).toBe('soc-assistant')
+  })
+
+  it('localizes the not-configured session error', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const response = new Response(
+      JSON.stringify({ detail: 'SOC Assistant provider is not configured' }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    )
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(response)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+
+    expect(store.session).toBeNull()
+    expect(store.error).toBe(
+      'Configure o provider, modelo e chave de API do Assistente SOC antes de iniciar.',
+    )
   })
 
   it('records tool_call + tool_result events in the trace', async () => {
     const csrf = jsonResponse({ csrfToken: 'csrf_42' })
     const sessionPayload = jsonResponse(
-      { sessionId: 'sess_1', backend: 'scripted', model: 'scripted-cockpit-agent', role: 'incident-triage', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { sessionId: 'sess_1', backend: 'anthropic', model: 'claude-sonnet-4-6', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
       { status: 201 },
     )
     const stream = sseResponse([
@@ -82,9 +123,17 @@ describe('useAiAgentStore', () => {
     vi.stubGlobal('fetch', fetcher)
 
     const store = useAiAgentStore()
-    await store.startSession({ role: 'incident-triage', backend: 'scripted' })
+    await store.startSession()
     await store.sendMessage('liste incidentes')
 
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      '/api/ai/agent/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ locale: 'pt-BR' }),
+      }),
+    )
     const toolCalls = store.trace.filter((entry) => entry.kind === 'tool_call')
     expect(toolCalls).toHaveLength(1)
     const call = toolCalls[0] as { toolName: string; status?: string; result?: unknown }
@@ -96,10 +145,37 @@ describe('useAiAgentStore', () => {
     expect(store.tokensOut).toBe(0)
   })
 
+  it('aggregates consecutive text deltas for the same step', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const sessionPayload = jsonResponse(
+      { sessionId: 'sess_1', backend: 'openai', model: 'gpt-4o', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { status: 201 },
+    )
+    const stream = sseResponse([
+      sseEvent({ type: 'step', kind: 'text_delta', step: 1, text: 'Olá ' }),
+      sseEvent({ type: 'step', kind: 'text_delta', step: 1, text: 'SOC' }),
+      sseEvent({ type: 'step', kind: 'done', step: 2, reply: 'Olá SOC', used_tools: [], tokens_in: 0, tokens_out: 0 }),
+    ])
+
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(sessionPayload)
+      .mockResolvedValueOnce(stream)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+    await store.sendMessage('oi')
+
+    const textEntries = store.trace.filter((entry) => entry.kind === 'text')
+    expect(textEntries).toHaveLength(1)
+    expect(textEntries[0]).toEqual({ kind: 'text', step: 1, text: 'Olá SOC' })
+  })
+
   it('captures error events when the agent emits one', async () => {
     const csrf = jsonResponse({ csrfToken: 'csrf_42' })
     const sessionPayload = jsonResponse(
-      { sessionId: 'sess_1', backend: 'scripted', model: '', role: 'chat', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { sessionId: 'sess_1', backend: 'anthropic', model: 'claude-sonnet-4-6', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
       { status: 201 },
     )
     const stream = sseResponse([
@@ -112,7 +188,7 @@ describe('useAiAgentStore', () => {
     vi.stubGlobal('fetch', fetcher)
 
     const store = useAiAgentStore()
-    await store.startSession({ role: 'chat', backend: 'scripted' })
+    await store.startSession()
     await store.sendMessage('faz algo errado')
 
     const errors = store.trace.filter((entry) => entry.kind === 'error')
@@ -121,10 +197,36 @@ describe('useAiAgentStore', () => {
     expect(errEntry.code).toBe('unknown_tool')
   })
 
+  it('localizes not-configured stream events', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const sessionPayload = jsonResponse(
+      { sessionId: 'sess_1', backend: 'anthropic', model: 'claude-sonnet-4-6', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { status: 201 },
+    )
+    const stream = sseResponse([
+      sseEvent({ type: 'step', kind: 'error', step: 1, message: 'SOC Assistant provider is not configured', code: 'agent_not_configured' }),
+    ])
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(sessionPayload)
+      .mockResolvedValueOnce(stream)
+    vi.stubGlobal('fetch', fetcher)
+
+    const store = useAiAgentStore()
+    await store.startSession()
+    await store.sendMessage('oi')
+
+    const errors = store.trace.filter((entry) => entry.kind === 'error')
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as { message: string }).message).toBe(
+      'Configure o provider, modelo e chave de API do Assistente SOC antes de iniciar.',
+    )
+  })
+
   it('tracks awaiting approvals and posts an approval decision', async () => {
     const csrf = jsonResponse({ csrfToken: 'csrf_42' })
     const sessionPayload = jsonResponse(
-      { sessionId: 'sess_1', backend: 'scripted', model: '', role: 'soc-investigation', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { sessionId: 'sess_1', backend: 'openai', model: 'gpt-4o', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
       { status: 201 },
     )
     const stream = sseResponse([
@@ -141,7 +243,7 @@ describe('useAiAgentStore', () => {
     vi.stubGlobal('fetch', fetcher)
 
     const store = useAiAgentStore()
-    await store.startSession({ role: 'soc-investigation', backend: 'scripted' })
+    await store.startSession()
     await store.sendMessage('apply')
 
     expect(store.pendingApproval?.callId).toBe('c1')

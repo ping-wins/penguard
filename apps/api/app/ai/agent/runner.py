@@ -34,6 +34,7 @@ from app.ai.agent.events import (
 )
 from app.ai.agent.registry import AgentTool, ToolContext, get_tool, list_tools
 from app.ai.agent.roles import RoleConfig, get_role, render_system_prompt
+from app.ai.agent.router import AgentNotConfiguredError
 from app.ai.agent.session import AgentMessage, AgentSession, SessionStore
 
 logger = logging.getLogger(__name__)
@@ -87,12 +88,16 @@ class AgentRunner:
         session: AgentSession,
         tool_context: ToolContext,
     ) -> AsyncIterator[AgentEvent]:
-        role = get_role(session.role_id) or get_role("chat")
+        role = _role_for_session(session.role_id)
         if role is None:
             yield ErrorEvent(step=0, message="agent role registry unavailable", code="role_error")
             return
 
-        backend = self._resolve_backend(role, session.user_id)
+        try:
+            backend = self._resolve_backend(role, session.user_id)
+        except AgentNotConfiguredError as exc:
+            yield ErrorEvent(step=0, message=str(exc), code="agent_not_configured")
+            return
         session.backend = backend.name
         session.model = backend.model
 
@@ -442,3 +447,9 @@ def _history_snapshot(session: AgentSession) -> list[dict[str, Any]]:
                 entry["tool_calls"] = message.tool_calls
         snapshot.append(entry)
     return snapshot
+
+
+def _role_for_session(role_id: str) -> RoleConfig | None:
+    if role_id == "soc-assistant":
+        return get_role("chat")
+    return get_role(role_id)

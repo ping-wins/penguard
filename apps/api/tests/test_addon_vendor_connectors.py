@@ -58,6 +58,8 @@ def test_soar_package_exposes_playbook_actions() -> None:
 
 
 def test_fortiweb_package_uses_dashboard_managed_credentials() -> None:
+    if not (PKGS / "fortiweb-core" / "8.0.5.2" / "addon.json").is_file():
+        pytest.skip(f"fortiweb-core package not present at {PKGS}")
     manifest = (PKGS / "fortiweb-core" / "8.0.5.2" / "addon.json").read_text(
         encoding="utf-8"
     )
@@ -68,6 +70,8 @@ def test_fortiweb_package_uses_dashboard_managed_credentials() -> None:
 
 
 def test_fortiweb_package_uses_supported_system_status_endpoint() -> None:
+    if not (PKGS / "fortiweb-core" / "8.0.5.2" / "addon.json").is_file():
+        pytest.skip(f"fortiweb-core package not present at {PKGS}")
     module = _load("fortiweb-core", "8.0.5.2")
 
     def handler(request: httpx.Request) -> httpx.Response:

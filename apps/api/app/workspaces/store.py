@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 from secrets import token_urlsafe
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, desc, or_ as sa_or, select
+from sqlalchemy import Engine, create_engine, desc, select
+from sqlalchemy import or_ as sa_or
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import WorkspaceSpecModel, WorkspaceTemplateModel

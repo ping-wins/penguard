@@ -116,16 +116,12 @@ def _serialize_role(role: RoleModel, perms: list[str], member_count: int) -> Rol
 
 
 def _list_role_perms(db: Session, role_id: str) -> list[str]:
-    stmt = select(RolePermissionModel.permission).where(
-        RolePermissionModel.role_id == role_id
-    )
+    stmt = select(RolePermissionModel.permission).where(RolePermissionModel.role_id == role_id)
     return sorted(row[0] for row in db.execute(stmt).all())
 
 
 def _count_members(db: Session, role_id: str) -> int:
-    stmt = select(func.count()).select_from(UserRoleModel).where(
-        UserRoleModel.role_id == role_id
-    )
+    stmt = select(func.count()).select_from(UserRoleModel).where(UserRoleModel.role_id == role_id)
     return int(db.execute(stmt).scalar_one() or 0)
 
 
@@ -159,7 +155,11 @@ def get_permission_catalog(
 
 @router.get("", response_model=list[RoleResponse])
 def list_roles(_admin: ADMIN_USER_DEP, db: DB_DEP) -> list[RoleResponse]:
-    roles = db.execute(select(RoleModel).order_by(RoleModel.is_system.desc(), RoleModel.name)).scalars().all()
+    roles = (
+        db.execute(select(RoleModel).order_by(RoleModel.is_system.desc(), RoleModel.name))
+        .scalars()
+        .all()
+    )
     return [
         _serialize_role(role, _list_role_perms(db, role.id), _count_members(db, role.id))
         for role in roles
@@ -184,12 +184,16 @@ def create_role(payload: RolePayload, admin: ADMIN_USER_DEP, db: DB_DEP) -> Role
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Role name already exists",
-        )
+        ) from None
     for slug in normalized_perms:
         db.add(RolePermissionModel(role_id=role.id, permission=slug))
     db.commit()
     db.refresh(role)
-    _audit(admin, action="roles.role.create", details={"roleId": role.id, "name": role.name, "permissions": normalized_perms})
+    _audit(
+        admin,
+        action="roles.role.create",
+        details={"roleId": role.id, "name": role.name, "permissions": normalized_perms},
+    )
     return _serialize_role(role, normalized_perms, 0)
 
 
@@ -222,9 +226,7 @@ def update_role(
             )
         normalized_perms = _normalize_permissions(payload.permissions)
         db.execute(
-            RolePermissionModel.__table__.delete().where(
-                RolePermissionModel.role_id == role_id
-            )
+            RolePermissionModel.__table__.delete().where(RolePermissionModel.role_id == role_id)
         )
         for slug in normalized_perms:
             db.add(RolePermissionModel(role_id=role.id, permission=slug))
@@ -235,7 +237,7 @@ def update_role(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Role name already exists",
-        )
+        ) from None
     db.refresh(role)
     perms = _list_role_perms(db, role.id)
     _audit(admin, action="roles.role.update", details={"roleId": role.id, "permissions": perms})
@@ -275,11 +277,13 @@ def list_members(role_id: str, _admin: ADMIN_USER_DEP, db: DB_DEP) -> list[Membe
                 grantedBy=assignment.granted_by_user_id,
             )
         )
-    members.sort(key=lambda m: ((m.displayName or m.email or m.userId).lower()))
+    members.sort(key=lambda m: (m.displayName or m.email or m.userId).lower())
     return members
 
 
-@router.post("/{role_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{role_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED
+)
 def add_member(
     role_id: str,
     payload: AddMemberPayload,

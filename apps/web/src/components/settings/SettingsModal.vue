@@ -36,6 +36,7 @@ const { t, locale } = useI18n()
 
 const activeTab = ref<Tab>('profile')
 const localeSaved = ref(false)
+const canManageAi = computed(() => authStore.hasPermission('ai.agent.manage'))
 
 function tabLabel(key: string, fallback: string): string {
   // Avoid throwing if the i18n key is missing during incremental rollouts
@@ -53,7 +54,9 @@ const tabs = computed<{ id: Tab; label: string; icon: any }[]>(() => {
   if (authStore.hasPermission('marketplace.install')) {
     base.push({ id: 'marketplace', label: t('settings.tabs.marketplace'), icon: Boxes })
   }
-  base.push({ id: 'ai', label: t('settings.tabs.ai'), icon: Bot })
+  if (canManageAi.value) {
+    base.push({ id: 'ai', label: t('settings.tabs.ai'), icon: Bot })
+  }
   if (authStore.hasPermission('roles.manage')) {
     base.push({ id: 'roles', label: tabLabel('settings.tabs.roles', 'Cargos & Membros'), icon: UsersIcon })
   }
@@ -102,8 +105,18 @@ watch(
   () => [props.isOpen, props.initialTab] as const,
   ([open, initialTab]) => {
     if (open) {
-      activeTab.value = initialTab ?? 'profile'
+      const requestedTab = initialTab ?? 'profile'
+      activeTab.value = tabs.value.some((tab) => tab.id === requestedTab) ? requestedTab : 'profile'
       localeSaved.value = false
+    }
+  },
+)
+
+watch(
+  tabs,
+  (availableTabs) => {
+    if (!availableTabs.some((tab) => tab.id === activeTab.value)) {
+      activeTab.value = 'profile'
     }
   },
 )
@@ -286,7 +299,7 @@ watch(
               <MarketplacePanel @install="onMarketplaceInstall" />
             </div>
 
-            <div v-if="activeTab === 'ai'" class="flex-1 min-h-0 overflow-hidden">
+            <div v-if="activeTab === 'ai' && canManageAi" class="flex-1 min-h-0 overflow-hidden">
               <AiPreferencesPanel />
             </div>
 

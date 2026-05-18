@@ -33,6 +33,8 @@ def test_register_sets_http_only_session_cookie_without_returning_tokens():
             "email": "analyst@example.com",
             "displayName": "SOC Analyst",
             "roles": ["analyst"],
+            "permissions": [],
+            "isAdmin": False,
         },
         "session": {
             "authenticated": True,
@@ -74,6 +76,8 @@ def test_login_sets_session_cookie_and_me_reads_contextual_browser_session():
             "email": "analyst@example.com",
             "displayName": "SOC Analyst",
             "roles": ["analyst"],
+            "permissions": [],
+            "isAdmin": False,
         },
     }
 

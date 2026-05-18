@@ -225,8 +225,8 @@ def _enrich_with_permissions(user: dict) -> dict:
     from app.auth.permissions import (  # local import avoids cycle at module load
         PERMISSION_CATALOG,
         WILDCARD,
-        has_keycloak_admin_claim,
         effective_permissions,
+        has_keycloak_admin_claim,
     )
     from app.db.session import SessionLocal
 

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai import resolve_ai_provider
 from app.ai.agent.registry import AgentTool, ToolContext, register_tool
-from app.ai.provider import IncidentContext
+from app.ai.agent.settings import get_ai_agent_settings_store, normalize_provider
+from app.ai.provider import AnthropicAIProvider, IncidentContext, OpenAICompatibleAIProvider
 from app.ai.tools import (
     DraftWidgetRequest,
     WidgetDraftValidationError,
@@ -38,6 +38,19 @@ def _incident_context(payload: dict[str, Any], *, incident_id: str) -> IncidentC
     )
 
 
+def _enterprise_ai_provider() -> AnthropicAIProvider | OpenAICompatibleAIProvider:
+    settings = get_ai_agent_settings_store().get()
+    if settings is None or not settings.configured:
+        raise RuntimeError("SOC Assistant provider is not configured")
+
+    provider = normalize_provider(settings.provider)
+    if provider == "anthropic":
+        return AnthropicAIProvider(api_key=settings.api_key, model=settings.model)
+    if provider == "openai":
+        return OpenAICompatibleAIProvider(api_key=settings.api_key, model=settings.model)
+    raise RuntimeError("SOC Assistant provider is not configured")
+
+
 async def _analyze_incident(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     incident_id = str(args.get("incidentId") or args.get("incident_id") or "").strip()
     if not incident_id:
@@ -52,7 +65,10 @@ async def _analyze_incident(ctx: ToolContext, args: dict[str, Any]) -> dict[str,
     if not isinstance(incident_payload, dict):
         return {"error": "siem returned non-dict incident", "incidentId": incident_id}
 
-    provider = resolve_ai_provider(ctx.user_id)
+    try:
+        provider = _enterprise_ai_provider()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200], "incidentId": incident_id}
     context = _incident_context(incident_payload, incident_id=incident_id)
     try:
         analysis = provider.analyze_incident(context, locale=ctx.locale)
@@ -119,7 +135,10 @@ async def _draft_playbook(ctx: ToolContext, args: dict[str, Any]) -> dict[str, A
         incident_payload = siem.request("GET", f"/incidents/{incident_id}")
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)[:200], "ticketId": ticket_id}
-    provider = resolve_ai_provider(ctx.user_id)
+    try:
+        provider = _enterprise_ai_provider()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200], "ticketId": ticket_id}
     context = _incident_context(incident_payload, incident_id=str(incident_id))
     try:
         suggestion = provider.suggest_containment(context, locale=ctx.locale)

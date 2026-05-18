@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
@@ -19,13 +20,16 @@ from app.ai.agent import (
     AgentSession,
     ToolContext,
     get_session_store,
-    list_roles,
     list_tools,
 )
-from app.ai.agent.backends import ScriptedBackend
 from app.ai.agent.roles import get_role
-from app.ai.agent.router import pick_backend
+from app.ai.agent.router import AgentNotConfiguredError, pick_backend
 from app.ai.agent.runner import AgentRunner
+from app.ai.agent.settings import (
+    SUPPORTED_PROVIDERS,
+    get_ai_agent_settings_store,
+    normalize_provider,
+)
 
 # Importing this module side-effect registers the 9 read tools.
 from app.ai.agent.tools import (  # noqa: F401
@@ -48,16 +52,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ai-agent"], prefix="/ai/agent")
 
 
-_AVAILABLE_BACKENDS = ("scripted", "anthropic", "openai")
+_API_KEY_MAX_LENGTH = 1024
 
 
 class CreateSessionRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    role: str = Field(default="chat", min_length=1, max_length=64)
-    backend: str | None = Field(default=None, min_length=1, max_length=32)
     locale: str = Field(default="pt-BR", min_length=2, max_length=16)
-    model: str = Field(default="", max_length=128)
 
 
 class SessionResponse(BaseModel):
@@ -73,19 +74,6 @@ class SessionResponse(BaseModel):
     tokens_out: int = Field(alias="tokensOut")
 
 
-class AgentRoleResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: str
-    label: str
-    description: str
-    tier: str
-    locale_default: str = Field(alias="localeDefault")
-    token_budget: int = Field(alias="tokenBudget")
-    max_steps: int = Field(alias="maxSteps")
-    allowed_tool_categories: list[str] = Field(alias="allowedToolCategories")
-
-
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
 
@@ -95,15 +83,10 @@ class ApprovalRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
-def _resolve_forced_backend(name: str | None) -> Any | None:
-    if name is None:
-        return None
-    if name == "scripted":
-        return ScriptedBackend()
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"backend '{name}' not available; configured backends: {list(_AVAILABLE_BACKENDS)}",
-    )
+class AiAgentSettingsTestResponse(BaseModel):
+    ok: bool
+    status: str
+    error: str | None = None
 
 
 def _client_ip(request: Request) -> str | None:
@@ -111,6 +94,71 @@ def _client_ip(request: Request) -> str | None:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _default_settings_payload() -> dict[str, Any]:
+    return {
+        "provider": "",
+        "model": "",
+        "apiKeySet": False,
+        "configured": False,
+        "lastTestedAt": None,
+        "lastTestStatus": None,
+        "lastTestError": None,
+        "updatedBy": None,
+        "updatedAt": None,
+    }
+
+
+def _settings_audit_details(
+    settings_payload: dict[str, Any],
+    *,
+    status: str | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "provider": settings_payload.get("provider") or "",
+        "model": settings_payload.get("model") or "",
+        "credentialSet": bool(settings_payload.get("apiKeySet")),
+        "configured": bool(settings_payload.get("configured")),
+    }
+    if status is not None:
+        details["status"] = status
+    return details
+
+
+def _record_settings_audit(
+    *,
+    audit_store: Any,
+    action: str,
+    request: Request,
+    current_user: dict,
+    details: dict[str, Any],
+) -> None:
+    audit_store.record(
+        action=action,
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=current_user.get("id"),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details=details,
+    )
+
+
+def _optional_string_field(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    max_length: int,
+) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
+    if len(value) > max_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} exceeds maximum length")
+    return value
 
 
 def _build_tool_context(*, user: dict, locale: str, audit_store: Any) -> ToolContext:
@@ -135,39 +183,6 @@ def _build_tool_context(*, user: dict, locale: str, audit_store: Any) -> ToolCon
     )
 
 
-@router.get("/backends")
-def list_backends(
-    _current_user: Annotated[dict, Depends(get_current_api_user)],
-) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "items": [
-            {"name": name, "ready": name == "scripted", "default": name == "scripted"}
-            for name in _AVAILABLE_BACKENDS
-        ]
-    }
-
-
-@router.get("/roles")
-def list_agent_roles(
-    _current_user: Annotated[dict, Depends(get_current_api_user)],
-) -> dict[str, list[AgentRoleResponse]]:
-    return {
-        "items": [
-            AgentRoleResponse(
-                id=role.id,
-                label=role.label,
-                description=role.description,
-                tier=role.tier,
-                locale_default=role.locale_default,
-                token_budget=role.token_budget,
-                max_steps=role.max_steps,
-                allowed_tool_categories=sorted(role.allowed_tool_categories),
-            )
-            for role in list_roles()
-        ]
-    }
-
-
 @router.get("/tools")
 def list_agent_tools(
     _current_user: Annotated[dict, Depends(get_current_api_user)],
@@ -187,23 +202,139 @@ def list_agent_tools(
     }
 
 
+@router.get("/settings")
+def get_ai_agent_settings(
+    request: Request,
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+) -> dict[str, Any]:
+    settings = get_ai_agent_settings_store().get()
+    payload = _default_settings_payload() if settings is None else settings.to_dict(redact=True)
+    _record_settings_audit(
+        audit_store=audit_store,
+        action="ai.agent.settings.read",
+        request=request,
+        current_user=current_user,
+        details=_settings_audit_details(payload),
+    )
+    return payload
+
+
+@router.put("/settings")
+def update_ai_agent_settings(
+    request: Request,
+    payload: Annotated[Any, Body(...)],
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="settings payload must be an object")
+    fields: dict[str, Any] = {}
+    provider_value = _optional_string_field(payload, "provider", max_length=32)
+    if provider_value is not None:
+        provider = normalize_provider(provider_value)
+        if provider not in SUPPORTED_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider '{provider_value}' not supported",
+            )
+        fields["provider"] = provider
+    model_value = _optional_string_field(payload, "model", max_length=128)
+    if model_value is not None:
+        fields["model"] = model_value.strip()
+    api_key = payload.get("apiKey")
+    if api_key is not None:
+        if not isinstance(api_key, str):
+            raise HTTPException(status_code=400, detail="apiKey must be a string")
+        if len(api_key) > _API_KEY_MAX_LENGTH:
+            raise HTTPException(status_code=400, detail="apiKey exceeds maximum length")
+        fields["api_key"] = api_key
+    if any(name in fields for name in ("provider", "model", "api_key")):
+        fields["last_tested_at"] = None
+        fields["last_test_status"] = None
+        fields["last_test_error"] = None
+    fields["updated_by"] = current_user.get("email") or str(current_user.get("id") or "")
+    settings = get_ai_agent_settings_store().upsert(**fields)
+    payload = settings.to_dict(redact=True)
+    _record_settings_audit(
+        audit_store=audit_store,
+        action="ai.agent.settings.updated",
+        request=request,
+        current_user=current_user,
+        details={
+            key: value
+            for key, value in _settings_audit_details(payload).items()
+            if key != "configured"
+        },
+    )
+    return payload
+
+
+@router.post("/settings/test", response_model=AiAgentSettingsTestResponse)
+def test_ai_agent_settings(
+    request: Request,
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> AiAgentSettingsTestResponse:
+    store = get_ai_agent_settings_store()
+    settings = store.get()
+    if settings is None or not settings.configured:
+        settings = store.upsert(
+            last_tested_at=datetime.now(UTC),
+            last_test_status="not_configured",
+            last_test_error="SOC Assistant provider is not configured",
+            updated_by=current_user.get("email") or str(current_user.get("id") or ""),
+        )
+        payload = settings.to_dict(redact=True)
+        _record_settings_audit(
+            audit_store=audit_store,
+            action="ai.agent.settings.tested",
+            request=request,
+            current_user=current_user,
+            details=_settings_audit_details(payload, status="not_configured"),
+        )
+        return AiAgentSettingsTestResponse(
+            ok=False,
+            status="not_configured",
+            error="SOC Assistant provider is not configured",
+        )
+    settings = store.upsert(
+        last_tested_at=datetime.now(UTC),
+        last_test_status="configured",
+        last_test_error=None,
+        updated_by=current_user.get("email") or str(current_user.get("id") or ""),
+    )
+    _record_settings_audit(
+        audit_store=audit_store,
+        action="ai.agent.settings.tested",
+        request=request,
+        current_user=current_user,
+        details=_settings_audit_details(settings.to_dict(redact=True), status="configured"),
+    )
+    return AiAgentSettingsTestResponse(ok=True, status="configured", error=None)
+
+
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)
 def create_session(
     payload: Annotated[CreateSessionRequest, Body(...)],
     current_user: Annotated[dict, Depends(get_current_api_user)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> SessionResponse:
-    role = get_role(payload.role)
+    role = get_role("chat")
     if role is None:
-        raise HTTPException(status_code=400, detail=f"unknown agent role: {payload.role}")
-    forced_backend = _resolve_forced_backend(payload.backend)
-    backend = forced_backend or pick_backend(role, str(current_user["id"]))
+        raise HTTPException(status_code=500, detail="agent role registry unavailable")
+    try:
+        backend = pick_backend(role, str(current_user["id"]))
+    except AgentNotConfiguredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     store = get_session_store()
     session = store.create(
         user_id=str(current_user["id"]),
         backend=backend.name,
-        model=payload.model or backend.model,
-        role_id=role.id,
+        model=backend.model,
+        role_id="soc-assistant",
         locale=payload.locale,
     )
     return SessionResponse(
@@ -258,10 +389,8 @@ async def send_message(
     if session.turn_lock.locked():
         raise HTTPException(status_code=409, detail="session already has an active turn")
 
-    backend = ScriptedBackend() if session.backend == "scripted" else None
     runner = AgentRunner(
         session_store=store,
-        backend=backend,
         backend_picker=pick_backend,
         audit_recorder=lambda *, action, outcome, details: audit_store.record(
             action=action,
