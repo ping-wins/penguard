@@ -7,6 +7,7 @@ can swap it out later without touching callers.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ class AgentMessage:
     tool_name: str | None = None
     tool_args: dict[str, Any] | None = None
     tool_result: Any = None
+    tool_calls: list[dict[str, Any]] | None = None
     created_at: float = field(default_factory=time.time)
 
 
@@ -31,11 +33,16 @@ class AgentSession:
     user_id: str
     backend: str = "scripted"
     model: str = ""
+    role_id: str = "chat"
     locale: str = "pt-BR"
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
     history: list[AgentMessage] = field(default_factory=list)
     used_tools: list[str] = field(default_factory=list)
+    tokens_in_total: int = 0
+    tokens_out_total: int = 0
+    pending_approvals: dict[str, asyncio.Future] = field(default_factory=dict)
+    turn_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def touch(self) -> None:
         self.last_used_at = time.time()
@@ -60,6 +67,7 @@ class SessionStore:
         user_id: str,
         backend: str = "scripted",
         model: str = "",
+        role_id: str = "chat",
         locale: str = "pt-BR",
     ) -> AgentSession:
         session = AgentSession(
@@ -67,6 +75,7 @@ class SessionStore:
             user_id=user_id,
             backend=backend,
             model=model,
+            role_id=role_id,
             locale=locale,
         )
         with self._lock:

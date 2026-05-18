@@ -2,11 +2,14 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   type AgentBackend,
+  type AgentRole,
   type AgentSessionResponse,
   type AgentStreamEvent,
   type AgentTool,
+  approveAgentToolCall,
   createAgentSession,
   deleteAgentSession,
+  listAgentRoles,
   listAgentTools,
   listBackends,
   streamAgentMessage,
@@ -22,13 +25,21 @@ export type AgentTraceEntry =
       toolName: string
       args: Record<string, unknown>
       result?: unknown
-      status?: 'ok' | 'error'
+      status?: 'ok' | 'error' | 'denied'
       error?: string | null
       latencyMs?: number
     }
   | { kind: 'error'; step: number; message: string; code: string }
 
+export type PendingAgentApproval = {
+  callId: string
+  toolName: string
+  args: Record<string, unknown>
+  reason: string
+}
+
 export const useAiAgentStore = defineStore('aiAgent', () => {
+  const roles = ref<AgentRole[]>([])
   const backends = ref<AgentBackend[]>([])
   const tools = ref<AgentTool[]>([])
   const session = ref<AgentSessionResponse | null>(null)
@@ -37,12 +48,16 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
   const lastReply = ref<string>('')
+  const pendingApproval = ref<PendingAgentApproval | null>(null)
+  const tokensIn = ref(0)
+  const tokensOut = ref(0)
 
   async function ensureCatalog() {
-    if (backends.value.length > 0 && tools.value.length > 0) return
+    if (roles.value.length > 0 && backends.value.length > 0 && tools.value.length > 0) return
     isLoading.value = true
     try {
-      const [b, t] = await Promise.all([listBackends(), listAgentTools()])
+      const [r, b, t] = await Promise.all([listAgentRoles(), listBackends(), listAgentTools()])
+      roles.value = r
       backends.value = b
       tools.value = t
     } catch (e) {
@@ -52,13 +67,18 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     }
   }
 
-  async function startSession(backend = 'scripted', locale = 'pt-BR') {
+  async function startSession(
+    options: { role?: string; backend?: string; locale?: string; model?: string } = {},
+  ) {
     error.value = null
     isLoading.value = true
     try {
-      session.value = await createAgentSession({ backend, locale })
+      session.value = await createAgentSession(options)
       trace.value = []
       lastReply.value = ''
+      pendingApproval.value = null
+      tokensIn.value = session.value.tokensIn
+      tokensOut.value = session.value.tokensOut
     } catch (e) {
       error.value = (e as Error).message
     } finally {
@@ -71,6 +91,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     const id = session.value.sessionId
     session.value = null
     trace.value = []
+    pendingApproval.value = null
     try {
       await deleteAgentSession(id)
     } catch {
@@ -80,7 +101,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
 
   async function sendMessage(content: string) {
     if (!session.value) {
-      await startSession()
+      await startSession({ role: 'chat' })
       if (!session.value) return
     }
     error.value = null
@@ -132,8 +153,26 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
       }
       return
     }
+    if (event.kind === 'awaiting_approval') {
+      pendingApproval.value = {
+        callId: event.call_id,
+        toolName: event.tool_name,
+        args: event.args,
+        reason: event.reason,
+      }
+      trace.value.push({
+        kind: 'tool_call',
+        step: event.step,
+        callId: event.call_id,
+        toolName: event.tool_name,
+        args: event.args,
+      })
+      return
+    }
     if (event.kind === 'done') {
       lastReply.value = event.reply
+      tokensIn.value = event.tokens_in
+      tokensOut.value = event.tokens_out
       return
     }
     if (event.kind === 'error') {
@@ -146,18 +185,29 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     }
   }
 
+  async function approve(callId: string, granted: boolean, reason = '') {
+    if (!session.value) return
+    await approveAgentToolCall(session.value.sessionId, callId, granted, reason)
+    if (pendingApproval.value?.callId === callId) pendingApproval.value = null
+  }
+
   function reset() {
+    roles.value = []
     backends.value = []
     tools.value = []
     session.value = null
     trace.value = []
+    pendingApproval.value = null
     error.value = null
     isLoading.value = false
     isStreaming.value = false
     lastReply.value = ''
+    tokensIn.value = 0
+    tokensOut.value = 0
   }
 
   return {
+    roles,
     backends,
     tools,
     session,
@@ -166,10 +216,14 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     isStreaming,
     error,
     lastReply,
+    pendingApproval,
+    tokensIn,
+    tokensOut,
     ensureCatalog,
     startSession,
     endSession,
     sendMessage,
+    approve,
     reset,
   }
 })

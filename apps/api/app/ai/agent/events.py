@@ -7,12 +7,12 @@ event kinds must be additive so older clients can ignore them.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 
-class AgentEventType(str, Enum):
+class AgentEventType(StrEnum):
     TEXT_DELTA = "text_delta"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"

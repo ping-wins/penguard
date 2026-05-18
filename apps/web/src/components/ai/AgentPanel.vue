@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Bot, Hammer, Play, Send, Trash2 } from 'lucide-vue-next'
+import { Bot, Check, Hammer, Play, Send, Trash2, X } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 import { useAiAgentStore } from '../../stores/useAiAgentStore'
 
 const store = useAiAgentStore()
+const { t } = useI18n()
 const draft = ref('')
 const selectedBackend = ref('scripted')
+const selectedRole = ref('chat')
 
 onMounted(async () => {
   await store.ensureCatalog()
   const preferred = store.backends.find((b) => b.default) ?? store.backends[0]
   if (preferred) selectedBackend.value = preferred.name
+  if (store.roles[0]) selectedRole.value = store.roles[0].id
 })
 
 onBeforeUnmount(() => {
@@ -22,7 +26,7 @@ const canSend = computed(
 )
 
 async function start() {
-  await store.startSession(selectedBackend.value)
+  await store.startSession({ role: selectedRole.value, backend: selectedBackend.value })
 }
 
 async function submit() {
@@ -33,13 +37,35 @@ async function submit() {
 }
 
 function previewResult(value: unknown, limit = 320): string {
-  if (value === null || value === undefined) return '∅'
+  if (value === null || value === undefined) return t('aiAgent.resultEmpty')
   try {
     const text = typeof value === 'string' ? value : JSON.stringify(value)
     return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
   } catch {
     return String(value)
   }
+}
+
+const activeRole = computed(() => store.roles.find((role) => role.id === selectedRole.value))
+const modelBadge = computed(() => {
+  const model = store.session?.model || t('aiAgent.noModel')
+  const budget = activeRole.value?.tokenBudget ?? 0
+  return t('aiAgent.modelBadge', {
+    model,
+    used: formatTokens(store.tokensIn + store.tokensOut),
+    budget: formatTokens(budget),
+  })
+})
+
+function formatTokens(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`
+  return String(value)
+}
+
+function roleLabel(roleId: string, fallback: string): string {
+  const key = `aiAgent.roles.${roleId.replaceAll('-', '_')}.label`
+  const translated = t(key)
+  return translated === key ? fallback : translated
 }
 </script>
 
@@ -48,16 +74,29 @@ function previewResult(value: unknown, limit = 320): string {
     <header class="flex items-center justify-between gap-2 border-b border-theme-border pb-2">
       <div class="flex items-center gap-2">
         <Bot class="h-4 w-4 text-theme-primary" />
-        <span class="font-semibold text-theme-text">Agente IA</span>
+        <span class="font-semibold text-theme-text">{{ t('aiAgent.title') }}</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <label class="sr-only" for="agent-role">{{ t('aiAgent.roleLabel') }}</label>
         <select
+          id="agent-role"
+          v-model="selectedRole"
+          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs"
+          :disabled="store.isStreaming || store.isLoading || !!store.session"
+        >
+          <option v-for="role in store.roles" :key="role.id" :value="role.id">
+            {{ roleLabel(role.id, role.label) }}
+          </option>
+        </select>
+        <label class="sr-only" for="agent-backend">{{ t('aiAgent.backendLabel') }}</label>
+        <select
+          id="agent-backend"
           v-model="selectedBackend"
           class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs"
-          :disabled="store.isStreaming || store.isLoading"
+          :disabled="store.isStreaming || store.isLoading || !!store.session"
         >
           <option v-for="backend in store.backends" :key="backend.name" :value="backend.name">
-            {{ backend.name }}{{ backend.default ? ' (default)' : '' }}
+            {{ backend.name }}{{ backend.default ? ` (${t('aiAgent.defaultSuffix')})` : '' }}
           </option>
         </select>
         <button
@@ -68,7 +107,7 @@ function previewResult(value: unknown, limit = 320): string {
           @click="start"
         >
           <Play class="h-3 w-3" />
-          Iniciar
+          {{ t('aiAgent.start') }}
         </button>
         <button
           v-else
@@ -78,19 +117,51 @@ function previewResult(value: unknown, limit = 320): string {
           @click="store.endSession()"
         >
           <Trash2 class="h-3 w-3" />
-          Encerrar
+          {{ t('aiAgent.end') }}
         </button>
       </div>
     </header>
+
+    <div v-if="store.session" class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-[11px] text-theme-text-muted">
+      {{ modelBadge }}
+    </div>
 
     <p v-if="store.error" class="rounded border border-red-400/40 bg-red-950/20 p-2 text-xs text-red-200">
       {{ store.error }}
     </p>
 
+    <div
+      v-if="store.pendingApproval"
+      class="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100"
+    >
+      <div class="min-w-0">
+        <p class="font-semibold">{{ t('aiAgent.approvalTitle') }}</p>
+        <p class="truncate font-mono text-[11px]">{{ store.pendingApproval.toolName }}</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded bg-emerald-500 px-2 py-1 font-medium text-white"
+          @click="store.approve(store.pendingApproval.callId, true)"
+        >
+          <Check class="h-3 w-3" />
+          {{ t('aiAgent.approve') }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded border border-amber-300/60 px-2 py-1 font-medium"
+          @click="store.approve(store.pendingApproval.callId, false)"
+        >
+          <X class="h-3 w-3" />
+          {{ t('aiAgent.deny') }}
+        </button>
+      </div>
+    </div>
+
     <div class="flex-1 min-h-0 overflow-y-auto rounded border border-theme-border bg-theme-surface/40 p-2">
       <div v-if="store.trace.length === 0" class="text-xs text-theme-text-muted">
-        Envie uma mensagem para o agente — por exemplo "liste meus incidentes" ou "mostre integrações".
-        Backend: <span class="font-mono">{{ selectedBackend }}</span>.
+        {{ t('aiAgent.empty') }}
+        <span class="font-mono">{{ t('aiAgent.backendHint', { backend: selectedBackend }) }}</span>.
       </div>
       <ol class="flex flex-col gap-2">
         <li
@@ -100,7 +171,7 @@ function previewResult(value: unknown, limit = 320): string {
         >
           <div v-if="entry.kind === 'user'" class="flex items-start gap-2">
             <span class="rounded bg-theme-primary/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-primary">
-              você
+              {{ t('common.you') }}
             </span>
             <p class="text-xs text-theme-text">{{ entry.content }}</p>
           </div>
@@ -142,7 +213,7 @@ function previewResult(value: unknown, limit = 320): string {
       </ol>
 
       <p v-if="store.isStreaming" class="mt-2 text-[10px] text-theme-text-muted">
-        Streaming...
+        {{ t('aiAgent.streaming') }}
       </p>
     </div>
 
@@ -150,7 +221,7 @@ function previewResult(value: unknown, limit = 320): string {
       <input
         v-model="draft"
         type="text"
-        placeholder="Pergunte algo ao agente"
+        :placeholder="t('aiAgent.placeholder')"
         class="flex-1 rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
         :disabled="store.isStreaming"
       />
@@ -160,7 +231,7 @@ function previewResult(value: unknown, limit = 320): string {
         :disabled="!canSend"
       >
         <Send class="h-3 w-3" />
-        Enviar
+        {{ t('aiAgent.send') }}
       </button>
     </form>
   </section>

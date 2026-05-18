@@ -80,6 +80,12 @@ PERMISSION_CATALOG: tuple[PermissionDef, ...] = (
         label_key="settings.roles.permission.policies.manage.label",
         description_key="settings.roles.permission.policies.manage.description",
     ),
+    PermissionDef(
+        slug="ai.agent.approve",
+        category="ai",
+        label_key="settings.roles.permission.ai.agent.approve.label",
+        description_key="settings.roles.permission.ai.agent.approve.description",
+    ),
 )
 
 VALID_PERMISSION_SLUGS: frozenset[str] = frozenset(p.slug for p in PERMISSION_CATALOG)

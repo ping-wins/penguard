@@ -6,12 +6,20 @@ import asyncio
 import json
 from typing import Any
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.agent.backends.anthropic import AnthropicBackend
+from app.ai.agent.backends.base import BackendError, Final, TextDelta, ToolCall
+from app.ai.agent.backends.openai import OpenAIBackend
 from app.ai.agent.backends.scripted import ScriptedBackend
-from app.ai.agent.registry import REGISTRY, ToolContext
+from app.ai.agent.registry import REGISTRY, AgentTool, ToolContext, register_tool
+from app.ai.agent.roles import get_role, list_roles
+from app.ai.agent.router import pick_backend
 from app.ai.agent.runner import AgentRunner
 from app.ai.agent.session import SessionStore, get_session_store
+
 # Side-effect: registers built-in tools.
 from app.ai.agent.tools import (  # noqa: F401
     audit_tool,
@@ -22,6 +30,7 @@ from app.ai.agent.tools import (  # noqa: F401
     workspace,
     xdr_endpoints,
 )
+from app.ai.preferences import InMemoryPreferenceStore, UserAiPreference, get_preference_store
 from app.auth import dependencies as auth_dependencies
 from app.main import app
 
@@ -33,6 +42,7 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 
 def teardown_function():
     get_session_store().reset_for_tests()
+    get_preference_store.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +68,101 @@ def test_registry_lists_nine_read_tools():
         assert tool.input_schema["type"] == "object"
 
 
+def test_registry_marks_draft_tools_and_rejects_unapproved_write_tools():
+    assert REGISTRY["draft_widget"].category == "draft"
+    assert REGISTRY["draft_containment_playbook"].category == "draft"
+
+    async def _noop(_ctx: ToolContext, _args: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True}
+
+    with pytest.raises(ValueError, match="write.*requires_approval"):
+        register_tool(
+            AgentTool(
+                name="unsafe_write_for_test",
+                description="Unsafe write used only to verify registry validation.",
+                input_schema={"type": "object", "properties": {}},
+                impl=_noop,
+                category="write",
+                requires_approval=False,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Roles
+# ---------------------------------------------------------------------------
+
+
+def test_role_registry_matches_real_runtime_spec():
+    roles = {role.id: role for role in list_roles()}
+
+    assert set(roles) == {
+        "chat",
+        "widget-builder",
+        "incident-triage",
+        "playbook-draft",
+        "soc-investigation",
+    }
+    assert roles["chat"].tier == "fast"
+    assert roles["chat"].allowed_tool_categories == frozenset({"read"})
+    assert roles["incident-triage"].tier == "balanced"
+    assert roles["incident-triage"].allowed_tool_categories == frozenset({"read", "draft"})
+    assert roles["incident-triage"].token_budget == 150_000
+    assert roles["soc-investigation"].tier == "deep"
+    assert roles["soc-investigation"].allowed_tool_categories == frozenset(
+        {"read", "draft", "write"}
+    )
+    assert roles["soc-investigation"].token_budget == 300_000
+    assert all(role.system_prompt.strip() for role in roles.values())
+    assert get_role("missing-role") is None
+
+
+def test_router_falls_back_to_scripted_without_credentials(monkeypatch):
+    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "")
+    monkeypatch.setenv("FORTIDASHBOARD_AI_API_KEY", "")
+
+    backend = pick_backend(get_role("incident-triage"), "user-no-pref")  # type: ignore[arg-type]
+
+    assert backend.name == "scripted"
+
+
+def test_router_uses_user_preference_and_tier_model(monkeypatch):
+    store = InMemoryPreferenceStore()
+    store._rows["user-1"] = UserAiPreference(
+        user_id="user-1",
+        provider="anthropic",
+        api_keys={"anthropic": "sk-test"},
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_preference_store",
+        lambda: store,
+    )
+
+    backend = pick_backend(get_role("incident-triage"), "user-1")  # type: ignore[arg-type]
+
+    assert backend.name == "anthropic"
+    assert backend.model == "claude-sonnet-4-6"
+
+
+def test_router_applies_role_tier_env_override(monkeypatch):
+    store = InMemoryPreferenceStore()
+    store._rows["user-1"] = UserAiPreference(
+        user_id="user-1",
+        provider="openai",
+        api_keys={"openai": "sk-test"},
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_preference_store",
+        lambda: store,
+    )
+    monkeypatch.setenv("FORTIDASHBOARD_ROLE_CHAT_TIER", "deep")
+
+    backend = pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
+
+    assert backend.name == "openai"
+    assert backend.model == "gpt-4o"
+
+
 # ---------------------------------------------------------------------------
 # Session store
 # ---------------------------------------------------------------------------
@@ -80,38 +185,141 @@ def test_session_store_rejects_cross_user_access():
     assert store.get(s.id, user_id="user-2") is None
 
 
+def test_session_store_tracks_role_and_token_totals():
+    store = SessionStore()
+    s = store.create(user_id="user-1", role_id="incident-triage")
+
+    assert s.role_id == "incident-triage"
+    assert s.tokens_in_total == 0
+    assert s.tokens_out_total == 0
+    assert s.pending_approvals == {}
+
+
 # ---------------------------------------------------------------------------
 # Scripted backend
 # ---------------------------------------------------------------------------
 
 
-def test_scripted_backend_maps_keyword_to_tool():
-    backend = ScriptedBackend()
-    decision = backend.decide(
-        history=[{"role": "user", "content": "Liste meus incidentes"}],
-        tools=list(REGISTRY.values()),
-        locale="pt-BR",
-    )
-    assert decision.kind == "tool_call"
-    assert decision.tool_name == "list_incidents"
+async def _collect_backend(backend: Any, **kwargs: Any) -> list[Any]:
+    return [event async for event in backend.stream_decide(**kwargs)]
 
 
-def test_scripted_backend_finalizes_after_tool_result():
+def test_scripted_backend_streams_keyword_tool_call():
     backend = ScriptedBackend()
-    decision = backend.decide(
-        history=[
-            {"role": "user", "content": "Liste incidentes"},
-            {
-                "role": "tool",
-                "tool_name": "list_incidents",
-                "result": {"items": [], "count": 0},
-            },
-        ],
-        tools=list(REGISTRY.values()),
-        locale="pt-BR",
+    events = asyncio.run(
+        _collect_backend(
+            backend,
+            history=[{"role": "user", "content": "Liste meus incidentes"}],
+            tools=list(REGISTRY.values()),
+            system_prompt="system",
+            locale="pt-BR",
+            max_output_tokens=512,
+        )
     )
-    assert decision.kind == "final"
-    assert "list_incidents" in decision.text
+    assert [event.kind for event in events] == ["tool_call", "final"]
+    assert isinstance(events[0], ToolCall)
+    assert events[0].tool_name == "list_incidents"
+    assert isinstance(events[1], Final)
+    assert events[1].stop_reason == "tool_use"
+
+
+def test_scripted_backend_streams_final_after_tool_result():
+    backend = ScriptedBackend()
+    events = asyncio.run(
+        _collect_backend(
+            backend,
+            history=[
+                {"role": "user", "content": "Liste incidentes"},
+                {
+                    "role": "tool",
+                    "tool_name": "list_incidents",
+                    "result": {"items": [], "count": 0},
+                },
+            ],
+            tools=list(REGISTRY.values()),
+            system_prompt="system",
+            locale="pt-BR",
+            max_output_tokens=512,
+        )
+    )
+    assert [event.kind for event in events] == ["text_delta", "final"]
+    assert isinstance(events[0], TextDelta)
+    assert "list_incidents" in events[0].text
+    assert isinstance(events[1], Final)
+    assert events[1].stop_reason == "end_turn"
+
+
+def test_anthropic_backend_parses_text_stream():
+    async def _handler(_request: httpx.Request) -> httpx.Response:
+        body = "\n\n".join(
+            [
+                'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}',
+                (
+                    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
+                    '"usage":{"output_tokens":2}}'
+                ),
+                'data: {"type":"message_stop"}',
+            ]
+        )
+        return httpx.Response(200, content=body.encode("utf-8"))
+
+    backend = AnthropicBackend(
+        api_key="sk-test",
+        model="claude-sonnet-4-6",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_handler)),
+    )
+
+    events = asyncio.run(
+        _collect_backend(
+            backend,
+            history=[{"role": "user", "content": "hi"}],
+            tools=[],
+            system_prompt="system",
+            locale="en-US",
+            max_output_tokens=512,
+        )
+    )
+
+    assert [event.kind for event in events] == ["text_delta", "final"]
+    assert events[0].text == "hello"
+    assert events[1].stop_reason == "end_turn"
+
+
+def test_openai_backend_parses_text_stream_with_usage():
+    async def _handler(_request: httpx.Request) -> httpx.Response:
+        body = "\n\n".join(
+            [
+                'data: {"choices":[{"delta":{"content":"hello"}}]}',
+                (
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],'
+                    '"usage":{"prompt_tokens":7,"completion_tokens":2}}'
+                ),
+                "data: [DONE]",
+            ]
+        )
+        return httpx.Response(200, content=body.encode("utf-8"))
+
+    backend = OpenAIBackend(
+        api_key="sk-test",
+        model="gpt-4o",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_handler)),
+    )
+
+    events = asyncio.run(
+        _collect_backend(
+            backend,
+            history=[{"role": "user", "content": "hi"}],
+            tools=[],
+            system_prompt="system",
+            locale="en-US",
+            max_output_tokens=512,
+        )
+    )
+
+    assert [event.kind for event in events] == ["text_delta", "final"]
+    assert events[0].text == "hello"
+    assert events[1].tokens_in == 7
+    assert events[1].tokens_out == 2
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +343,12 @@ async def _collect(runner: AgentRunner, **kwargs):
 
 def test_runner_invokes_tool_and_emits_events():
     store = SessionStore()
-    session = store.create(user_id="user-1", backend="scripted", locale="pt-BR")
+    session = store.create(
+        user_id="user-1",
+        backend="scripted",
+        locale="pt-BR",
+        role_id="incident-triage",
+    )
     audit_calls: list[dict[str, Any]] = []
 
     runner = AgentRunner(
@@ -161,30 +374,166 @@ def test_runner_invokes_tool_and_emits_events():
 
     done = events[-1]
     assert "list_incidents" in done["used_tools"]
+    assert done["tokens_in"] > 0
+    assert done["tokens_out"] > 0
+    assert session.tokens_in_total == done["tokens_in"]
+    assert session.tokens_out_total == done["tokens_out"]
     assert any(audit["details"]["toolName"] == "list_incidents" for audit in audit_calls)
 
 
-def test_runner_reports_unknown_tool_error():
+def test_runner_returns_tool_result_error_for_unallowed_tool():
     store = SessionStore()
-    session = store.create(user_id="user-1", backend="scripted")
+    session = store.create(user_id="user-1", backend="scripted", role_id="chat")
 
-    class FailingBackend:
+    class DraftBackend:
         name = "broken"
         model = ""
 
-        def decide(self, **_kwargs):
-            from app.ai.agent.backends.base import BackendDecision
+        async def stream_decide(self, **kwargs):
+            if kwargs["history"] and kwargs["history"][-1].get("role") == "tool":
+                yield TextDelta(text="recovered")
+                yield Final(stop_reason="end_turn", tokens_in=8, tokens_out=2)
+                return
+            yield ToolCall(
+                call_id="call_1",
+                tool_name="draft_widget",
+                args={
+                    "provider": "fortigate",
+                    "visualType": "card",
+                    "fieldIds": ["system.cpu"],
+                },
+            )
+            yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=3)
 
-            return BackendDecision(kind="tool_call", tool_name="nonexistent")
-
-    runner = AgentRunner(backend=FailingBackend(), session_store=store)
+    runner = AgentRunner(backend=DraftBackend(), session_store=store)
     ctx = ToolContext(user_id="user-1")
     events = asyncio.run(
         _collect(runner, session=session, user_message="run", tool_context=ctx)
     )
 
+    blocked = next(e for e in events if e["kind"] == "tool_result")
+    assert blocked["status"] == "error"
+    assert blocked["error"] == "tool not allowed for this role"
+    assert events[-1]["kind"] == "done"
+
+
+def test_runner_aborts_when_role_token_budget_is_exhausted():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="scripted", role_id="chat")
+    session.tokens_in_total = 20_000
+
+    class NeverCalledBackend:
+        name = "never"
+        model = ""
+
+        async def stream_decide(self, **_kwargs):
+            raise AssertionError("backend must not be called after budget is exhausted")
+            yield  # pragma: no cover
+
+    runner = AgentRunner(backend=NeverCalledBackend(), session_store=store)
+    ctx = ToolContext(user_id="user-1")
+    events = asyncio.run(
+        _collect(runner, session=session, user_message="hello", tool_context=ctx)
+    )
+
     assert events[-1]["kind"] == "error"
-    assert events[-1]["code"] == "unknown_tool"
+    assert events[-1]["code"] == "budget_exceeded"
+
+
+def test_runner_waits_for_write_tool_approval_before_invoking():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="scripted", role_id="soc-investigation")
+    calls: list[dict[str, Any]] = []
+
+    async def _write_tool(_ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+        calls.append(args)
+        return {"applied": True}
+
+    tool = AgentTool(
+        name="write_policy_for_test",
+        description="Write tool used only by the approval-gate test.",
+        input_schema={"type": "object", "properties": {"policyId": {"type": "string"}}},
+        impl=_write_tool,
+        category="write",
+        requires_approval=True,
+    )
+    original = REGISTRY.get(tool.name)
+    REGISTRY[tool.name] = tool
+
+    class WriteBackend:
+        name = "writer"
+        model = ""
+
+        async def stream_decide(self, **_kwargs):
+            if not session.history or session.history[-1].role != "tool":
+                yield ToolCall(
+                    call_id="call_write",
+                    tool_name="write_policy_for_test",
+                    args={"policyId": "p1"},
+                )
+                yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=4)
+                return
+            yield TextDelta(text="write completed")
+            yield Final(stop_reason="end_turn", tokens_in=9, tokens_out=2)
+
+    async def _run_and_approve() -> list[dict[str, Any]]:
+        runner = AgentRunner(
+            backend=WriteBackend(),
+            session_store=store,
+            approval_timeout_seconds=1,
+        )
+        events: list[dict[str, Any]] = []
+
+        async def _consume() -> None:
+            async for event in runner.run_turn(
+                session=session,
+                user_message="apply it",
+                tool_context=ToolContext(user_id="user-1"),
+            ):
+                events.append(event.to_dict())
+                if event.kind.value == "awaiting_approval":
+                    future = session.pending_approvals[event.call_id]
+                    future.set_result({"granted": True, "reason": "test approval"})
+
+        await _consume()
+        return events
+
+    try:
+        events = asyncio.run(_run_and_approve())
+    finally:
+        if original is None:
+            REGISTRY.pop(tool.name, None)
+        else:
+            REGISTRY[tool.name] = original
+
+    assert [e["kind"] for e in events].count("awaiting_approval") == 1
+    assert calls == [{"policyId": "p1"}]
+    assert events[-1]["kind"] == "done"
+
+
+def test_runner_emits_backend_error_without_exception():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="scripted", role_id="chat")
+
+    class ErrorBackend:
+        name = "erroring"
+        model = ""
+
+        async def stream_decide(self, **_kwargs):
+            yield BackendError(message="bad credentials", code="auth", retryable=False)
+
+    runner = AgentRunner(backend=ErrorBackend(), session_store=store)
+    events = asyncio.run(
+        _collect(
+            runner,
+            session=session,
+            user_message="hello",
+            tool_context=ToolContext(user_id="user-1"),
+        )
+    )
+
+    assert events[-1]["kind"] == "error"
+    assert events[-1]["code"] == "auth"
 
 
 # ---------------------------------------------------------------------------
@@ -212,16 +561,30 @@ def test_list_tools_endpoint_returns_input_schemas():
     assert list_incidents["inputSchema"]["type"] == "object"
 
 
+def test_list_roles_endpoint_returns_runtime_roles():
+    client = TestClient(app)
+    response = client.get("/api/ai/agent/roles")
+    assert response.status_code == 200
+    payload = response.json()
+    roles = {item["id"]: item for item in payload["items"]}
+    assert roles["incident-triage"]["tier"] == "balanced"
+    assert roles["incident-triage"]["tokenBudget"] == 150_000
+    assert roles["soc-investigation"]["allowedToolCategories"] == ["draft", "read", "write"]
+
+
 def test_create_session_returns_session_id():
     client = TestClient(app)
     response = client.post(
         "/api/ai/agent/sessions",
         headers=csrf_headers(client),
-        json={"backend": "scripted", "locale": "pt-BR"},
+        json={"role": "incident-triage", "backend": "scripted", "locale": "pt-BR"},
     )
     assert response.status_code == 201
     payload = response.json()
     assert payload["backend"] == "scripted"
+    assert payload["role"] == "incident-triage"
+    assert payload["tokensIn"] == 0
+    assert payload["tokensOut"] == 0
     assert payload["sessionId"]
 
 
@@ -231,6 +594,16 @@ def test_create_session_rejects_unknown_backend():
         "/api/ai/agent/sessions",
         headers=csrf_headers(client),
         json={"backend": "openai"},
+    )
+    assert response.status_code == 400
+
+
+def test_create_session_rejects_unknown_role():
+    client = TestClient(app)
+    response = client.post(
+        "/api/ai/agent/sessions",
+        headers=csrf_headers(client),
+        json={"role": "missing"},
     )
     assert response.status_code == 400
 
@@ -271,3 +644,53 @@ def test_send_message_streams_steps_and_records_audit():
     )
     # Greeting-without-keyword path triggers no tool call; that's fine.
     assert "items" in audit
+
+
+def test_approval_endpoint_resolves_pending_future():
+    client = TestClient(app)
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
+        "id": "admin-1",
+        "email": "admin@example.test",
+        "roles": ["admin"],
+    }
+    headers = csrf_headers(client)
+    try:
+        create = client.post(
+            "/api/ai/agent/sessions",
+            headers=headers,
+            json={"role": "soc-investigation", "backend": "scripted", "locale": "pt-BR"},
+        )
+        assert create.status_code == 201
+        session_id = create.json()["sessionId"]
+        store = get_session_store()
+        session = store.get(session_id, user_id="admin-1")
+        assert session is not None
+
+        class _Future:
+            def __init__(self) -> None:
+                self._done = False
+                self._result: dict[str, Any] | None = None
+
+            def done(self) -> bool:
+                return self._done
+
+            def set_result(self, value: dict[str, Any]) -> None:
+                self._done = True
+                self._result = value
+
+            def result(self) -> dict[str, Any] | None:
+                return self._result
+
+        future = _Future()
+        session.pending_approvals["call_1"] = future
+        response = client.post(
+            f"/api/ai/agent/sessions/{session_id}/approvals/call_1",
+            headers=headers,
+            json={"granted": True, "reason": "ok"},
+        )
+
+        assert response.status_code == 200
+        assert future.done()
+        assert future.result()["granted"] is True
+    finally:
+        app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)

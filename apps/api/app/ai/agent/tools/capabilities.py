@@ -181,6 +181,7 @@ register_tool(
             "additionalProperties": False,
         },
         impl=_draft_widget,
+        category="draft",
     )
 )
 
@@ -200,6 +201,7 @@ register_tool(
             "additionalProperties": False,
         },
         impl=_draft_playbook,
+        category="draft",
         timeout_seconds=30,
     )
 )

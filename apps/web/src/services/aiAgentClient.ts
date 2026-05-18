@@ -6,6 +6,17 @@ export type AgentBackend = {
   default: boolean
 }
 
+export type AgentRole = {
+  id: string
+  label: string
+  description: string
+  tier: 'fast' | 'balanced' | 'deep'
+  localeDefault: string
+  tokenBudget: number
+  maxSteps: number
+  allowedToolCategories: string[]
+}
+
 export type AgentTool = {
   name: string
   description: string
@@ -19,8 +30,11 @@ export type AgentSessionResponse = {
   sessionId: string
   backend: string
   model: string
+  role: string
   locale: string
   createdAt: number
+  tokensIn: number
+  tokensOut: number
 }
 
 export type AgentStreamEvent =
@@ -45,10 +59,19 @@ export type AgentStreamEvent =
       step: number
       call_id: string
       tool_name: string
-      status: 'ok' | 'error'
+      status: 'ok' | 'error' | 'denied'
       result: unknown
       error: string | null
       latency_ms: number
+    }
+  | {
+      type: 'step'
+      kind: 'awaiting_approval'
+      step: number
+      call_id: string
+      tool_name: string
+      args: Record<string, unknown>
+      reason: string
     }
   | {
       type: 'step'
@@ -86,6 +109,12 @@ export async function listBackends(): Promise<AgentBackend[]> {
   return payload.items
 }
 
+export async function listAgentRoles(): Promise<AgentRole[]> {
+  const response = await fetch('/api/ai/agent/roles', { credentials: 'include' })
+  const payload = await parseOrThrow<{ items: AgentRole[] }>(response, 'Falha ao listar roles')
+  return payload.items
+}
+
 export async function listAgentTools(): Promise<AgentTool[]> {
   const response = await fetch('/api/ai/agent/tools', { credentials: 'include' })
   const payload = await parseOrThrow<{ items: AgentTool[] }>(response, 'Falha ao listar tools')
@@ -93,7 +122,7 @@ export async function listAgentTools(): Promise<AgentTool[]> {
 }
 
 export async function createAgentSession(
-  options: { backend?: string; locale?: string; model?: string } = {},
+  options: { role?: string; backend?: string; locale?: string; model?: string } = {},
 ): Promise<AgentSessionResponse> {
   const headers = await csrfHeaders()
   const response = await fetch('/api/ai/agent/sessions', {
@@ -101,12 +130,32 @@ export async function createAgentSession(
     credentials: 'include',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      backend: options.backend ?? 'scripted',
+      role: options.role ?? 'chat',
+      ...(options.backend ? { backend: options.backend } : {}),
       locale: options.locale ?? 'pt-BR',
       model: options.model ?? '',
     }),
   })
   return parseOrThrow<AgentSessionResponse>(response, 'Falha ao criar sessão de agente')
+}
+
+export async function approveAgentToolCall(
+  sessionId: string,
+  callId: string,
+  granted: boolean,
+  reason = '',
+): Promise<void> {
+  const headers = await csrfHeaders()
+  const response = await fetch(
+    `/api/ai/agent/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(callId)}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ granted, reason }),
+    },
+  )
+  await parseOrThrow(response, 'Falha ao aprovar chamada do agente')
 }
 
 export async function deleteAgentSession(sessionId: string): Promise<void> {

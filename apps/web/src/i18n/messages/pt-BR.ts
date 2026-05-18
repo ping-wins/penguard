@@ -26,6 +26,7 @@ export default {
     upload: 'Carregar',
     none: 'Nenhum',
     all: 'Todos',
+    you: 'Você',
   },
   auth: {
     login: {
@@ -76,6 +77,32 @@ export default {
     playbooks: 'Playbooks SOAR',
     audit: 'Trilha de auditoria',
     settings: 'Configurações',
+  },
+  aiAgent: {
+    title: 'Agente IA',
+    start: 'Iniciar',
+    end: 'Encerrar',
+    send: 'Enviar',
+    roleLabel: 'Papel',
+    backendLabel: 'Backend',
+    defaultSuffix: 'default',
+    empty: 'Envie uma mensagem para o agente, por exemplo "liste incidentes" ou "mostre integrações".',
+    backendHint: 'Backend: {backend}',
+    streaming: 'Streaming...',
+    placeholder: 'Pergunte algo ao agente',
+    resultEmpty: 'vazio',
+    approvalTitle: 'Aprovação necessária',
+    approve: 'Aprovar',
+    deny: 'Negar',
+    modelBadge: '{model} · {used} / {budget} tokens',
+    noModel: 'Modelo pendente',
+    roles: {
+      chat: { label: 'Chat' },
+      widget_builder: { label: 'Construtor de widgets' },
+      incident_triage: { label: 'Triagem de incidente' },
+      playbook_draft: { label: 'Rascunho de playbook' },
+      soc_investigation: { label: 'Investigação SOC' },
+    },
   },
   marketplace: {
     title: 'Marketplace',
@@ -646,6 +673,7 @@ export default {
           playbooks: 'Playbooks',
           tickets: 'Tickets',
           policies: 'Policies',
+          ai: 'IA',
         },
         'integrations.write': {
           label: 'Adicionar/remover provedores',
@@ -678,6 +706,10 @@ export default {
         'policies.manage': {
           label: 'Gerenciar policies SOC',
           description: 'Criar, editar, desabilitar, habilitar e remover policies dos provedores.',
+        },
+        'ai.agent.approve': {
+          label: 'Aprovar escritas do agente',
+          description: 'Aprovar chamadas de tools de escrita do agente IA.',
         },
       },
       members: {

@@ -22,6 +22,7 @@ from app.ai.agent.registry import (
     get_tool,
     list_tools,
 )
+from app.ai.agent.roles import RoleConfig, get_role, list_roles
 from app.ai.agent.session import AgentSession, SessionStore, get_session_store
 
 __all__ = [
@@ -33,12 +34,15 @@ __all__ = [
     "AwaitingApprovalEvent",
     "DoneEvent",
     "ErrorEvent",
+    "RoleConfig",
     "SessionStore",
     "TextDeltaEvent",
     "ToolCallEvent",
     "ToolContext",
     "ToolResultEvent",
+    "get_role",
     "get_session_store",
     "get_tool",
+    "list_roles",
     "list_tools",
 ]

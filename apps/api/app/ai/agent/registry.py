@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -46,7 +46,7 @@ class AgentTool:
     description: str
     input_schema: dict[str, Any]
     impl: ToolImpl
-    category: str = "read"
+    category: Literal["read", "draft", "write"] = "read"
     requires_approval: bool = False
     timeout_seconds: int = 5
 
@@ -57,6 +57,10 @@ REGISTRY: dict[str, AgentTool] = {}
 def register_tool(tool: AgentTool) -> AgentTool:
     if tool.name in REGISTRY:
         raise ValueError(f"Duplicate agent tool: {tool.name}")
+    if tool.category not in {"read", "draft", "write"}:
+        raise ValueError(f"Unsupported agent tool category: {tool.category}")
+    if tool.category == "write" and not tool.requires_approval:
+        raise ValueError("write agent tools must set requires_approval=True")
     REGISTRY[tool.name] = tool
     return tool
 

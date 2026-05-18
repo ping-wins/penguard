@@ -11,7 +11,7 @@ fall back to `get_ai_provider()` (env-driven) in that case.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, Protocol
@@ -42,16 +42,19 @@ class UserAiPreference:
     provider: str = "gemini"
     model: str = ""
     api_key: str = ""
+    api_keys: dict[str, str] = field(default_factory=dict)
     cli_binary: str = ""
     updated_at: datetime | None = None
 
     def to_dict(self, *, redact: bool = True) -> dict[str, Any]:
+        api_keys_set = sorted(provider for provider, key in self.api_keys.items() if key)
         return {
             "userId": self.user_id,
             "mode": self.mode,
             "provider": self.provider,
             "model": self.model,
-            "apiKeySet": bool(self.api_key),
+            "apiKeySet": bool(self.api_key) or bool(api_keys_set),
+            "apiKeysSet": api_keys_set,
             "apiKey": "" if redact else self.api_key,
             "cliBinary": self.cli_binary,
             "updatedAt": (
@@ -85,6 +88,7 @@ class InMemoryPreferenceStore:
             ),
             model=fields.get("model", existing.model if existing else ""),
             api_key=fields.get("api_key", existing.api_key if existing else ""),
+            api_keys=fields.get("api_keys", existing.api_keys if existing else {}),
             cli_binary=fields.get(
                 "cli_binary", existing.cli_binary if existing else ""
             ),
@@ -121,12 +125,14 @@ class SqlAlchemyPreferenceStore:
             if row is None:
                 return None
             api_key = self._decrypt(row.api_key_blob)
+            api_keys = self._decrypt_key_map(row.api_keys_blob)
             return UserAiPreference(
                 user_id=row.user_id,
                 mode=row.mode,
                 provider=row.provider,
                 model=row.model,
                 api_key=api_key,
+                api_keys=api_keys,
                 cli_binary=row.cli_binary or "",
                 updated_at=row.updated_at,
             )
@@ -134,6 +140,7 @@ class SqlAlchemyPreferenceStore:
     def upsert(self, *, user_id: str, **fields: Any) -> UserAiPreference:
         api_key = fields.get("api_key")
         api_key_blob = self._encrypt(api_key) if api_key else None
+        api_keys = fields.get("api_keys")
         with self._session_factory() as db:
             row = db.get(UserAiPreferenceModel, user_id)
             if row is None:
@@ -153,16 +160,20 @@ class SqlAlchemyPreferenceStore:
                     row.api_key_blob = api_key_blob
                 elif api_key == "":
                     row.api_key_blob = None
+            if "api_keys" in fields:
+                row.api_keys_blob = self._encrypt_key_map(api_keys)
             row.updated_at = datetime.now(UTC)
             db.commit()
             db.refresh(row)
             decrypted_key = self._decrypt(row.api_key_blob)
+            decrypted_keys = self._decrypt_key_map(row.api_keys_blob)
             return UserAiPreference(
                 user_id=row.user_id,
                 mode=row.mode,
                 provider=row.provider,
                 model=row.model,
                 api_key=decrypted_key,
+                api_keys=decrypted_keys,
                 cli_binary=row.cli_binary or "",
                 updated_at=row.updated_at,
             )
@@ -178,6 +189,28 @@ class SqlAlchemyPreferenceStore:
         except Exception:  # noqa: BLE001
             logger.warning("user_ai_preference_decrypt_failed")
             return ""
+
+    def _encrypt_key_map(self, values: Any) -> dict[str, str] | None:
+        if not isinstance(values, dict):
+            return None
+        encrypted: dict[str, str] = {}
+        for provider, key in values.items():
+            provider_name = str(provider).lower().strip()
+            if not provider_name:
+                continue
+            if key:
+                encrypted[provider_name] = self._encrypt(str(key))
+        return encrypted or None
+
+    def _decrypt_key_map(self, blob: Any) -> dict[str, str]:
+        if not isinstance(blob, dict):
+            return {}
+        decrypted: dict[str, str] = {}
+        for provider, encrypted in blob.items():
+            plain = self._decrypt(str(encrypted) if encrypted else None)
+            if plain:
+                decrypted[str(provider)] = plain
+        return decrypted
 
 
 @lru_cache
@@ -216,15 +249,20 @@ def build_provider_for_user(user_id: str) -> AIProvider | None:
     if pref.mode != "api":
         return None
     if not pref.api_key:
-        return None
+        api_keys = pref.api_keys or {}
+        pref_key = api_keys.get(pref.provider.lower().strip())
+        if not pref_key:
+            return None
+    else:
+        pref_key = pref.api_key
     provider = pref.provider.lower().strip()
     model = pref.model or _default_model_for(provider)
     if provider == "gemini":
-        return GeminiAIProvider(api_key=pref.api_key, model=model)
+        return GeminiAIProvider(api_key=pref_key, model=model)
     if provider == "anthropic":
-        return AnthropicAIProvider(api_key=pref.api_key, model=model)
+        return AnthropicAIProvider(api_key=pref_key, model=model)
     if provider in {"openai", "openai_compat", "openai-compatible"}:
-        return OpenAICompatibleAIProvider(api_key=pref.api_key, model=model)
+        return OpenAICompatibleAIProvider(api_key=pref_key, model=model)
     if provider == "scripted":
         return ScriptedAIProvider()
     raise AIConfigurationError(f"Unsupported user provider: {pref.provider}")
