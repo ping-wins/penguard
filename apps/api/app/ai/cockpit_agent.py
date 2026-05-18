@@ -215,19 +215,24 @@ def _try_incident_intent(
         or "alerta" in normalized
         or "alert" in normalized
     )
+    # "mostre/mostra/exiba/show/adicione" are widget-add verbs handled by
+    # the frontend catalog shortcut. Only intercept textual list intents.
     wants_incident_list = mentions_incident and (
         severity is not None
         or "lista" in normalized
         or "listar" in normalized
-        or "list" in normalized
-        or "recent" in normalized
-        or "recente" in normalized
+        or "list " in normalized
+        or "list:" in normalized
+        or normalized.endswith("list")
         or "ultim" in normalized
         or "abertos" in normalized
-        or "open " in normalized
-        or "mostra" in normalized
-        or "show" in normalized
-    )
+        or "quantos" in normalized
+        or "how many" in normalized
+        or "quais" in normalized
+    ) and not any(verb in normalized for verb in (
+        "mostre", "mostra", "exiba", "exibir", "show", "abre", "abrir",
+        "adicione", "adicionar", "add ", "abrir painel", "open panel",
+    ))
     if wants_incident_list and incident_id is None:
         result = list_incidents(user_id=user_id, limit=10, severity=severity)
         if result.get("error"):

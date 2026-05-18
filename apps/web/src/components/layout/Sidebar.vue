@@ -277,14 +277,72 @@ async function handleLogout() {
   router.push({ name: 'login' })
 }
 
-// Catalog quick-add: if the user phrase is a literal match for a widget
-// preset, short-circuit before calling the real model so the demo flow stays
-// fast and free. Anything else goes to the configured AI provider.
+// Catalog quick-add: if the user phrase is a literal match (English title,
+// id-tail) or a known pt-BR alias for a widget preset, short-circuit before
+// calling the real model so the demo flow stays fast and free.
+// Anything else goes to the configured AI provider.
+const CATALOG_ALIASES: Record<string, string> = {
+  'incidentes recentes': 'soc-recent-incidents',
+  'incidentes por severidade': 'soc-incidents-by-severity',
+  'severidade dos incidentes': 'soc-incidents-by-severity',
+  'top entidades': 'soc-top-entities',
+  'principais entidades': 'soc-top-entities',
+  'status do sistema': 'fortigate-system-status',
+  'status sistema': 'fortigate-system-status',
+  'tráfego de rede': 'fortigate-network-traffic',
+  'trafego de rede': 'fortigate-network-traffic',
+  'tráfego': 'fortigate-network-traffic',
+  'políticas de firewall': 'fortigate-firewall-policies',
+  'politicas de firewall': 'fortigate-firewall-policies',
+  'políticas': 'fortigate-firewall-policies',
+  'politicas': 'fortigate-firewall-policies',
+  'top ameaças': 'fortigate-top-threats',
+  'top ameacas': 'fortigate-top-threats',
+  'ameaças': 'fortigate-top-threats',
+  'ameacas': 'fortigate-top-threats',
+  'eventos recentes': 'fortigate-recent-events',
+  'postura de risco': 'fortigate-risk-posture',
+  'saúde das interfaces': 'fortigate-interface-health',
+  'saude das interfaces': 'fortigate-interface-health',
+  'destaques de anomalias': 'fortigate-anomaly-highlights',
+  'kpi de sessões': 'fortigate-kpi-sessions',
+  'kpi de sessoes': 'fortigate-kpi-sessions',
+  'saúde dos endpoints': 'xdr-endpoint-health',
+  'saude dos endpoints': 'xdr-endpoint-health',
+  'execuções de playbook': 'soar-active-playbook-runs',
+  'execucoes de playbook': 'soar-active-playbook-runs',
+  'histórico de playbook': 'soar-playbook-run-history',
+  'historico de playbook': 'soar-playbook-run-history',
+}
+
+function resolveAliasCatalogId(lowerText: string): string | null {
+  for (const [alias, catalogId] of Object.entries(CATALOG_ALIASES)) {
+    if (lowerText.includes(alias)) return catalogId
+  }
+  return null
+}
+
 function tryCatalogShortcut(text: string): boolean {
   const lowerText = text.toLowerCase()
+
+  // Step 1: pt-BR alias map wins (covers natural phrasing).
+  const aliasId = resolveAliasCatalogId(lowerText)
+  if (aliasId) {
+    const item = store.catalogItems.find(c => c.id === aliasId)
+    if (item) {
+      const integration = integrationForCatalogItem(item) ?? integrationsStore.integrations[0]
+      if (integration) {
+        handleAddWidget(item.id, integration.id)
+        chatMessages.value.push({ role: 'assistant', text: t('chat.widgetAdded', { title: item.title }) })
+        return true
+      }
+    }
+  }
+
+  // Step 2: literal English title or id-tail substring match (legacy path).
   for (const item of store.catalogItems) {
     if (lowerText.includes(item.title.toLowerCase()) || lowerText.includes(item.id.split('-').pop() || '')) {
-      const integration = integrationForCatalogItem(item)
+      const integration = integrationForCatalogItem(item) ?? integrationsStore.integrations[0]
       if (integration) {
         handleAddWidget(item.id, integration.id)
         chatMessages.value.push({ role: 'assistant', text: t('chat.widgetAdded', { title: item.title }) })
