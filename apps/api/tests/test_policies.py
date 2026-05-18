@@ -439,6 +439,8 @@ class FakeFortiWebPolicyService:
                 "desiredInlineProtectionProfileExists": False,
                 "currentDosPreventionPolicy": None,
                 "desiredDosPreventionPolicy": dos_prevention_policy,
+                "currentTrafficLog": "disable",
+                "desiredTrafficLog": "enable",
             },
             "proposedChanges": [
                 {
@@ -454,6 +456,10 @@ class FakeFortiWebPolicyService:
                         f"Attach {inline_protection_profile} to FortiWeb "
                         "server policy lab-waf-policy"
                     ),
+                },
+                {
+                    "operation": "enable_traffic_log",
+                    "summary": "Enable FortiWeb traffic logging on lab-waf-policy",
                 },
             ],
             "reviewHash": "waf_dos_hash_01",
@@ -569,6 +575,7 @@ def test_fortiweb_policy_adapter_reviews_and_applies_waf_dos_policy_edit() -> No
     assert [entry["field"] for entry in review.diff] == [
         "create_inline_protection_profile",
         "attach_inline_protection_profile",
+        "enable_traffic_log",
     ]
     assert service.waf_reviews == [
         (

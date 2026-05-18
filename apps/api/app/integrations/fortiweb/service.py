@@ -629,6 +629,7 @@ class FortiWebIntegrationService:
         client.get_application_layer_dos_prevention(dos_policy)
 
         current_profile = _inline_profile_name(server_policy)
+        current_traffic_log = _server_policy_traffic_log(server_policy)
         current_dos_policy = _profile_dos_policy(desired_profile)
         preflight_summary = {
             "integrationId": integration_id,
@@ -638,6 +639,8 @@ class FortiWebIntegrationService:
             "desiredInlineProtectionProfileExists": profile_exists,
             "currentDosPreventionPolicy": current_dos_policy,
             "desiredDosPreventionPolicy": dos_policy,
+            "currentTrafficLog": current_traffic_log,
+            "desiredTrafficLog": "enable",
         }
         proposed_changes = _waf_dos_policy_changes(
             target_policy=target_policy,
@@ -646,6 +649,7 @@ class FortiWebIntegrationService:
             inline_profile_exists=profile_exists,
             current_dos_policy=current_dos_policy,
             dos_policy=dos_policy,
+            current_traffic_log=current_traffic_log,
         )
         intent = {
             "action": "prepare_waf_dos_policy",
@@ -720,11 +724,13 @@ class FortiWebIntegrationService:
             )
             profile_updated = True
 
+        server_policy_update: dict[str, Any] = {}
         if _inline_profile_name(server_policy) != inline_profile_name:
-            client.update_server_policy(
-                target_policy,
-                {"web-protection-profile": inline_profile_name},
-            )
+            server_policy_update["web-protection-profile"] = inline_profile_name
+        if _server_policy_traffic_log(server_policy) != "enable":
+            server_policy_update["tlog"] = "enable"
+        if server_policy_update:
+            client.update_server_policy(target_policy, server_policy_update)
             server_updated = True
 
         return {
@@ -735,6 +741,7 @@ class FortiWebIntegrationService:
             "dosPreventionPolicy": dos_policy,
             "inlineProtectionProfileCreated": profile_created,
             "serverPolicyUpdated": server_updated,
+            "trafficLogUpdated": server_policy_update.get("tlog") == "enable",
             "inlineProtectionProfileUpdated": profile_updated,
         }
 
@@ -985,6 +992,16 @@ def _profile_dos_policy(profile: dict[str, Any]) -> str | None:
     return None
 
 
+def _server_policy_traffic_log(server_policy: dict[str, Any]) -> str | None:
+    for key in ("tlog", "traffic-log", "traffic_log", "trafficLog"):
+        value = server_policy.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+        if isinstance(value, bool):
+            return "enable" if value else "disable"
+    return None
+
+
 def _is_fortiweb_not_found_error(error: FortiWebApiError) -> bool:
     return "entry is not found" in str(error).lower()
 
@@ -1018,6 +1035,7 @@ def _waf_dos_policy_changes(
     inline_profile_exists: bool,
     current_dos_policy: str | None,
     dos_policy: str,
+    current_traffic_log: str | None,
 ) -> list[dict[str, Any]]:
     changes: list[dict[str, Any]] = []
     if not inline_profile_exists:
@@ -1057,6 +1075,17 @@ def _waf_dos_policy_changes(
                 "before": current_dos_policy,
                 "after": dos_policy,
                 "summary": f"Attach {dos_policy} DoS prevention to {inline_profile}",
+            }
+        )
+    if current_traffic_log != "enable":
+        changes.append(
+            {
+                "operation": "enable_traffic_log",
+                "target": target_policy,
+                "field": "tlog",
+                "before": current_traffic_log,
+                "after": "enable",
+                "summary": f"Enable FortiWeb traffic logging on {target_policy}",
             }
         )
     return changes

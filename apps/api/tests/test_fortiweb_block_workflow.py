@@ -97,6 +97,7 @@ class FortiWebBlockClient:
         self.server_policy = {
             "name": "lab-waf-policy",
             "web-protection-profile": "lab-inline-protection",
+            "tlog": "disable",
         }
         self.inline_profile = {
             "name": "lab-inline-protection",
@@ -324,10 +325,13 @@ def test_review_waf_dos_policy_prepares_server_policy_and_profile_changes():
         "desiredInlineProtectionProfileExists": False,
         "currentDosPreventionPolicy": None,
         "desiredDosPreventionPolicy": "Predefined",
+        "currentTrafficLog": "disable",
+        "desiredTrafficLog": "enable",
     }
     assert [change["operation"] for change in review["proposedChanges"]] == [
         "create_inline_protection_profile",
         "attach_inline_protection_profile",
+        "enable_traffic_log",
     ]
 
 
@@ -357,7 +361,7 @@ def test_apply_waf_dos_policy_updates_fortiweb_through_confirmed_review():
         == "Predefined"
     )
     assert fake_client.server_updates == [
-        {"web-protection-profile": "FD Inline DoS Protection"}
+        {"web-protection-profile": "FD Inline DoS Protection", "tlog": "enable"}
     ]
     assert fake_client.inline_updates == [
         {
