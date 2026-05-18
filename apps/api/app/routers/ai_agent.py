@@ -107,7 +107,7 @@ class AiAgentSettingsUpdate(BaseModel):
 
     provider: str | None = Field(default=None, max_length=32)
     model: str | None = Field(default=None, max_length=128)
-    api_key: str | None = Field(default=None, alias="apiKey")
+    api_key: Any = Field(default=None, alias="apiKey")
 
 
 class AiAgentSettingsTestResponse(BaseModel):
@@ -295,6 +295,8 @@ def update_ai_agent_settings(
     if payload.model is not None:
         fields["model"] = payload.model.strip()
     if payload.api_key is not None:
+        if not isinstance(payload.api_key, str):
+            raise HTTPException(status_code=400, detail="apiKey must be a string")
         if len(payload.api_key) > _API_KEY_MAX_LENGTH:
             raise HTTPException(status_code=400, detail="apiKey exceeds maximum length")
         fields["api_key"] = payload.api_key
