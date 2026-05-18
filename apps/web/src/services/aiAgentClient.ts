@@ -122,7 +122,7 @@ export async function listAgentTools(): Promise<AgentTool[]> {
 }
 
 export async function createAgentSession(
-  options: { role?: string; backend?: string; locale?: string; model?: string } = {},
+  options: { locale?: string } = {},
 ): Promise<AgentSessionResponse> {
   const headers = await csrfHeaders()
   const response = await fetch('/api/ai/agent/sessions', {

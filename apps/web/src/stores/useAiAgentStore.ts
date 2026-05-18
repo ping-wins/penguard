@@ -9,9 +9,7 @@ import {
   approveAgentToolCall,
   createAgentSession,
   deleteAgentSession,
-  listAgentRoles,
   listAgentTools,
-  listBackends,
   streamAgentMessage,
 } from '../services/aiAgentClient'
 
@@ -53,13 +51,12 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   const tokensOut = ref(0)
 
   async function ensureCatalog() {
-    if (roles.value.length > 0 && backends.value.length > 0 && tools.value.length > 0) return
+    roles.value = []
+    backends.value = []
+    if (tools.value.length > 0) return
     isLoading.value = true
     try {
-      const [r, b, t] = await Promise.all([listAgentRoles(), listBackends(), listAgentTools()])
-      roles.value = r
-      backends.value = b
-      tools.value = t
+      tools.value = await listAgentTools()
     } catch (e) {
       error.value = (e as Error).message
     } finally {
@@ -67,9 +64,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     }
   }
 
-  async function startSession(
-    options: { role?: string; backend?: string; locale?: string; model?: string } = {},
-  ) {
+  async function startSession(options: { locale?: string } = {}) {
     error.value = null
     isLoading.value = true
     try {
@@ -101,7 +96,7 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
 
   async function sendMessage(content: string) {
     if (!session.value) {
-      await startSession({ role: 'chat' })
+      await startSession()
       if (!session.value) return
     }
     error.value = null
@@ -128,6 +123,11 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
   function consumeEvent(event: AgentStreamEvent) {
     if (event.type === 'connected') return
     if (event.kind === 'text_delta') {
+      const lastEntry = trace.value[trace.value.length - 1]
+      if (lastEntry?.kind === 'text' && lastEntry.step === event.step) {
+        lastEntry.text += event.text
+        return
+      }
       trace.value.push({ kind: 'text', step: event.step, text: event.text })
       return
     }
