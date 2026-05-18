@@ -18,6 +18,10 @@ logger = logging.getLogger("uvicorn.error")
 ALLOWED_SCAN_WINDOW_SECONDS = 60
 ALLOWED_SCAN_MIN_UNIQUE_PORTS = 20
 ALLOWED_SCAN_EVENT_LIMIT = 250
+HTTP_FLOOD_WINDOW_SECONDS = 60
+HTTP_FLOOD_MIN_EVENTS = 100
+HTTP_FLOOD_EVENT_LIMIT = 500
+HTTP_FLOOD_SUPPRESSION_SECONDS = 300
 FORWARDED_SCAN_ACTIONS = {
     "accept",
     "allow",
@@ -27,6 +31,8 @@ FORWARDED_SCAN_ACTIONS = {
     "server-rst",
     "timeout",
 }
+HTTP_FLOOD_SERVICES = {"HTTP", "HTTPS"}
+HTTP_FLOOD_PORTS = {80, 443, 8080, 8443}
 
 
 def _triage_from_severity(severity: str) -> TriageLevel:
@@ -194,7 +200,9 @@ DETECTION_RULES: list[DetectionRule] = [
         id="fortiweb_dos_activity",
         title="FortiWeb DoS activity detected",
         severity="critical",
-        summary="FortiWeb reported DoS activity against a protected application.",
+        summary=(
+            "FortiDashboard observed or inferred DoS activity against a protected application."
+        ),
         eventTypes=["waf.dos"],
     ),
     DetectionRule(
@@ -538,6 +546,126 @@ def _same_network_flow(left: SecurityEvent, right: SecurityEvent) -> bool:
     return True
 
 
+def _enrich_http_flood(event: SecurityEvent) -> SecurityEvent:
+    if event.event_type != "network.event":
+        return event
+    if not _is_forwarded_scan_action(event):
+        return event
+    if not _is_http_flow(event):
+        return event
+
+    integration_id = event.attributes.get("integrationId") or event.entities.get("integrationId")
+    source_ip = event.attributes.get("sourceIp") or event.entities.get("sourceIp")
+    destination_ip = event.attributes.get("destinationIp") or event.entities.get("destinationIp")
+    destination_port = _coerce_int(event.attributes.get("destinationPort"))
+    if not integration_id or not source_ip or not destination_ip or destination_port is None:
+        return event
+
+    window_start = event.occurred_at - timedelta(seconds=HTTP_FLOOD_WINDOW_SECONDS)
+    suppression_start = event.occurred_at - timedelta(seconds=HTTP_FLOOD_SUPPRESSION_SECONDS)
+    if _has_recent_http_flood_event(
+        integration_id=integration_id,
+        source_ip=source_ip,
+        destination_ip=destination_ip,
+        destination_port=destination_port,
+        window_start=suppression_start,
+        occurred_at=event.occurred_at,
+    ):
+        return event
+
+    count = 1
+    related_event_ids: list[str] = [event.id] if event.id else []
+    for payload in store.list_recent_events(
+        event_type="network.event",
+        limit=HTTP_FLOOD_EVENT_LIMIT,
+    ):
+        previous = _load_event(payload)
+        if previous.id == event.id:
+            continue
+        if previous.occurred_at < window_start or previous.occurred_at > event.occurred_at:
+            continue
+        if not _same_http_flow(event, previous):
+            continue
+        if not _is_forwarded_scan_action(previous):
+            continue
+
+        count += max(1, _coerce_int(previous.attributes.get("count")) or 1)
+        if previous.id:
+            related_event_ids.append(previous.id)
+        if count >= HTTP_FLOOD_MIN_EVENTS:
+            break
+
+    if count < HTTP_FLOOD_MIN_EVENTS:
+        return event
+
+    attributes = {
+        **event.attributes,
+        "integrationId": integration_id,
+        "sourceIp": source_ip,
+        "destinationIp": destination_ip,
+        "destinationPort": destination_port,
+        "attackType": "http_flood",
+        "action": event.attributes.get("action") or "allow",
+        "count": count,
+        "floodWindowSeconds": HTTP_FLOOD_WINDOW_SECONDS,
+        "relatedEventIds": related_event_ids,
+        "ingestionMode": "fortigate_flow_inference",
+    }
+    return event.model_copy(
+        update={
+            "event_type": "waf.dos",
+            "severity": "critical",
+            "attributes": attributes,
+        }
+    )
+
+
+def _is_http_flow(event: SecurityEvent) -> bool:
+    service = str(event.attributes.get("service") or "").upper()
+    if service in HTTP_FLOOD_SERVICES:
+        return True
+    destination_port = _coerce_int(event.attributes.get("destinationPort"))
+    return destination_port in HTTP_FLOOD_PORTS
+
+
+def _same_http_flow(left: SecurityEvent, right: SecurityEvent) -> bool:
+    if not _same_network_flow(left, right):
+        return False
+    return _coerce_int(left.attributes.get("destinationPort")) == _coerce_int(
+        right.attributes.get("destinationPort")
+    )
+
+
+def _has_recent_http_flood_event(
+    *,
+    integration_id: Any,
+    source_ip: Any,
+    destination_ip: Any,
+    destination_port: int,
+    window_start: datetime,
+    occurred_at: datetime,
+) -> bool:
+    for payload in store.list_recent_events(event_type="waf.dos", limit=50):
+        previous = _load_event(payload)
+        if previous.occurred_at < window_start or previous.occurred_at > occurred_at:
+            continue
+        attributes = previous.attributes
+        if attributes.get("attackType") != "http_flood":
+            continue
+        if attributes.get("ingestionMode") != "fortigate_flow_inference":
+            continue
+        if attributes.get("integrationId") != integration_id:
+            continue
+        if attributes.get("sourceIp") != source_ip:
+            continue
+        if attributes.get("destinationIp") != destination_ip:
+            continue
+        if _coerce_int(attributes.get("destinationPort")) != destination_port:
+            continue
+        return True
+    return False
+
+
 def _has_recent_allowed_scan_event(
     *,
     integration_id: Any,
@@ -590,6 +718,7 @@ def _ingest_event(event: SecurityEvent) -> tuple[SecurityEvent, Incident | None]
     stored_event = event.model_copy(update={"id": event.id or _new_id("evt")})
     stored_event = _enrich_failed_login_burst(stored_event)
     stored_event = _enrich_allowed_port_scan(stored_event)
+    stored_event = _enrich_http_flood(stored_event)
     store.add_event(
         _dump(stored_event),
         event_type=stored_event.event_type,

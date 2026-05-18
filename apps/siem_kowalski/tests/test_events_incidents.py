@@ -233,6 +233,70 @@ def test_fortigate_timeout_traffic_burst_creates_allowed_port_scan_incident():
     assert matching[0]["attributes"]["uniqueDestinationPortCount"] == 20
 
 
+def test_fortigate_http_flow_burst_creates_waf_dos_incident():
+    client.post("/admin/reset")
+
+    event = None
+    for _index in range(100):
+        payload = _event_payload(
+            "network.event",
+            severity="medium",
+            source_ip="10.10.10.10",
+        )
+        payload["occurredAt"] = "2026-05-17T20:24:30.000Z"
+        payload["entities"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "10.10.10.10",
+            "destinationIp": "10.10.20.30",
+        }
+        payload["attributes"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "10.10.10.10",
+            "destinationIp": "10.10.20.30",
+            "destinationPort": 80,
+            "service": "HTTP",
+            "action": "close",
+            "policyId": "2",
+            "subtype": "forward",
+        }
+        response = client.post("/events/ingest", json=payload)
+        assert response.status_code == 200
+        event = response.json()["event"]
+
+    assert event is not None
+    assert event["eventType"] == "waf.dos"
+    assert event["severity"] == "critical"
+    assert event["attributes"]["attackType"] == "http_flood"
+    assert event["attributes"]["count"] == 100
+    assert event["attributes"]["ingestionMode"] == "fortigate_flow_inference"
+
+    incidents = client.get("/incidents").json()
+    matching = [
+        incident
+        for incident in incidents
+        if incident["ruleId"] == "fortiweb_dos_activity"
+        and incident["attributes"].get("sourceIp") == "10.10.10.10"
+        and incident["attributes"].get("destinationIp") == "10.10.20.30"
+    ]
+
+    assert len(matching) == 1
+    assert matching[0]["severity"] == "critical"
+    assert matching[0]["triageLevel"] == "T1"
+    assert matching[0]["attributes"]["attackType"] == "http_flood"
+    assert matching[0]["attributes"]["ingestionMode"] == "fortigate_flow_inference"
+
+    suppressed = client.post("/events/ingest", json=payload).json()["event"]
+    assert suppressed["eventType"] == "network.event"
+    incidents_after_suppression = client.get("/incidents").json()
+    assert len(
+        [
+            incident
+            for incident in incidents_after_suppression
+            if incident["ruleId"] == "fortiweb_dos_activity"
+        ]
+    ) == 1
+
+
 def test_incidents_preserve_event_provenance_for_demo_badges():
     event = client.post(
         "/events",
