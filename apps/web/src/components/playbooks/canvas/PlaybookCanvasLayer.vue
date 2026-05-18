@@ -6,7 +6,7 @@ import { MiniMap } from '@vue-flow/minimap'
 import { VueFlow, type Connection } from '@vue-flow/core'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
-import { GripHorizontal, Maximize2, Minimize2, Plus, Save, Workflow } from 'lucide-vue-next'
+import { GripHorizontal, Maximize2, Minimize2, Plus, Save, ShieldCheck, Trash2, Workflow } from 'lucide-vue-next'
 import { useDashboardStore } from '../../../stores/useDashboardStore'
 import { usePlaybooksStore } from '../../../stores/usePlaybooksStore'
 import { usePlaybookCanvasStore } from '../../../stores/usePlaybookCanvasStore'
@@ -25,8 +25,10 @@ import PlaybookRunOverlay from './PlaybookRunOverlay.vue'
 
 const props = withDefaults(defineProps<{
   embedded?: boolean
+  surface?: boolean
 }>(), {
   embedded: false,
+  surface: false,
 })
 
 const { t } = useI18n()
@@ -45,6 +47,7 @@ const {
   selectedNodeId,
   error,
   isSaving,
+  selectedPlaybook,
   selectedNode,
   graphTitle,
 } = storeToRefs(canvasStore)
@@ -58,21 +61,27 @@ const selectedRun = computed(() => {
   return runId ? playbooksStore.runs[runId] ?? null : null
 })
 const automationNodeTypes = computed(() => playbooksStore.nodeTypes.filter((nodeType) => nodeType.category !== 'trigger'))
+const isAnchored = computed(() => props.embedded || props.surface)
+const selectedIsSystem = computed(() => Boolean(selectedPlaybook.value?.system))
 const layerClass = computed(() => (
   isFullscreen.value
     ? 'fixed inset-4 z-[900] h-auto w-auto rounded-lg'
+    : props.surface
+      ? 'relative h-full w-full rounded-none border-0 shadow-none'
     : props.embedded
       ? 'relative h-full w-full rounded-none'
     : 'absolute z-[160] h-[680px] w-[1180px] rounded'
 ))
 const layerStyle = computed(() => (
-  isFullscreen.value || props.embedded
+  isFullscreen.value || isAnchored.value
     ? undefined
     : { transform: `translate(${Math.round(layerPosition.value.x)}px, ${Math.round(layerPosition.value.y)}px)` }
 ))
 const bodyGridClass = computed(() => (
   isFullscreen.value
     ? 'playbook-builder-body playbook-builder-body--fullscreen'
+    : props.surface
+      ? 'playbook-builder-body playbook-builder-body--surface'
     : props.embedded
       ? 'playbook-builder-body playbook-builder-body--embedded'
       : 'playbook-builder-body playbook-builder-body--floating'
@@ -153,7 +162,26 @@ function selectNode(node: { id: string }) {
 }
 
 async function saveGraph() {
+  if (selectedIsSystem.value) {
+    error.value = t('playbooks.canvas.systemReadOnly')
+    return
+  }
   await canvasStore.save().catch(() => undefined)
+}
+
+async function deletePlaybook(playbookId: string) {
+  const playbook = playbooksStore.playbooks.find((item) => item.id === playbookId)
+  if (!playbook || playbook.system) return
+  if (!window.confirm(t('playbooks.canvas.deleteConfirm', { name: playbook.name }))) return
+  await playbooksStore.remove(playbookId).catch(() => undefined)
+  if (selectedPlaybookId.value === playbookId) {
+    const nextPlaybook = playbooksStore.playbooks[0] ?? null
+    if (nextPlaybook) {
+      canvasStore.loadPlaybook(nextPlaybook)
+    } else {
+      canvasStore.startNewDraft()
+    }
+  }
 }
 
 async function simulateGraph() {
@@ -173,7 +201,7 @@ function handleFullscreenKeydown(event: KeyboardEvent) {
 }
 
 function startMove(event: PointerEvent) {
-  if (isFullscreen.value || props.embedded) return
+  if (isFullscreen.value || isAnchored.value) return
   isMoving.value = true
   moveStartClientX = event.clientX
   moveStartClientY = event.clientY
@@ -218,13 +246,13 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
     <section
       data-test="playbook-canvas-layer"
       class="playbook-builder-shell flex flex-col overflow-hidden border border-theme-border bg-theme-panel/95 shadow-2xl"
-      :class="[layerClass, props.embedded && !isFullscreen ? 'shadow-none' : '', isMoving ? 'ring-2 ring-theme-primary/50 shadow-theme-primary/10' : '']"
+      :class="[layerClass, isAnchored && !isFullscreen ? 'shadow-none' : '', isMoving ? 'ring-2 ring-theme-primary/50 shadow-theme-primary/10' : '']"
       :style="layerStyle"
     >
       <header class="flex items-center justify-between gap-3 border-b border-theme-border px-3 py-2">
         <div class="flex min-w-0 items-center gap-2">
           <button
-            v-if="!props.embedded"
+            v-if="!isAnchored"
             type="button"
             data-test="playbook-canvas-drag-handle"
             class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-theme-border bg-theme-bg text-theme-text-muted hover:text-theme-text disabled:cursor-default disabled:opacity-50"
@@ -238,7 +266,16 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
           </button>
           <Workflow :size="16" class="shrink-0 text-theme-primary" />
           <div class="min-w-0">
-            <div class="truncate text-sm font-semibold text-theme-text">{{ graphTitle }}</div>
+            <div class="flex min-w-0 items-center gap-2">
+              <div class="truncate text-sm font-semibold text-theme-text">{{ graphTitle }}</div>
+              <span
+                v-if="selectedIsSystem"
+                class="inline-flex shrink-0 items-center gap-1 rounded border border-amber-400/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-100"
+              >
+                <ShieldCheck :size="11" />
+                {{ t('playbooks.canvas.systemTemplate') }}
+              </span>
+            </div>
             <div class="truncate text-[11px] text-theme-text-muted">{{ t('playbooks.canvas.subtitle') }}</div>
           </div>
         </div>
@@ -267,7 +304,8 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
             type="button"
             data-test="playbook-canvas-save"
             class="inline-flex h-8 items-center gap-1 rounded border border-theme-primary/40 bg-theme-primary/10 px-2 text-xs font-semibold text-theme-primary hover:bg-theme-primary/20 disabled:opacity-50"
-            :disabled="isSaving || nodes.length === 0"
+            :disabled="isSaving || nodes.length === 0 || selectedIsSystem"
+            :title="selectedIsSystem ? t('playbooks.canvas.systemReadOnly') : t('playbooks.canvas.saveGraph')"
             @click="saveGraph"
           >
             <Save :size="13" />
@@ -305,6 +343,70 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
           data-test="playbook-node-drawer"
           class="playbook-builder-node-drawer flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-theme-border bg-theme-panel/80"
         >
+          <section data-test="playbook-library" class="border-b border-theme-border">
+            <div class="border-b border-theme-border px-3 py-2">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="truncate text-[11px] font-semibold uppercase tracking-wide text-theme-text">
+                  {{ t('playbooks.canvas.playbookLibrary') }}
+                </h3>
+                <button
+                  type="button"
+                  data-test="playbook-library-new"
+                  class="inline-flex h-6 shrink-0 items-center gap-1 rounded border border-theme-border bg-theme-bg px-1.5 text-[10px] text-theme-text-muted hover:text-theme-text"
+                  @click="canvasStore.startNewDraft"
+                >
+                  <Plus :size="11" />
+                  {{ t('playbooks.canvas.newGraph') }}
+                </button>
+              </div>
+            </div>
+            <div class="max-h-48 overflow-y-auto p-2">
+              <div v-if="playbooksStore.playbooks.length === 0" class="rounded border border-theme-border bg-theme-bg p-2 text-[11px] text-theme-text-muted">
+                {{ t('playbooks.empty') }}
+              </div>
+              <div v-else class="grid grid-cols-1 gap-1.5">
+                <div
+                  v-for="playbook in playbooksStore.playbooks"
+                  :key="playbook.id"
+                  role="button"
+                  tabindex="0"
+                  class="group grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-2 rounded border p-2 text-left transition-colors"
+                  :class="selectedPlaybookId === playbook.id ? 'border-theme-primary/60 bg-theme-primary/10' : 'border-theme-border bg-theme-bg hover:border-theme-primary/40'"
+                  :data-test="`playbook-library-card-${playbook.id}`"
+                  @click="canvasStore.loadPlaybook(playbook)"
+                  @keydown.enter.prevent="canvasStore.loadPlaybook(playbook)"
+                  @keydown.space.prevent="canvasStore.loadPlaybook(playbook)"
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate text-xs font-semibold text-theme-text">{{ playbook.name }}</span>
+                    <span class="mt-1 flex min-w-0 items-center gap-1">
+                      <span
+                        class="rounded border px-1 py-0.5 text-[9px]"
+                        :class="playbook.system ? 'border-amber-400/40 text-amber-100' : 'border-theme-border text-theme-text-muted'"
+                      >
+                        {{ playbook.system ? t('playbooks.canvas.systemTemplate') : t('playbooks.canvas.customPlaybook') }}
+                      </span>
+                      <span class="truncate font-mono text-[9px] text-theme-text-muted">{{ playbook.id }}</span>
+                    </span>
+                  </span>
+                  <span class="flex shrink-0 items-center gap-1">
+                    <button
+                      v-if="!playbook.system"
+                      type="button"
+                      class="inline-flex h-7 w-7 items-center justify-center rounded border border-red-400/30 text-red-200 opacity-80 hover:bg-red-500/10 hover:opacity-100 disabled:opacity-40"
+                      :data-test="`playbook-delete-${playbook.id}`"
+                      :disabled="playbooksStore.isDeleting[playbook.id]"
+                      :title="t('playbooks.canvas.deletePlaybook')"
+                      @click.stop="deletePlaybook(playbook.id)"
+                    >
+                      <Trash2 :size="12" />
+                    </button>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <div class="border-b border-theme-border px-3 py-2">
             <div class="flex items-center justify-between gap-2">
               <h3 class="truncate text-[11px] font-semibold uppercase tracking-wide text-theme-text">
@@ -463,6 +565,10 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
   grid-template-columns: 240px minmax(0, 1fr) 320px;
 }
 
+.playbook-builder-body--surface {
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
+}
+
 .playbook-builder-body--floating {
   grid-template-columns: 220px minmax(0, 1fr) 260px;
 }
@@ -472,6 +578,17 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
 }
 
 @container (max-width: 920px) {
+  .playbook-builder-body--surface {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  }
+
+  .playbook-builder-body--surface .playbook-builder-properties {
+    grid-column: 1 / -1;
+    min-height: 260px;
+    border-left: 0;
+    border-top: 1px solid var(--theme-border);
+  }
+
   .playbook-builder-body--embedded {
     grid-template-columns: minmax(170px, 200px) minmax(0, 1fr);
   }
@@ -485,6 +602,16 @@ function nodeListLabel(node: { id: string, data?: PlaybookCanvasNodeData }) {
 }
 
 @container (max-width: 760px) {
+  .playbook-builder-body--surface {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-builder-body--surface .playbook-builder-node-drawer {
+    max-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--theme-border);
+  }
+
   .playbook-builder-body--embedded {
     grid-template-columns: 1fr;
   }

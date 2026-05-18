@@ -43,6 +43,7 @@ export type Playbook = {
   name: string
   description?: string | null
   enabled: boolean
+  system?: boolean
   nodes: PlaybookNode[]
   edges: PlaybookEdge[]
 }
@@ -216,6 +217,17 @@ export async function updatePlaybook(playbookId: string, payload: PlaybookDraft)
       body: JSON.stringify(payload),
     }),
     'Failed to update playbook',
+  )
+}
+
+export async function deletePlaybook(playbookId: string): Promise<{ id: string, deleted: boolean }> {
+  return parseOrThrow<{ id: string, deleted: boolean }>(
+    await fetch(`/api/soc/playbooks/${encodeURIComponent(playbookId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: await csrfHeaders(),
+    }),
+    'Failed to delete playbook',
   )
 }
 

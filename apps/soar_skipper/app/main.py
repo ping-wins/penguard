@@ -32,6 +32,7 @@ def _default_playbooks() -> list[Playbook]:
             id="pb_port_scan_triage",
             name="Port Scan Triage",
             enabled=False,
+            system=True,
             nodes=[
                 PlaybookNode(id="trigger", type="trigger.incident_created"),
                 PlaybookNode(
@@ -66,6 +67,7 @@ def _default_playbooks() -> list[Playbook]:
             id="pb_suspicious_endpoint_triage",
             name="Suspicious Endpoint Triage",
             enabled=False,
+            system=True,
             nodes=[
                 PlaybookNode(id="trigger", type="trigger.incident_created"),
                 PlaybookNode(
@@ -96,14 +98,57 @@ def _default_playbooks() -> list[Playbook]:
                 PlaybookEdge(from_node="case_note", to_node="notify"),
             ],
         ),
+        Playbook(
+            id="pb_auth_bruteforce_triage",
+            name="Authentication Brute Force Triage",
+            enabled=False,
+            system=True,
+            nodes=[
+                PlaybookNode(id="trigger", type="trigger.incident_created"),
+                PlaybookNode(
+                    id="severity",
+                    type="condition.severity",
+                    config={"severity": ["medium", "high", "critical"]},
+                ),
+                PlaybookNode(
+                    id="enrich_source_ip",
+                    type="enrich.ip",
+                    config={"field": "entities.sourceIp"},
+                ),
+                PlaybookNode(
+                    id="case_note",
+                    type="case.note",
+                    config={"template": "Review failed-login burst for {incident.id}."},
+                ),
+                PlaybookNode(
+                    id="notify",
+                    type="notify.webhook",
+                    config={"mode": "dry_run", "channel": "identity"},
+                ),
+            ],
+            edges=[
+                PlaybookEdge(from_node="trigger", to_node="severity"),
+                PlaybookEdge(from_node="severity", to_node="enrich_source_ip"),
+                PlaybookEdge(from_node="enrich_source_ip", to_node="case_note"),
+                PlaybookEdge(from_node="case_note", to_node="notify"),
+            ],
+        ),
     ]
 
 
 def _seed_default_playbooks() -> None:
-    """Insert default disabled playbooks only when the store is empty."""
+    """Insert missing default playbooks and protect existing system templates."""
     for playbook in _default_playbooks():
-        if store.get_playbook(playbook.id) is None:
+        existing = store.get_playbook(playbook.id)
+        if existing is None:
             store.save_playbook(playbook.id, _playbook_to_payload(playbook))
+            continue
+        current = _payload_to_playbook(existing)
+        if not current.system:
+            store.update_playbook(
+                playbook.id,
+                _playbook_to_payload(current.model_copy(update={"system": True})),
+            )
 
 
 def _playbook_to_payload(playbook: Playbook) -> dict[str, Any]:
@@ -151,6 +196,7 @@ def create_playbook(playbook: Playbook) -> Playbook:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"playbook {playbook.id} already exists",
         )
+    playbook = playbook.model_copy(update={"system": False})
     validation_errors = validate_playbook_for_save(playbook)
     if validation_errors:
         raise HTTPException(
@@ -179,7 +225,13 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="playbook id must match path",
         )
-    _get_playbook_or_404(playbook_id)
+    existing = _get_playbook_or_404(playbook_id)
+    if existing.system:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="system playbooks are read-only",
+        )
+    playbook = playbook.model_copy(update={"system": existing.system})
     validation_errors = validate_playbook_for_save(playbook)
     if validation_errors:
         raise HTTPException(
@@ -194,6 +246,19 @@ def update_playbook(playbook_id: str, playbook: Playbook) -> Playbook:
         len(playbook.nodes),
     )
     return playbook
+
+
+@app.delete("/playbooks/{playbook_id}")
+def delete_playbook(playbook_id: str) -> dict[str, Any]:
+    playbook = _get_playbook_or_404(playbook_id)
+    if playbook.system:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="system playbooks cannot be deleted",
+        )
+    store.delete_playbook(playbook_id)
+    logger.info("soar_playbook_deleted playbook_id=%s", playbook_id)
+    return {"id": playbook_id, "deleted": True}
 
 
 @app.post("/playbooks/{playbook_id}/simulate", response_model=SimulationResponse)
