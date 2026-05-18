@@ -43,6 +43,8 @@ const ticketsStore = useTicketsStore()
 const layoutStore = useCockpitLayoutStore()
 const router = useRouter()
 const activeTab = ref<'none' | 'assistant' | 'settings' | 'integrations' | 'audit' | 'workspaces' | 'tickets' | 'endpoints'>('none')
+// Agent mode is gated behind a "coming soon" flag while the streaming
+// runtime is still wired through Gemini's openai-compat layer.
 const assistantMode = ref<'chat' | 'agent'>('chat')
 
 const showWizard = ref(false)
@@ -447,12 +449,15 @@ async function handleChatSubmit() {
             </button>
             <button
               type="button"
-              class="px-3 py-1 text-xs font-medium rounded transition-colors"
-              :class="assistantMode === 'agent' ? 'bg-theme-primary/15 text-theme-primary' : 'text-theme-text-muted hover:text-theme-text'"
+              class="px-3 py-1 text-xs font-medium rounded transition-colors opacity-50 cursor-not-allowed flex items-center gap-1.5"
               data-testid="assistant-mode-agent"
-              @click="setAssistantMode('agent')"
+              :title="t('chat.agentComingSoonTooltip')"
+              disabled
             >
               Agente
+              <span class="rounded-sm border border-amber-400/40 bg-amber-500/15 px-1 py-px text-[8px] uppercase tracking-wider text-amber-300">
+                {{ t('chat.comingSoon') }}
+              </span>
             </button>
           </div>
           <span

@@ -760,6 +760,8 @@ export default {
   },
   chat: {
     header: 'AI assistant',
+    comingSoon: 'Coming soon',
+    agentComingSoonTooltip: 'Streaming agent runtime arrives in a future release. Use Chat for now.',
     greeting: 'Hi! I am your virtual SOC analyst. Ask anything or request a panel ("Add System Status").',
     thinking: 'Analyzing...',
     inputPlaceholder: 'Ask the assistant or request a panel...',
