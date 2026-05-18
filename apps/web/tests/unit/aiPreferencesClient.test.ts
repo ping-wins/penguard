@@ -1,9 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  getAiPreferences,
-  updateAiPreferences,
-} from '../../src/services/aiPreferencesClient'
+  getSocAssistantSettings,
+  saveSocAssistantSettings,
+  testSocAssistantSettings,
+} from '../../src/services/socAssistantSettingsClient'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -12,63 +13,89 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   })
 }
 
-describe('aiPreferencesClient', () => {
+describe('socAssistantSettingsClient', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  it('getAiPreferences sends credentials and parses response', async () => {
+  it('getSocAssistantSettings sends credentials and parses response', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(
       jsonResponse({
-        mode: 'api',
-        provider: 'gemini',
-        model: 'gemini-flash-latest',
+        provider: 'openai',
+        model: 'gpt-4o',
         apiKeySet: false,
-        cliBinary: '',
+        configured: false,
+        lastTestedAt: null,
+        lastTestStatus: null,
+        lastTestError: null,
+        updatedBy: null,
         updatedAt: null,
       }),
     )
     vi.stubGlobal('fetch', fetcher)
 
-    const result = await getAiPreferences()
+    const result = await getSocAssistantSettings()
 
-    expect(fetcher).toHaveBeenCalledWith('/api/ai/preferences', expect.objectContaining({ credentials: 'include' }))
-    expect(result.provider).toBe('gemini')
-    expect(result.apiKeySet).toBe(false)
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/ai/agent/settings',
+      expect.objectContaining({ credentials: 'include' }),
+    )
+    expect(result.provider).toBe('openai')
+    expect(result.configured).toBe(false)
   })
 
-  it('updateAiPreferences PUTs payload with CSRF header', async () => {
+  it('saveSocAssistantSettings PUTs payload with CSRF header', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf_z' }))
       .mockResolvedValueOnce(
         jsonResponse({
-          mode: 'api',
-          provider: 'gemini',
-          model: 'gemini-flash-latest',
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
           apiKeySet: true,
-          cliBinary: '',
-          updatedAt: '2026-05-16T00:00:00.000Z',
+          configured: true,
+          lastTestedAt: null,
+          lastTestStatus: null,
+          lastTestError: null,
+          updatedBy: 'admin@example.com',
+          updatedAt: '2026-05-18T12:01:00.000Z',
         }),
       )
     vi.stubGlobal('fetch', fetcher)
 
-    const result = await updateAiPreferences({
-      mode: 'api',
-      provider: 'gemini',
-      model: 'gemini-flash-latest',
-      apiKey: 'AIza-xyz',
+    const result = await saveSocAssistantSettings({
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      apiKey: 'sk-ant-secret',
     })
 
     const putCall = fetcher.mock.calls[1]
-    expect(putCall[0]).toBe('/api/ai/preferences')
+    expect(putCall[0]).toBe('/api/ai/agent/settings')
     expect(putCall[1].method).toBe('PUT')
+    expect(putCall[1].credentials).toBe('include')
     expect(putCall[1].headers['X-CSRF-Token']).toBe('csrf_z')
+    expect(putCall[1].headers['Content-Type']).toBe('application/json')
     const body = JSON.parse(putCall[1].body)
-    expect(body.apiKey).toBe('AIza-xyz')
+    expect(body.apiKey).toBe('sk-ant-secret')
     expect(result.apiKeySet).toBe(true)
   })
 
-  it('throws when server returns error detail', async () => {
+  it('testSocAssistantSettings POSTs with CSRF and parses configured status', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf_z' }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, status: 'configured', error: null }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const result = await testSocAssistantSettings()
+
+    const postCall = fetcher.mock.calls[1]
+    expect(postCall[0]).toBe('/api/ai/agent/settings/test')
+    expect(postCall[1].method).toBe('POST')
+    expect(postCall[1].credentials).toBe('include')
+    expect(postCall[1].headers['X-CSRF-Token']).toBe('csrf_z')
+    expect(result.status).toBe('configured')
+  })
+
+  it('throws string detail from server errors', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: 'forbidden' }), {
         status: 403,
@@ -77,6 +104,6 @@ describe('aiPreferencesClient', () => {
     )
     vi.stubGlobal('fetch', fetcher)
 
-    await expect(getAiPreferences()).rejects.toThrow('forbidden')
+    await expect(getSocAssistantSettings()).rejects.toThrow('forbidden')
   })
 })

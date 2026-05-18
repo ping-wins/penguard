@@ -1,122 +1,123 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Bot, KeyRound, Save, Terminal } from 'lucide-vue-next'
-import {
-  type AiPreferenceMode,
-  type AiPreferenceResponse,
-  type CliProbeResponse,
-  getAiPreferences,
-  probeCliBinary,
-  updateAiPreferences,
-} from '../../services/aiPreferencesClient'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Bot, CheckCircle2, KeyRound, PlugZap, Save, Trash2 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { useSocAssistantSettingsStore } from '../../stores/useSocAssistantSettingsStore'
 
 type ProviderOption = {
-  id: string
+  id: 'anthropic' | 'openai'
   label: string
   defaultModel: string
-  enabled: boolean
-  hint?: string
 }
 
 const PROVIDERS: ProviderOption[] = [
-  {
-    id: 'gemini',
-    label: 'Google Gemini',
-    defaultModel: 'gemini-flash-latest',
-    enabled: true,
-    hint: 'Pegue a key em https://aistudio.google.com/apikey',
-  },
-  { id: 'anthropic', label: 'Anthropic Claude', defaultModel: 'claude-haiku-4-5-20251001', enabled: false },
-  { id: 'openai', label: 'OpenAI / Codex', defaultModel: 'gpt-4o-mini', enabled: false },
+  { id: 'anthropic', label: 'Anthropic', defaultModel: 'claude-sonnet-4-6' },
+  { id: 'openai', label: 'OpenAI', defaultModel: 'gpt-4o' },
 ]
 
-const state = ref<AiPreferenceResponse>({
-  mode: 'api',
-  provider: 'gemini',
-  model: 'gemini-flash-latest',
-  apiKeySet: false,
-  cliBinary: '',
-  updatedAt: null,
-})
+const store = useSocAssistantSettingsStore()
+const { t, locale } = useI18n()
+
+const provider = ref<ProviderOption['id']>('anthropic')
+const model = ref('claude-sonnet-4-6')
 const apiKeyDraft = ref('')
-const isLoading = ref(true)
-const isSaving = ref(false)
-const isProbing = ref(false)
-const probeResult = ref<CliProbeResponse | null>(null)
-const error = ref<string | null>(null)
 const saved = ref(false)
 
-async function load() {
-  isLoading.value = true
-  error.value = null
-  try {
-    state.value = await getAiPreferences()
-  } catch (e) {
-    error.value = (e as Error).message
-  } finally {
-    isLoading.value = false
+const selectedProvider = computed(() => (
+  PROVIDERS.find((option) => option.id === provider.value) ?? PROVIDERS[0]
+))
+
+const canSave = computed(() => (
+  !store.isLoading
+  && !store.isSaving
+  && provider.value.length > 0
+  && model.value.trim().length > 0
+))
+
+const updatedAtLabel = computed(() => formatDateTime(store.settings?.updatedAt ?? null))
+const lastTestedAtLabel = computed(() => formatDateTime(store.settings?.lastTestedAt ?? null))
+
+function syncFromSettings() {
+  const settings = store.settings
+  const knownProvider = PROVIDERS.find((option) => option.id === settings?.provider)
+  provider.value = knownProvider?.id ?? 'anthropic'
+  model.value = settings?.model || knownProvider?.defaultModel || selectedProvider.value.defaultModel
+  apiKeyDraft.value = ''
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+function selectProvider(id: ProviderOption['id']) {
+  const previousDefaultModel = selectedProvider.value.defaultModel
+  provider.value = id
+  const option = PROVIDERS.find((item) => item.id === id)
+  if (option && (!model.value.trim() || model.value === previousDefaultModel)) {
+    model.value = option.defaultModel
   }
 }
 
-onMounted(load)
-
-function selectProvider(id: string) {
-  const option = PROVIDERS.find((p) => p.id === id)
-  if (!option || !option.enabled) return
-  state.value.provider = id
-  if (!state.value.model) state.value.model = option.defaultModel
-}
-
-function selectMode(mode: AiPreferenceMode) {
-  state.value.mode = mode
+function testStatusLabel(status: string | null | undefined): string {
+  if (!status) return t('settings.ai.testStatus.never')
+  const keys: Record<string, string> = {
+    configured: 'settings.ai.testStatus.configured',
+    not_configured: 'settings.ai.testStatus.not_configured',
+    success: 'settings.ai.testStatus.success',
+    failed: 'settings.ai.testStatus.failed',
+  }
+  return t(keys[status] ?? 'settings.ai.testStatus.failed')
 }
 
 async function save() {
-  isSaving.value = true
-  error.value = null
   saved.value = false
-  try {
-    const update = {
-      mode: state.value.mode,
-      provider: state.value.provider,
-      model: state.value.model,
-      cliBinary: state.value.cliBinary,
-      ...(apiKeyDraft.value ? { apiKey: apiKeyDraft.value } : {}),
-    }
-    state.value = await updateAiPreferences(update)
+  const payload: { provider: string; model: string; apiKey?: string } = {
+    provider: provider.value,
+    model: model.value.trim(),
+  }
+  if (apiKeyDraft.value.length > 0) payload.apiKey = apiKeyDraft.value
+  const result = await store.save(payload)
+  if (result) {
     apiKeyDraft.value = ''
     saved.value = true
-    window.setTimeout(() => (saved.value = false), 2200)
-  } catch (e) {
-    error.value = (e as Error).message
-  } finally {
-    isSaving.value = false
-  }
-}
-
-async function probe() {
-  isProbing.value = true
-  probeResult.value = null
-  try {
-    probeResult.value = await probeCliBinary(state.value.cliBinary, state.value.model)
-  } catch (e) {
-    probeResult.value = { ok: false, error: (e as Error).message }
-  } finally {
-    isProbing.value = false
+    window.setTimeout(() => {
+      saved.value = false
+    }, 2200)
   }
 }
 
 async function clearApiKey() {
-  isSaving.value = true
-  try {
-    state.value = await updateAiPreferences({ apiKey: '' })
+  saved.value = false
+  const result = await store.save({
+    provider: provider.value,
+    model: model.value.trim(),
+    apiKey: '',
+  })
+  if (result) {
     apiKeyDraft.value = ''
-  } catch (e) {
-    error.value = (e as Error).message
-  } finally {
-    isSaving.value = false
+    saved.value = true
+    window.setTimeout(() => {
+      saved.value = false
+    }, 2200)
   }
 }
+
+async function testConnection() {
+  await store.testConnection()
+}
+
+watch(() => store.settings, syncFromSettings)
+
+onMounted(async () => {
+  await store.load()
+  syncFromSettings()
+})
 </script>
 
 <template>
@@ -124,195 +125,172 @@ async function clearApiKey() {
     <header class="flex items-center gap-2">
       <Bot class="h-5 w-5 text-theme-primary" />
       <div>
-        <h3 class="text-lg font-semibold text-theme-text">Assistente IA</h3>
-        <p class="text-xs text-theme-text-muted">
-          Escolha entre IA por API (Gemini, Anthropic, OpenAI) ou IA via CLI local
-          (Claude Code, Codex CLI). Configuração é por usuário e fica criptografada
-          no servidor.
-        </p>
+        <h3 class="text-lg font-semibold text-theme-text">{{ t('settings.ai.title') }}</h3>
+        <p class="text-xs text-theme-text-muted">{{ t('settings.ai.subtitle') }}</p>
       </div>
     </header>
 
-    <p v-if="error" class="rounded border border-red-400/40 bg-red-950/20 p-2 text-xs text-red-200">
-      {{ error }}
+    <p
+      v-if="store.error"
+      class="rounded border border-red-400/40 bg-red-950/20 p-2 text-xs text-red-200"
+    >
+      {{ store.error }}
     </p>
-    <p v-if="saved" class="rounded border border-emerald-400/40 bg-emerald-950/20 p-2 text-xs text-emerald-200">
-      Preferências salvas.
+    <p
+      v-if="saved"
+      class="flex items-center gap-2 rounded border border-emerald-400/40 bg-emerald-950/20 p-2 text-xs text-emerald-200"
+    >
+      <CheckCircle2 class="h-3.5 w-3.5" />
+      {{ t('settings.ai.saved') }}
     </p>
 
-    <fieldset v-if="!isLoading" class="flex flex-col gap-2 rounded border border-theme-border p-3">
-      <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">Modo</legend>
-      <div class="flex gap-2">
-        <button
-          type="button"
-          class="flex-1 rounded border px-3 py-2 text-left text-xs transition-colors"
-          :class="state.mode === 'api'
-            ? 'border-theme-primary bg-theme-primary/10 text-theme-primary'
-            : 'border-theme-border text-theme-text hover:border-theme-primary/40'"
-          @click="selectMode('api')"
-        >
-          <div class="flex items-center gap-2 font-semibold"><KeyRound class="h-3 w-3" /> API direta</div>
-          <p class="mt-1 text-[11px] text-theme-text-muted">
-            Backend salva sua key e chama o provider. Funciona em qualquer deploy.
-          </p>
-        </button>
-        <button
-          type="button"
-          class="flex-1 rounded border px-3 py-2 text-left text-xs transition-colors"
-          :class="state.mode === 'cli'
-            ? 'border-theme-primary bg-theme-primary/10 text-theme-primary'
-            : 'border-theme-border text-theme-text hover:border-theme-primary/40'"
-          @click="selectMode('cli')"
-        >
-          <div class="flex items-center gap-2 font-semibold"><Terminal class="h-3 w-3" /> CLI local</div>
-          <p class="mt-1 text-[11px] text-theme-text-muted">
-            Reusa o login do <code>claude</code>/<code>codex</code> instalado no host. Requer cockpit fora do Docker (em breve).
-          </p>
-        </button>
-      </div>
-    </fieldset>
+    <div v-if="store.isLoading && !store.settings" class="rounded border border-theme-border p-3 text-xs text-theme-text-muted">
+      {{ t('settings.ai.loading') }}
+    </div>
 
-    <fieldset v-if="state.mode === 'api' && !isLoading" class="flex flex-col gap-3 rounded border border-theme-border p-3">
-      <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">Provider</legend>
-      <div class="flex flex-col gap-2">
-        <label
-          v-for="provider in PROVIDERS"
-          :key="provider.id"
-          class="flex items-start gap-2 rounded border px-2 py-2 transition-colors"
-          :class="state.provider === provider.id
-            ? 'border-theme-primary bg-theme-primary/5'
-            : 'border-theme-border'"
-        >
-          <input
-            type="radio"
-            name="ai-provider"
-            class="mt-0.5"
-            :value="provider.id"
-            :checked="state.provider === provider.id"
-            :disabled="!provider.enabled"
-            @change="selectProvider(provider.id)"
-          />
-          <div class="flex-1">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-theme-text">{{ provider.label }}</span>
-              <span v-if="!provider.enabled" class="rounded bg-theme-border px-1.5 py-0.5 text-[10px] uppercase text-theme-text-muted">
-                em breve
+    <template v-else>
+      <fieldset class="flex flex-col gap-3 rounded border border-theme-border p-3">
+        <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">
+          {{ t('settings.ai.providerLegend') }}
+        </legend>
+        <div class="grid grid-cols-2 gap-2">
+          <label
+            v-for="option in PROVIDERS"
+            :key="option.id"
+            class="flex cursor-pointer items-start gap-2 rounded border px-2 py-2 transition-colors"
+            :class="provider === option.id
+              ? 'border-theme-primary bg-theme-primary/5'
+              : 'border-theme-border hover:border-theme-primary/40'"
+          >
+            <input
+              type="radio"
+              name="soc-assistant-provider"
+              class="mt-0.5"
+              :value="option.id"
+              :checked="provider === option.id"
+              @change="selectProvider(option.id)"
+            />
+            <span>
+              <span class="block text-sm font-medium text-theme-text">{{ option.label }}</span>
+              <span class="block text-[11px] text-theme-text-muted">
+                {{ t('settings.ai.defaultModel', { model: option.defaultModel }) }}
               </span>
-            </div>
-            <p v-if="provider.hint" class="mt-1 text-[11px] text-theme-text-muted">{{ provider.hint }}</p>
-          </div>
+            </span>
+          </label>
+        </div>
+
+        <label class="flex flex-col gap-1 text-xs">
+          <span class="text-theme-text-muted">{{ t('settings.ai.modelLabel') }}</span>
+          <input
+            v-model="model"
+            type="text"
+            :placeholder="selectedProvider.defaultModel"
+            class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
+          />
         </label>
-      </div>
 
-      <label class="flex flex-col gap-1 text-xs">
-        <span class="text-theme-text-muted">Modelo</span>
-        <input
-          v-model="state.model"
-          type="text"
-          placeholder="gemini-flash-latest"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
-        />
-      </label>
-
-      <label class="flex flex-col gap-1 text-xs">
-        <span class="text-theme-text-muted">
-          Chave de API
-          <span v-if="state.apiKeySet" class="ml-1 rounded bg-emerald-500/15 px-1 py-0.5 text-[10px] uppercase text-emerald-200">
-            salva
+        <label class="flex flex-col gap-1 text-xs">
+          <span class="flex items-center gap-2 text-theme-text-muted">
+            <KeyRound class="h-3.5 w-3.5" />
+            {{ t('settings.ai.apiKeyLabel') }}
+            <span
+              v-if="store.settings?.apiKeySet"
+              class="rounded bg-emerald-500/15 px-1 py-0.5 text-[10px] uppercase text-emerald-200"
+            >
+              {{ t('settings.ai.apiKeySavedBadge') }}
+            </span>
           </span>
-        </span>
-        <input
-          v-model="apiKeyDraft"
-          type="password"
-          autocomplete="off"
-          :placeholder="state.apiKeySet ? '••• key salva, deixe vazio pra manter' : 'AIzaSy… / sk-… / etc'"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm font-mono"
-        />
-        <p class="text-[11px] text-theme-text-muted">
-          A chave é criptografada com a master key do servidor antes de ir pro Postgres.
-          Nunca volta plain-text no GET.
+          <input
+            v-model="apiKeyDraft"
+            type="password"
+            autocomplete="off"
+            :placeholder="store.settings?.apiKeySet
+              ? t('settings.ai.apiKeyPlaceholderSaved')
+              : t('settings.ai.apiKeyPlaceholderEmpty')"
+            class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm font-mono"
+          />
+          <p class="text-[11px] text-theme-text-muted">{{ t('settings.ai.apiKeyHint') }}</p>
+          <button
+            v-if="store.settings?.apiKeySet"
+            type="button"
+            class="inline-flex items-center gap-1 self-start text-[11px] text-red-300 hover:underline disabled:opacity-50"
+            :disabled="store.isSaving"
+            @click="clearApiKey"
+          >
+            <Trash2 class="h-3 w-3" />
+            {{ t('settings.ai.clearApiKey') }}
+          </button>
+        </label>
+      </fieldset>
+
+      <section class="rounded border border-theme-border p-3">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span class="block text-theme-text-muted">{{ t('settings.ai.configuredLabel') }}</span>
+            <span
+              class="mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px]"
+              :class="store.settings?.configured
+                ? 'bg-emerald-500/15 text-emerald-200'
+                : 'bg-amber-500/15 text-amber-100'"
+            >
+              {{ store.settings?.configured ? t('settings.ai.configuredYes') : t('settings.ai.configuredNo') }}
+            </span>
+          </div>
+          <div>
+            <span class="block text-theme-text-muted">{{ t('settings.ai.lastTestStatusLabel') }}</span>
+            <span class="mt-1 block text-theme-text">
+              {{ testStatusLabel(store.settings?.lastTestStatus) }}
+            </span>
+          </div>
+          <div v-if="updatedAtLabel">
+            <span class="block text-theme-text-muted">{{ t('settings.ai.updatedAtLabel') }}</span>
+            <span class="mt-1 block text-theme-text">{{ updatedAtLabel }}</span>
+          </div>
+          <div v-if="lastTestedAtLabel">
+            <span class="block text-theme-text-muted">{{ t('settings.ai.lastTestedAtLabel') }}</span>
+            <span class="mt-1 block text-theme-text">{{ lastTestedAtLabel }}</span>
+          </div>
+          <div v-if="store.settings?.updatedBy" class="col-span-2">
+            <span class="block text-theme-text-muted">{{ t('settings.ai.updatedByLabel') }}</span>
+            <span class="mt-1 block break-all font-mono text-theme-text">{{ store.settings.updatedBy }}</span>
+          </div>
+        </div>
+        <p v-if="store.settings?.lastTestError" class="mt-3 rounded border border-red-400/30 bg-red-950/20 p-2 text-xs text-red-200">
+          {{ store.settings.lastTestError }}
         </p>
-        <button
-          v-if="state.apiKeySet"
-          type="button"
-          class="self-start text-[11px] text-red-300 hover:underline"
-          @click="clearApiKey"
+        <p
+          v-if="store.testResult"
+          class="mt-3 rounded border p-2 text-xs"
+          :class="store.testResult.ok
+            ? 'border-emerald-400/40 bg-emerald-950/20 text-emerald-200'
+            : 'border-red-400/40 bg-red-950/20 text-red-200'"
         >
-          Remover key salva
-        </button>
-      </label>
-    </fieldset>
+          {{ store.testResult.ok
+            ? t('settings.ai.testOk')
+            : (store.testResult.error || t('settings.ai.testFailed')) }}
+        </p>
+      </section>
 
-    <fieldset v-if="state.mode === 'cli' && !isLoading" class="flex flex-col gap-3 rounded border border-theme-border p-3">
-      <legend class="px-1 text-xs uppercase tracking-wide text-theme-text-muted">CLI local</legend>
-      <p class="rounded border border-amber-500/30 bg-amber-950/15 p-2 text-[11px] text-amber-100">
-        ⚠ CLI subprocess só funciona quando o backend roda nativo no host onde
-        o <code>claude</code>/<code>codex</code> está autenticado.
-        Container Docker não enxerga <code>~/.claude</code> nem
-        <code>~/.codex</code>. Pra usar isto, suba o cockpit com
-        <code>uv run uvicorn app.main:app --reload</code> em vez de
-        <code>docker compose up</code>.
-      </p>
-      <label class="flex flex-col gap-1 text-xs">
-        <span class="text-theme-text-muted">Binário CLI</span>
-        <input
-          v-model="state.cliBinary"
-          type="text"
-          placeholder="C:\Users\lucas\.local\bin\claude.exe"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm font-mono"
-        />
-        <span class="text-[11px] text-theme-text-muted">
-          Suportados: <code>claude</code> (Claude Code) e <code>codex</code> (OpenAI Codex CLI).
-        </span>
-      </label>
-      <label class="flex flex-col gap-1 text-xs">
-        <span class="text-theme-text-muted">Modelo (opcional)</span>
-        <input
-          v-model="state.model"
-          type="text"
-          placeholder="sonnet / opus / claude-sonnet-4-6"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
-        />
-      </label>
-      <div class="flex items-center gap-2">
+      <footer class="flex items-center justify-between gap-2 border-t border-theme-border pt-3">
         <button
           type="button"
-          class="inline-flex items-center gap-1 rounded border border-theme-border px-2 py-1 text-xs hover:border-theme-primary/40 disabled:opacity-50"
-          :disabled="!state.cliBinary || isProbing"
-          @click="probe"
+          class="inline-flex items-center gap-2 rounded border border-theme-border px-3 py-1.5 text-sm text-theme-text hover:border-theme-primary/40 disabled:opacity-50"
+          :disabled="store.isTesting || store.isSaving"
+          @click="testConnection"
         >
-          Testar binário
+          <PlugZap class="h-3.5 w-3.5" />
+          {{ store.isTesting ? t('settings.ai.testing') : t('settings.ai.testConnection') }}
         </button>
-        <span v-if="isProbing" class="text-[11px] text-theme-text-muted">Validando…</span>
-        <span
-          v-else-if="probeResult"
-          class="text-[11px]"
-          :class="probeResult.ok ? 'text-emerald-300' : 'text-red-300'"
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-theme-on-primary disabled:opacity-50"
+          :disabled="!canSave"
+          @click="save"
         >
-          <template v-if="probeResult.ok">
-            ✓ {{ probeResult.flavor }} encontrado em {{ probeResult.binary }}
-          </template>
-          <template v-else>✗ {{ probeResult.error }}</template>
-        </span>
-      </div>
-      <p v-if="probeResult?.ok && probeResult.argvPreview" class="overflow-x-auto rounded bg-black/40 p-1.5 text-[10px] font-mono text-theme-text-muted">
-        argv: {{ probeResult.argvPreview }}
-      </p>
-    </fieldset>
-
-    <footer class="flex items-center justify-between gap-2 border-t border-theme-border pt-3">
-      <span v-if="state.updatedAt" class="text-[11px] text-theme-text-muted">
-        Última atualização: {{ state.updatedAt }}
-      </span>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-theme-on-primary disabled:opacity-50"
-        :disabled="isSaving || isLoading"
-        @click="save"
-      >
-        <Save class="h-3 w-3" />
-        Salvar
-      </button>
-    </footer>
+          <Save class="h-3.5 w-3.5" />
+          {{ store.isSaving ? t('settings.ai.saving') : t('settings.ai.save') }}
+        </button>
+      </footer>
+    </template>
   </section>
 </template>
