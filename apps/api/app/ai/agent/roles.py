@@ -8,7 +8,7 @@ from typing import Literal
 from app.ai.agent.registry import AgentTool
 
 AgentRoleTier = Literal["fast", "balanced", "deep"]
-AgentToolCategory = Literal["read", "draft", "write"]
+AgentToolCategory = Literal["read", "draft", "write", "execute"]
 
 
 @dataclass(frozen=True)
@@ -97,14 +97,14 @@ _ROLES: dict[str, RoleConfig] = {
         label="SOC investigation",
         description="Deep investigation with approved write-action infrastructure.",
         tier="deep",
-        allowed_tool_categories=frozenset({"read", "draft", "write"}),
+        allowed_tool_categories=frozenset({"read", "draft", "write", "execute"}),
         token_budget=300_000,
         max_steps=30,
         locale_default="pt-BR",
         system_prompt=(
             f"{_BASE_RESTRICTIONS} Investigate across incidents, endpoints, "
-            "playbooks, integrations, and workspace state. Write-category tools "
-            "must pause for explicit approval before invocation."
+            "playbooks, integrations, and workspace state. Write and execute "
+            "tools must pause for explicit approval before invocation."
         ),
     ),
 }

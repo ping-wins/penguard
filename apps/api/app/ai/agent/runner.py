@@ -282,14 +282,14 @@ class AgentRunner:
                     args=dict(call.args),
                 )
 
-                if tool.category == "write":
+                if tool.requires_approval:
                     approval_future = self._create_approval_future(session, call.call_id)
                     yield AwaitingApprovalEvent(
                         step=step,
                         call_id=call.call_id,
                         tool_name=tool.name,
                         args=dict(call.args),
-                        reason="write tool requires approval",
+                        reason=f"{tool.category} tool requires approval",
                     )
                     approved = await self._await_approval(session, call.call_id, approval_future)
                     if not approved:

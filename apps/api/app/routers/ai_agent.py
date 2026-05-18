@@ -42,6 +42,7 @@ from app.ai.agent.tools import (  # noqa: F401
     integrations,
     playbook_runs,
     playbooks,
+    tickets,
     widgets,
     workspace,
     xdr_endpoints,

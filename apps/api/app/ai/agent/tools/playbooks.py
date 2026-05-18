@@ -208,6 +208,24 @@ async def _simulate_playbook(ctx: ToolContext, args: dict[str, Any]) -> dict[str
     return payload if isinstance(payload, dict) else {"error": "soar returned non-dict simulation"}
 
 
+async def _run_playbook(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    incident_id = str(args.get("incidentId") or args.get("incident_id") or "").strip()
+    playbook_id = str(args.get("playbookId") or args.get("playbook_id") or "").strip()
+    if not incident_id:
+        return {"error": "incidentId is required"}
+    if not playbook_id:
+        return {"error": "playbookId is required", "incidentId": incident_id}
+    try:
+        payload = _soar_client(ctx).request(
+            "POST",
+            f"/incidents/{incident_id}/playbooks/{playbook_id}/run",
+            json={},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200], "incidentId": incident_id, "playbookId": playbook_id}
+    return payload if isinstance(payload, dict) else {"run": payload}
+
+
 _PLAYBOOK_SCHEMA = {
     "type": "object",
     "required": ["id", "name", "nodes"],
@@ -317,6 +335,30 @@ register_tool(
         },
         impl=_simulate_playbook,
         category="draft",
+        required_permissions=frozenset({"playbooks.execute"}),
+    )
+)
+
+
+register_tool(
+    AgentTool(
+        name="run_playbook",
+        description=(
+            "Start a SOAR playbook run for an incident after analyst approval. "
+            "Sensitive nodes may still pause at the SOAR approval gate."
+        ),
+        input_schema={
+            "type": "object",
+            "required": ["incidentId", "playbookId"],
+            "properties": {
+                "incidentId": {"type": "string"},
+                "playbookId": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        impl=_run_playbook,
+        category="execute",
+        requires_approval=True,
         required_permissions=frozenset({"playbooks.execute"}),
     )
 )

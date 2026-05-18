@@ -90,6 +90,7 @@ export default {
     approvalTitle: 'Approval required',
     approvalRiskLabel: 'Risk',
     approvalRiskWrite: 'Approved write',
+    approvalRiskExecute: 'Approved execution',
     approvalRiskDraft: 'Draft only',
     approvalRiskRead: 'Authorized read',
     approvalPermissionsLabel: 'Permissions',

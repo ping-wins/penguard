@@ -4,8 +4,9 @@ A `AgentTool` is a callable `(ctx, args) -> dict` plus a JSON Schema
 description. Backends translate this into their wire format (Anthropic
 `tools=`, OpenAI Responses `tools=`, etc).
 
-Tools are *read-only* in PR1. Write tools land in PR4 with the approval
-gate; the `requires_approval` flag here is reserved for that future cut.
+Read and draft tools may run directly when the role and RBAC allow them.
+Write and execute tools must always pause on the approval gate before they
+touch SOC state.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ class AgentTool:
     description: str
     input_schema: dict[str, Any]
     impl: ToolImpl
-    category: Literal["read", "draft", "write"] = "read"
+    category: Literal["read", "draft", "write", "execute"] = "read"
     requires_approval: bool = False
     required_permissions: frozenset[str] = field(default_factory=frozenset)
     timeout_seconds: int = 5
@@ -61,10 +62,12 @@ REGISTRY: dict[str, AgentTool] = {}
 def register_tool(tool: AgentTool) -> AgentTool:
     if tool.name in REGISTRY:
         raise ValueError(f"Duplicate agent tool: {tool.name}")
-    if tool.category not in {"read", "draft", "write"}:
+    if tool.category not in {"read", "draft", "write", "execute"}:
         raise ValueError(f"Unsupported agent tool category: {tool.category}")
-    if tool.category == "write" and not tool.requires_approval:
-        raise ValueError("write agent tools must set requires_approval=True")
+    if tool.category in {"write", "execute"} and not tool.requires_approval:
+        raise ValueError(
+            f"{tool.category} agent tools must set requires_approval=True"
+        )
     unknown_permissions = sorted(
         permission
         for permission in tool.required_permissions

@@ -43,4 +43,35 @@ describe('AgentPanel', () => {
     expect(wrapper.text()).toContain('write tool requires approval')
     expect(wrapper.text()).toContain('policy_42')
   })
+
+  it('labels execute approvals separately from writes', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useAiAgentStore()
+    store.tools = [
+      {
+        name: 'run_playbook',
+        description: 'Run an approved response playbook.',
+        inputSchema: { type: 'object' },
+        category: 'execute',
+        requiresApproval: true,
+        requiredPermissions: ['playbooks.execute'],
+        timeoutSeconds: 5,
+      },
+    ]
+    store.pendingApproval = {
+      callId: 'call_2',
+      toolName: 'run_playbook',
+      args: { playbookId: 'pb_1' },
+      reason: 'execute tool requires approval',
+    }
+
+    const wrapper = mount(AgentPanel, {
+      global: { plugins: [pinia, i18n] },
+    })
+
+    expect(wrapper.text()).toContain('Execução aprovada')
+    expect(wrapper.text()).toContain('playbooks.execute')
+    expect(wrapper.text()).toContain('execute tool requires approval')
+  })
 })

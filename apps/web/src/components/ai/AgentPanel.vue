@@ -48,6 +48,7 @@ const pendingApprovalTool = computed(() => {
 
 const pendingApprovalRisk = computed(() => {
   const tool = pendingApprovalTool.value
+  if (tool?.category === 'execute') return t('aiAgent.approvalRiskExecute')
   if (tool?.category === 'write' || tool?.requiresApproval) return t('aiAgent.approvalRiskWrite')
   if (tool?.category === 'draft') return t('aiAgent.approvalRiskDraft')
   return t('aiAgent.approvalRiskRead')
