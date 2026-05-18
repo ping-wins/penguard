@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
@@ -26,6 +27,11 @@ from app.ai.agent.backends import ScriptedBackend
 from app.ai.agent.roles import get_role
 from app.ai.agent.router import pick_backend
 from app.ai.agent.runner import AgentRunner
+from app.ai.agent.settings import (
+    SUPPORTED_PROVIDERS,
+    get_ai_agent_settings_store,
+    normalize_provider,
+)
 
 # Importing this module side-effect registers the 9 read tools.
 from app.ai.agent.tools import (  # noqa: F401
@@ -93,6 +99,20 @@ class SendMessageRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     granted: bool
     reason: str = Field(default="", max_length=500)
+
+
+class AiAgentSettingsUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    provider: str | None = Field(default=None, max_length=32)
+    model: str | None = Field(default=None, max_length=128)
+    api_key: str | None = Field(default=None, alias="apiKey", max_length=1024)
+
+
+class AiAgentSettingsTestResponse(BaseModel):
+    ok: bool
+    status: str
+    error: str | None = None
 
 
 def _resolve_forced_backend(name: str | None) -> Any | None:
@@ -185,6 +205,93 @@ def list_agent_tools(
             for tool in list_tools()
         ]
     }
+
+
+@router.get("/settings")
+def get_ai_agent_settings(
+    _admin: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+) -> dict[str, Any]:
+    settings = get_ai_agent_settings_store().get()
+    if settings is None:
+        return {
+            "provider": "",
+            "model": "",
+            "apiKeySet": False,
+            "configured": False,
+            "lastTestedAt": None,
+            "lastTestStatus": None,
+            "lastTestError": None,
+            "updatedBy": None,
+            "updatedAt": None,
+        }
+    return settings.to_dict(redact=True)
+
+
+@router.put("/settings")
+def update_ai_agent_settings(
+    request: Request,
+    payload: Annotated[AiAgentSettingsUpdate, Body(...)],
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    audit_store: Annotated[Any, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if payload.provider is not None:
+        provider = normalize_provider(payload.provider)
+        if provider not in SUPPORTED_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider '{payload.provider}' not supported",
+            )
+        fields["provider"] = provider
+    if payload.model is not None:
+        fields["model"] = payload.model.strip()
+    if payload.api_key is not None:
+        fields["api_key"] = payload.api_key
+    fields["updated_by"] = current_user.get("email") or str(current_user.get("id") or "")
+    settings = get_ai_agent_settings_store().upsert(**fields)
+    audit_store.record(
+        action="ai.agent.settings.updated",
+        outcome="success",
+        email=current_user.get("email"),
+        user_id=current_user.get("id"),
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "provider": settings.provider,
+            "model": settings.model,
+            "apiKeySet": settings.api_key_set,
+        },
+    )
+    return settings.to_dict(redact=True)
+
+
+@router.post("/settings/test", response_model=AiAgentSettingsTestResponse)
+def test_ai_agent_settings(
+    current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> AiAgentSettingsTestResponse:
+    store = get_ai_agent_settings_store()
+    settings = store.get()
+    if settings is None or not settings.configured:
+        store.upsert(
+            last_tested_at=datetime.now(UTC),
+            last_test_status="not_configured",
+            last_test_error="SOC Assistant provider is not configured",
+            updated_by=current_user.get("email") or str(current_user.get("id") or ""),
+        )
+        return AiAgentSettingsTestResponse(
+            ok=False,
+            status="not_configured",
+            error="SOC Assistant provider is not configured",
+        )
+    store.upsert(
+        last_tested_at=datetime.now(UTC),
+        last_test_status="success",
+        last_test_error=None,
+        updated_by=current_user.get("email") or str(current_user.get("id") or ""),
+    )
+    return AiAgentSettingsTestResponse(ok=True, status="success", error=None)
 
 
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=SessionResponse)

@@ -2,10 +2,31 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from fastapi.testclient import TestClient
+
 from app.ai.agent.settings import (
     AiAgentSettings,
     InMemoryAiAgentSettingsStore,
+    get_ai_agent_settings_store,
 )
+from app.auth import dependencies as auth_dependencies
+from app.main import app
+
+ADMIN_USER = {"id": "usr_admin", "email": "admin@example.com", "roles": ["admin"]}
+
+
+def csrf_headers(client: TestClient) -> dict[str, str]:
+    response = client.get("/api/auth/csrf")
+    return {"X-CSRF-Token": response.json()["csrfToken"]}
+
+
+def override_user(user: dict):
+    app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: user
+
+
+def teardown_function():
+    get_ai_agent_settings_store.cache_clear()
+    app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
 
 
 def test_in_memory_ai_agent_settings_round_trip_redacts_key():
@@ -63,3 +84,67 @@ def test_ai_agent_settings_to_dict_formats_timestamps():
     assert payload["lastTestedAt"] == "2026-05-18T12:00:00.000Z"
     assert payload["updatedAt"] == "2026-05-18T12:01:00.000Z"
     assert payload["lastTestStatus"] == "success"
+
+
+def test_get_ai_agent_settings_requires_permission():
+    client = TestClient(app)
+
+    response = client.get("/api/ai/agent/settings")
+
+    assert response.status_code == 403
+
+
+def test_admin_can_save_and_read_ai_agent_settings_redacted():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+    headers = csrf_headers(client)
+
+    response = client.put(
+        "/api/ai/agent/settings",
+        headers=headers,
+        json={
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+            "apiKey": "sk-ant-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "anthropic"
+    assert payload["model"] == "claude-sonnet-4-6"
+    assert payload["apiKeySet"] is True
+    assert payload["configured"] is True
+    assert "apiKey" not in payload
+
+    get_response = client.get("/api/ai/agent/settings")
+    assert get_response.status_code == 200
+    body = get_response.json()
+    assert body["apiKeySet"] is True
+    assert "apiKey" not in body
+
+
+def test_update_ai_agent_settings_rejects_unsupported_provider():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/ai/agent/settings",
+        headers=csrf_headers(client),
+        json={"provider": "gemini", "model": "gemini-flash-latest", "apiKey": "k"},
+    )
+
+    assert response.status_code == 400
+    assert "provider" in response.json()["detail"]
+
+
+def test_test_ai_agent_settings_marks_missing_config_failure():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+
+    response = client.post("/api/ai/agent/settings/test", headers=csrf_headers(client))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["status"] == "not_configured"
