@@ -102,14 +102,6 @@ class ApprovalRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
-class AiAgentSettingsUpdate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    provider: str | None = Field(default=None, max_length=32)
-    model: str | None = Field(default=None, max_length=128)
-    api_key: Any = Field(default=None, alias="apiKey")
-
-
 class AiAgentSettingsTestResponse(BaseModel):
     ok: bool
     status: str
@@ -181,6 +173,22 @@ def _record_settings_audit(
         user_agent=request.headers.get("user-agent"),
         details=details,
     )
+
+
+def _optional_string_field(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    max_length: int,
+) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
+    if len(value) > max_length:
+        raise HTTPException(status_code=400, detail=f"{field_name} exceeds maximum length")
+    return value
 
 
 def _build_tool_context(*, user: dict, locale: str, audit_store: Any) -> ToolContext:
@@ -278,28 +286,33 @@ def get_ai_agent_settings(
 @router.put("/settings")
 def update_ai_agent_settings(
     request: Request,
-    payload: Annotated[AiAgentSettingsUpdate, Body(...)],
+    payload: Annotated[Any, Body(...)],
     current_user: Annotated[dict, Depends(require_permission("ai.agent.manage"))],
     audit_store: Annotated[Any, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="settings payload must be an object")
     fields: dict[str, Any] = {}
-    if payload.provider is not None:
-        provider = normalize_provider(payload.provider)
+    provider_value = _optional_string_field(payload, "provider", max_length=32)
+    if provider_value is not None:
+        provider = normalize_provider(provider_value)
         if provider not in SUPPORTED_PROVIDERS:
             raise HTTPException(
                 status_code=400,
-                detail=f"provider '{payload.provider}' not supported",
+                detail=f"provider '{provider_value}' not supported",
             )
         fields["provider"] = provider
-    if payload.model is not None:
-        fields["model"] = payload.model.strip()
-    if payload.api_key is not None:
-        if not isinstance(payload.api_key, str):
+    model_value = _optional_string_field(payload, "model", max_length=128)
+    if model_value is not None:
+        fields["model"] = model_value.strip()
+    api_key = payload.get("apiKey")
+    if api_key is not None:
+        if not isinstance(api_key, str):
             raise HTTPException(status_code=400, detail="apiKey must be a string")
-        if len(payload.api_key) > _API_KEY_MAX_LENGTH:
+        if len(api_key) > _API_KEY_MAX_LENGTH:
             raise HTTPException(status_code=400, detail="apiKey exceeds maximum length")
-        fields["api_key"] = payload.api_key
+        fields["api_key"] = api_key
     if any(name in fields for name in ("provider", "model", "api_key")):
         fields["last_tested_at"] = None
         fields["last_test_status"] = None

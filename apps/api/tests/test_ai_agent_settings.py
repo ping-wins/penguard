@@ -200,6 +200,28 @@ def test_update_ai_agent_settings_rejects_non_string_key_without_echoing_secret(
     assert secret not in response.text
 
 
+def test_update_ai_agent_settings_rejects_array_body_without_echoing_secret():
+    override_user(ADMIN_USER)
+    client = TestClient(app)
+    secret = "sk-secret-in-nonstring-key"
+
+    response = client.put(
+        "/api/ai/agent/settings",
+        headers=csrf_headers(client),
+        json=[
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "apiKey": {"secret": secret},
+            }
+        ],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "settings payload must be an object"
+    assert secret not in response.text
+
+
 def test_test_ai_agent_settings_marks_missing_config_failure():
     auth_dependencies.get_auth_audit_store.cache_clear()
     override_user(ADMIN_USER)
