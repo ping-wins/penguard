@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.ai.agent.roles import get_role
+from app.ai.agent.router import AgentNotConfiguredError, pick_backend
 from app.ai.agent.settings import (
     AiAgentSettings,
     InMemoryAiAgentSettingsStore,
@@ -85,6 +88,36 @@ def test_ai_agent_settings_to_dict_formats_timestamps():
     assert payload["lastTestedAt"] == "2026-05-18T12:00:00.000Z"
     assert payload["updatedAt"] == "2026-05-18T12:01:00.000Z"
     assert payload["lastTestStatus"] == "success"
+
+
+def test_agent_router_uses_enterprise_settings(monkeypatch):
+    store = InMemoryAiAgentSettingsStore()
+    store.upsert(
+        provider="openai",
+        model="gpt-4o",
+        api_key="sk-test",
+        updated_by="admin@example.com",
+    )
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
+
+    backend = pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
+
+    assert backend.name == "openai"
+    assert backend.model == "gpt-4o"
+
+
+def test_agent_router_raises_without_enterprise_settings(monkeypatch):
+    store = InMemoryAiAgentSettingsStore()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
+
+    with pytest.raises(AgentNotConfiguredError):
+        pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
 
 
 def test_get_ai_agent_settings_requires_permission():

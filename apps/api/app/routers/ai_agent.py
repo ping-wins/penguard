@@ -23,9 +23,8 @@ from app.ai.agent import (
     list_roles,
     list_tools,
 )
-from app.ai.agent.backends import ScriptedBackend
 from app.ai.agent.roles import get_role
-from app.ai.agent.router import pick_backend
+from app.ai.agent.router import AgentNotConfiguredError, pick_backend
 from app.ai.agent.runner import AgentRunner
 from app.ai.agent.settings import (
     SUPPORTED_PROVIDERS,
@@ -59,12 +58,9 @@ _API_KEY_MAX_LENGTH = 1024
 
 
 class CreateSessionRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    role: str = Field(default="chat", min_length=1, max_length=64)
-    backend: str | None = Field(default=None, min_length=1, max_length=32)
     locale: str = Field(default="pt-BR", min_length=2, max_length=16)
-    model: str = Field(default="", max_length=128)
 
 
 class SessionResponse(BaseModel):
@@ -106,17 +102,6 @@ class AiAgentSettingsTestResponse(BaseModel):
     ok: bool
     status: str
     error: str | None = None
-
-
-def _resolve_forced_backend(name: str | None) -> Any | None:
-    if name is None:
-        return None
-    if name == "scripted":
-        return ScriptedBackend()
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"backend '{name}' not available; configured backends: {list(_AVAILABLE_BACKENDS)}",
-    )
 
 
 def _client_ip(request: Request) -> str | None:
@@ -385,17 +370,19 @@ def create_session(
     current_user: Annotated[dict, Depends(get_current_api_user)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ) -> SessionResponse:
-    role = get_role(payload.role)
+    role = get_role("chat")
     if role is None:
-        raise HTTPException(status_code=400, detail=f"unknown agent role: {payload.role}")
-    forced_backend = _resolve_forced_backend(payload.backend)
-    backend = forced_backend or pick_backend(role, str(current_user["id"]))
+        raise HTTPException(status_code=500, detail="agent role registry unavailable")
+    try:
+        backend = pick_backend(role, str(current_user["id"]))
+    except AgentNotConfiguredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     store = get_session_store()
     session = store.create(
         user_id=str(current_user["id"]),
         backend=backend.name,
-        model=payload.model or backend.model,
-        role_id=role.id,
+        model=backend.model,
+        role_id="soc-assistant",
         locale=payload.locale,
     )
     return SessionResponse(
@@ -450,10 +437,8 @@ async def send_message(
     if session.turn_lock.locked():
         raise HTTPException(status_code=409, detail="session already has an active turn")
 
-    backend = ScriptedBackend() if session.backend == "scripted" else None
     runner = AgentRunner(
         session_store=store,
-        backend=backend,
         backend_picker=pick_backend,
         audit_recorder=lambda *, action, outcome, details: audit_store.record(
             action=action,

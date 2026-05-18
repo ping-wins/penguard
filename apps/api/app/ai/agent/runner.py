@@ -87,7 +87,7 @@ class AgentRunner:
         session: AgentSession,
         tool_context: ToolContext,
     ) -> AsyncIterator[AgentEvent]:
-        role = get_role(session.role_id) or get_role("chat")
+        role = _role_for_session(session.role_id)
         if role is None:
             yield ErrorEvent(step=0, message="agent role registry unavailable", code="role_error")
             return
@@ -442,3 +442,9 @@ def _history_snapshot(session: AgentSession) -> list[dict[str, Any]]:
                 entry["tool_calls"] = message.tool_calls
         snapshot.append(entry)
     return snapshot
+
+
+def _role_for_session(role_id: str) -> RoleConfig | None:
+    if role_id == "soc-assistant":
+        return get_role("chat")
+    return get_role(role_id)

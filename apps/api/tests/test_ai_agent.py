@@ -16,9 +16,10 @@ from app.ai.agent.backends.openai import OpenAIBackend
 from app.ai.agent.backends.scripted import ScriptedBackend
 from app.ai.agent.registry import REGISTRY, AgentTool, ToolContext, register_tool
 from app.ai.agent.roles import get_role, list_roles
-from app.ai.agent.router import pick_backend
+from app.ai.agent.router import AgentNotConfiguredError, pick_backend
 from app.ai.agent.runner import AgentRunner
 from app.ai.agent.session import SessionStore, get_session_store
+from app.ai.agent.settings import InMemoryAiAgentSettingsStore, get_ai_agent_settings_store
 
 # Side-effect: registers built-in tools.
 from app.ai.agent.tools import (  # noqa: F401
@@ -30,7 +31,6 @@ from app.ai.agent.tools import (  # noqa: F401
     workspace,
     xdr_endpoints,
 )
-from app.ai.preferences import InMemoryPreferenceStore, UserAiPreference, get_preference_store
 from app.auth import dependencies as auth_dependencies
 from app.main import app
 
@@ -42,7 +42,24 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 
 def teardown_function():
     get_session_store().reset_for_tests()
-    get_preference_store.cache_clear()
+    get_ai_agent_settings_store.cache_clear()
+    app.dependency_overrides.pop(auth_dependencies.get_current_api_user, None)
+
+
+def configured_settings_store(
+    *,
+    provider: str = "openai",
+    model: str = "gpt-4o",
+    api_key: str = "sk-test",
+) -> InMemoryAiAgentSettingsStore:
+    store = InMemoryAiAgentSettingsStore()
+    store.upsert(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        updated_by="admin@example.com",
+    )
+    return store
 
 
 # ---------------------------------------------------------------------------
@@ -117,24 +134,25 @@ def test_role_registry_matches_real_runtime_spec():
     assert get_role("missing-role") is None
 
 
-def test_router_falls_back_to_scripted_without_credentials(monkeypatch):
-    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "")
-    monkeypatch.setenv("FORTIDASHBOARD_AI_API_KEY", "")
+def test_router_raises_without_enterprise_settings(monkeypatch):
+    store = InMemoryAiAgentSettingsStore()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
 
-    backend = pick_backend(get_role("incident-triage"), "user-no-pref")  # type: ignore[arg-type]
+    with pytest.raises(AgentNotConfiguredError):
+        pick_backend(get_role("incident-triage"), "user-no-pref")  # type: ignore[arg-type]
 
-    assert backend.name == "scripted"
 
-
-def test_router_uses_user_preference_and_tier_model(monkeypatch):
-    store = InMemoryPreferenceStore()
-    store._rows["user-1"] = UserAiPreference(
-        user_id="user-1",
+def test_router_uses_enterprise_settings_model(monkeypatch):
+    store = configured_settings_store(
         provider="anthropic",
-        api_keys={"anthropic": "sk-test"},
+        model="claude-sonnet-4-6",
+        api_key="sk-test",
     )
     monkeypatch.setattr(
-        "app.ai.agent.router.get_preference_store",
+        "app.ai.agent.router.get_ai_agent_settings_store",
         lambda: store,
     )
 
@@ -144,15 +162,10 @@ def test_router_uses_user_preference_and_tier_model(monkeypatch):
     assert backend.model == "claude-sonnet-4-6"
 
 
-def test_router_applies_role_tier_env_override(monkeypatch):
-    store = InMemoryPreferenceStore()
-    store._rows["user-1"] = UserAiPreference(
-        user_id="user-1",
-        provider="openai",
-        api_keys={"openai": "sk-test"},
-    )
+def test_router_ignores_role_tier_env_override(monkeypatch):
+    store = configured_settings_store(model="gpt-4o-mini")
     monkeypatch.setattr(
-        "app.ai.agent.router.get_preference_store",
+        "app.ai.agent.router.get_ai_agent_settings_store",
         lambda: store,
     )
     monkeypatch.setenv("FORTIDASHBOARD_ROLE_CHAT_TIER", "deep")
@@ -160,7 +173,7 @@ def test_router_applies_role_tier_env_override(monkeypatch):
     backend = pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
 
     assert backend.name == "openai"
-    assert backend.model == "gpt-4o"
+    assert backend.model == "gpt-4o-mini"
 
 
 # ---------------------------------------------------------------------------
@@ -572,49 +585,77 @@ def test_list_roles_endpoint_returns_runtime_roles():
     assert roles["soc-investigation"]["allowedToolCategories"] == ["draft", "read", "write"]
 
 
-def test_create_session_returns_session_id():
+def test_create_session_returns_session_id(monkeypatch):
+    store = configured_settings_store()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
     client = TestClient(app)
     response = client.post(
         "/api/ai/agent/sessions",
         headers=csrf_headers(client),
-        json={"role": "incident-triage", "backend": "scripted", "locale": "pt-BR"},
+        json={"locale": "pt-BR"},
     )
     assert response.status_code == 201
     payload = response.json()
-    assert payload["backend"] == "scripted"
-    assert payload["role"] == "incident-triage"
+    assert payload["backend"] == "openai"
+    assert payload["model"] == "gpt-4o"
+    assert payload["role"] == "soc-assistant"
     assert payload["tokensIn"] == 0
     assert payload["tokensOut"] == 0
     assert payload["sessionId"]
 
 
-def test_create_session_rejects_unknown_backend():
+def test_create_session_rejects_frontend_backend_selection(monkeypatch):
+    store = configured_settings_store()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
     client = TestClient(app)
     response = client.post(
         "/api/ai/agent/sessions",
         headers=csrf_headers(client),
         json={"backend": "openai"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
-def test_create_session_rejects_unknown_role():
+def test_create_session_returns_conflict_when_assistant_unconfigured(monkeypatch):
+    store = InMemoryAiAgentSettingsStore()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
     client = TestClient(app)
     response = client.post(
         "/api/ai/agent/sessions",
         headers=csrf_headers(client),
-        json={"role": "missing"},
+        json={"locale": "pt-BR"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 409
+    assert "not configured" in response.json()["detail"]
 
 
-def test_send_message_streams_steps_and_records_audit():
+def test_send_message_streams_steps_and_records_audit(monkeypatch):
+    store = configured_settings_store()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
+
+    async def _stream_final(self, **_kwargs):
+        yield TextDelta(text="Olá")
+        yield Final(stop_reason="end_turn", tokens_in=5, tokens_out=2)
+
+    monkeypatch.setattr(OpenAIBackend, "stream_decide", _stream_final)
     client = TestClient(app)
     headers = csrf_headers(client)
     create = client.post(
         "/api/ai/agent/sessions",
         headers=headers,
-        json={"backend": "scripted", "locale": "pt-BR"},
+        json={"locale": "pt-BR"},
     )
     assert create.status_code == 201
     session_id = create.json()["sessionId"]
@@ -646,7 +687,12 @@ def test_send_message_streams_steps_and_records_audit():
     assert "items" in audit
 
 
-def test_approval_endpoint_resolves_pending_future():
+def test_approval_endpoint_resolves_pending_future(monkeypatch):
+    store = configured_settings_store()
+    monkeypatch.setattr(
+        "app.ai.agent.router.get_ai_agent_settings_store",
+        lambda: store,
+    )
     client = TestClient(app)
     app.dependency_overrides[auth_dependencies.get_current_api_user] = lambda: {
         "id": "admin-1",
@@ -658,7 +704,7 @@ def test_approval_endpoint_resolves_pending_future():
         create = client.post(
             "/api/ai/agent/sessions",
             headers=headers,
-            json={"role": "soc-investigation", "backend": "scripted", "locale": "pt-BR"},
+            json={"locale": "pt-BR"},
         )
         assert create.status_code == 201
         session_id = create.json()["sessionId"]
