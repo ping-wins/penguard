@@ -27,9 +27,26 @@ const selectedProvider = computed(() => (
   PROVIDERS.find((option) => option.id === provider.value) ?? PROVIDERS[0]
 ))
 
+const savedProviderId = computed<ProviderOption['id']>(() => {
+  const knownProvider = PROVIDERS.find((option) => option.id === store.settings?.provider)
+  return knownProvider?.id ?? 'anthropic'
+})
+
+const savedModel = computed(() => {
+  const knownProvider = PROVIDERS.find((option) => option.id === store.settings?.provider)
+  return store.settings?.model || knownProvider?.defaultModel || PROVIDERS[0].defaultModel
+})
+
+const hasUnsavedFormChanges = computed(() => (
+  provider.value !== savedProviderId.value
+  || model.value.trim() !== savedModel.value
+  || apiKeyDraft.value.length > 0
+))
+
 const canSave = computed(() => (
   !store.isLoading
   && !store.isSaving
+  && !store.isTesting
   && provider.value.length > 0
   && model.value.trim().length > 0
 ))
@@ -38,10 +55,8 @@ const updatedAtLabel = computed(() => formatDateTime(store.settings?.updatedAt ?
 const lastTestedAtLabel = computed(() => formatDateTime(store.settings?.lastTestedAt ?? null))
 
 function syncFromSettings() {
-  const settings = store.settings
-  const knownProvider = PROVIDERS.find((option) => option.id === settings?.provider)
-  provider.value = knownProvider?.id ?? 'anthropic'
-  model.value = settings?.model || knownProvider?.defaultModel || selectedProvider.value.defaultModel
+  provider.value = savedProviderId.value
+  model.value = savedModel.value
   apiKeyDraft.value = ''
 }
 
@@ -112,7 +127,9 @@ async function testConnection() {
   await store.testConnection()
 }
 
-watch(() => store.settings, syncFromSettings)
+watch(() => store.settings, () => {
+  if (!hasUnsavedFormChanges.value) syncFromSettings()
+})
 
 onMounted(async () => {
   await store.load()
@@ -184,6 +201,7 @@ onMounted(async () => {
           <input
             v-model="model"
             type="text"
+            data-test="soc-assistant-model"
             :placeholder="selectedProvider.defaultModel"
             class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-sm"
           />
@@ -204,6 +222,7 @@ onMounted(async () => {
             v-model="apiKeyDraft"
             type="password"
             autocomplete="off"
+            data-test="soc-assistant-api-key"
             :placeholder="store.settings?.apiKeySet
               ? t('settings.ai.apiKeyPlaceholderSaved')
               : t('settings.ai.apiKeyPlaceholderEmpty')"
@@ -274,6 +293,7 @@ onMounted(async () => {
       <footer class="flex items-center justify-between gap-2 border-t border-theme-border pt-3">
         <button
           type="button"
+          data-test="soc-assistant-test"
           class="inline-flex items-center gap-2 rounded border border-theme-border px-3 py-1.5 text-sm text-theme-text hover:border-theme-primary/40 disabled:opacity-50"
           :disabled="store.isTesting || store.isSaving"
           @click="testConnection"
@@ -283,6 +303,7 @@ onMounted(async () => {
         </button>
         <button
           type="button"
+          data-test="soc-assistant-save"
           class="inline-flex items-center gap-2 rounded bg-theme-primary px-3 py-1.5 text-sm font-medium text-theme-on-primary disabled:opacity-50"
           :disabled="!canSave"
           @click="save"
