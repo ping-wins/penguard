@@ -58,10 +58,10 @@ EXECUTIVE_PROVIDER_SOURCES = {
 def _triage_from_severity(severity: str) -> TriageLevel:
     normalized = (severity or "").lower()
     if normalized in {"critical", "high"}:
-        return "T1"
+        return "T3"
     if normalized == "medium":
         return "T2"
-    return "T3"
+    return "T1"
 
 app = FastAPI(title="siem_kowalski", version="0.1.0")
 store = SiemStore()
