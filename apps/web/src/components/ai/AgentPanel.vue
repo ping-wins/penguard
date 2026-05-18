@@ -7,14 +7,9 @@ import { useAiAgentStore } from '../../stores/useAiAgentStore'
 const store = useAiAgentStore()
 const { t } = useI18n()
 const draft = ref('')
-const selectedBackend = ref('scripted')
-const selectedRole = ref('chat')
 
 onMounted(async () => {
   await store.ensureCatalog()
-  const preferred = store.backends.find((b) => b.default) ?? store.backends[0]
-  if (preferred) selectedBackend.value = preferred.name
-  if (store.roles[0]) selectedRole.value = store.roles[0].id
 })
 
 onBeforeUnmount(() => {
@@ -26,7 +21,7 @@ const canSend = computed(
 )
 
 async function start() {
-  await store.startSession({ role: selectedRole.value, backend: selectedBackend.value })
+  await store.startSession()
 }
 
 async function submit() {
@@ -46,14 +41,11 @@ function previewResult(value: unknown, limit = 320): string {
   }
 }
 
-const activeRole = computed(() => store.roles.find((role) => role.id === selectedRole.value))
 const modelBadge = computed(() => {
   const model = store.session?.model || t('aiAgent.noModel')
-  const budget = activeRole.value?.tokenBudget ?? 0
   return t('aiAgent.modelBadge', {
     model,
     used: formatTokens(store.tokensIn + store.tokensOut),
-    budget: formatTokens(budget),
   })
 })
 
@@ -62,11 +54,6 @@ function formatTokens(value: number): string {
   return String(value)
 }
 
-function roleLabel(roleId: string, fallback: string): string {
-  const key = `aiAgent.roles.${roleId.replaceAll('-', '_')}.label`
-  const translated = t(key)
-  return translated === key ? fallback : translated
-}
 </script>
 
 <template>
@@ -77,28 +64,6 @@ function roleLabel(roleId: string, fallback: string): string {
         <span class="font-semibold text-theme-text">{{ t('aiAgent.title') }}</span>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <label class="sr-only" for="agent-role">{{ t('aiAgent.roleLabel') }}</label>
-        <select
-          id="agent-role"
-          v-model="selectedRole"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs"
-          :disabled="store.isStreaming || store.isLoading || !!store.session"
-        >
-          <option v-for="role in store.roles" :key="role.id" :value="role.id">
-            {{ roleLabel(role.id, role.label) }}
-          </option>
-        </select>
-        <label class="sr-only" for="agent-backend">{{ t('aiAgent.backendLabel') }}</label>
-        <select
-          id="agent-backend"
-          v-model="selectedBackend"
-          class="rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs"
-          :disabled="store.isStreaming || store.isLoading || !!store.session"
-        >
-          <option v-for="backend in store.backends" :key="backend.name" :value="backend.name">
-            {{ backend.name }}{{ backend.default ? ` (${t('aiAgent.defaultSuffix')})` : '' }}
-          </option>
-        </select>
         <button
           v-if="!store.session"
           type="button"
@@ -161,7 +126,6 @@ function roleLabel(roleId: string, fallback: string): string {
     <div class="flex-1 min-h-0 overflow-y-auto rounded border border-theme-border bg-theme-surface/40 p-2">
       <div v-if="store.trace.length === 0" class="text-xs text-theme-text-muted">
         {{ t('aiAgent.empty') }}
-        <span class="font-mono">{{ t('aiAgent.backendHint', { backend: selectedBackend }) }}</span>.
       </div>
       <ol class="flex flex-col gap-2">
         <li

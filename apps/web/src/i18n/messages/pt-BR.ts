@@ -94,7 +94,7 @@ export default {
     approvalTitle: 'Aprovação necessária',
     approve: 'Aprovar',
     deny: 'Negar',
-    modelBadge: '{model} · {used} / {budget} tokens',
+    modelBadge: '{model} · {used} tokens',
     noModel: 'Modelo pendente',
     roles: {
       chat: { label: 'Chat' },
