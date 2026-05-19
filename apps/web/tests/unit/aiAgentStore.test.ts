@@ -35,6 +35,9 @@ describe('useAiAgentStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     setLocale('pt-BR')
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.clear()
+    }
   })
 
   it('loads only tools via ensureCatalog', async () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Bot, Check, Hammer, Play, Send, ShieldAlert, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useAiAgentStore } from '../../stores/useAiAgentStore'
@@ -11,10 +11,6 @@ const draft = ref('')
 
 onMounted(async () => {
   await store.ensureCatalog()
-})
-
-onBeforeUnmount(() => {
-  store.endSession()
 })
 
 const canSend = computed(

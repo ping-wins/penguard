@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { i18n } from '../i18n'
 import { useDashboardStore } from './useDashboardStore'
 import {
@@ -43,17 +43,77 @@ function localizedError(message: string, code?: string): string {
   return message
 }
 
+const STORAGE_KEY = 'fortidashboard.aiAgent.state'
+
+type PersistedState = {
+  session: AgentSessionResponse | null
+  trace: AgentTraceEntry[]
+  tokensIn: number
+  tokensOut: number
+  lastReply: string
+}
+
+function loadPersisted(): PersistedState | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as PersistedState
+    if (!data || typeof data !== 'object') return null
+    return data
+  } catch {
+    return null
+  }
+}
+
+function savePersisted(state: PersistedState): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // ignore quota / privacy-mode errors
+  }
+}
+
+function clearPersisted(): void {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 export const useAiAgentStore = defineStore('aiAgent', () => {
   const tools = ref<AgentTool[]>([])
-  const session = ref<AgentSessionResponse | null>(null)
-  const trace = ref<AgentTraceEntry[]>([])
+  const persisted = loadPersisted()
+  const session = ref<AgentSessionResponse | null>(persisted?.session ?? null)
+  const trace = ref<AgentTraceEntry[]>(persisted?.trace ?? [])
   const isLoading = ref(false)
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
-  const lastReply = ref<string>('')
+  const lastReply = ref<string>(persisted?.lastReply ?? '')
   const pendingApproval = ref<PendingAgentApproval | null>(null)
-  const tokensIn = ref(0)
-  const tokensOut = ref(0)
+  const tokensIn = ref(persisted?.tokensIn ?? 0)
+  const tokensOut = ref(persisted?.tokensOut ?? 0)
+
+  watch(
+    [session, trace, tokensIn, tokensOut, lastReply],
+    () => {
+      if (!session.value) {
+        clearPersisted()
+        return
+      }
+      savePersisted({
+        session: session.value,
+        trace: trace.value,
+        tokensIn: tokensIn.value,
+        tokensOut: tokensOut.value,
+        lastReply: lastReply.value,
+      })
+    },
+    { deep: true },
+  )
 
   async function ensureCatalog() {
     if (tools.value.length > 0) return
@@ -108,26 +168,51 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     isStreaming.value = true
     trace.value.push({ kind: 'user', step: 0, content })
 
-    try {
-      const dashboardStore = useDashboardStore()
-      for await (const event of streamAgentMessage(
-        session.value.sessionId,
-        content,
-        { workspaceId: dashboardStore.activeWorkspaceId },
-      )) {
-        consumeEvent(event)
+    let attempted_recovery = false
+    while (true) {
+      try {
+        const dashboardStore = useDashboardStore()
+        for await (const event of streamAgentMessage(
+          session.value.sessionId,
+          content,
+          { workspaceId: dashboardStore.activeWorkspaceId },
+        )) {
+          consumeEvent(event)
+        }
+        break
+      } catch (e) {
+        const msg = (e as Error).message || ''
+        if (!attempted_recovery && /session not found/i.test(msg)) {
+          attempted_recovery = true
+          try {
+            session.value = await createAgentSession({
+              locale: String(i18n.global.locale.value || 'pt-BR'),
+            })
+            tokensIn.value = session.value.tokensIn
+            tokensOut.value = session.value.tokensOut
+            continue
+          } catch (recoveryError) {
+            error.value = (recoveryError as Error).message
+            trace.value.push({
+              kind: 'error',
+              step: -1,
+              message: error.value || msg,
+              code: 'stream_error',
+            })
+            break
+          }
+        }
+        error.value = msg
+        trace.value.push({
+          kind: 'error',
+          step: -1,
+          message: error.value || 'stream error',
+          code: 'stream_error',
+        })
+        break
       }
-    } catch (e) {
-      error.value = (e as Error).message
-      trace.value.push({
-        kind: 'error',
-        step: -1,
-        message: error.value || 'stream error',
-        code: 'stream_error',
-      })
-    } finally {
-      isStreaming.value = false
     }
+    isStreaming.value = false
   }
 
   function consumeEvent(event: AgentStreamEvent) {
