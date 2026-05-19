@@ -140,6 +140,36 @@ def test_windows_security_endpoint_events_are_accepted_and_timeline_visible():
     assert body["timelineItem"]["title"] == "Auth Failed Login"
 
 
+def test_sysmon_endpoint_events_are_accepted_and_timeline_visible():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+
+    response = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.dns_query",
+            "occurredAt": "2026-05-19T12:10:01Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": "FORTIDASHBOARD\\analyst",
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 22,
+                "queryName": "suspicious.example",
+                "ioc": {"type": "domain", "value": "suspicious.example"},
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["endpoint"]["id"] == "end_win_01"
+    assert body["timelineItem"]["eventType"] == "sysmon.dns_query"
+    assert body["timelineItem"]["title"] == "Sysmon Dns Query"
+
+
 def test_endpoint_timeline_is_newest_first():
     test_client = client()
     headers = enrollment_headers(test_client)

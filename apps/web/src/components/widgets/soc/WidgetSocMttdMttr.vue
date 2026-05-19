@@ -24,10 +24,41 @@ const seriesStore = useWidgetSeriesStore()
 const mttdValues = computed(() => incidents.value.map(mttdEstimate).filter((v): v is number => v !== null))
 const mttrValues = computed(() => incidents.value.map(mttrEstimate).filter((v): v is number => v !== null))
 
-const mttdAvg = computed(() => avg(mttdValues.value))
-const mttrAvg = computed(() => avg(mttrValues.value))
-const mttdMedian = computed(() => median(mttdValues.value))
-const mttrMedian = computed(() => median(mttrValues.value))
+function metricMs(key: string): number | null {
+  const raw = props.data?.[key]
+  if (raw === null || raw === undefined) return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
+function nullableMs(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const calculatedRows = computed(() => {
+  const raw = Array.isArray(props.data?.perIncident) ? props.data.perIncident : []
+  return raw
+    .filter((row: any) => row && typeof row === 'object')
+    .map((row: any) => ({
+      id: String(row.id ?? ''),
+      title: String(row.title ?? row.summary ?? row.id ?? 'Incident'),
+      severity: normalizeSeverity(row.severity),
+      mttd: nullableMs(row.mttdMs),
+      mttr: nullableMs(row.mttrMs),
+      age: nullableMs(row.ageMs),
+    }))
+})
+
+const calculatedSampleCount = computed(() =>
+  (Number(props.data?.mttdSampleSize) || 0) + (Number(props.data?.mttrSampleSize) || 0)
+)
+
+const mttdAvg = computed(() => metricMs('mttdAvgMs') ?? avg(mttdValues.value))
+const mttrAvg = computed(() => metricMs('mttrAvgMs') ?? avg(mttrValues.value))
+const mttdMedian = computed(() => metricMs('mttdMedianMs') ?? median(mttdValues.value))
+const mttrMedian = computed(() => metricMs('mttrMedianMs') ?? median(mttrValues.value))
 
 function avg(values: number[]): number | null {
   if (values.length === 0) return null
@@ -44,6 +75,10 @@ function median(values: number[]): number | null {
 const countSeries = useWidgetSeries(props.instanceId, 'count')
 
 const rankedIncidents = computed(() => {
+  if (calculatedRows.value.length > 0) {
+    return [...calculatedRows.value]
+      .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+  }
   return [...incidents.value]
     .map((inc: any) => ({
       id: String(inc?.id ?? ''),
@@ -56,7 +91,11 @@ const rankedIncidents = computed(() => {
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
 })
 
-const noData = computed(() => incidents.value.length === 0)
+const noData = computed(() =>
+  incidents.value.length === 0
+  && calculatedRows.value.length === 0
+  && calculatedSampleCount.value === 0
+)
 
 void seriesStore
 </script>

@@ -121,6 +121,16 @@ const SAMPLERS: Record<string, SamplerFn> = {
     uniqueEntities: items(data, 'entities').length,
   }),
   'soc-sla-breach': (data) => {
+    if (data && typeof data === 'object') {
+      const rec = data as Record<string, unknown>
+      if ('red' in rec || 'amber' in rec || 'open' in rec) {
+        return {
+          red: num(rec.red),
+          amber: num(rec.amber),
+          open: num(rec.open),
+        }
+      }
+    }
     const incidents = items(data, 'incidents')
     let red = 0
     let amber = 0
@@ -142,6 +152,16 @@ const SAMPLERS: Record<string, SamplerFn> = {
     return { red, amber, open: openCount }
   },
   'soc-mttd-mttr': (data) => {
+    if (data && typeof data === 'object') {
+      const rec = data as Record<string, unknown>
+      if ('mttdAvgMs' in rec || 'mttrAvgMs' in rec) {
+        return {
+          count: num(rec.mttdSampleSize) + num(rec.mttrSampleSize),
+          mttdAvgMs: num(rec.mttdAvgMs),
+          mttrAvgMs: num(rec.mttrAvgMs),
+        }
+      }
+    }
     const incidents = items(data, 'incidents')
     const mttd: number[] = []
     const mttr: number[] = []

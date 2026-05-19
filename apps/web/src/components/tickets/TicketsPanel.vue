@@ -29,6 +29,7 @@ import {
   applyPlaybookRunPolicy,
   createPlaybookRunPolicyReview,
   draftContainmentPlaybook,
+  enrichIncidentThreatIntel,
   getIncidentTriageContext,
   instantiateRecommendedPlaybook,
   resetIncidentStore,
@@ -42,6 +43,8 @@ import {
   type PlaybookRunPolicyReviewResponse,
   type Ticket,
   type TicketStatus,
+  type ThreatIntelEnrichmentResponse,
+  type ThreatIntelVerdict,
   type TriageContext,
   type TriageLevel,
 } from '../../services/ticketsClient'
@@ -86,6 +89,9 @@ const triageContextError = ref<string | null>(null)
 const isAnalyzing = ref(false)
 const isContaining = ref(false)
 const aiError = ref<string | null>(null)
+const threatIntel = ref<ThreatIntelEnrichmentResponse | null>(null)
+const isEnrichingThreatIntel = ref(false)
+const threatIntelError = ref<string | null>(null)
 const playbookDraft = ref<PlaybookDraftResponse | null>(null)
 const applyResult = ref<ApplyContainmentResponse | null>(null)
 const isDrafting = ref(false)
@@ -128,6 +134,7 @@ const selectedDetection = computed(() => {
 const visibleTriageContext = computed(() => {
   return triageContext.value?.incidentId ? triageContext.value : null
 })
+const threatIntelFlagged = computed(() => threatIntel.value?.summary.flagged ?? [])
 
 function formatTriageValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(', ')
@@ -301,6 +308,18 @@ async function runContainment(ticket: Ticket) {
   }
 }
 
+async function runThreatIntel(ticket: Ticket) {
+  isEnrichingThreatIntel.value = true
+  threatIntelError.value = null
+  try {
+    threatIntel.value = await enrichIncidentThreatIntel(ticket.id)
+  } catch (e: any) {
+    threatIntelError.value = e?.message ?? t('tickets.threatIntel.error')
+  } finally {
+    isEnrichingThreatIntel.value = false
+  }
+}
+
 async function applySuggestedAnalysis(ticket: Ticket) {
   if (!aiAnalysis.value) return
   await applyPatch(ticket, {
@@ -313,6 +332,9 @@ function resetAiState() {
   aiAnalysis.value = null
   aiContainment.value = null
   aiError.value = null
+  threatIntel.value = null
+  threatIntelError.value = null
+  isEnrichingThreatIntel.value = false
   playbookDraft.value = null
   applyResult.value = null
   playbookError.value = null
@@ -617,6 +639,13 @@ function sourceBadgeClass(badge: SourceBadge) {
   if (badge.tone === 'simulator') return 'border-sky-500/40 bg-sky-500/10 text-sky-200'
   if (badge.tone === 'ai') return 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200'
   return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+}
+
+function threatIntelVerdictClass(verdict: ThreatIntelVerdict | string) {
+  if (verdict === 'malicious') return 'border-red-500/40 bg-red-500/10 text-red-300'
+  if (verdict === 'suspicious') return 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+  if (verdict === 'clean') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+  return 'border-theme-border bg-theme-bg/60 text-theme-text-muted'
 }
 
 function formatTime(value: string | null | undefined) {
@@ -1062,6 +1091,88 @@ async function resetIncidents() {
             <Loader2 :size="12" class="animate-spin" />
             {{ t('common.saving') }}
           </div>
+        </div>
+
+        <!-- Threat Intel -->
+        <div class="px-4 py-3 border-b border-theme-border bg-sky-500/5 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs uppercase tracking-wider text-sky-300 flex items-center gap-1">
+              <Shield :size="13" />
+              {{ t('tickets.threatIntel.header') }}
+            </h4>
+            <button
+              type="button"
+              data-test="ticket-threat-intel-enrich"
+              :disabled="isEnrichingThreatIntel"
+              @click="runThreatIntel(selected!)"
+              class="text-xs px-2 py-1 rounded border border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Loader2 v-if="isEnrichingThreatIntel" :size="11" class="animate-spin" />
+              <Shield v-else :size="11" />
+              {{ t('tickets.threatIntel.enrich') }}
+            </button>
+          </div>
+
+          <div v-if="threatIntelError" class="text-xs text-red-300 flex items-start gap-1">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ threatIntelError }}
+          </div>
+
+          <div v-if="threatIntel" data-test="ticket-threat-intel-result" class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span class="rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-sky-200">
+                {{ threatIntel.provider }}
+              </span>
+              <span
+                v-if="!threatIntel.providerConfigured"
+                class="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+              >
+                {{ t('tickets.threatIntel.notConfigured') }}
+              </span>
+              <span class="text-theme-text-muted">
+                {{ t('tickets.threatIntel.indicatorCount', { count: threatIntel.summary.total }) }}
+              </span>
+            </div>
+            <div class="grid grid-cols-4 gap-1 text-[10px]">
+              <span class="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-red-200">
+                {{ t('tickets.threatIntel.malicious', { count: threatIntel.summary.malicious }) }}
+              </span>
+              <span class="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-1 text-amber-200">
+                {{ t('tickets.threatIntel.suspicious', { count: threatIntel.summary.suspicious }) }}
+              </span>
+              <span class="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-1 text-emerald-200">
+                {{ t('tickets.threatIntel.clean', { count: threatIntel.summary.clean }) }}
+              </span>
+              <span class="rounded border border-theme-border bg-theme-bg/60 px-1.5 py-1 text-theme-text-muted">
+                {{ t('tickets.threatIntel.unknown', { count: threatIntel.summary.unknown }) }}
+              </span>
+            </div>
+            <div v-if="threatIntelFlagged.length" class="space-y-1">
+              <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">
+                {{ t('tickets.threatIntel.flagged') }}
+              </div>
+              <div class="space-y-1">
+                <a
+                  v-for="item in threatIntelFlagged"
+                  :key="`${item.type}-${item.value}`"
+                  :href="item.referenceUrl || undefined"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block rounded border px-2 py-1 text-[11px] hover:brightness-110"
+                  :class="threatIntelVerdictClass(item.verdict)"
+                >
+                  <span class="font-mono break-all">{{ item.type }} · {{ item.value }}</span>
+                  <span class="ml-1">· {{ item.verdict }} · {{ item.score }}</span>
+                </a>
+              </div>
+            </div>
+            <p v-else class="text-xs text-theme-text-muted italic">
+              {{ t('tickets.threatIntel.noFlagged') }}
+            </p>
+          </div>
+          <p v-else class="text-xs text-theme-text-muted italic">
+            {{ t('tickets.threatIntel.hint') }}
+          </p>
         </div>
 
         <!-- FortiWeb Response -->

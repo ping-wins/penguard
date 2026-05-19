@@ -1,10 +1,10 @@
 {
   "slug": "soc-analyst-shift",
   "title": "SOC Analyst Shift",
-  "description": "Shift dashboard for SOC analysts: recent incidents feed, top entities, anomaly highlights and threat signal.",
+  "description": "Shift dashboard for SOC analysts with SIEM severity, open SLA pressure, incident feed, top entities, anomalies and FortiGate event context.",
   "category": "analyst",
   "icon": "ShieldAlert",
-  "tags": ["analyst", "soc", "triage"],
+  "tags": ["analyst", "soc", "triage", "siem"],
   "manifest": {
     "schemaVersion": 1,
     "workspaceId": "tpl_soc_analyst_shift",
@@ -12,47 +12,61 @@
     "providerTypes": ["fortigate", "siem_kowalski"],
     "widgets": [
       {
+        "instanceId": "w_severity",
+        "catalogId": "soc-incidents-by-severity",
+        "providerType": "siem_kowalski",
+        "layout": { "x": 0, "y": 0, "w": 4, "h": 3, "z": 10 },
+        "fieldBindings": []
+      },
+      {
         "instanceId": "w_recent_incidents",
         "catalogId": "soc-recent-incidents",
         "providerType": "siem_kowalski",
-        "layout": { "x": 0, "y": 0, "w": 5, "h": 4, "z": 10 },
+        "layout": { "x": 4, "y": 0, "w": 5, "h": 4, "z": 11 },
         "fieldBindings": []
       },
       {
         "instanceId": "w_top_entities",
         "catalogId": "soc-top-entities",
         "providerType": "siem_kowalski",
-        "layout": { "x": 5, "y": 0, "w": 5, "h": 4, "z": 11 },
+        "layout": { "x": 9, "y": 0, "w": 5, "h": 4, "z": 12 },
+        "fieldBindings": []
+      },
+      {
+        "instanceId": "w_sla_breach",
+        "catalogId": "soc-sla-breach",
+        "providerType": "siem_kowalski",
+        "layout": { "x": 0, "y": 3, "w": 5, "h": 4, "z": 13 },
         "fieldBindings": []
       },
       {
         "instanceId": "w_anomalies",
         "catalogId": "fortigate-anomaly-highlights",
         "providerType": "fortigate",
-        "layout": { "x": 0, "y": 4, "w": 5, "h": 3, "z": 12 },
+        "layout": { "x": 5, "y": 4, "w": 5, "h": 3, "z": 14 },
         "fieldBindings": []
       },
       {
         "instanceId": "w_recent_events",
         "catalogId": "fortigate-recent-events",
         "providerType": "fortigate",
-        "layout": { "x": 5, "y": 4, "w": 5, "h": 4, "z": 13 },
+        "layout": { "x": 10, "y": 4, "w": 5, "h": 4, "z": 15 },
         "fieldBindings": []
       },
       {
         "instanceId": "w_top_threats",
         "catalogId": "fortigate-top-threats",
         "providerType": "fortigate",
-        "layout": { "x": 0, "y": 7, "w": 5, "h": 4, "z": 14 },
+        "layout": { "x": 0, "y": 7, "w": 5, "h": 4, "z": 16 },
         "fieldBindings": []
       }
     ],
     "presentation": null,
     "metadata": {
       "description": "SOC analyst preset",
-      "tags": ["analyst", "soc"],
+      "tags": ["analyst", "soc", "siem"],
       "incidentId": null,
-      "exportedAt": "2026-05-17T00:00:00.000Z",
+      "exportedAt": "2026-05-19T00:00:00.000Z",
       "exportedByEmail": null
     }
   }

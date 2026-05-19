@@ -10,6 +10,8 @@ import WidgetRiskPosture from '../../src/components/widgets/WidgetRiskPosture.vu
 import WidgetThreats from '../../src/components/widgets/WidgetThreats.vue'
 import WidgetGenericData from '../../src/components/widgets/WidgetGenericData.vue'
 import WidgetSoarPlaybookRunHistory from '../../src/components/widgets/soc/WidgetSoarPlaybookRunHistory.vue'
+import WidgetSocMttdMttr from '../../src/components/widgets/soc/WidgetSocMttdMttr.vue'
+import WidgetSocSlaBreach from '../../src/components/widgets/soc/WidgetSocSlaBreach.vue'
 import TicketsPanel from '../../src/components/tickets/TicketsPanel.vue'
 import { i18n, setLocale } from '../../src/i18n'
 import { useAuthStore } from '../../src/stores/useAuthStore'
@@ -110,6 +112,68 @@ describe('FortiGate widget renderers', () => {
     expect(statusList.text()).toContain('Endpoint Health')
     expect(statusList.text()).toContain('win-lab-01')
     expect(statusList.text()).toContain('warning')
+  })
+
+  it('renders SIEM-calculated executive SOC metrics', async () => {
+    const mttdMttr = mount(WidgetSocMttdMttr, {
+      props: {
+        catalogId: 'soc-mttd-mttr',
+        instanceId: 'w_mttd',
+        integrationId: 'int_siem_01',
+        data: {
+          mttdAvgMs: 120000,
+          mttrAvgMs: 900000,
+          mttdMedianMs: 120000,
+          mttrMedianMs: 900000,
+          mttdSampleSize: 2,
+          mttrSampleSize: 1,
+          perIncident: [
+            {
+              id: 'inc_01',
+              title: 'Possible port scan',
+              severity: 'high',
+              ageMs: 600000,
+              mttdMs: 120000,
+              mttrMs: 900000,
+            },
+          ],
+        },
+      },
+    })
+
+    expect(mttdMttr.text()).toContain('2m')
+    expect(mttdMttr.text()).toContain('15m')
+    await mttdMttr.get('[role="button"]').trigger('click')
+    expect(mttdMttr.text()).toContain('Possible port scan')
+
+    const sla = mount(WidgetSocSlaBreach, {
+      props: {
+        catalogId: 'soc-sla-breach',
+        instanceId: 'w_sla',
+        integrationId: 'int_siem_01',
+        data: {
+          red: 1,
+          amber: 0,
+          open: 1,
+          breaches: [
+            {
+              id: 'inc_red',
+              title: 'Overdue critical incident',
+              severity: 'critical',
+              ticketStatus: 'new',
+              triageLevel: 'T1',
+              ageMs: 7200000,
+              bucket: 'red',
+              ruleId: 'network_scan',
+            },
+          ],
+        },
+      },
+    })
+
+    expect(sla.text()).toContain('Red SLA')
+    expect(sla.text()).toContain('Overdue critical incident')
+    expect(sla.text()).toContain('network_scan')
   })
 
   it('renders provenance badges for generic SOC rows with existing metadata', () => {

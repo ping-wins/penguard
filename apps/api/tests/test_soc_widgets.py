@@ -85,6 +85,34 @@ class FakePenguinToolIntegrationService:
         }
 
 
+def executive_metrics_payload(
+    *,
+    severity: dict | None = None,
+    recent_incidents: dict | None = None,
+    top_entities: dict | None = None,
+    sla: dict | None = None,
+    response_times: dict | None = None,
+) -> dict:
+    return {
+        "window": "24h",
+        "generatedAt": "2026-05-19T00:00:00.000Z",
+        "severity": severity or {"items": [], "total": 0},
+        "recentIncidents": recent_incidents or {"incidents": [], "count": 0},
+        "topEntities": top_entities or {"entities": []},
+        "sla": sla or {"breaches": [], "red": 0, "amber": 0, "open": 0},
+        "responseTimes": response_times
+        or {
+            "mttdAvgMs": None,
+            "mttrAvgMs": None,
+            "mttdMedianMs": None,
+            "mttrMedianMs": None,
+            "mttdSampleSize": 0,
+            "mttrSampleSize": 0,
+            "perIncident": [],
+        },
+    }
+
+
 def csrf_headers(client: TestClient) -> dict[str, str]:
     response = client.get("/api/auth/csrf")
     return {"X-CSRF-Token": response.json()["csrfToken"]}
@@ -106,6 +134,8 @@ def test_soc_widget_catalog_returns_soc_widgets():
         "soc-incidents-by-severity",
         "soc-recent-incidents",
         "soc-top-entities",
+        "soc-sla-breach",
+        "soc-mttd-mttr",
         "xdr-endpoint-health",
         "soar-active-playbook-runs",
         "soar-playbook-run-history",
@@ -132,13 +162,15 @@ def test_soc_incidents_by_severity_widget_aggregates_incidents():
     client = TestClient(app)
     fake_siem = FakeSocClient(
         {
-            "/incidents": {
-                "items": [
-                    {"id": "inc_01", "severity": "high", "entities": {"sourceIp": "192.0.2.10"}},
-                    {"id": "inc_02", "severity": "high", "entities": {"sourceIp": "192.0.2.10"}},
-                    {"id": "inc_03", "severity": "medium", "entities": {"hostname": "host-01"}},
-                ]
-            }
+            "/metrics/executive": executive_metrics_payload(
+                severity={
+                    "items": [
+                        {"severity": "high", "count": 2},
+                        {"severity": "medium", "count": 1},
+                    ],
+                    "total": 3,
+                }
+            )
         }
     )
     app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
@@ -152,6 +184,12 @@ def test_soc_incidents_by_severity_widget_aggregates_incidents():
     )
 
     assert response.status_code == 200
+    assert fake_siem.calls[0]["path"] == "/metrics/executive"
+    assert fake_siem.calls[0]["params"] == {
+        "window": "24h",
+        "limit": 10,
+        "integrationId": "int_penguin_01",
+    }
     assert response.json()["data"] == {
         "items": [
             {"severity": "high", "count": 2},
@@ -159,6 +197,79 @@ def test_soc_incidents_by_severity_widget_aggregates_incidents():
         ],
         "total": 3,
     }
+
+
+def test_soc_mttd_mttr_widget_uses_siem_executive_metrics():
+    client = TestClient(app)
+    response_times = {
+        "mttdAvgMs": 120000,
+        "mttrAvgMs": 900000,
+        "mttdMedianMs": 120000,
+        "mttrMedianMs": 900000,
+        "mttdSampleSize": 2,
+        "mttrSampleSize": 1,
+        "perIncident": [
+            {
+                "id": "inc_01",
+                "title": "Possible port scan",
+                "severity": "high",
+                "ageMs": 600000,
+                "mttdMs": 120000,
+                "mttrMs": 900000,
+            }
+        ],
+    }
+    fake_siem = FakeSocClient(
+        {"/metrics/executive": executive_metrics_payload(response_times=response_times)}
+    )
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("siem_kowalski")
+    )
+
+    response = client.get(
+        "/api/widgets/soc-mttd-mttr/data",
+        params={"integrationId": "int_penguin_01"},
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["path"] == "/metrics/executive"
+    assert response.json()["data"] == response_times
+
+
+def test_soc_sla_breach_widget_uses_siem_executive_metrics():
+    client = TestClient(app)
+    sla = {
+        "breaches": [
+            {
+                "id": "inc_red",
+                "title": "Overdue critical incident",
+                "severity": "critical",
+                "ticketStatus": "new",
+                "triageLevel": "T1",
+                "ageMs": 7200000,
+                "bucket": "red",
+                "ruleId": "network_scan",
+            }
+        ],
+        "red": 1,
+        "amber": 0,
+        "open": 1,
+    }
+    fake_siem = FakeSocClient({"/metrics/executive": executive_metrics_payload(sla=sla)})
+    app.dependency_overrides[widgets_router.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[widgets_router.get_penguin_tool_integration_service] = lambda: (
+        FakePenguinToolIntegrationService("siem_kowalski")
+    )
+
+    response = client.get(
+        "/api/widgets/soc-sla-breach/data",
+        params={"integrationId": "int_penguin_01"},
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["path"] == "/metrics/executive"
+    assert response.json()["data"] == sla
 
 
 def test_xdr_endpoint_health_widget_aggregates_endpoint_health():

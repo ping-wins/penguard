@@ -14,6 +14,14 @@ TriageLevel = Literal["T1", "T2", "T3"]
 TicketStatus = Literal["new", "investigating", "contained", "closed"]
 RuleOperator = Literal["equals", "gte", "exists", "contains"]
 RuleMatch = Literal["all", "any"]
+ExecutiveProviderType = Literal[
+    "fortigate",
+    "fortiweb",
+    "xdr_rico",
+    "agent_private",
+    "manual",
+    "demo",
+]
 logger = logging.getLogger("uvicorn.error")
 ALLOWED_SCAN_WINDOW_SECONDS = 60
 ALLOWED_SCAN_MIN_UNIQUE_PORTS = 20
@@ -33,6 +41,18 @@ FORWARDED_SCAN_ACTIONS = {
 }
 HTTP_FLOOD_SERVICES = {"HTTP", "HTTPS"}
 HTTP_FLOOD_PORTS = {80, 443, 8080, 8443}
+EXECUTIVE_DEFAULT_WINDOW_SECONDS = 24 * 60 * 60
+EXECUTIVE_SLA_AMBER_MS = 15 * 60 * 1000
+EXECUTIVE_SLA_RED_MS = 60 * 60 * 1000
+EXECUTIVE_TERMINAL_STATUSES = {"contained", "resolved", "false_positive"}
+EXECUTIVE_PROVIDER_SOURCES = {
+    "fortigate": {"fortigate", "fortigate.syslog", "fortigate.api"},
+    "fortiweb": {"fortiweb", "fortiweb.telemetry", "fortiweb.api"},
+    "xdr_rico": {"xdr_rico", "xdr_rico.agent_private"},
+    "agent_private": {"agent_private", "xdr_rico.agent_private"},
+    "manual": {"manual", "manual.event"},
+    "demo": {"demo", "demo.replay", "simulator"},
+}
 
 
 def _triage_from_severity(severity: str) -> TriageLevel:
@@ -722,6 +742,381 @@ def _has_recent_allowed_scan_event(
             continue
         return True
     return False
+
+
+def _executive_metrics(
+    *,
+    window: str,
+    limit: int,
+    now: datetime,
+    integration_id: str | None = None,
+    provider_type: ExecutiveProviderType | None = None,
+) -> dict[str, Any]:
+    since = now - timedelta(seconds=_executive_window_seconds(window))
+    incidents = [
+        _load_incident(payload)
+        for payload in store.list_incidents()
+    ]
+    windowed_incidents = [
+        incident for incident in incidents
+        if _as_utc(incident.created_at) >= since
+    ]
+    events_by_id = _executive_events_by_id(windowed_incidents)
+    scoped_incidents = _filter_incidents_for_scope(
+        windowed_incidents,
+        integration_id=integration_id,
+        provider_type=provider_type,
+        events_by_id=events_by_id,
+    )
+    return {
+        "window": window,
+        "generatedAt": now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "scope": {
+            "integrationId": integration_id,
+            "providerType": provider_type,
+            "applied": integration_id is not None or provider_type is not None,
+        },
+        "severity": _executive_severity(scoped_incidents),
+        "recentIncidents": _executive_recent_incidents(scoped_incidents, limit=limit),
+        "topEntities": _executive_top_entities(scoped_incidents, limit=10),
+        "sla": _executive_sla(scoped_incidents, now=now),
+        "responseTimes": _executive_response_times(
+            scoped_incidents,
+            now=now,
+            events_by_id=events_by_id,
+        ),
+    }
+
+
+def _executive_window_seconds(window: str) -> int:
+    return {
+        "15m": 15 * 60,
+        "1h": 60 * 60,
+        "6h": 6 * 60 * 60,
+        "24h": EXECUTIVE_DEFAULT_WINDOW_SECONDS,
+        "7d": 7 * EXECUTIVE_DEFAULT_WINDOW_SECONDS,
+    }.get(window, EXECUTIVE_DEFAULT_WINDOW_SECONDS)
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _executive_events_by_id(incidents: list[Incident]) -> dict[str, SecurityEvent]:
+    event_ids = sorted(
+        {
+            event_id
+            for incident in incidents
+            for event_id in incident.event_ids
+            if event_id
+        }
+    )
+    return {
+        payload["id"]: _load_event(payload)
+        for payload in store.list_events_by_ids(event_ids)
+        if payload.get("id")
+    }
+
+
+def _filter_incidents_for_scope(
+    incidents: list[Incident],
+    *,
+    integration_id: str | None,
+    provider_type: ExecutiveProviderType | None,
+    events_by_id: dict[str, SecurityEvent],
+) -> list[Incident]:
+    if integration_id is None and provider_type is None:
+        return incidents
+    return [
+        incident
+        for incident in incidents
+        if (
+            integration_id is None
+            or _incident_matches_integration(incident, integration_id, events_by_id)
+        )
+        and (
+            provider_type is None
+            or _incident_matches_provider(incident, provider_type, events_by_id)
+        )
+    ]
+
+
+def _incident_matches_integration(
+    incident: Incident,
+    integration_id: str,
+    events_by_id: dict[str, SecurityEvent],
+) -> bool:
+    if incident.entities.get("integrationId") == integration_id:
+        return True
+    if incident.attributes.get("integrationId") == integration_id:
+        return True
+    if incident.origin.get("integrationId") == integration_id:
+        return True
+    return any(
+        event.entities.get("integrationId") == integration_id
+        or event.attributes.get("integrationId") == integration_id
+        for event in _related_events(incident, events_by_id)
+    )
+
+
+def _incident_matches_provider(
+    incident: Incident,
+    provider_type: ExecutiveProviderType,
+    events_by_id: dict[str, SecurityEvent],
+) -> bool:
+    allowed = EXECUTIVE_PROVIDER_SOURCES[provider_type]
+    return any(
+        _provider_source_matches(source, allowed)
+        for source in _incident_provider_sources(incident, events_by_id)
+    )
+
+
+def _provider_source_matches(source: Any, allowed: set[str]) -> bool:
+    normalized = str(source or "").lower()
+    return normalized in allowed
+
+
+def _incident_provider_sources(
+    incident: Incident,
+    events_by_id: dict[str, SecurityEvent],
+) -> list[Any]:
+    sources: list[Any] = [
+        incident.origin.get("kind"),
+        incident.attributes.get("source"),
+    ]
+    for event in _related_events(incident, events_by_id):
+        sources.append(event.source)
+        sources.append(event.attributes.get("source"))
+    return sources
+
+
+def _related_events(
+    incident: Incident,
+    events_by_id: dict[str, SecurityEvent],
+) -> list[SecurityEvent]:
+    return [
+        events_by_id[event_id]
+        for event_id in incident.event_ids
+        if event_id in events_by_id
+    ]
+
+
+def _executive_severity(incidents: list[Incident]) -> dict[str, Any]:
+    order = ["critical", "high", "medium", "low", "informational"]
+    counts = {severity: 0 for severity in order}
+    for incident in incidents:
+        severity = str(incident.severity or "informational").lower()
+        counts.setdefault(severity, 0)
+        counts[severity] += 1
+    return {
+        "items": [
+            {"severity": severity, "count": count}
+            for severity, count in counts.items()
+            if count > 0
+        ],
+        "total": len(incidents),
+    }
+
+
+def _executive_recent_incidents(
+    incidents: list[Incident],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    ordered = sorted(
+        incidents,
+        key=lambda incident: _as_utc(incident.created_at),
+        reverse=True,
+    )
+    return {
+        "incidents": [_dump(incident) for incident in ordered[:limit]],
+        "count": len(incidents),
+    }
+
+
+def _executive_top_entities(
+    incidents: list[Incident],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    counts: dict[tuple[str, str], int] = {}
+    for incident in incidents:
+        for field, value in incident.entities.items():
+            if value in (None, ""):
+                continue
+            key = (str(field), str(value))
+            counts[key] = counts.get(key, 0) + 1
+    rows = [
+        {"field": field, "value": value, "count": count}
+        for (field, value), count in counts.items()
+    ]
+    rows.sort(key=lambda row: row["count"], reverse=True)
+    return {"entities": rows[:limit]}
+
+
+def _executive_sla(incidents: list[Incident], *, now: datetime) -> dict[str, Any]:
+    breaches: list[dict[str, Any]] = []
+    open_count = 0
+    red_count = 0
+    amber_count = 0
+    for incident in incidents:
+        if not _incident_is_open_for_sla(incident):
+            continue
+        open_count += 1
+        age_ms = _age_ms(incident.created_at, now)
+        bucket: str | None = None
+        if age_ms >= EXECUTIVE_SLA_RED_MS:
+            bucket = "red"
+            red_count += 1
+        elif age_ms >= EXECUTIVE_SLA_AMBER_MS:
+            bucket = "amber"
+            amber_count += 1
+        if bucket is None:
+            continue
+        breaches.append(
+            {
+                "id": incident.id,
+                "title": incident.title,
+                "severity": incident.severity,
+                "ticketStatus": incident.ticket_status,
+                "triageLevel": incident.triage_level,
+                "ageMs": age_ms,
+                "bucket": bucket,
+                "ruleId": incident.rule_id,
+            }
+        )
+    breaches.sort(key=lambda breach: breach["ageMs"], reverse=True)
+    return {
+        "breaches": breaches,
+        "red": red_count,
+        "amber": amber_count,
+        "open": open_count,
+    }
+
+
+def _incident_is_open_for_sla(incident: Incident) -> bool:
+    status = str(incident.status or "").lower()
+    ticket_status = str(incident.ticket_status or "").lower()
+    return status not in EXECUTIVE_TERMINAL_STATUSES and ticket_status not in {
+        "contained",
+        "closed",
+    }
+
+
+def _executive_response_times(
+    incidents: list[Incident],
+    *,
+    now: datetime,
+    events_by_id: dict[str, SecurityEvent],
+) -> dict[str, Any]:
+    mttd_values: list[int] = []
+    mttr_values: list[int] = []
+    rows: list[dict[str, Any]] = []
+    for incident in sorted(incidents, key=lambda item: _as_utc(item.created_at), reverse=True):
+        mttd_ms = _incident_mttd_ms(incident, events_by_id)
+        mttr_ms = _incident_mttr_ms(incident)
+        if mttd_ms is not None:
+            mttd_values.append(mttd_ms)
+        if mttr_ms is not None:
+            mttr_values.append(mttr_ms)
+        rows.append(
+            {
+                "id": incident.id,
+                "title": incident.title,
+                "severity": incident.severity,
+                "ageMs": _age_ms(incident.created_at, now),
+                "mttdMs": mttd_ms,
+                "mttrMs": mttr_ms,
+            }
+        )
+    return {
+        "mttdAvgMs": _average_ms(mttd_values),
+        "mttrAvgMs": _average_ms(mttr_values),
+        "mttdMedianMs": _median_ms(mttd_values),
+        "mttrMedianMs": _median_ms(mttr_values),
+        "mttdSampleSize": len(mttd_values),
+        "mttrSampleSize": len(mttr_values),
+        "perIncident": rows,
+    }
+
+
+def _incident_mttd_ms(
+    incident: Incident,
+    events_by_id: dict[str, SecurityEvent],
+) -> int | None:
+    event_times = [
+        _as_utc(events_by_id[event_id].occurred_at)
+        for event_id in incident.event_ids
+        if event_id in events_by_id
+    ]
+    if not event_times:
+        return None
+    return _duration_ms(min(event_times), incident.created_at)
+
+
+def _incident_mttr_ms(incident: Incident) -> int | None:
+    if str(incident.status or "").lower() not in EXECUTIVE_TERMINAL_STATUSES:
+        return None
+    terminal_times = [
+        _as_utc(item.occurred_at)
+        for item in incident.timeline
+        if item.status is not None
+        and str(item.status).lower() in EXECUTIVE_TERMINAL_STATUSES
+    ]
+    if not terminal_times:
+        return None
+    return _duration_ms(incident.created_at, min(terminal_times))
+
+
+def _age_ms(start: datetime, now: datetime) -> int:
+    return _duration_ms(start, now)
+
+
+def _duration_ms(start: datetime, end: datetime) -> int:
+    return max(0, round((_as_utc(end) - _as_utc(start)).total_seconds() * 1000))
+
+
+def _average_ms(values: list[int]) -> int | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values))
+
+
+def _median_ms(values: list[int]) -> int | None:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    mid = len(sorted_values) // 2
+    if len(sorted_values) % 2 == 1:
+        return sorted_values[mid]
+    return round((sorted_values[mid - 1] + sorted_values[mid]) / 2)
+
+
+@app.get("/metrics/executive")
+def get_executive_metrics(
+    window: str = "24h",
+    limit: int = Query(default=10, ge=1, le=100),
+    integration_id: Annotated[str | None, Query(alias="integrationId")] = None,
+    provider_type: Annotated[ExecutiveProviderType | None, Query(alias="providerType")] = None,
+) -> dict[str, Any]:
+    metrics = _executive_metrics(
+        window=window,
+        limit=limit,
+        now=_now(),
+        integration_id=integration_id,
+        provider_type=provider_type,
+    )
+    logger.info(
+        "siem_executive_metrics window=%s integration_id=%s provider_type=%s "
+        "severity_total=%s sla_red=%s sla_amber=%s",
+        window,
+        integration_id,
+        provider_type,
+        metrics["severity"]["total"],
+        metrics["sla"]["red"],
+        metrics["sla"]["amber"],
+    )
+    return metrics
 
 
 @app.get("/health")

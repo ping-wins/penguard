@@ -4,8 +4,20 @@ import { AlertCircle, Boxes, ChevronRight, Plug, RefreshCcw, Search, Trash2, X }
 import { useI18n } from 'vue-i18n'
 import { useMarketplaceStore } from '../../stores/useMarketplaceStore'
 import type { AddonManifest } from '../../services/marketplaceClient'
+import {
+  localizedAddonSearchText,
+  localizeAddonAuthField,
+  localizeAddonCategory,
+  localizeAddonDescription,
+  localizeAddonFieldType,
+  localizeAddonName,
+  localizeAddonRoute,
+  localizeAddonSiemEventType,
+  localizeAddonWidget,
+  localizeMarketplaceError,
+} from '../../lib/marketplaceI18n'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const emit = defineEmits<{
   install: [addon: AddonManifest]
   uninstall: [addon: AddonManifest]
@@ -19,21 +31,38 @@ const filtered = computed<AddonManifest[]>(() => {
   const term = search.value.trim().toLowerCase()
   if (!term) return store.addons
   return store.addons.filter((addon) => {
-    return (
-      addon.name.toLowerCase().includes(term)
-      || addon.vendor.toLowerCase().includes(term)
-      || addon.category.toLowerCase().includes(term)
-      || addon.description.toLowerCase().includes(term)
-    )
+    return localizedAddonSearchText(addon, translate, hasTranslation)
+      .toLowerCase()
+      .includes(term)
   })
 })
+
+function translate(key: string) {
+  return t(key)
+}
+
+function hasTranslation(key: string) {
+  return te(key)
+}
 
 function addonVersion(addon: AddonManifest) {
   return addon.version ?? addon.latestVersion ?? addon.versions?.[0] ?? ''
 }
 
+function addonName(addon: AddonManifest) {
+  return localizeAddonName(addon, translate, hasTranslation)
+}
+
+function addonCategory(addon: AddonManifest) {
+  return localizeAddonCategory(addon, translate, hasTranslation)
+}
+
+function addonDescription(addon: AddonManifest) {
+  return localizeAddonDescription(addon, translate, hasTranslation)
+}
+
 function addonRoutes(addon: AddonManifest) {
-  return addon.routes ?? []
+  return (addon.routes ?? []).map(route => localizeAddonRoute(addon.id, route, translate, hasTranslation))
 }
 
 function addonWidgets(addon: AddonManifest) {
@@ -45,7 +74,24 @@ function addonSiemEventTypes(addon: AddonManifest) {
 }
 
 function addonAuthFields(addon: AddonManifest) {
-  return addon.provider?.auth?.fields ?? []
+  return (addon.provider?.auth?.fields ?? [])
+    .map(field => localizeAddonAuthField(addon.id, field, translate, hasTranslation))
+}
+
+function addonFieldTypeLabel(fieldType: string) {
+  return localizeAddonFieldType(fieldType, translate, hasTranslation)
+}
+
+function addonWidgetLabel(addon: AddonManifest, widgetId: string) {
+  return localizeAddonWidget(addon.id, widgetId, translate, hasTranslation)
+}
+
+function addonSiemEventLabel(addon: AddonManifest, eventType: string) {
+  return localizeAddonSiemEventType(addon.id, eventType, translate, hasTranslation)
+}
+
+function marketplaceErrorMessage(message: string) {
+  return localizeMarketplaceError(message, translate, hasTranslation)
 }
 
 function isCurrentVersion(addon: AddonManifest) {
@@ -65,7 +111,7 @@ async function installAddon(addon: AddonManifest) {
 async function uninstallAddon(addon: AddonManifest) {
   if (!addon.installed) return
   const confirmed = window.confirm(
-    t('marketplace.uninstallConfirm', { name: addon.name }),
+    t('marketplace.uninstallConfirm', { name: addonName(addon) }),
   )
   if (!confirmed) return
   try {
@@ -118,7 +164,7 @@ onMounted(() => {
       class="px-4 py-2 text-xs border-b border-red-500/30 bg-red-500/10 text-red-300 flex items-start gap-2"
     >
       <AlertCircle :size="14" class="mt-0.5 shrink-0" />
-      <span>{{ store.error }}</span>
+      <span>{{ marketplaceErrorMessage(store.error) }}</span>
     </div>
 
     <div class="flex-1 overflow-y-auto">
@@ -139,8 +185,8 @@ onMounted(() => {
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-theme-text truncate">{{ addon.name }}</span>
-                <span class="rounded border border-theme-border/70 bg-theme-text/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-text-muted">{{ addon.category }}</span>
+                <span class="text-sm font-semibold text-theme-text truncate">{{ addonName(addon) }}</span>
+                <span class="rounded border border-theme-border/70 bg-theme-text/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-theme-text-muted">{{ addonCategory(addon) }}</span>
                 <span class="text-[10px] font-mono text-theme-text-muted">v{{ addonVersion(addon) }}</span>
                 <span
                   v-if="addon.installed"
@@ -148,7 +194,7 @@ onMounted(() => {
                 >{{ t('marketplace.installed') }}</span>
               </div>
               <p class="text-[11px] text-theme-text-muted mt-0.5">{{ addon.vendor }}</p>
-              <p class="text-xs text-theme-text mt-1 line-clamp-2">{{ addon.description }}</p>
+              <p class="text-xs text-theme-text mt-1 line-clamp-2">{{ addonDescription(addon) }}</p>
               <div class="mt-2 flex flex-wrap gap-1 text-[10px] text-theme-text-muted">
                 <span>{{ t('marketplace.routesLabel', { count: addonRoutes(addon).length }) }}</span>
                 <span>·</span>
@@ -202,8 +248,8 @@ onMounted(() => {
         <div class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-theme-border bg-theme-panel shadow-xl">
           <header class="flex items-start justify-between gap-3 border-b border-theme-border px-4 py-3">
             <div class="min-w-0">
-              <h3 class="truncate text-base font-semibold text-theme-text">{{ selected.name }}</h3>
-              <p class="text-[11px] text-theme-text-muted">{{ selected.vendor }} · {{ selected.category }} · v{{ addonVersion(selected) }}</p>
+              <h3 class="truncate text-base font-semibold text-theme-text">{{ addonName(selected) }}</h3>
+              <p class="text-[11px] text-theme-text-muted">{{ selected.vendor }} · {{ addonCategory(selected) }} · v{{ addonVersion(selected) }}</p>
             </div>
             <button
               type="button"
@@ -215,7 +261,7 @@ onMounted(() => {
             </button>
           </header>
           <div class="px-4 py-3 text-sm text-theme-text space-y-3">
-            <p>{{ selected.description }}</p>
+            <p>{{ addonDescription(selected) }}</p>
             <section v-if="addonAuthFields(selected).length">
               <h4 class="text-[10px] uppercase tracking-wide text-theme-text-muted mb-1">{{ t('marketplace.authHeader') }}</h4>
               <ul class="text-xs flex flex-col gap-1">
@@ -225,7 +271,7 @@ onMounted(() => {
                   class="rounded border border-theme-border bg-theme-bg/50 px-2 py-1"
                 >
                   <span class="font-mono text-theme-primary">{{ field.id }}</span>
-                  <span class="text-theme-text-muted"> — {{ field.label }} ({{ field.type }}{{ field.required ? '*' : '' }})</span>
+                  <span class="text-theme-text-muted"> — {{ field.label }} ({{ addonFieldTypeLabel(field.type) }}{{ field.required ? `, ${t('marketplace.requiredField')}` : '' }})</span>
                 </li>
               </ul>
             </section>
@@ -249,8 +295,8 @@ onMounted(() => {
                 <span
                   v-for="widget in addonWidgets(selected)"
                   :key="widget"
-                  class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] font-mono text-theme-text"
-                >{{ widget }}</span>
+                  class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] text-theme-text"
+                >{{ addonWidgetLabel(selected, widget) }}</span>
               </div>
             </section>
             <section v-if="addonSiemEventTypes(selected).length">
@@ -259,8 +305,8 @@ onMounted(() => {
                 <span
                   v-for="evt in addonSiemEventTypes(selected)"
                   :key="evt"
-                  class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] font-mono text-theme-text"
-                >{{ evt }}</span>
+                  class="rounded border border-theme-border bg-theme-bg/50 px-2 py-0.5 text-[11px] text-theme-text"
+                >{{ addonSiemEventLabel(selected, evt) }}</span>
               </div>
             </section>
           </div>

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -14,6 +16,7 @@ from app.main import app
 from app.routers import lab_demo, soc
 from app.soc import client as soc_client_module
 from app.soc.client import SocServiceClient
+from app.threat_intel.models import Indicator, ThreatIntelEnrichment
 
 
 class FakeSocClient:
@@ -42,6 +45,63 @@ class FakeSocClient:
             }
         )
         return self.response
+
+
+class SequencedSocClient:
+    def __init__(self, responses: list[dict]) -> None:
+        self.responses = list(responses)
+        self.calls: list[dict] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json=None,
+        params=None,
+        headers=None,
+        pass_through_statuses=None,
+    ) -> dict:
+        self.calls.append(
+            {
+                "method": method,
+                "path": path,
+                "json": json,
+                "params": params,
+                "headers": headers,
+                "pass_through_statuses": pass_through_statuses,
+            }
+        )
+        if not self.responses:
+            raise AssertionError(f"unexpected SOC call {method} {path}")
+        return self.responses.pop(0)
+
+
+class FakeThreatIntelService:
+    provider_name = "fake-ti"
+    configured = True
+
+    def __init__(self) -> None:
+        self.calls: list[list[Indicator]] = []
+
+    def enrich_indicators(self, indicators: list[Indicator]) -> list[ThreatIntelEnrichment]:
+        self.calls.append(indicators)
+        checked_at = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
+        results: list[ThreatIntelEnrichment] = []
+        for indicator in indicators:
+            flagged = indicator.value in {"198.51.100.20", "suspicious.example"}
+            results.append(
+                ThreatIntelEnrichment(
+                    indicator=indicator,
+                    provider=self.provider_name,
+                    verdict="malicious" if flagged else "clean",
+                    score=4 if flagged else 0,
+                    stats={"malicious": 4 if flagged else 0, "suspicious": 0},
+                    checked_at=checked_at,
+                    reference_url=f"https://example.test/ioc/{indicator.value}",
+                )
+            )
+        return results
 
 
 class FailingSocClient:
@@ -96,6 +156,7 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 def teardown_function():
     app.dependency_overrides.clear()
     get_settings.cache_clear()
+    soc.get_threat_intel_service.cache_clear()
 
 
 def _user_with_roles(*roles: str) -> dict:
@@ -317,6 +378,59 @@ def test_incident_endpoint_context_gateway_correlates_siem_incident_with_xdr():
     assert body["incident"] == incident
     assert body["total"] == 1
     assert body["items"][0]["endpoint"]["id"] == "end_01"
+
+
+def test_incident_threat_intel_enrichment_patches_ticket_and_audits():
+    client = TestClient(app)
+    incident = {
+        "id": "inc_ti",
+        "title": "Suspicious outbound connection",
+        "severity": "high",
+        "entities": {
+            "sourceIp": "192.0.2.50",
+            "destinationIp": "198.51.100.20",
+            "domain": "suspicious.example",
+        },
+        "attributes": {
+            "url": "https://suspicious.example/download?token=redacted",
+        },
+    }
+    fake_siem = SequencedSocClient(
+        [
+            incident,
+            {"id": "inc_ti", "ticketStatus": "investigating"},
+        ]
+    )
+    fake_ti = FakeThreatIntelService()
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.get_threat_intel_service] = lambda: fake_ti
+
+    response = client.post(
+        "/api/soc/incidents/inc_ti/threat-intel/enrich",
+        headers=csrf_headers(client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["incidentId"] == "inc_ti"
+    assert body["provider"] == "fake-ti"
+    assert body["providerConfigured"] is True
+    assert body["summary"]["malicious"] == 2
+    assert body["summary"]["clean"] == 2
+    assert body["results"][1]["indicator"] == {"type": "ip", "value": "198.51.100.20"}
+    assert fake_ti.calls[0] == [
+        Indicator(type="ip", value="192.0.2.50"),
+        Indicator(type="ip", value="198.51.100.20"),
+        Indicator(type="domain", value="suspicious.example"),
+        Indicator(type="url", value="https://suspicious.example"),
+    ]
+    assert fake_siem.calls[1]["path"] == "/incidents/inc_ti/triage"
+    assert "Threat intel enrichment (fake-ti)" in fake_siem.calls[1]["json"]["note"]
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="soc.incident.threat_intel_enriched"
+    )
+    assert audit["items"][0]["details"]["incidentId"] == "inc_ti"
+    assert audit["items"][0]["details"]["flaggedCount"] == 2
 
 
 def test_incident_triage_context_maps_network_scan_to_mitre_and_fortigate_response():
@@ -1551,6 +1665,141 @@ def test_xdr_endpoint_event_gateway_reads_nested_remote_address_for_suspicious_c
     assert response.status_code == 200
     assert fake_siem.calls[0]["json"]["eventType"] == "endpoint.suspicious_connection"
     assert fake_siem.calls[0]["json"]["entities"]["destinationIp"] == "10.10.10.10"
+
+
+def test_xdr_endpoint_event_gateway_enriches_sysmon_with_threat_intel_before_forwarding():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "end_win_01"},
+            "timelineItem": {"id": "tl_sysmon_01", "eventType": "sysmon.network_connection"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_sysmon_01"})
+    fake_ti = FakeThreatIntelService()
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[soc.get_threat_intel_service] = lambda: fake_ti
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.network_connection",
+            "occurredAt": "2026-05-19T12:10:00.000Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 3,
+                "destinationIp": "198.51.100.20",
+                "destinationHostname": "suspicious.example",
+                "ioc": {"type": "ip", "value": "198.51.100.20"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_ti.calls == [[Indicator(type="ip", value="198.51.100.20")]]
+    xdr_payload = fake_xdr.calls[0]["json"]
+    assert xdr_payload["attributes"]["threatIntelVerdict"] == "malicious"
+    assert xdr_payload["attributes"]["threatIntelProvider"] == "fake-ti"
+    assert xdr_payload["attributes"]["threatIntelScore"] == 4
+    forwarded = fake_siem.calls[0]["json"]
+    assert forwarded["eventType"] == "endpoint.suspicious_connection"
+    assert forwarded["attributes"]["threatIntel"]["verdict"] == "malicious"
+
+
+def test_xdr_endpoint_event_gateway_forwards_malicious_sysmon_network_to_siem():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "end_win_01"},
+            "timelineItem": {"id": "tl_sysmon_01", "eventType": "sysmon.network_connection"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_sysmon_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.network_connection",
+            "occurredAt": "2026-05-19T12:10:00.000Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": "FORTIDASHBOARD\\analyst",
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 3,
+                "image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "processName": "chrome.exe",
+                "destinationIp": "198.51.100.20",
+                "destinationHostname": "suspicious.example",
+                "destinationPort": 443,
+                "threatIntelVerdict": "malicious",
+                "threatIntelProvider": "virustotal-core",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["siemForwarding"]["status"] == "created"
+    forwarded = fake_siem.calls[0]["json"]
+    assert forwarded["eventType"] == "endpoint.suspicious_connection"
+    assert forwarded["entities"]["destinationIp"] == "198.51.100.20"
+    assert forwarded["entities"]["domain"] == "suspicious.example"
+    assert forwarded["attributes"]["originSource"] == "agent_private.sysmon"
+    assert forwarded["attributes"]["xdrTimelineItemId"] == "tl_sysmon_01"
+
+
+def test_xdr_endpoint_event_gateway_skips_clean_sysmon_dns_query():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "end_win_01"},
+            "timelineItem": {"id": "tl_dns_01", "eventType": "sysmon.dns_query"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_dns_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.dns_query",
+            "occurredAt": "2026-05-19T12:10:01.000Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 22,
+                "queryName": "example.com",
+                "queryResults": ["93.184.216.34"],
+                "threatIntelVerdict": "clean",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert "siemForwarding" not in response.json()
+    assert fake_siem.calls == []
 
 
 def test_xdr_endpoint_event_gateway_requires_enrollment_authorization():

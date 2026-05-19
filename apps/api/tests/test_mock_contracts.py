@@ -163,7 +163,7 @@ def test_penguin_provider_data_fields_are_grouped_for_custom_visuals():
     assert payload["groups"][0]["category"] == "SIEM / Incidents"
     assert payload["groups"][0]["fields"][0] == {
         "id": "total",
-        "label": "Open Incidents",
+        "label": "Incident Count",
         "type": "number",
         "unit": "count",
         "source": "soc-incidents-by-severity",

@@ -179,8 +179,38 @@ uv run agent-private identity
 uv run agent-private heartbeat --endpoint-id demo-endpoint-01
 uv run agent-private process-snapshot --endpoint-id demo-endpoint-01
 uv run agent-private connection-snapshot --endpoint-id demo-endpoint-01
+uv run agent-private sysmon --endpoint-id demo-endpoint-01
 uv run agent-private simulate --endpoint-id demo-endpoint-01
 ```
+
+## Sysmon Network And DNS Collection
+
+On Windows Server labs with Microsoft Sysinternals Sysmon installed,
+`agent_private` can read recent Sysmon Operational Log records through
+`wevtutil`, normalize network and DNS activity, and optionally post them
+through the BFF.
+
+```powershell
+$env:AGENT_PRIVATE_API_URL = "http://localhost:8000"
+$env:AGENT_PRIVATE_ENDPOINT_ID = "win-dc01"
+$env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
+
+uv run agent-private sysmon --limit 50
+uv run agent-private sysmon --limit 50 --post
+```
+
+Supported Sysmon events:
+
+- `3` network connections become `sysmon.network_connection` with process,
+  destination IP/port and optional destination hostname.
+- `22` DNS queries become `sysmon.dns_query` with process, query name and
+  resolved results.
+
+These events include minimized IoC fields for later Threat Intel enrichment.
+They do not capture full URLs, request headers, cookies or page content.
+When a later enrichment step marks an event with `threatIntelVerdict` equal to
+`suspicious` or `malicious`, the BFF can forward it to the SIEM as
+`endpoint.suspicious_connection`.
 
 ## Windows Security Log Collection
 
@@ -259,6 +289,7 @@ Headless foreground loop for scripts/tests:
 uv run agent-private run-headless
 uv run agent-private run-headless --heartbeat-interval 30 --connection-interval 60 --process-interval 300
 uv run agent-private run-headless --windows-security-interval 60
+uv run agent-private run-headless --sysmon-interval 60
 ```
 
 Windows PowerShell:

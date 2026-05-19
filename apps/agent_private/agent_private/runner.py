@@ -10,9 +10,11 @@ from agent_private.cli import (
     build_heartbeat_payload,
     build_identity_payload,
     build_process_snapshot_payload,
+    build_sysmon_event_payloads,
     build_windows_security_event_payloads,
     collect_connections,
     collect_processes,
+    collect_sysmon_events,
     get_ip_addresses,
     post_endpoint_event,
 )
@@ -31,8 +33,10 @@ class AgentRunConfig:
     connection_interval: float = 60.0
     process_interval: float = 300.0
     windows_security_interval: float | None = None
+    sysmon_interval: float | None = None
     process_limit: int | None = None
     windows_security_limit: int = 50
+    sysmon_limit: int = 50
     allowed_admin_hosts: tuple[str, ...] = ()
     critical_paths: tuple[str, ...] = ()
 
@@ -44,6 +48,7 @@ IpProvider = Callable[[], list[str]]
 ProcessCollector = Callable[[int | None], list[dict[str, Any]]]
 ConnectionCollector = Callable[[], list[dict[str, Any]]]
 WindowsSecurityCollector = Callable[[int], list[dict[str, Any]]]
+SysmonCollector = Callable[[int], list[dict[str, Any]]]
 
 
 def run_agent(
@@ -58,6 +63,7 @@ def run_agent(
     process_collector: ProcessCollector = collect_processes,
     connection_collector: ConnectionCollector = collect_connections,
     windows_security_collector: WindowsSecurityCollector = collect_new_windows_security_events,
+    sysmon_collector: SysmonCollector = collect_sysmon_events,
 ) -> None:
     intervals: dict[str, float] = {
         "heartbeat": config.heartbeat_interval,
@@ -66,6 +72,8 @@ def run_agent(
     }
     if config.windows_security_interval is not None:
         intervals["windows-security"] = config.windows_security_interval
+    if config.sysmon_interval is not None:
+        intervals["sysmon"] = config.sysmon_interval
 
     next_due = {name: 0.0 for name in intervals}
     _emit_log(log, f"agent_private run started for endpoint {config.endpoint_id}", config)
@@ -85,6 +93,7 @@ def run_agent(
                     process_collector=process_collector,
                     connection_collector=connection_collector,
                     windows_security_collector=windows_security_collector,
+                    sysmon_collector=sysmon_collector,
                 )
             except Exception as exc:  # noqa: BLE001
                 _emit_log(log, f"collect failed for {name}: {exc}", config)
@@ -111,10 +120,14 @@ def build_payloads_for_kind(
     process_collector: ProcessCollector,
     connection_collector: ConnectionCollector,
     windows_security_collector: WindowsSecurityCollector,
+    sysmon_collector: SysmonCollector = collect_sysmon_events,
 ) -> Sequence[dict[str, Any]]:
     if name == "all":
+        kinds = ["heartbeat", "connection.snapshot", "process.snapshot", "windows-security"]
+        if config.sysmon_interval is not None:
+            kinds.append("sysmon")
         payloads: list[dict[str, Any]] = []
-        for kind in ("heartbeat", "connection.snapshot", "process.snapshot", "windows-security"):
+        for kind in kinds:
             payloads.extend(
                 build_payloads_for_kind(
                     kind,
@@ -124,6 +137,7 @@ def build_payloads_for_kind(
                     process_collector=process_collector,
                     connection_collector=connection_collector,
                     windows_security_collector=windows_security_collector,
+                    sysmon_collector=sysmon_collector,
                 )
             )
         return payloads
@@ -171,6 +185,13 @@ def build_payloads_for_kind(
             events=windows_security_collector(config.windows_security_limit),
             allowed_admin_hosts=config.allowed_admin_hosts,
             critical_paths=config.critical_paths,
+        )
+    if name == "sysmon":
+        return build_sysmon_event_payloads(
+            endpoint_id=config.endpoint_id,
+            hostname=hostname,
+            ip_addresses=ip_addresses,
+            events=sysmon_collector(config.sysmon_limit),
         )
     return []
 

@@ -45,6 +45,10 @@ from app.playbooks.webhook_destinations import (
 )
 from app.soc.client import SocServiceClient
 from app.soc.triage import build_triage_context
+from app.threat_intel.extractors import extract_indicators_from_incident
+from app.threat_intel.models import Indicator, ThreatIntelEnrichment
+from app.threat_intel.providers import VirusTotalProvider
+from app.threat_intel.service import ThreatIntelService
 
 router = APIRouter(tags=["soc"])
 
@@ -136,6 +140,23 @@ def get_xdr_client() -> SocServiceClient:
         base_url=settings.xdr_rico_url,
         service_name="xdr_rico",
         timeout_seconds=settings.internal_service_timeout_seconds,
+    )
+
+
+@lru_cache
+def get_threat_intel_service() -> ThreatIntelService:
+    settings = get_settings()
+    provider = None
+    provider_name = settings.threat_intel_provider.strip().casefold()
+    if provider_name in {"virustotal", "virus_total"} and settings.virustotal_api_key.strip():
+        provider = VirusTotalProvider(
+            api_key=settings.virustotal_api_key,
+            base_url=settings.virustotal_base_url,
+            timeout_seconds=settings.internal_service_timeout_seconds,
+        )
+    return ThreatIntelService(
+        provider=provider,
+        cache_ttl_seconds=max(60, settings.threat_intel_cache_ttl_seconds),
     )
 
 
@@ -499,6 +520,65 @@ def _configured_ai_provider_or_502():
         raise HTTPException(status_code=502, detail=f"AI provider not configured: {exc}") from exc
 
 
+def _indicator_to_dict(indicator: Indicator) -> dict[str, str]:
+    return indicator.model_dump(mode="json")
+
+
+def _threat_intel_result_to_dict(result: ThreatIntelEnrichment) -> dict[str, Any]:
+    return result.model_dump(by_alias=True, mode="json")
+
+
+def _threat_intel_summary(results: list[ThreatIntelEnrichment]) -> dict[str, Any]:
+    counts = {"malicious": 0, "suspicious": 0, "clean": 0, "unknown": 0}
+    flagged: list[dict[str, Any]] = []
+    for result in results:
+        counts[result.verdict] = counts.get(result.verdict, 0) + 1
+        if result.verdict in {"malicious", "suspicious"}:
+            flagged.append(
+                {
+                    "type": result.indicator.type,
+                    "value": result.indicator.value,
+                    "verdict": result.verdict,
+                    "score": result.score,
+                    "provider": result.provider,
+                    "referenceUrl": result.reference_url,
+                }
+            )
+    return {
+        **counts,
+        "total": len(results),
+        "flagged": flagged[:10],
+    }
+
+
+def _threat_intel_note(summary: dict[str, Any], results: list[ThreatIntelEnrichment]) -> str:
+    provider = results[0].provider if results else "unconfigured"
+    note = (
+        f"Threat intel enrichment ({provider}): {summary['malicious']} malicious, "
+        f"{summary['suspicious']} suspicious, {summary['clean']} clean, "
+        f"{summary['unknown']} unknown across {summary['total']} indicators."
+    )
+    flagged = [
+        result
+        for result in results
+        if result.verdict in {"malicious", "suspicious"}
+    ][:5]
+    if not flagged:
+        return note
+    flagged_summary = "; ".join(
+        (
+            f"{result.indicator.type} {result.indicator.value[:120]} "
+            f"({result.verdict}, score {result.score})"
+        )
+        for result in flagged
+    )
+    return f"{note} Flagged: {flagged_summary}."
+
+
+def _threat_intel_service_configured(service: ThreatIntelService) -> bool:
+    return bool(getattr(service, "configured", False))
+
+
 @router.post("/soc/incidents/{incident_id}/analyze")
 def analyze_incident(
     incident_id: str,
@@ -569,6 +649,86 @@ def analyze_incident(
             "provider": provider.name,
             "riskScore": analysis.risk_score,
             "suggestedTriage": analysis.suggested_triage,
+        },
+    )
+    return response
+
+
+@router.post("/soc/incidents/{incident_id}/threat-intel/enrich")
+def enrich_incident_threat_intel(
+    incident_id: str,
+    request: Request,
+    client: Annotated[SocClient, Depends(get_siem_client)],
+    threat_intel: Annotated[ThreatIntelService, Depends(get_threat_intel_service)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    incident = client.request("GET", f"/incidents/{incident_id}")
+    indicators = extract_indicators_from_incident(incident)
+    try:
+        results = threat_intel.enrich_indicators(indicators)
+    except Exception as exc:  # noqa: BLE001
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.incident.threat_intel_enriched",
+            outcome="failure",
+            details={
+                "incidentId": incident_id,
+                "provider": threat_intel.provider_name,
+                "indicatorCount": len(indicators),
+                "error": str(exc)[:200],
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Threat intelligence provider failed: {exc}",
+        ) from exc
+
+    response = {
+        "incidentId": incident_id,
+        "provider": threat_intel.provider_name,
+        "providerConfigured": _threat_intel_service_configured(threat_intel),
+        "indicators": [_indicator_to_dict(indicator) for indicator in indicators],
+        "results": [_threat_intel_result_to_dict(result) for result in results],
+        "summary": _threat_intel_summary(results),
+    }
+    if indicators:
+        try:
+            ticket = client.request(
+                "PATCH",
+                f"/incidents/{incident_id}/triage",
+                json={"note": _threat_intel_note(response["summary"], results)},
+            )
+            response["ticket"] = ticket
+        except Exception as exc:  # noqa: BLE001
+            _audit(
+                audit_store,
+                request=request,
+                current_user=current_user,
+                action="soc.incident.threat_intel_enriched",
+                outcome="partial",
+                details={
+                    "incidentId": incident_id,
+                    "provider": threat_intel.provider_name,
+                    "indicatorCount": len(indicators),
+                    "warning": f"Failed to persist threat intel note: {exc}"[:200],
+                },
+            )
+            return response
+
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="soc.incident.threat_intel_enriched",
+        details={
+            "incidentId": incident_id,
+            "provider": threat_intel.provider_name,
+            "indicatorCount": len(indicators),
+            "flaggedCount": response["summary"]["malicious"] + response["summary"]["suspicious"],
         },
     )
     return response
@@ -1797,6 +1957,7 @@ def create_endpoint_event(
     payload: Annotated[dict[str, Any], Body()],
     client: Annotated[SocClient, Depends(get_xdr_client)],
     siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    threat_intel: Annotated[ThreatIntelService, Depends(get_threat_intel_service)],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> dict:
@@ -1805,6 +1966,7 @@ def create_endpoint_event(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Endpoint enrollment token required",
         )
+    payload = _enrich_sysmon_endpoint_payload(payload, threat_intel)
     payload = _endpoint_payload_with_observed_source_ip(payload, request)
     response = client.request(
         "POST",
@@ -1847,6 +2009,50 @@ def _endpoint_payload_with_observed_source_ip(
             **attributes,
             "observedSourceIp": _client_ip(request),
         },
+    }
+
+
+def _enrich_sysmon_endpoint_payload(
+    payload: dict[str, Any],
+    threat_intel: ThreatIntelService,
+) -> dict[str, Any]:
+    event_type = str(payload.get("eventType") or "")
+    if not event_type.startswith("sysmon.") or not _threat_intel_service_configured(threat_intel):
+        return payload
+    attributes = payload.get("attributes") if isinstance(payload.get("attributes"), dict) else {}
+    if _first_string(attributes.get("threatIntelVerdict")):
+        return payload
+    indicators = extract_indicators_from_incident({"attributes": attributes})
+    if not indicators:
+        return payload
+    try:
+        result = threat_intel.enrich_indicators([indicators[0]])[0]
+    except Exception:  # noqa: BLE001
+        return {
+            **payload,
+            "attributes": {
+                **attributes,
+                "threatIntelProvider": threat_intel.provider_name,
+                "threatIntelError": "provider_failed",
+            },
+        }
+    result_payload = _threat_intel_result_to_dict(result)
+    enriched_attributes = {
+        **attributes,
+        "threatIntel": result_payload,
+        "threatIntelVerdict": result.verdict,
+        "threatIntelProvider": result.provider,
+        "threatIntelScore": result.score,
+        "threatIntelStats": result.stats,
+        "threatIntelCached": result.cached,
+    }
+    if result.reference_url:
+        enriched_attributes["threatIntelReferenceUrl"] = result.reference_url
+    if result.error:
+        enriched_attributes["threatIntelError"] = result.error[:160]
+    return {
+        **payload,
+        "attributes": enriched_attributes,
     }
 
 
@@ -1978,7 +2184,12 @@ def _endpoint_event_to_siem_events(
     response: dict[str, Any],
 ) -> list[dict[str, Any]]:
     event_type = payload.get("eventType")
-    if event_type in {"suspicious.process", "connection.snapshot"}:
+    if event_type in {
+        "suspicious.process",
+        "connection.snapshot",
+        "sysmon.network_connection",
+        "sysmon.dns_query",
+    }:
         suspicious_event = _suspicious_endpoint_event_to_siem_event(payload, response=response)
         return [suspicious_event] if suspicious_event else []
     if event_type not in {"auth.failed_login", "auth.privileged_logon", "file.change"}:
@@ -2024,6 +2235,8 @@ def _suspicious_endpoint_event_to_siem_event(
     suspicious_connection = _suspicious_connection(attributes)
     if event_type == "connection.snapshot" and suspicious_connection is None:
         return None
+    if str(event_type).startswith("sysmon.") and not _threat_intel_is_suspicious(attributes):
+        return None
     destination_ip = (
         _first_string(
             attributes.get("destinationIp"),
@@ -2042,7 +2255,9 @@ def _suspicious_endpoint_event_to_siem_event(
             attributes.get("processRemoteIp"),
             attributes.get("processDestinationIp"),
         )
+        or _first_query_result(attributes)
     )
+    domain = _first_string(attributes.get("destinationHostname"), attributes.get("queryName"))
     observed_source_ip = _first_string(attributes.get("observedSourceIp"))
     source_ip = observed_source_ip or _first_payload_ip(payload)
     current_user = payload.get("currentUser") or attributes.get("username")
@@ -2068,6 +2283,8 @@ def _suspicious_endpoint_event_to_siem_event(
         entities["sourceIp"] = source_ip
     if destination_ip:
         entities["destinationIp"] = destination_ip
+    if domain:
+        entities["domain"] = domain
 
     return {
         "source": "xdr_rico.agent_private",
@@ -2089,6 +2306,21 @@ def _suspicious_connection(attributes: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(connection, dict) and connection.get("suspicious") is True:
             return connection
     return None
+
+
+def _threat_intel_is_suspicious(attributes: dict[str, Any]) -> bool:
+    verdict = _first_string(attributes.get("threatIntelVerdict"))
+    threat_intel = attributes.get("threatIntel")
+    if verdict is None and isinstance(threat_intel, dict):
+        verdict = _first_string(threat_intel.get("verdict"))
+    return (verdict or "").casefold() in {"suspicious", "malicious"}
+
+
+def _first_query_result(attributes: dict[str, Any]) -> str | None:
+    query_results = attributes.get("queryResults")
+    if isinstance(query_results, list):
+        return _first_string(*query_results)
+    return _first_string(query_results)
 
 
 def _first_string(*values: Any) -> str | None:

@@ -97,6 +97,56 @@ def test_run_agent_once_posts_windows_security_when_enabled():
     assert posted[-1]["attributes"]["windowsEventId"] == 4625
 
 
+def test_run_agent_once_posts_sysmon_when_enabled():
+    posted: list[dict] = []
+
+    run_agent(
+        AgentRunConfig(
+            api_url="http://localhost:8000",
+            endpoint_id="end_win_lab",
+            enrollment_token="secret-token",
+            sysmon_interval=60,
+            sysmon_limit=10,
+        ),
+        once=True,
+        post=lambda **kwargs: posted.append(kwargs["payload"]),
+        log=lambda message: None,
+        identity_provider=identity,
+        ip_provider=lambda: ["192.168.56.10"],
+        process_collector=lambda limit=None: [],
+        connection_collector=lambda: [],
+        windows_security_collector=lambda limit=50: [],
+        sysmon_collector=lambda limit=50: [
+            {
+                "eventId": 22,
+                "occurredAt": "2026-05-19T12:10:01.000Z",
+                "computer": "WIN-LAB-01",
+                "recordId": "3002",
+                "data": {
+                    "ProcessId": "1200",
+                    "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    "User": r"FORTIDASHBOARD\Administrator",
+                    "QueryName": "suspicious.example",
+                    "QueryStatus": "0",
+                    "QueryResults": "198.51.100.20;",
+                },
+            }
+        ],
+    )
+
+    assert [payload["eventType"] for payload in posted] == [
+        "heartbeat",
+        "connection.snapshot",
+        "process.snapshot",
+        "sysmon.dns_query",
+    ]
+    assert posted[-1]["attributes"]["sysmonEventId"] == 22
+    assert posted[-1]["attributes"]["ioc"] == {
+        "type": "domain",
+        "value": "suspicious.example",
+    }
+
+
 def test_run_agent_logs_post_failures_without_revealing_token():
     logs: list[str] = []
 

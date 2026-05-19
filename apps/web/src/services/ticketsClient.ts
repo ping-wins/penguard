@@ -198,6 +198,53 @@ export type IncidentAnalysis = {
   raw_output?: string
 }
 
+export type ThreatIntelVerdict = 'clean' | 'unknown' | 'suspicious' | 'malicious'
+
+export type ThreatIntelIndicator = {
+  type: 'ip' | 'domain' | 'url'
+  value: string
+}
+
+export type ThreatIntelResult = {
+  indicator: ThreatIntelIndicator
+  provider: string
+  verdict: ThreatIntelVerdict
+  score: number
+  confidence: string
+  stats: Record<string, number>
+  categories: Record<string, string>
+  referenceUrl?: string | null
+  checkedAt: string
+  cached: boolean
+  error?: string | null
+}
+
+export type ThreatIntelSummary = {
+  total: number
+  malicious: number
+  suspicious: number
+  clean: number
+  unknown: number
+  flagged: Array<{
+    type: string
+    value: string
+    verdict: ThreatIntelVerdict
+    score: number
+    provider: string
+    referenceUrl?: string | null
+  }>
+}
+
+export type ThreatIntelEnrichmentResponse = {
+  incidentId: string
+  provider: string
+  providerConfigured: boolean
+  indicators: ThreatIntelIndicator[]
+  results: ThreatIntelResult[]
+  summary: ThreatIntelSummary
+  ticket?: Ticket
+}
+
 export type ContainmentStep = {
   title: string
   description: string
@@ -225,6 +272,22 @@ export async function analyzeIncident(incidentId: string): Promise<IncidentAnaly
     headers,
   })
   return parseOrThrow<IncidentAnalysis>(response, 'Failed to analyze incident')
+}
+
+export async function enrichIncidentThreatIntel(incidentId: string): Promise<ThreatIntelEnrichmentResponse> {
+  const headers = { ...(await csrfHeaders()), ...localeHeaders() }
+  const response = await fetch(
+    `/api/soc/incidents/${encodeURIComponent(incidentId)}/threat-intel/enrich`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+    },
+  )
+  return parseOrThrow<ThreatIntelEnrichmentResponse>(
+    response,
+    'Failed to enrich incident with threat intelligence',
+  )
 }
 
 export type PlaybookSimulationStep = {
