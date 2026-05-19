@@ -65,15 +65,18 @@ class AgentPrivateWindowsService(_ServiceFramework):
     def SvcDoRun(self) -> None:  # noqa: N802
         if _servicemanager is None or _win32service is None:
             raise RuntimeError("Windows Service support requires pywin32")
-        from agent_private.daemon import AgentDaemon
-        from agent_private.tui import build_run_config, load_config
-
-        _servicemanager.LogInfoMsg(f"{SERVICE_NAME} started")
-        config = build_run_config(load_config())
-        self._daemon = AgentDaemon(config, log=_servicemanager.LogInfoMsg)
         self.ReportServiceStatus(_win32service.SERVICE_RUNNING)
         try:
+            from agent_private.daemon import AgentDaemon
+            from agent_private.tui import build_run_config, load_config
+
+            _servicemanager.LogInfoMsg(f"{SERVICE_NAME} started")
+            config = build_run_config(load_config())
+            self._daemon = AgentDaemon(config, log=_servicemanager.LogInfoMsg)
             self._daemon.run_foreground()
+        except Exception as exc:  # noqa: BLE001
+            _log_service_error(f"{SERVICE_NAME} failed: {exc}")
+            raise
         finally:
             _servicemanager.LogInfoMsg(f"{SERVICE_NAME} stopped")
             self.ReportServiceStatus(_win32service.SERVICE_STOPPED)
@@ -121,3 +124,13 @@ def _require_pywin32_module(module: Any | None) -> Any:
     if module is None:
         raise RuntimeError("Windows Service support requires pywin32")
     return module
+
+
+def _log_service_error(message: str) -> None:
+    if _servicemanager is None:
+        return
+    log_error = getattr(_servicemanager, "LogErrorMsg", None)
+    if callable(log_error):
+        log_error(message)
+    else:
+        _servicemanager.LogInfoMsg(message)

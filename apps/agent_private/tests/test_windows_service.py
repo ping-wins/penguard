@@ -77,6 +77,47 @@ def test_service_run_reports_running_before_blocking(monkeypatch):
     ]
 
 
+def test_service_run_reports_running_even_when_config_load_fails(monkeypatch):
+    import agent_private.tui as tui_module
+
+    reports: list[int] = []
+    errors: list[str] = []
+    logs: list[str] = []
+
+    class FakeServiceManager:
+        @staticmethod
+        def LogInfoMsg(message: str) -> None:
+            logs.append(message)
+
+        @staticmethod
+        def LogErrorMsg(message: str) -> None:
+            errors.append(message)
+
+    class FakeWin32Service:
+        SERVICE_RUNNING = 4
+        SERVICE_STOPPED = 1
+
+    monkeypatch.setattr(windows_service, "_servicemanager", FakeServiceManager)
+    monkeypatch.setattr(windows_service, "_win32service", FakeWin32Service)
+    def fail_load_config():
+        raise ValueError("bad config")
+
+    monkeypatch.setattr(tui_module, "load_config", fail_load_config)
+
+    service = object.__new__(windows_service.AgentPrivateWindowsService)
+    service.ReportServiceStatus = reports.append
+
+    with pytest.raises(ValueError, match="bad config"):
+        service.SvcDoRun()
+
+    assert reports == [FakeWin32Service.SERVICE_RUNNING, FakeWin32Service.SERVICE_STOPPED]
+    assert errors == [f"{windows_service.SERVICE_NAME} failed: bad config"]
+    assert logs == [
+        f"{windows_service.SERVICE_NAME} started",
+        f"{windows_service.SERVICE_NAME} stopped",
+    ]
+
+
 def test_service_stop_stops_daemon_and_reports_pending(monkeypatch):
     reports: list[int] = []
     events: list[str] = []
