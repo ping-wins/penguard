@@ -1698,6 +1698,99 @@ def get_endpoint_timeline(
     return client.request("GET", f"/endpoints/{endpoint_id}/timeline")
 
 
+@router.get("/weapons/endpoints/{endpoint_id}/actions")
+def list_endpoint_actions(
+    endpoint_id: str,
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    _current_user: Annotated[dict, Depends(get_current_api_user)],
+) -> dict:
+    return client.request("GET", f"/endpoints/{endpoint_id}/actions")
+
+
+@router.post("/weapons/endpoints/{endpoint_id}/actions")
+def create_endpoint_action(
+    endpoint_id: str,
+    request: Request,
+    payload: Annotated[dict[str, Any], Body()],
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    current_user: Annotated[dict, Depends(get_current_api_user)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+) -> dict:
+    response = client.request("POST", f"/endpoints/{endpoint_id}/actions", json=payload)
+    _audit(
+        audit_store,
+        request=request,
+        current_user=current_user,
+        action="xdr.endpoint_action.created",
+        details={
+            "endpointId": endpoint_id,
+            "actionId": response.get("id"),
+            "kind": response.get("kind"),
+            "service": "xdr_rico",
+        },
+    )
+    return response
+
+
+@router.post("/weapons/endpoints/{endpoint_id}/actions/claim")
+def claim_endpoint_action(
+    endpoint_id: str,
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> dict:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Endpoint enrollment token required",
+        )
+    return client.request(
+        "POST",
+        f"/endpoints/{endpoint_id}/actions/claim",
+        json={},
+        headers={"Authorization": authorization},
+        pass_through_statuses={401, 403, 404},
+    )
+
+
+@router.post("/weapons/endpoints/{endpoint_id}/actions/{action_id}/result")
+def report_endpoint_action_result(
+    endpoint_id: str,
+    action_id: str,
+    request: Request,
+    payload: Annotated[dict[str, Any], Body()],
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> dict:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Endpoint enrollment token required",
+        )
+    response = client.request(
+        "POST",
+        f"/endpoints/{endpoint_id}/actions/{action_id}/result",
+        json=payload,
+        headers={"Authorization": authorization},
+        pass_through_statuses={401, 403, 404},
+    )
+    audit_store.record(
+        action="xdr.endpoint_action.result_reported",
+        outcome="success",
+        client_ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "endpointId": endpoint_id,
+            "actionId": action_id,
+            "status": payload.get("status"),
+            "service": "xdr_rico",
+            "actorType": "agent_private",
+        },
+    )
+    return response
+
+
 @router.post("/weapons/endpoint-events")
 def create_endpoint_event(
     request: Request,

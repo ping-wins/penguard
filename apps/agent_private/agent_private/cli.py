@@ -9,6 +9,7 @@ import socket
 import subprocess
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Sequence
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,9 +17,13 @@ import httpx
 import psutil
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from agent_private import windows_service
+from agent_private.control import AgentControlClient
+
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEMO_OCCURRED_AT = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
 WINDOWS_SECURITY_EVENT_IDS = (4625, 4672, 4663)
+DEFAULT_CONTROL_URL = "http://127.0.0.1:8765"
 
 
 def format_timestamp(value: datetime | None = None) -> str:
@@ -581,6 +586,17 @@ def build_parser() -> argparse.ArgumentParser:
         "run",
         help="Open the interactive setup TUI and run the agent from there.",
     )
+    daemon_parser = subparsers.add_parser(
+        "daemon",
+        parents=[common],
+        help="Run the endpoint daemon in the foreground.",
+    )
+    daemon_parser.add_argument("--heartbeat-interval", type=float, default=30.0)
+    daemon_parser.add_argument("--connection-interval", type=float, default=60.0)
+    daemon_parser.add_argument("--process-interval", type=float, default=300.0)
+    daemon_parser.add_argument("--windows-security-interval", type=float)
+    daemon_parser.add_argument("--windows-security-limit", type=int, default=50)
+    daemon_parser.add_argument("--control-port", type=int, default=8765)
     run_parser = subparsers.add_parser(
         "run-headless",
         parents=[common],
@@ -592,6 +608,29 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--windows-security-interval", type=float)
     run_parser.add_argument("--windows-security-limit", type=int, default=50)
     run_parser.add_argument("--once", action="store_true")
+    status_parser = subparsers.add_parser("status", help="Read status from the local daemon.")
+    status_parser.add_argument("--control-url", default=DEFAULT_CONTROL_URL)
+    collect_parser = subparsers.add_parser(
+        "collect-now",
+        help="Ask the local daemon to post telemetry now.",
+    )
+    collect_parser.add_argument(
+        "kind",
+        choices=["heartbeat", "processes", "connections", "windows-security", "all"],
+    )
+    collect_parser.add_argument("--control-url", default=DEFAULT_CONTROL_URL)
+    config_parser = subparsers.add_parser("config", help="Read or update local daemon config.")
+    config_subparsers = config_parser.add_subparsers(dest="config_command")
+    config_subparsers.add_parser("show")
+    config_set = config_subparsers.add_parser("set")
+    config_set.add_argument("--api-url")
+    config_set.add_argument("--endpoint-id")
+    config_set.add_argument("--enrollment-token")
+    service_parser = subparsers.add_parser("service", help="Manage the Windows Service.")
+    service_parser.add_argument(
+        "service_action",
+        choices=["install", "start", "stop", "status", "uninstall"],
+    )
     subparsers.add_parser("simulate", parents=[common], help="Print deterministic demo events.")
     return parser
 
@@ -636,7 +675,65 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_json(build_identity_payload())
         return
 
+    if args.command == "status":
+        print_json(AgentControlClient(base_url=args.control_url).status())
+        return
+
+    if args.command == "collect-now":
+        print_json(AgentControlClient(base_url=args.control_url).collect_now(args.kind))
+        return
+
+    if args.command == "config":
+        from agent_private.tui import load_config, save_config
+
+        if args.config_command == "show":
+            print_json(asdict(load_config()))
+            return
+        if args.config_command == "set":
+            current = load_config()
+            updated = current.__class__(
+                api_url=args.api_url or current.api_url,
+                endpoint_id=args.endpoint_id or current.endpoint_id,
+                enrollment_token=args.enrollment_token or current.enrollment_token,
+                heartbeat_interval=current.heartbeat_interval,
+                connection_interval=current.connection_interval,
+                process_interval=current.process_interval,
+                windows_security_interval=current.windows_security_interval,
+            )
+            save_config(updated)
+            print_json(updated.safe_summary())
+            return
+        parser.error("config requires show or set")
+
+    if args.command == "service":
+        print_json(windows_service.run_service_command(args.service_action))
+        return
+
     endpoint_id = _require_endpoint_id(parser, args)
+
+    if args.command == "daemon":
+        if not args.api_url:
+            parser.error("--api-url or AGENT_PRIVATE_API_URL is required with daemon")
+        if not args.enrollment_token:
+            parser.error(
+                "--enrollment-token or AGENT_PRIVATE_ENROLLMENT_TOKEN is required with daemon"
+            )
+        from agent_private.daemon import AgentDaemon
+        from agent_private.runner import AgentRunConfig
+
+        AgentDaemon(
+            AgentRunConfig(
+                api_url=args.api_url,
+                endpoint_id=endpoint_id,
+                enrollment_token=args.enrollment_token,
+                heartbeat_interval=args.heartbeat_interval,
+                connection_interval=args.connection_interval,
+                process_interval=args.process_interval,
+                windows_security_interval=args.windows_security_interval,
+                windows_security_limit=args.windows_security_limit,
+            )
+        ).run_foreground(control_port=args.control_port)
+        return
 
     if args.command == "run-headless":
         if not args.api_url:

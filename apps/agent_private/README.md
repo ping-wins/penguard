@@ -1,9 +1,9 @@
 # agent_private
 
 `agent_private` is the optional endpoint sensor for FortiDashboard labs. It is
-explicit, foreground-only and safe by default. The recommended onboarding flow
-starts in the FortiDashboard Endpoints panel; the TUI and CLI commands remain
-available for tests, scripts and dry-run demos.
+explicit and safe by default. The recommended Windows Server lab path is now a
+daemon/service runtime managed by a local CLI; the TUI remains available for
+troubleshooting and dry-run demos.
 
 ## Cockpit Onboarding
 
@@ -11,23 +11,59 @@ available for tests, scripts and dry-run demos.
 2. Enter a display name and optional hostname hint for the Windows host.
 3. Generate the enrollment and copy the one-time PowerShell command.
 4. Run the command from the repository root on the Windows host.
-5. The command opens the `agent_private` TUI with the enrollment values already
-   loaded. Review the setup and press **Start agent**.
-6. Keep the terminal open. The cockpit moves the endpoint from pending to
-   inventory after the first heartbeat.
+5. Save config, install/start the Windows Service, then check local daemon
+   status with the CLI.
+6. The cockpit moves the endpoint from pending to inventory after the first
+   heartbeat.
 
 PowerShell command shape:
 
 ```powershell
-cd apps\agent_private; $env:AGENT_PRIVATE_API_URL="http://<fortidashboard-host>:8000"; $env:AGENT_PRIVATE_ENDPOINT_ID="<enrollment-id>"; $env:AGENT_PRIVATE_ENROLLMENT_TOKEN="<token-returned-once>"; uv run agent-private run
+cd apps\agent_private
+uv run agent-private config set --api-url "http://<fortidashboard-host>:8000" --endpoint-id "<enrollment-id>" --enrollment-token "<token-returned-once>"
+uv run agent-private service install
+uv run agent-private service start
+uv run agent-private status
 ```
 
-To include Windows Security events, set the Windows Security interval in the TUI
-to a positive number before starting the agent. `0` disables collection.
+For development or smoke tests without installing the Windows Service, run the
+daemon in the foreground:
 
-Stop the foreground agent with the **Stop agent** button or close the TUI with
-`Ctrl+C`. Windows Scheduled Task installation is planned as the next cut after
-the foreground loop is stable.
+```powershell
+uv run agent-private daemon --api-url "http://<fortidashboard-host>:8000" --endpoint-id "<enrollment-id>" --enrollment-token "<token-returned-once>"
+```
+
+The foreground daemon exposes a loopback-only control API on `127.0.0.1:8765`.
+The local CLI uses that API for status and immediate collection requests. The
+dashboard never connects inbound to the Windows host.
+
+## Daemon And Service CLI
+
+```powershell
+uv run agent-private service install
+uv run agent-private service start
+uv run agent-private service status
+uv run agent-private service stop
+uv run agent-private service uninstall
+
+uv run agent-private status
+uv run agent-private collect-now heartbeat
+uv run agent-private collect-now processes
+uv run agent-private collect-now connections
+uv run agent-private collect-now windows-security
+uv run agent-private collect-now all
+
+uv run agent-private config show
+uv run agent-private config set --api-url "http://localhost:8000"
+```
+
+The Windows Service wrapper uses `pywin32` on Windows only. Linux CI and local
+developer tests can import the service module safely, but service management
+commands require Windows.
+
+Remote dashboard orchestration is pull-based: the daemon polls the BFF for
+typed XDR actions, executes only supported actions such as `collect_now` and
+posts a result. It does not run arbitrary PowerShell from the dashboard.
 
 ## TUI Usage
 
@@ -39,8 +75,9 @@ uv run agent-private
 The TUI lets the operator set the FortiDashboard API URL, endpoint ID,
 enrollment token and loop intervals, save a local config, start/stop the
 foreground agent loop, or send one-off heartbeat, process snapshot, connection
-snapshot and demo telemetry. The enrollment token is masked in the UI log and is
-sent only as `Authorization: Bearer ...`.
+snapshot and demo telemetry. It is a troubleshooting surface, not the preferred
+Windows Server runtime. The enrollment token is masked in the UI log and is sent
+only as `Authorization: Bearer ...`.
 
 Navigation:
 
@@ -108,7 +145,7 @@ export AGENT_PRIVATE_ENROLLMENT_TOKEN=<token-returned-once>
 uv run agent-private heartbeat --post
 ```
 
-Interactive foreground loop:
+Interactive troubleshooting loop:
 
 ```bash
 uv run agent-private run
@@ -130,15 +167,17 @@ $env:AGENT_PRIVATE_ENDPOINT_ID = "demo-endpoint-01"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
 
 uv run agent-private heartbeat --post
-uv run agent-private run
+uv run agent-private daemon
 ```
 
 ## Safety Notes
 
-- No daemon install, privilege escalation or remote command execution.
+- No hidden install, privilege escalation or arbitrary remote command execution.
 - Saved TUI config stores the enrollment token in the user's local config file; Linux files are written with `0600`. Use lab-scoped tokens and clear the config after demos.
 - Enrollment tokens are sent only as `Authorization: Bearer ...`.
 - The interactive `run` command masks the enrollment token in the TUI log.
 - The `run-headless` command logs event status but never prints the enrollment token.
+- The daemon status and action result payloads never include the enrollment token.
+- Supported remote actions are typed and bounded; unknown actions fail closed.
 - Process and connection snapshots may include usernames, process names and remote IPs; use only in authorized labs.
 - Keep dry-run mode for demos unless the SOC stack is running and the token is scoped to the lab endpoint.

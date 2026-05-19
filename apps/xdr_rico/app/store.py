@@ -57,6 +57,17 @@ timeline_table = Table(
     Column("payload", JSON, nullable=False),
 )
 
+actions_table = Table(
+    "xdr_rico_endpoint_actions",
+    metadata,
+    Column("row_id", Integer, primary_key=True, autoincrement=True),
+    Column("id", String(128), nullable=False, unique=True, index=True),
+    Column("endpoint_id", String(128), nullable=False, index=True),
+    Column("status", String(64), nullable=False, index=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("payload", JSON, nullable=False),
+)
+
 
 class XdrStore:
     def __init__(self, database_url: str | None = None) -> None:
@@ -90,6 +101,7 @@ class XdrStore:
 
     def reset(self) -> None:
         with self.engine.begin() as connection:
+            connection.execute(delete(actions_table))
             connection.execute(delete(timeline_table))
             connection.execute(delete(endpoints_table))
             connection.execute(delete(enrollments_table))
@@ -189,6 +201,9 @@ class XdrStore:
     def delete_endpoint(self, endpoint_id: str) -> None:
         with self.engine.begin() as connection:
             connection.execute(
+                delete(actions_table).where(actions_table.c.endpoint_id == endpoint_id)
+            )
+            connection.execute(
                 delete(timeline_table).where(timeline_table.c.endpoint_id == endpoint_id)
             )
             connection.execute(delete(endpoints_table).where(endpoints_table.c.id == endpoint_id))
@@ -234,6 +249,91 @@ class XdrStore:
         )
         with self.engine.begin() as connection:
             return int(connection.execute(statement).scalar_one())
+
+    def add_action(
+        self,
+        payload: dict[str, Any],
+        *,
+        endpoint_id: str,
+        status: str,
+        created_at: datetime,
+    ) -> None:
+        with self.engine.begin() as connection:
+            connection.execute(
+                actions_table.insert().values(
+                    id=payload["id"],
+                    endpoint_id=endpoint_id,
+                    status=status,
+                    created_at=created_at,
+                    payload=payload,
+                )
+            )
+
+    def list_actions(self, endpoint_id: str) -> list[dict[str, Any]]:
+        statement = (
+            select(actions_table.c.payload)
+            .where(actions_table.c.endpoint_id == endpoint_id)
+            .order_by(actions_table.c.created_at.desc(), actions_table.c.row_id.desc())
+        )
+        with self.engine.begin() as connection:
+            return [row.payload for row in connection.execute(statement)]
+
+    def claim_next_action(
+        self,
+        endpoint_id: str,
+        *,
+        claimed_at: datetime,
+    ) -> dict[str, Any] | None:
+        statement = (
+            select(actions_table.c.id, actions_table.c.payload)
+            .where(
+                actions_table.c.endpoint_id == endpoint_id,
+                actions_table.c.status == "queued",
+            )
+            .order_by(actions_table.c.created_at.asc(), actions_table.c.row_id.asc())
+            .limit(1)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if row is None:
+                return None
+            payload = {**row.payload, "status": "claimed", "claimedAt": claimed_at.isoformat()}
+            connection.execute(
+                update(actions_table)
+                .where(actions_table.c.id == row.id)
+                .values(status="claimed", payload=payload)
+            )
+        return payload
+
+    def update_action_result(
+        self,
+        endpoint_id: str,
+        action_id: str,
+        *,
+        status: str,
+        result: dict[str, Any],
+        completed_at: datetime,
+    ) -> dict[str, Any] | None:
+        statement = select(actions_table.c.payload).where(actions_table.c.id == action_id)
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if row is None:
+                return None
+            payload = row.payload
+            if payload.get("endpointId") != endpoint_id:
+                return None
+            updated = {
+                **payload,
+                "status": status,
+                "result": result,
+                "completedAt": completed_at.isoformat(),
+            }
+            connection.execute(
+                update(actions_table)
+                .where(actions_table.c.id == action_id)
+                .values(status=status, payload=updated)
+            )
+        return updated
 
 
 def _create_engine(database_url: str) -> Engine:

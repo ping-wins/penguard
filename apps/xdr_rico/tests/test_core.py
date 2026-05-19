@@ -219,6 +219,81 @@ def test_delete_endpoint_removes_inventory_and_timeline():
     assert test_client.get("/endpoints").json()["items"] == []
 
 
+def test_endpoint_action_lifecycle_create_claim_and_complete():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    heartbeat = test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-19T12:00:00Z",
+            "hostname": "WIN-LAB-01",
+        },
+    )
+    assert heartbeat.status_code == 201
+
+    created = test_client.post(
+        "/endpoints/end_win_01/actions",
+        json={"kind": "collect_now", "parameters": {"kind": "processes"}},
+    )
+
+    assert created.status_code == 201
+    action = created.json()
+    assert action["endpointId"] == "end_win_01"
+    assert action["kind"] == "collect_now"
+    assert action["status"] == "queued"
+
+    claimed = test_client.post("/endpoints/end_win_01/actions/claim", headers=headers)
+
+    assert claimed.status_code == 200
+    assert claimed.json()["action"]["id"] == action["id"]
+    assert claimed.json()["action"]["status"] == "claimed"
+
+    completed = test_client.post(
+        f"/endpoints/end_win_01/actions/{action['id']}/result",
+        headers=headers,
+        json={"status": "completed", "result": {"posted": ["process.snapshot"]}},
+    )
+
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["result"] == {"posted": ["process.snapshot"]}
+
+
+def test_endpoint_action_claim_requires_bound_enrollment_token():
+    test_client = client()
+    headers = enrollment_headers(test_client)
+    other_headers = enrollment_headers(test_client)
+    assert test_client.post(
+        "/endpoint-events",
+        headers=headers,
+        json={
+            "endpointId": "end_win_01",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-19T12:00:00Z",
+        },
+    ).status_code == 201
+    assert test_client.post(
+        "/endpoint-events",
+        headers=other_headers,
+        json={
+            "endpointId": "end_win_02",
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-19T12:00:00Z",
+        },
+    ).status_code == 201
+    assert test_client.post(
+        "/endpoints/end_win_01/actions",
+        json={"kind": "collect_now"},
+    ).status_code == 201
+
+    response = test_client.post("/endpoints/end_win_01/actions/claim", headers=other_headers)
+
+    assert response.status_code == 403
+
+
 def test_simulator_creates_deterministic_demo_endpoint_and_events(monkeypatch):
     test_client = client()
 

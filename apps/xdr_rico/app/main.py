@@ -24,6 +24,9 @@ EndpointEventType = Literal[
     "health.signal",
 ]
 EndpointHealth = Literal["unknown", "healthy", "warning", "critical", "offline"]
+EndpointActionKind = Literal["collect_now", "run_diagnostic"]
+EndpointActionStatus = Literal["queued", "claimed", "completed", "failed"]
+EndpointActionResultStatus = Literal["completed", "failed"]
 
 
 class ApiModel(BaseModel):
@@ -98,6 +101,36 @@ class EndpointTimelineResponse(ApiModel):
 class EndpointEventResponse(ApiModel):
     endpoint: Endpoint
     timeline_item: EndpointTimelineItem = Field(alias="timelineItem")
+
+
+class EndpointActionCreate(ApiModel):
+    kind: EndpointActionKind
+    parameters: dict[str, object] = Field(default_factory=dict)
+
+
+class EndpointAction(ApiModel):
+    id: str
+    endpoint_id: str = Field(alias="endpointId")
+    kind: EndpointActionKind
+    status: EndpointActionStatus
+    parameters: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(alias="createdAt")
+    claimed_at: datetime | None = Field(default=None, alias="claimedAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
+    result: dict[str, object] = Field(default_factory=dict)
+
+
+class EndpointActionListResponse(ApiModel):
+    items: list[EndpointAction]
+
+
+class EndpointActionClaimResponse(ApiModel):
+    action: EndpointAction | None = None
+
+
+class EndpointActionResultCreate(ApiModel):
+    status: EndpointActionResultStatus
+    result: dict[str, object] = Field(default_factory=dict)
 
 
 class SimulatorResponse(ApiModel):
@@ -401,6 +434,10 @@ def _load_timeline_item(payload: dict[str, object]) -> EndpointTimelineItem:
     return EndpointTimelineItem(**payload)
 
 
+def _load_action(payload: dict[str, object]) -> EndpointAction:
+    return EndpointAction(**payload)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE_NAME}
@@ -468,6 +505,94 @@ def get_endpoint_timeline(endpoint_id: str) -> EndpointTimelineResponse:
     items = [_load_timeline_item(payload) for payload in get_store().list_timeline(endpoint_id)]
     logger.info("xdr_endpoint_timeline endpoint_id=%s returned=%s", endpoint_id, len(items))
     return EndpointTimelineResponse(endpointId=endpoint_id, items=items)
+
+
+@app.post(
+    "/endpoints/{endpoint_id}/actions",
+    response_model=EndpointAction,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_endpoint_action(endpoint_id: str, payload: EndpointActionCreate) -> EndpointAction:
+    get_endpoint_or_404(endpoint_id)
+    created_at = now_utc()
+    action = EndpointAction(
+        id=f"act_{uuid4().hex}",
+        endpointId=endpoint_id,
+        kind=payload.kind,
+        status="queued",
+        parameters=payload.parameters,
+        createdAt=created_at,
+    )
+    get_store().add_action(
+        _dump(action),
+        endpoint_id=endpoint_id,
+        status=action.status,
+        created_at=action.created_at,
+    )
+    logger.info(
+        "xdr_endpoint_action_created endpoint_id=%s action_id=%s kind=%s",
+        endpoint_id,
+        action.id,
+        action.kind,
+    )
+    return action
+
+
+@app.get("/endpoints/{endpoint_id}/actions", response_model=EndpointActionListResponse)
+def list_endpoint_actions(endpoint_id: str) -> EndpointActionListResponse:
+    get_endpoint_or_404(endpoint_id)
+    return EndpointActionListResponse(
+        items=[_load_action(payload) for payload in get_store().list_actions(endpoint_id)]
+    )
+
+
+@app.post("/endpoints/{endpoint_id}/actions/claim", response_model=EndpointActionClaimResponse)
+def claim_endpoint_action(
+    endpoint_id: str,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> EndpointActionClaimResponse:
+    require_enrollment_token_for_endpoint(authorization, endpoint_id)
+    payload = get_store().claim_next_action(endpoint_id, claimed_at=now_utc())
+    if payload is None:
+        return EndpointActionClaimResponse(action=None)
+    action = _load_action(payload)
+    logger.info(
+        "xdr_endpoint_action_claimed endpoint_id=%s action_id=%s kind=%s",
+        endpoint_id,
+        action.id,
+        action.kind,
+    )
+    return EndpointActionClaimResponse(action=action)
+
+
+@app.post("/endpoints/{endpoint_id}/actions/{action_id}/result", response_model=EndpointAction)
+def complete_endpoint_action(
+    endpoint_id: str,
+    action_id: str,
+    payload: EndpointActionResultCreate,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> EndpointAction:
+    require_enrollment_token_for_endpoint(authorization, endpoint_id)
+    updated = get_store().update_action_result(
+        endpoint_id,
+        action_id,
+        status=payload.status,
+        result=payload.result,
+        completed_at=now_utc(),
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Endpoint action {action_id} was not found.",
+        )
+    action = _load_action(updated)
+    logger.info(
+        "xdr_endpoint_action_completed endpoint_id=%s action_id=%s status=%s",
+        endpoint_id,
+        action.id,
+        action.status,
+    )
+    return action
 
 
 @app.post(

@@ -1161,6 +1161,98 @@ def test_xdr_endpoint_delete_gateway_audits_and_uses_csrf():
     }
 
 
+def test_xdr_endpoint_action_gateway_audits_browser_created_action():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient(
+        {
+            "id": "act_01",
+            "endpointId": "end_01",
+            "kind": "collect_now",
+            "status": "queued",
+        }
+    )
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/endpoints/end_01/actions",
+        headers=csrf_headers(client),
+        json={"kind": "collect_now", "parameters": {"kind": "processes"}},
+    )
+
+    assert response.status_code == 200
+    assert fake_xdr.calls[0] == {
+        "method": "POST",
+        "path": "/endpoints/end_01/actions",
+        "json": {"kind": "collect_now", "parameters": {"kind": "processes"}},
+        "params": None,
+        "headers": None,
+        "pass_through_statuses": None,
+    }
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="xdr.endpoint_action.created"
+    )
+    assert audit["items"][0]["details"] == {
+        "endpointId": "end_01",
+        "actionId": "act_01",
+        "kind": "collect_now",
+        "service": "xdr_rico",
+    }
+
+
+def test_xdr_endpoint_action_claim_gateway_forwards_enrollment_authorization():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient({"action": None})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/endpoints/end_01/actions/claim",
+        headers={"Authorization": "Bearer demo-enrollment-token"},
+    )
+
+    assert response.status_code == 200
+    assert fake_xdr.calls[0] == {
+        "method": "POST",
+        "path": "/endpoints/end_01/actions/claim",
+        "json": {},
+        "params": None,
+        "headers": {"Authorization": "Bearer demo-enrollment-token"},
+        "pass_through_statuses": {401, 403, 404},
+    }
+
+
+def test_xdr_endpoint_action_result_gateway_forwards_enrollment_authorization():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient(
+        {
+            "id": "act_01",
+            "endpointId": "end_01",
+            "kind": "collect_now",
+            "status": "completed",
+        }
+    )
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/endpoints/end_01/actions/act_01/result",
+        headers={"Authorization": "Bearer demo-enrollment-token"},
+        json={"status": "completed", "result": {"posted": ["heartbeat"]}},
+    )
+
+    assert response.status_code == 200
+    assert fake_xdr.calls[0]["headers"] == {"Authorization": "Bearer demo-enrollment-token"}
+    assert fake_xdr.calls[0]["path"] == "/endpoints/end_01/actions/act_01/result"
+    audit = auth_dependencies.get_auth_audit_store().list_events(
+        action="xdr.endpoint_action.result_reported"
+    )
+    assert audit["items"][0]["details"] == {
+        "endpointId": "end_01",
+        "actionId": "act_01",
+        "status": "completed",
+        "service": "xdr_rico",
+        "actorType": "agent_private",
+    }
+
+
 def test_xdr_endpoint_event_gateway_adds_observed_source_ip_to_payload():
     client = TestClient(app, client=("192.168.56.10", 55088))
     fake_xdr = FakeSocClient({"endpoint": {"id": "win-server-01"}, "timelineItem": {"id": "tl_01"}})

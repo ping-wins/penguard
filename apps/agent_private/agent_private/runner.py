@@ -34,6 +34,11 @@ class AgentRunConfig:
 
 PostFn = Callable[..., None]
 LogFn = Callable[[str], None]
+IdentityProvider = Callable[[], dict[str, str]]
+IpProvider = Callable[[], list[str]]
+ProcessCollector = Callable[[int | None], list[dict[str, Any]]]
+ConnectionCollector = Callable[[], list[dict[str, Any]]]
+WindowsSecurityCollector = Callable[[int], list[dict[str, Any]]]
 
 
 def run_agent(
@@ -43,13 +48,11 @@ def run_agent(
     sleep: Callable[[float], None] = time.sleep,
     post: PostFn = post_endpoint_event,
     log: LogFn = print,
-    identity_provider: Callable[[], dict[str, str]] = build_identity_payload,
-    ip_provider: Callable[[], list[str]] = get_ip_addresses,
-    process_collector: Callable[[int | None], list[dict[str, Any]]] = collect_processes,
-    connection_collector: Callable[[], list[dict[str, Any]]] = collect_connections,
-    windows_security_collector: Callable[
-        [int], list[dict[str, Any]]
-    ] = collect_windows_security_events,
+    identity_provider: IdentityProvider = build_identity_payload,
+    ip_provider: IpProvider = get_ip_addresses,
+    process_collector: ProcessCollector = collect_processes,
+    connection_collector: ConnectionCollector = collect_connections,
+    windows_security_collector: WindowsSecurityCollector = collect_windows_security_events,
 ) -> None:
     intervals: dict[str, float] = {
         "heartbeat": config.heartbeat_interval,
@@ -68,7 +71,7 @@ def run_agent(
         for name, interval in intervals.items():
             if now < next_due[name]:
                 continue
-            for payload in _build_due_payloads(
+            for payload in build_payloads_for_kind(
                 name,
                 config,
                 identity_provider=identity_provider,
@@ -87,16 +90,38 @@ def run_agent(
         sleep(_sleep_seconds(next_due.values(), ran=ran))
 
 
-def _build_due_payloads(
+def build_payloads_for_kind(
     name: str,
     config: AgentRunConfig,
     *,
-    identity_provider: Callable[[], dict[str, str]],
-    ip_provider: Callable[[], list[str]],
-    process_collector: Callable[[int | None], list[dict[str, Any]]],
-    connection_collector: Callable[[], list[dict[str, Any]]],
-    windows_security_collector: Callable[[int], list[dict[str, Any]]],
+    identity_provider: IdentityProvider,
+    ip_provider: IpProvider,
+    process_collector: ProcessCollector,
+    connection_collector: ConnectionCollector,
+    windows_security_collector: WindowsSecurityCollector,
 ) -> Sequence[dict[str, Any]]:
+    if name == "all":
+        payloads: list[dict[str, Any]] = []
+        for kind in ("heartbeat", "connection.snapshot", "process.snapshot", "windows-security"):
+            payloads.extend(
+                build_payloads_for_kind(
+                    kind,
+                    config,
+                    identity_provider=identity_provider,
+                    ip_provider=ip_provider,
+                    process_collector=process_collector,
+                    connection_collector=connection_collector,
+                    windows_security_collector=windows_security_collector,
+                )
+            )
+        return payloads
+    if name == "processes":
+        name = "process.snapshot"
+    elif name == "connections":
+        name = "connection.snapshot"
+    elif name == "windows-security":
+        name = "windows-security"
+
     identity = identity_provider()
     ip_addresses = ip_provider()
     hostname = identity["hostname"]

@@ -458,3 +458,51 @@ def test_run_headless_command_calls_foreground_runner(monkeypatch):
     assert config.process_interval == 3
     assert config.windows_security_interval == 4
     assert config.windows_security_limit == 5
+
+
+def test_status_command_queries_local_daemon(monkeypatch, capsys):
+    class FakeControlClient:
+        def __init__(self, *, base_url):
+            assert base_url == "http://127.0.0.1:8765"
+
+        def status(self):
+            return {"endpointId": "end_win_01", "sentCount": 2}
+
+    monkeypatch.setattr(cli, "AgentControlClient", FakeControlClient)
+
+    main(["status"])
+
+    assert json.loads(capsys.readouterr().out) == {
+        "endpointId": "end_win_01",
+        "sentCount": 2,
+    }
+
+
+def test_collect_now_command_queries_local_daemon(monkeypatch, capsys):
+    class FakeControlClient:
+        def __init__(self, *, base_url):
+            assert base_url == "http://127.0.0.1:8765"
+
+        def collect_now(self, kind):
+            return {"posted": [kind]}
+
+    monkeypatch.setattr(cli, "AgentControlClient", FakeControlClient)
+
+    main(["collect-now", "processes"])
+
+    assert json.loads(capsys.readouterr().out) == {"posted": ["processes"]}
+
+
+def test_service_command_routes_to_windows_service(monkeypatch, capsys):
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        cli.windows_service,
+        "run_service_command",
+        lambda action: calls.append(action) or {"service": "FortiDashboardAgent"},
+    )
+
+    main(["service", "status"])
+
+    assert calls == ["status"]
+    assert json.loads(capsys.readouterr().out) == {"service": "FortiDashboardAgent"}
