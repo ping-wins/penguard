@@ -9,8 +9,8 @@ async def _list_integrations(ctx: ToolContext, _args: dict[str, Any]) -> dict[st
     service = ctx.fortigate_integration_service
     if service is None:
         return {"items": []}
-    items = service.list_integrations(owner_user_id=ctx.user_id)
-    # Service may return list[dict] or list of pydantic models. Normalize.
+    result = service.list(owner_user_id=ctx.user_id)
+    items = result.get("items", []) if isinstance(result, dict) else result or []
     normalized: list[dict[str, Any]] = []
     for entry in items:
         if hasattr(entry, "model_dump"):
