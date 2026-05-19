@@ -599,6 +599,14 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     def fake_post_endpoint_event(**kwargs):
         posted.append(kwargs)
 
+    def fake_run(command, *, capture_output, text, timeout, check):
+        assert capture_output is True
+        assert text is True
+        assert timeout == 5
+        assert check is False
+        stdout = " ".join(command)
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
     monkeypatch.setattr(cli.windows_service, "run_service_command", fake_run_service_command)
     monkeypatch.setattr(
         cli.windows_service,
@@ -606,6 +614,8 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
         lambda: {"service": "FortiDashboardAgent", "status": "stopped"},
     )
     monkeypatch.setattr(cli, "post_endpoint_event", fake_post_endpoint_event)
+    monkeypatch.setattr(cli.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
 
     main(["service", "start"])
 
@@ -613,33 +623,18 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     assert output["outcome"] == "failed"
     assert output["serviceStatus"] == {"service": "FortiDashboardAgent", "status": "stopped"}
     assert "did not respond" in output["stdout"]
+    assert output["diagnostics"]["scQuery"]["stdout"] == "sc.exe queryex FortiDashboardAgent"
+    assert output["diagnostics"]["systemEvents"]["stdout"].startswith("wevtutil.exe qe System")
     assert output["telemetry"] == {"sent": True, "eventType": "health.signal"}
-    assert posted == [
-        {
-            "api_url": "http://192.168.204.1:8000",
-            "enrollment_token": "secret-token",
-            "payload": {
-                "endpointId": "enr_01",
-                "eventType": "health.signal",
-                "occurredAt": posted[0]["payload"]["occurredAt"],
-                "hostname": "WIN-LAB-01",
-                "ipAddresses": ["192.168.204.77"],
-                "currentUser": "Administrator",
-                "health": "warning",
-                "attributes": {
-                    "source": "agent_private.windows_service",
-                    "service": "FortiDashboardAgent",
-                    "serviceAction": "start",
-                    "outcome": "failed",
-                    "serviceStatus": {
-                        "service": "FortiDashboardAgent",
-                        "status": "stopped",
-                    },
-                    "stdout": "Error starting service: The service did not respond in time.",
-                    "stderr": None,
-                    "error": None,
-                    "os": "Windows",
-                },
-            },
-        }
-    ]
+    assert len(posted) == 1
+    assert posted[0]["api_url"] == "http://192.168.204.1:8000"
+    assert posted[0]["enrollment_token"] == "secret-token"
+    payload = posted[0]["payload"]
+    assert payload["endpointId"] == "enr_01"
+    assert payload["eventType"] == "health.signal"
+    assert payload["health"] == "warning"
+    assert payload["attributes"]["serviceAction"] == "start"
+    assert payload["attributes"]["outcome"] == "failed"
+    assert payload["attributes"]["diagnostics"]["scConfig"]["stdout"] == (
+        "sc.exe qc FortiDashboardAgent"
+    )

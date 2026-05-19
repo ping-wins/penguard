@@ -612,6 +612,9 @@ def run_service_command_with_reporting(service_action: str) -> dict[str, Any]:
         payload["stderr"] = _truncate_log(stderr_text)
     if error is not None:
         payload["error"] = _truncate_log(str(error))
+    diagnostics = _service_diagnostics(outcome)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
 
     payload["telemetry"] = _report_service_command(payload)
     return payload
@@ -669,6 +672,7 @@ def _report_service_command(command_payload: dict[str, Any]) -> dict[str, Any]:
             "stdout": command_payload.get("stdout"),
             "stderr": command_payload.get("stderr"),
             "error": command_payload.get("error"),
+            "diagnostics": command_payload.get("diagnostics"),
             "os": identity["os"],
         },
     )
@@ -688,6 +692,58 @@ def _truncate_log(value: str, limit: int = 4000) -> str:
     if len(value) <= limit:
         return value
     return f"{value[:limit]}...<truncated>"
+
+
+def _service_diagnostics(outcome: str) -> dict[str, Any]:
+    if outcome != "failed" or platform.system() != "Windows":
+        return {}
+    commands = {
+        "scQuery": ["sc.exe", "queryex", windows_service.SERVICE_NAME],
+        "scConfig": ["sc.exe", "qc", windows_service.SERVICE_NAME],
+        "systemEvents": [
+            "wevtutil.exe",
+            "qe",
+            "System",
+            "/q:*[System[Provider[@Name='Service Control Manager']]]",
+            "/c:15",
+            "/rd:true",
+            "/f:text",
+        ],
+        "applicationEvents": [
+            "wevtutil.exe",
+            "qe",
+            "Application",
+            "/c:20",
+            "/rd:true",
+            "/f:text",
+        ],
+    }
+    diagnostics: dict[str, Any] = {}
+    for name, command in commands.items():
+        diagnostics[name] = _run_diagnostic_command(command)
+    return diagnostics
+
+
+def _run_diagnostic_command(command: Sequence[str]) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            list(command),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "command": list(command),
+            "error": _truncate_log(str(exc)),
+        }
+    return {
+        "command": list(command),
+        "returnCode": result.returncode,
+        "stdout": _truncate_log(result.stdout.strip()),
+        "stderr": _truncate_log(result.stderr.strip()),
+    }
 
 
 def run_tui() -> None:
