@@ -11,8 +11,8 @@ troubleshooting and dry-run demos.
 2. Enter a display name and optional hostname hint for the Windows host.
 3. Generate the enrollment and copy only the one-time enrollment token.
 4. Pair the agent from the repository root on the Windows host.
-5. Install/start the Windows Service, then check local daemon status with the
-   CLI.
+5. Install/start the Windows Scheduled Task daemon runtime, then check local
+   daemon status with the CLI.
 6. The cockpit moves the endpoint from pending to inventory after the first
    heartbeat.
 
@@ -21,8 +21,8 @@ PowerShell pairing shape:
 ```powershell
 cd apps\agent_private
 uv run agent-private pair "<token-returned-once>"
-uv run agent-private service install
-uv run agent-private service start
+uv run agent-private task install
+uv run agent-private task start
 uv run agent-private status
 ```
 
@@ -43,9 +43,15 @@ The foreground daemon exposes a loopback-only control API on `127.0.0.1:8765`.
 The local CLI uses that API for status and immediate collection requests. The
 dashboard never connects inbound to the Windows host.
 
-## Daemon And Service CLI
+## Daemon, Task And Service CLI
 
 ```powershell
+uv run agent-private task install
+uv run agent-private task start
+uv run agent-private task status
+uv run agent-private task stop
+uv run agent-private task uninstall
+
 uv run agent-private service install
 uv run agent-private service start
 uv run agent-private service status
@@ -61,16 +67,35 @@ uv run agent-private collect-now all
 
 uv run agent-private config show
 uv run agent-private pair "<token-returned-once>"
+uv run agent-private diagnostics --post
 ```
 
-Service management commands capture `pywin32` stdout/stderr and publish a
-`health.signal` event to XDR when local pairing config exists. This makes failed
-`install`, `start`, `stop`, `status` or `uninstall` attempts visible in the
-endpoint timeline without copying terminal output from the Windows VM.
+`task` is the recommended Windows Server lab runtime. It writes a runner script
+under `%PROGRAMDATA%\agent_private`, registers `FortiDashboardAgentDaemon` with
+Windows Task Scheduler, runs the foreground daemon under `SYSTEM`, and redirects
+stdout/stderr to `%PROGRAMDATA%\agent_private\logs\daemon-task.log`.
+
+Task and service management commands publish a `health.signal` event to XDR
+when local pairing config exists. Failed `install`, `start`, `stop`, `status` or
+`uninstall` attempts attach an expanded diagnostics snapshot: service/task
+registry state, Task Scheduler output, SCM events, Application events, recent
+agent logs, Python/import checks, current process visibility and API reachability
+probes. This is intended to make the endpoint timeline sufficient for remote
+debugging without copying terminal output from the Windows VM.
 
 The Windows Service wrapper uses `pywin32` on Windows only. Linux CI and local
 developer tests can import the service module safely, but service management
 commands require Windows.
+
+Use the manual diagnostics command whenever the agent is paired but a runtime
+command did not capture enough context:
+
+```powershell
+uv run agent-private diagnostics --post --reason manual-check
+```
+
+The command posts the same diagnostics bundle to the endpoint timeline. Tokens
+are masked/redacted before logs are printed or sent.
 
 ## VMware Discovery Network
 

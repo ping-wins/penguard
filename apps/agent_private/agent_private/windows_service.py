@@ -4,6 +4,8 @@ import platform
 import sys
 from typing import Any
 
+from agent_private.logs import append_agent_log
+
 try:
     import servicemanager as _servicemanager  # type: ignore[import-not-found]
     import win32event as _win32event  # type: ignore[import-not-found]
@@ -65,20 +67,24 @@ class AgentPrivateWindowsService(_ServiceFramework):
     def SvcDoRun(self) -> None:  # noqa: N802
         if _servicemanager is None or _win32service is None:
             raise RuntimeError("Windows Service support requires pywin32")
+        append_agent_log(f"{SERVICE_NAME} SvcDoRun entered", name="service.log")
         self.ReportServiceStatus(_win32service.SERVICE_RUNNING)
         try:
             from agent_private.daemon import AgentDaemon
             from agent_private.tui import build_run_config, load_config
 
             _servicemanager.LogInfoMsg(f"{SERVICE_NAME} started")
+            append_agent_log(f"{SERVICE_NAME} reported running", name="service.log")
             config = build_run_config(load_config())
             self._daemon = AgentDaemon(config, log=_servicemanager.LogInfoMsg)
             self._daemon.run_foreground()
         except Exception as exc:  # noqa: BLE001
             _log_service_error(f"{SERVICE_NAME} failed: {exc}")
+            append_agent_log(f"{SERVICE_NAME} failed: {exc}", name="service.log")
             raise
         finally:
             _servicemanager.LogInfoMsg(f"{SERVICE_NAME} stopped")
+            append_agent_log(f"{SERVICE_NAME} stopped", name="service.log")
             self.ReportServiceStatus(_win32service.SERVICE_STOPPED)
 
 

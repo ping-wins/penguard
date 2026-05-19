@@ -7,6 +7,7 @@ from typing import Any
 
 from agent_private.actions import EndpointActionClient
 from agent_private.control import AgentControlServer, AgentControlState
+from agent_private.logs import append_agent_log
 from agent_private.runner import (
     AgentRunConfig,
     ConnectionCollector,
@@ -62,15 +63,21 @@ class AgentDaemon:
         self._stop_event.set()
 
     def collect_now(self, kind: str) -> dict[str, Any]:
-        payloads = build_payloads_for_kind(
-            kind,
-            self.config,
-            identity_provider=self.identity_provider,
-            ip_provider=self.ip_provider,
-            process_collector=self.process_collector,
-            connection_collector=self.connection_collector,
-            windows_security_collector=self.windows_security_collector,
-        )
+        try:
+            payloads = build_payloads_for_kind(
+                kind,
+                self.config,
+                identity_provider=self.identity_provider,
+                ip_provider=self.ip_provider,
+                process_collector=self.process_collector,
+                connection_collector=self.connection_collector,
+                windows_security_collector=self.windows_security_collector,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.state.failed_count += 1
+            error = _redact(str(exc), self.config.enrollment_token)
+            self._log(f"collect failed for {kind}: {error}")
+            return {"posted": [], "failed": [{"eventType": kind, "error": error}]}
         posted: list[str] = []
         failed: list[dict[str, str]] = []
         for payload in payloads:
@@ -90,8 +97,10 @@ class AgentDaemon:
                         "error": _redact(str(exc), self.config.enrollment_token),
                     }
                 )
+                self._log(f"post failed for {event_type}: {failed[-1]['error']}")
                 continue
             self.state.sent_count += 1
+            self._log(f"posted {event_type} for endpoint {self.config.endpoint_id}")
             posted.append(event_type)
         return {"posted": posted, "failed": failed}
 
@@ -122,6 +131,7 @@ class AgentDaemon:
                 status=status,
                 result=result,
             )
+            self._log(f"reported action {action_id} as {status}")
         return True
 
     def run_foreground(self, *, control_port: int = 8765) -> None:
@@ -131,11 +141,21 @@ class AgentDaemon:
             stop=self.stop,
         )
         with server.running(port=control_port):
-            self.log(f"agent_private daemon running for endpoint {self.config.endpoint_id}")
+            self._log(f"agent_private daemon running for endpoint {self.config.endpoint_id}")
             self.collect_now("all")
             while not self._stop_event.wait(self.config.heartbeat_interval):
                 self.collect_now("heartbeat")
-                self.process_remote_action()
+                try:
+                    self.process_remote_action()
+                except Exception as exc:  # noqa: BLE001
+                    self.state.failed_count += 1
+                    error = _redact(str(exc), self.config.enrollment_token)
+                    self._log(f"remote action polling failed: {error}")
+
+    def _log(self, message: str) -> None:
+        safe_message = _redact(message, self.config.enrollment_token)
+        append_agent_log(safe_message)
+        self.log(safe_message)
 
 
 def _redact(value: str, secret: str) -> str:

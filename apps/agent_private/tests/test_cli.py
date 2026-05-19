@@ -599,14 +599,6 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     def fake_post_endpoint_event(**kwargs):
         posted.append(kwargs)
 
-    def fake_run(command, *, capture_output, text, timeout, check):
-        assert capture_output is True
-        assert text is True
-        assert timeout == 5
-        assert check is False
-        stdout = " ".join(command)
-        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
-
     monkeypatch.setattr(cli.windows_service, "run_service_command", fake_run_service_command)
     monkeypatch.setattr(
         cli.windows_service,
@@ -614,8 +606,11 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
         lambda: {"service": "FortiDashboardAgent", "status": "stopped"},
     )
     monkeypatch.setattr(cli, "post_endpoint_event", fake_post_endpoint_event)
-    monkeypatch.setattr(cli.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        cli,
+        "_management_diagnostics",
+        lambda outcome, *, reason: {"reason": reason, "windows": {"serviceConfig": "captured"}},
+    )
 
     main(["service", "start"])
 
@@ -623,8 +618,10 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     assert output["outcome"] == "failed"
     assert output["serviceStatus"] == {"service": "FortiDashboardAgent", "status": "stopped"}
     assert "did not respond" in output["stdout"]
-    assert output["diagnostics"]["scQuery"]["stdout"] == "sc.exe queryex FortiDashboardAgent"
-    assert output["diagnostics"]["systemEvents"]["stdout"].startswith("wevtutil.exe qe System")
+    assert output["diagnostics"] == {
+        "reason": "service.command",
+        "windows": {"serviceConfig": "captured"},
+    }
     assert output["telemetry"] == {"sent": True, "eventType": "health.signal"}
     assert len(posted) == 1
     assert posted[0]["api_url"] == "http://192.168.204.1:8000"
@@ -635,9 +632,109 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     assert payload["health"] == "warning"
     assert payload["attributes"]["serviceAction"] == "start"
     assert payload["attributes"]["outcome"] == "failed"
-    assert payload["attributes"]["diagnostics"]["scConfig"]["stdout"] == (
-        "sc.exe qc FortiDashboardAgent"
+    assert payload["attributes"]["diagnostics"]["windows"]["serviceConfig"] == "captured"
+
+
+def test_task_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    posted: list[dict] = []
+
+    tui.save_config(
+        tui.AgentPrivateConfig(
+            api_url="http://192.168.204.1:8000",
+            endpoint_id="enr_01",
+            enrollment_token="secret-token",
+        ),
+        config_path,
     )
-    assert payload["attributes"]["diagnostics"]["serviceRegistry"]["stdout"] == (
-        "reg.exe query HKLM\\SYSTEM\\CurrentControlSet\\Services\\FortiDashboardAgent /s"
+    monkeypatch.setattr(tui, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        cli,
+        "_identity_context",
+        lambda: (
+            {
+                "service": "agent_private",
+                "hostname": "WIN-LAB-01",
+                "username": "Administrator",
+                "os": "Windows",
+            },
+            ["192.168.204.77"],
+        ),
     )
+    monkeypatch.setattr(
+        cli.windows_task,
+        "run_task_command",
+        lambda action: {
+            "task": "FortiDashboardAgentDaemon",
+            "action": action,
+            "run": {"returnCode": 1, "stderr": "task not found"},
+        },
+    )
+    monkeypatch.setattr(
+        cli.windows_task,
+        "task_status",
+        lambda: {"task": "FortiDashboardAgentDaemon", "status": "missing"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "_management_diagnostics",
+        lambda outcome, *, reason: {"reason": reason, "windows": {"taskQuery": "captured"}},
+    )
+    monkeypatch.setattr(cli, "post_endpoint_event", lambda **kwargs: posted.append(kwargs))
+
+    main(["task", "start"])
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "failed"
+    assert output["diagnostics"]["reason"] == "task.start"
+    assert output["telemetry"] == {"sent": True, "eventType": "health.signal"}
+    payload = posted[0]["payload"]
+    assert payload["attributes"]["source"] == "agent_private.windows_task"
+    assert payload["attributes"]["taskAction"] == "start"
+    assert payload["attributes"]["taskStatus"] == {
+        "task": "FortiDashboardAgentDaemon",
+        "status": "missing",
+    }
+
+
+def test_diagnostics_command_can_post_to_xdr(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    posted: list[dict] = []
+
+    tui.save_config(
+        tui.AgentPrivateConfig(
+            api_url="http://192.168.204.1:8000",
+            endpoint_id="enr_01",
+            enrollment_token="secret-token",
+        ),
+        config_path,
+    )
+    monkeypatch.setattr(tui, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        cli,
+        "_identity_context",
+        lambda: (
+            {
+                "service": "agent_private",
+                "hostname": "WIN-LAB-01",
+                "username": "Administrator",
+                "os": "Windows",
+            },
+            ["192.168.204.77"],
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_management_diagnostics",
+        lambda outcome, *, reason: {"reason": reason, "config": {"safeSummary": {}}},
+    )
+    monkeypatch.setattr(cli, "post_endpoint_event", lambda **kwargs: posted.append(kwargs))
+
+    main(["diagnostics", "--post", "--reason", "manual-test"])
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["telemetry"] == {"sent": True, "eventType": "health.signal"}
+    payload = posted[0]["payload"]
+    assert payload["attributes"]["source"] == "agent_private.diagnostics"
+    assert payload["attributes"]["reason"] == "manual-test"
+    assert payload["attributes"]["diagnostics"]["reason"] == "manual-test"

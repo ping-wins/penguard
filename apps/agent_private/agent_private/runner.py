@@ -17,6 +17,7 @@ from agent_private.cli import (
     get_ip_addresses,
     post_endpoint_event,
 )
+from agent_private.logs import append_agent_log
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def run_agent(
         intervals["windows-security"] = config.windows_security_interval
 
     next_due = {name: 0.0 for name in intervals}
-    log(f"agent_private run started for endpoint {config.endpoint_id}")
+    _emit_log(log, f"agent_private run started for endpoint {config.endpoint_id}", config)
 
     while True:
         now = time.monotonic()
@@ -71,15 +72,22 @@ def run_agent(
         for name, interval in intervals.items():
             if now < next_due[name]:
                 continue
-            for payload in build_payloads_for_kind(
-                name,
-                config,
-                identity_provider=identity_provider,
-                ip_provider=ip_provider,
-                process_collector=process_collector,
-                connection_collector=connection_collector,
-                windows_security_collector=windows_security_collector,
-            ):
+            try:
+                payloads = build_payloads_for_kind(
+                    name,
+                    config,
+                    identity_provider=identity_provider,
+                    ip_provider=ip_provider,
+                    process_collector=process_collector,
+                    connection_collector=connection_collector,
+                    windows_security_collector=windows_security_collector,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _emit_log(log, f"collect failed for {name}: {exc}", config)
+                next_due[name] = now + interval
+                ran = True
+                continue
+            for payload in payloads:
                 _post_payload(config, payload, post=post, log=log)
             next_due[name] = now + interval
             ran = True
@@ -176,9 +184,15 @@ def _post_payload(
             payload=payload,
         )
     except Exception as exc:  # noqa: BLE001
-        log(f"post failed for {event_type}: {_redact(str(exc), config.enrollment_token)}")
+        _emit_log(log, f"post failed for {event_type}: {exc}", config)
         return
-    log(f"posted {event_type} for endpoint {config.endpoint_id}")
+    _emit_log(log, f"posted {event_type} for endpoint {config.endpoint_id}", config)
+
+
+def _emit_log(log: LogFn, message: str, config: AgentRunConfig) -> None:
+    safe_message = _redact(message, config.enrollment_token)
+    append_agent_log(safe_message)
+    log(safe_message)
 
 
 def _redact(value: str, secret: str) -> str:

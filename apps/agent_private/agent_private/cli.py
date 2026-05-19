@@ -19,13 +19,14 @@ import httpx
 import psutil
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from agent_private import windows_service
+from agent_private import windows_service, windows_task
 from agent_private.control import AgentControlClient
 from agent_private.discovery import (
     DEFAULT_DISCOVERY_PORT,
     DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
     discover_dashboard,
 )
+from agent_private.logs import append_agent_log
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEMO_OCCURRED_AT = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
@@ -576,6 +577,7 @@ def pair_with_dashboard(
 
 
 def run_service_command_with_reporting(service_action: str) -> dict[str, Any]:
+    append_agent_log(f"service command requested: {service_action}", name="service.log")
     stdout = io.StringIO()
     stderr = io.StringIO()
     error: BaseException | None = None
@@ -617,12 +619,59 @@ def run_service_command_with_reporting(service_action: str) -> dict[str, Any]:
         payload["diagnostics"] = diagnostics
 
     payload["telemetry"] = _report_service_command(payload)
+    append_agent_log(
+        f"service command finished: {service_action} outcome={outcome}",
+        name="service.log",
+    )
+    return payload
+
+
+def run_task_command_with_reporting(task_action: str) -> dict[str, Any]:
+    append_agent_log(f"scheduled task command requested: {task_action}")
+    error: BaseException | None = None
+    try:
+        result = windows_task.run_task_command(task_action)
+    except BaseException as exc:  # noqa: BLE001
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        error = exc
+        result = {"task": windows_task.TASK_NAME, "action": task_action}
+
+    task_status_payload = _task_status_payload()
+    outcome = _task_command_outcome(
+        task_action,
+        result=result,
+        error=error,
+        task_status_payload=task_status_payload,
+    )
+    payload: dict[str, Any] = {
+        **result,
+        "action": result.get("action", task_action),
+        "outcome": outcome,
+    }
+    if task_status_payload is not None:
+        payload["taskStatus"] = task_status_payload
+    if error is not None:
+        payload["error"] = _truncate_log(str(error))
+    diagnostics = _management_diagnostics(outcome, reason=f"task.{task_action}")
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
+
+    payload["telemetry"] = _report_task_command(payload)
+    append_agent_log(f"scheduled task command finished: {task_action} outcome={outcome}")
     return payload
 
 
 def _service_status_payload() -> dict[str, str] | None:
     try:
         return windows_service.service_status()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _task_status_payload() -> dict[str, Any] | None:
+    try:
+        return windows_task.task_status()
     except Exception:  # noqa: BLE001
         return None
 
@@ -648,7 +697,63 @@ def _service_command_outcome(
     return "success"
 
 
+def _task_command_outcome(
+    task_action: str,
+    *,
+    result: dict[str, Any],
+    error: BaseException | None,
+    task_status_payload: dict[str, Any] | None,
+) -> str:
+    if error is not None:
+        return "failed"
+    if _has_failed_command_result(result):
+        return "failed"
+    if task_action == "status":
+        return "success" if result.get("installed") is True else "failed"
+    if task_action == "install":
+        installed = task_status_payload.get("installed") if task_status_payload else None
+        return "success" if installed is True else "failed"
+    return "success"
+
+
+def _has_failed_command_result(value: Any) -> bool:
+    if isinstance(value, dict):
+        return_code = value.get("returnCode")
+        if return_code not in {None, 0}:
+            return True
+        if value.get("error"):
+            return True
+        return any(_has_failed_command_result(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_has_failed_command_result(child) for child in value)
+    return False
+
+
 def _report_service_command(command_payload: dict[str, Any]) -> dict[str, Any]:
+    return _report_management_command(
+        command_payload,
+        source="agent_private.windows_service",
+        status_key="serviceStatus",
+        action_key="serviceAction",
+    )
+
+
+def _report_task_command(command_payload: dict[str, Any]) -> dict[str, Any]:
+    return _report_management_command(
+        command_payload,
+        source="agent_private.windows_task",
+        status_key="taskStatus",
+        action_key="taskAction",
+    )
+
+
+def _report_management_command(
+    command_payload: dict[str, Any],
+    *,
+    source: str,
+    status_key: str,
+    action_key: str,
+) -> dict[str, Any]:
     from agent_private.tui import load_config
 
     config = load_config()
@@ -664,11 +769,12 @@ def _report_service_command(command_payload: dict[str, Any]) -> dict[str, Any]:
         ip_addresses=ip_addresses,
         current_user=identity["username"],
         attributes={
-            "source": "agent_private.windows_service",
+            "source": source,
             "service": command_payload.get("service"),
-            "serviceAction": command_payload.get("action"),
+            "task": command_payload.get("task"),
+            action_key: command_payload.get("action"),
             "outcome": outcome,
-            "serviceStatus": command_payload.get("serviceStatus"),
+            status_key: command_payload.get(status_key),
             "stdout": command_payload.get("stdout"),
             "stderr": command_payload.get("stderr"),
             "error": command_payload.get("error"),
@@ -688,6 +794,47 @@ def _report_service_command(command_payload: dict[str, Any]) -> dict[str, Any]:
     return {"sent": True, "eventType": "health.signal"}
 
 
+def run_diagnostics_command_with_reporting(reason: str, *, post: bool = False) -> dict[str, Any]:
+    diagnostics = _management_diagnostics("failed", reason=reason)
+    payload: dict[str, Any] = {"diagnostics": diagnostics}
+    if post:
+        payload["telemetry"] = _report_diagnostics(reason, diagnostics)
+    return payload
+
+
+def _report_diagnostics(reason: str, diagnostics: dict[str, Any]) -> dict[str, Any]:
+    from agent_private.tui import load_config
+
+    config = load_config()
+    if not config.api_url or not config.endpoint_id or not config.enrollment_token:
+        return {"sent": False, "reason": "agent config is incomplete"}
+
+    identity, ip_addresses = _identity_context()
+    event = build_endpoint_event(
+        endpoint_id=config.endpoint_id,
+        event_type="health.signal",
+        hostname=identity["hostname"],
+        ip_addresses=ip_addresses,
+        current_user=identity["username"],
+        attributes={
+            "source": "agent_private.diagnostics",
+            "reason": reason,
+            "diagnostics": diagnostics,
+            "os": identity["os"],
+        },
+    )
+    event["health"] = "warning"
+    try:
+        post_endpoint_event(
+            api_url=config.api_url,
+            enrollment_token=config.enrollment_token,
+            payload=event,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"sent": False, "reason": _truncate_log(str(exc))}
+    return {"sent": True, "eventType": "health.signal"}
+
+
 def _truncate_log(value: str, limit: int = 4000) -> str:
     if len(value) <= limit:
         return value
@@ -695,61 +842,23 @@ def _truncate_log(value: str, limit: int = 4000) -> str:
 
 
 def _service_diagnostics(outcome: str) -> dict[str, Any]:
-    if outcome != "failed" or platform.system() != "Windows":
+    return _management_diagnostics(outcome, reason="service.command")
+
+
+def _management_diagnostics(outcome: str, *, reason: str) -> dict[str, Any]:
+    if outcome != "failed":
         return {}
-    commands = {
-        "scQuery": ["sc.exe", "queryex", windows_service.SERVICE_NAME],
-        "scConfig": ["sc.exe", "qc", windows_service.SERVICE_NAME],
-        "serviceRegistry": [
-            "reg.exe",
-            "query",
-            f"HKLM\\SYSTEM\\CurrentControlSet\\Services\\{windows_service.SERVICE_NAME}",
-            "/s",
-        ],
-        "systemEvents": [
-            "wevtutil.exe",
-            "qe",
-            "System",
-            "/q:*[System[Provider[@Name='Service Control Manager']]]",
-            "/c:15",
-            "/rd:true",
-            "/f:text",
-        ],
-        "applicationEvents": [
-            "wevtutil.exe",
-            "qe",
-            "Application",
-            "/c:20",
-            "/rd:true",
-            "/f:text",
-        ],
-    }
-    diagnostics: dict[str, Any] = {}
-    for name, command in commands.items():
-        diagnostics[name] = _run_diagnostic_command(command)
-    return diagnostics
-
-
-def _run_diagnostic_command(command: Sequence[str]) -> dict[str, Any]:
     try:
-        result = subprocess.run(
-            list(command),
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
+        from agent_private.diagnostics import collect_agent_diagnostics
+        from agent_private.tui import load_config
+
+        config = load_config()
+        return collect_agent_diagnostics(
+            reason=reason,
+            extra_secrets=[config.enrollment_token],
         )
     except Exception as exc:  # noqa: BLE001
-        return {
-            "command": list(command),
-            "error": _truncate_log(str(exc)),
-        }
-    return {
-        "command": list(command),
-        "returnCode": result.returncode,
-        "stdout": _truncate_log(result.stdout.strip()),
-        "stderr": _truncate_log(result.stderr.strip()),
-    }
+        return {"error": _truncate_log(str(exc))}
 
 
 def run_tui() -> None:
@@ -869,6 +978,20 @@ def build_parser() -> argparse.ArgumentParser:
         "service_action",
         choices=["install", "start", "stop", "status", "uninstall"],
     )
+    task_parser = subparsers.add_parser(
+        "task",
+        help="Manage the Windows Scheduled Task daemon runtime.",
+    )
+    task_parser.add_argument(
+        "task_action",
+        choices=["install", "start", "stop", "status", "uninstall"],
+    )
+    diagnostics_parser = subparsers.add_parser(
+        "diagnostics",
+        help="Collect local Windows/agent diagnostics for debugging.",
+    )
+    diagnostics_parser.add_argument("--post", action="store_true")
+    diagnostics_parser.add_argument("--reason", default="manual")
     subparsers.add_parser("simulate", parents=[common], help="Print deterministic demo events.")
     return parser
 
@@ -958,6 +1081,14 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "service":
         print_json(run_service_command_with_reporting(args.service_action))
+        return
+
+    if args.command == "task":
+        print_json(run_task_command_with_reporting(args.task_action))
+        return
+
+    if args.command == "diagnostics":
+        print_json(run_diagnostics_command_with_reporting(args.reason, post=args.post))
         return
 
     if args.command == "daemon":

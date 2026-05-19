@@ -62,6 +62,36 @@ def test_daemon_reports_post_failure_without_revealing_token():
     assert daemon.status()["failedCount"] == 1
 
 
+def test_daemon_reports_collector_failure_without_crashing():
+    logs: list[str] = []
+
+    def failing_process_collector(limit=None):
+        raise RuntimeError("collector rejected secret-token")
+
+    daemon = AgentDaemon(
+        AgentRunConfig(
+            api_url="http://localhost:8000",
+            endpoint_id="end_win_01",
+            enrollment_token="secret-token",
+        ),
+        log=logs.append,
+        identity_provider=identity,
+        ip_provider=lambda: ["192.168.56.10"],
+        process_collector=failing_process_collector,
+        connection_collector=lambda: [],
+        windows_security_collector=lambda limit=50: [],
+    )
+
+    result = daemon.collect_now("processes")
+
+    assert result["posted"] == []
+    assert result["failed"] == [
+        {"eventType": "processes", "error": "collector rejected [redacted]"}
+    ]
+    assert daemon.status()["failedCount"] == 1
+    assert "secret-token" not in "\n".join(logs)
+
+
 def test_daemon_claims_remote_collect_now_action_and_reports_result():
     posted: list[dict] = []
 
