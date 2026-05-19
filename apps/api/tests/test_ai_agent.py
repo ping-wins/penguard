@@ -758,6 +758,88 @@ def test_gemini_backend_parses_text_and_tool_call():
     assert body["tools"][0]["functionDeclarations"][0]["parameters"]["type"] == "OBJECT"
 
 
+def test_gemini_runner_preserves_function_call_thought_signature():
+    from app.ai.agent.backends.gemini import GeminiBackend
+
+    requests: list[httpx.Request] = []
+
+    async def _handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "role": "model",
+                                "parts": [
+                                    {"text": "Vou consultar os incidentes."},
+                                    {
+                                        "functionCall": {
+                                            "name": "list_incidents",
+                                            "args": {"limit": 5},
+                                            "id": "call_incidents",
+                                        },
+                                        "thoughtSignature": "gemini-signature-1",
+                                    },
+                                ],
+                            },
+                            "finishReason": "STOP",
+                        }
+                    ],
+                    "usageMetadata": {
+                        "promptTokenCount": 9,
+                        "candidatesTokenCount": 4,
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [{"text": "Encontrei 1 incidente recente."}],
+                        },
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 12,
+                    "candidatesTokenCount": 5,
+                },
+            },
+        )
+
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="gemini", role_id="soc-assistant")
+    backend = GeminiBackend(
+        api_key="sk-test",
+        model="gemini-flash-latest",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(_handler)),
+    )
+    runner = AgentRunner(backend=backend, session_store=store)
+    events = asyncio.run(
+        _collect(
+            runner,
+            session=session,
+            user_message="most recent incidents",
+            tool_context=ToolContext(user_id="user-1", siem_client=_StubSiem()),
+        )
+    )
+
+    assert events[-1]["kind"] == "done"
+    assert len(requests) == 2
+    body = json.loads(requests[1].content)
+    model_parts = next(
+        item["parts"] for item in body["contents"] if item.get("role") == "model"
+    )
+    function_part = next(part for part in model_parts if "functionCall" in part)
+    assert function_part["thoughtSignature"] == "gemini-signature-1"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------

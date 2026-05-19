@@ -27,6 +27,7 @@ class ToolCall:
     call_id: str = ""
     tool_name: str = ""
     args: dict[str, Any] = field(default_factory=dict)
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

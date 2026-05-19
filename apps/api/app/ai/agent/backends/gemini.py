@@ -94,6 +94,7 @@ class GeminiBackend:
                             call_id=str(function_call.get("id") or f"call_{index}"),
                             tool_name=name,
                             args=args if isinstance(args, dict) else {},
+                            provider_metadata=_gemini_tool_call_metadata(part),
                         )
 
             usage = payload.get("usageMetadata") or {}
@@ -141,7 +142,11 @@ def _gemini_contents(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 call_id = call.get("id")
                 if call_id:
                     function_call["id"] = str(call_id)
-                parts.append({"functionCall": function_call})
+                part: dict[str, Any] = {"functionCall": function_call}
+                thought_signature = _stored_thought_signature(call)
+                if thought_signature:
+                    part["thoughtSignature"] = thought_signature
+                parts.append(part)
             if parts:
                 contents.append({"role": "model", "parts": parts})
         elif role == "tool":
@@ -170,6 +175,28 @@ def _function_declaration(tool: AgentTool) -> dict[str, Any]:
         "description": tool.description,
         "parameters": _gemini_schema(tool.input_schema),
     }
+
+
+def _gemini_tool_call_metadata(part: dict[str, Any]) -> dict[str, Any]:
+    thought_signature = part.get("thoughtSignature") or part.get("thought_signature")
+    if not thought_signature:
+        return {}
+    return {"gemini": {"thoughtSignature": str(thought_signature)}}
+
+
+def _stored_thought_signature(call: dict[str, Any]) -> str | None:
+    metadata = call.get("providerMetadata") or call.get("provider_metadata") or {}
+    if not isinstance(metadata, dict):
+        return None
+    gemini_metadata = metadata.get("gemini")
+    if isinstance(gemini_metadata, dict):
+        thought_signature = gemini_metadata.get("thoughtSignature") or gemini_metadata.get(
+            "thought_signature"
+        )
+        if thought_signature:
+            return str(thought_signature)
+    thought_signature = metadata.get("thoughtSignature") or metadata.get("thought_signature")
+    return str(thought_signature) if thought_signature else None
 
 
 def _gemini_schema(schema: Any) -> dict[str, Any]:

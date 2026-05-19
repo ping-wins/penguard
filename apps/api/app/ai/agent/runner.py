@@ -222,6 +222,7 @@ class AgentRunner:
                             "id": call.call_id,
                             "name": call.tool_name,
                             "args": dict(call.args),
+                            "providerMetadata": dict(call.provider_metadata),
                         }
                         for call in pending_tool_calls
                     ],
