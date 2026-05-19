@@ -24,12 +24,12 @@ $EnvFile = Join-Path $RepoRoot '.env'
 $ExampleFile = Join-Path $RepoRoot '.env.example'
 
 if (-not (Test-Path $ExampleFile)) {
-    throw ".env.example not found at $ExampleFile — run this from a clean checkout."
+    throw ".env.example not found at $ExampleFile - run this from a clean checkout."
 }
 
 if ((Test-Path $EnvFile) -and -not $Force) {
     Write-Error ".env already exists at $EnvFile. Pass -Force to overwrite."
-    Write-Error '  (Existing secrets will be lost — back them up first if needed.)'
+    Write-Error '  (Existing secrets will be lost - back them up first if needed.)'
     exit 1
 }
 
