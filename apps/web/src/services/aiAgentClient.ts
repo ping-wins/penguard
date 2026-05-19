@@ -157,6 +157,7 @@ export async function deleteAgentSession(sessionId: string): Promise<void> {
 export async function* streamAgentMessage(
   sessionId: string,
   content: string,
+  options: { workspaceId?: string } = {},
   signal?: AbortSignal,
 ): AsyncGenerator<AgentStreamEvent, void, void> {
   const headers = await csrfHeaders()
@@ -166,7 +167,10 @@ export async function* streamAgentMessage(
       method: 'POST',
       credentials: 'include',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+      }),
       signal,
     },
   )

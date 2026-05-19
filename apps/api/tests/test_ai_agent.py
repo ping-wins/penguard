@@ -107,6 +107,9 @@ def test_registry_marks_draft_tools_and_rejects_unapproved_write_tools():
     assert REGISTRY["run_playbook"].category == "execute"
     assert REGISTRY["run_playbook"].requires_approval is True
     assert REGISTRY["run_playbook"].required_permissions == frozenset({"playbooks.execute"})
+    assert REGISTRY["summon_widget"].category == "write"
+    assert REGISTRY["summon_widget"].requires_approval is True
+    assert REGISTRY["summon_widget"].required_permissions == frozenset({"workspaces.manage"})
 
     async def _noop(_ctx: ToolContext, _args: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
@@ -387,6 +390,69 @@ class _StubSoarPlaybooks:
         raise AssertionError(f"unexpected SOAR request {method} {path}")
 
 
+class _StubWorkspaceStore:
+    def __init__(self) -> None:
+        self.workspaces: dict[str, dict[str, Any]] = {
+            "ws_active": {
+                "id": "ws_active",
+                "name": "SOC Active",
+                "widgets": [
+                    {
+                        "instanceId": "w_existing",
+                        "catalogId": "fortigate-system-status",
+                        "integrationId": "int_fgt",
+                        "layout": {"x": 50, "y": 50, "w": 320, "h": 220, "z": 101},
+                    }
+                ],
+            }
+        }
+        self.saved: list[dict[str, Any]] = []
+
+    def get(self, workspace_id: str, *, owner_user_id: str):
+        assert owner_user_id == "analyst-1"
+        return self.workspaces.get(workspace_id)
+
+    def list_workspaces(self, *, owner_user_id: str):
+        assert owner_user_id == "analyst-1"
+        return [
+            {"id": payload["id"], "name": payload["name"]}
+            for payload in self.workspaces.values()
+        ]
+
+    def save(
+        self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        name: str,
+        **payload: Any,
+    ):
+        saved_widgets = payload["widgets"]
+        assert owner_user_id == "analyst-1"
+        self.saved.append(
+            {
+                "workspaceId": workspace_id,
+                "ownerUserId": owner_user_id,
+                "name": name,
+                "widgets": saved_widgets,
+            }
+        )
+        self.workspaces[workspace_id] = {
+            "id": workspace_id,
+            "name": name,
+            "widgets": saved_widgets,
+        }
+        return {"id": workspace_id, "version": len(self.saved) + 1}
+
+
+class _StubAuditStore:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def record(self, **kwargs):
+        self.events.append(kwargs)
+
+
 def _valid_playbook_payload() -> dict[str, Any]:
     return {
         "id": "pb_agent",
@@ -400,6 +466,74 @@ def _valid_playbook_payload() -> dict[str, Any]:
             },
         ],
         "edges": [{"from": "trigger", "to": "note", "condition": "success"}],
+    }
+
+
+def test_summon_widget_tool_persists_draft_to_active_workspace_and_audits():
+    workspace_store = _StubWorkspaceStore()
+    audit_store = _StubAuditStore()
+    ctx = ToolContext(
+        user_id="analyst-1",
+        email="analyst@example.test",
+        workspace_store=workspace_store,
+        audit_store=audit_store,
+        extras={"activeWorkspaceId": "ws_active"},
+    )
+
+    result = asyncio.run(
+        REGISTRY["summon_widget"].impl(
+            ctx,
+            {
+                "draft": {
+                    "provider": "fortigate",
+                    "integrationId": "int_fgt",
+                    "visualType": "card",
+                    "fieldBindings": [
+                        {
+                            "fieldId": "system.cpu",
+                            "label": "CPU Usage",
+                            "type": "number",
+                            "unit": "%",
+                            "source": "system",
+                            "provider": "fortigate",
+                            "ignored": "must not be persisted",
+                        }
+                    ],
+                    "layout": {"w": 2, "h": 2},
+                    "settings": {"ignored": True},
+                },
+                "position": {"x": 0, "y": 0},
+            },
+        )
+    )
+
+    assert result["workspaceId"] == "ws_active"
+    assert result["widget"]["catalogId"] == "visual-template-card"
+    assert result["widget"]["integrationId"] == "int_fgt"
+    assert result["widget"]["layout"]["z"] == 102
+    assert result["widget"]["layout"]["x"] == 0
+    assert result["widget"]["layout"]["y"] == 0
+    assert result["widget"]["layout"]["w"] == 220
+    assert result["widget"]["layout"]["h"] == 200
+    assert result["widget"]["fieldBindings"] == [
+        {
+            "fieldId": "system.cpu",
+            "label": "CPU Usage",
+            "type": "number",
+            "unit": "%",
+            "source": "system",
+            "provider": "fortigate",
+            "integrationId": "int_fgt",
+            "integrationType": "fortigate",
+        }
+    ]
+    assert workspace_store.saved[-1]["widgets"][-1] == result["widget"]
+    assert audit_store.events[-1]["action"] == "workspace.widget.summoned"
+    assert audit_store.events[-1]["details"] == {
+        "workspaceId": "ws_active",
+        "widgetId": result["widget"]["instanceId"],
+        "catalogId": "visual-template-card",
+        "source": "ai_agent",
     }
 
 
@@ -480,6 +614,9 @@ def test_role_registry_matches_real_runtime_spec():
     }
     assert roles["chat"].tier == "fast"
     assert roles["chat"].allowed_tool_categories == frozenset({"read"})
+    assert roles["widget-builder"].allowed_tool_categories == frozenset(
+        {"read", "draft", "write"}
+    )
     assert roles["incident-triage"].tier == "balanced"
     assert roles["incident-triage"].allowed_tool_categories == frozenset({"read", "draft"})
     assert roles["incident-triage"].token_budget == 150_000
@@ -1340,6 +1477,7 @@ def test_list_tools_endpoint_hides_permission_gated_tools_for_default_analyst():
     assert "search_audit" not in names
     assert "run_playbook" not in names
     assert "update_ticket" not in names
+    assert "summon_widget" not in names
 
 
 def test_list_tools_endpoint_exposes_required_permissions():
@@ -1362,6 +1500,10 @@ def test_list_tools_endpoint_exposes_required_permissions():
     assert run_playbook["category"] == "execute"
     assert run_playbook["requiresApproval"] is True
     assert run_playbook["requiredPermissions"] == ["playbooks.execute"]
+    summon_widget = next(item for item in payload["items"] if item["name"] == "summon_widget")
+    assert summon_widget["category"] == "write"
+    assert summon_widget["requiresApproval"] is True
+    assert summon_widget["requiredPermissions"] == ["workspaces.manage"]
 
 
 def test_list_roles_endpoint_is_not_public():

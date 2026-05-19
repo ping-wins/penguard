@@ -701,6 +701,10 @@ export default {
           label: 'Share workspaces',
           description: 'Publish workspaces to the rest of the organization.',
         },
+        'workspaces.manage': {
+          label: 'Manage workspaces',
+          description: 'Create, edit and save workspace widgets and layouts.',
+        },
         'playbooks.execute': {
           label: 'Execute playbooks',
           description: 'Trigger SOAR playbooks (dry-run and live).',

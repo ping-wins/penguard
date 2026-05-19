@@ -86,7 +86,14 @@ class SessionResponse(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     content: str = Field(min_length=1, max_length=8000)
+    workspace_id: str | None = Field(
+        default=None,
+        alias="workspaceId",
+        max_length=128,
+    )
 
 
 class ApprovalRequest(BaseModel):
@@ -233,6 +240,7 @@ def _build_tool_context(
     locale: str,
     audit_store: Any,
     effective_permissions: frozenset[str],
+    active_workspace_id: str | None = None,
 ) -> ToolContext:
     # Lazy imports avoid loading service factories at module import time
     # (keeps test patch points stable).
@@ -253,6 +261,11 @@ def _build_tool_context(
         workspace_store=get_workspace_store(),
         audit_store=audit_store,
         effective_permissions=effective_permissions,
+        extras={
+            "activeWorkspaceId": active_workspace_id,
+        }
+        if active_workspace_id
+        else {},
     )
 
 
@@ -490,6 +503,7 @@ async def send_message(
         locale=session.locale,
         audit_store=audit_store,
         effective_permissions=frozenset(resolve_effective_permissions(db, current_user)),
+        active_workspace_id=payload.workspace_id,
     )
 
     async def event_stream():

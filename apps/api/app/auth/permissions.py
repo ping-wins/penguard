@@ -63,6 +63,12 @@ PERMISSION_CATALOG: tuple[PermissionDef, ...] = (
         description_key="settings.roles.permission.workspaces.share.description",
     ),
     PermissionDef(
+        slug="workspaces.manage",
+        category="workspaces",
+        label_key="settings.roles.permission.workspaces.manage.label",
+        description_key="settings.roles.permission.workspaces.manage.description",
+    ),
+    PermissionDef(
         slug="playbooks.execute",
         category="playbooks",
         label_key="settings.roles.permission.playbooks.execute.label",

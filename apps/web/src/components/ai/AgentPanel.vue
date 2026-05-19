@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Bot, Check, Hammer, Play, Send, ShieldAlert, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useAiAgentStore } from '../../stores/useAiAgentStore'
+import { renderSafeMarkdown } from '../../lib/markdown'
 
 const store = useAiAgentStore()
 const { t, locale } = useI18n()
@@ -72,6 +73,10 @@ const modelBadge = computed(() => {
 function formatTokens(value: number): string {
   if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`
   return String(value)
+}
+
+function renderMarkdown(value: string): string {
+  return renderSafeMarkdown(value)
 }
 
 </script>
@@ -187,7 +192,11 @@ function formatTokens(value: number): string {
 
           <div v-else-if="entry.kind === 'text'" class="flex items-start gap-2">
             <Bot class="mt-0.5 h-3 w-3 text-theme-primary" />
-            <p class="whitespace-pre-wrap text-xs text-theme-text">{{ entry.text }}</p>
+            <div
+              data-test="agent-markdown"
+              class="agent-markdown text-xs text-theme-text"
+              v-html="renderMarkdown(entry.text)"
+            />
           </div>
 
           <div v-else-if="entry.kind === 'tool_call'" class="flex flex-col gap-1">
@@ -245,3 +254,64 @@ function formatTokens(value: number): string {
     </form>
   </section>
 </template>
+
+<style scoped>
+.agent-markdown :deep(h1),
+.agent-markdown :deep(h2),
+.agent-markdown :deep(h3) {
+  margin: 0.25rem 0;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.agent-markdown :deep(h1) {
+  font-size: 0.95rem;
+}
+
+.agent-markdown :deep(h2) {
+  font-size: 0.85rem;
+}
+
+.agent-markdown :deep(h3) {
+  font-size: 0.78rem;
+}
+
+.agent-markdown :deep(p) {
+  margin: 0.25rem 0;
+  white-space: normal;
+}
+
+.agent-markdown :deep(ul),
+.agent-markdown :deep(ol) {
+  margin: 0.25rem 0;
+  padding-left: 1rem;
+}
+
+.agent-markdown :deep(ul) {
+  list-style: disc;
+}
+
+.agent-markdown :deep(ol) {
+  list-style: decimal;
+}
+
+.agent-markdown :deep(code) {
+  border-radius: 0.25rem;
+  background: rgb(0 0 0 / 0.35);
+  padding: 0.05rem 0.25rem;
+  font-size: 0.7rem;
+}
+
+.agent-markdown :deep(pre) {
+  margin: 0.4rem 0;
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  background: rgb(0 0 0 / 0.4);
+  padding: 0.5rem;
+}
+
+.agent-markdown :deep(a) {
+  color: var(--theme-primary);
+  text-decoration: underline;
+}
+</style>

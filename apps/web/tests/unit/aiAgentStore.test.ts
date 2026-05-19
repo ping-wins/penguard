@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLocale } from '../../src/i18n'
 import { useAiAgentStore } from '../../src/stores/useAiAgentStore'
+import { useDashboardStore } from '../../src/stores/useDashboardStore'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -143,6 +144,40 @@ describe('useAiAgentStore', () => {
     expect(store.lastReply).toBe('pronto')
     expect(store.tokensIn).toBe(0)
     expect(store.tokensOut).toBe(0)
+  })
+
+  it('sends the active workspace id with agent messages', async () => {
+    const csrf = jsonResponse({ csrfToken: 'csrf_42' })
+    const sessionPayload = jsonResponse(
+      { sessionId: 'sess_1', backend: 'gemini', model: 'gemini-flash-latest', role: 'soc-assistant', locale: 'pt-BR', createdAt: 1, tokensIn: 0, tokensOut: 0 },
+      { status: 201 },
+    )
+    const stream = sseResponse([
+      sseEvent({ type: 'step', kind: 'done', step: 1, reply: 'ok', used_tools: [], tokens_in: 0, tokens_out: 0 }),
+    ])
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(csrf)
+      .mockResolvedValueOnce(sessionPayload)
+      .mockResolvedValueOnce(stream)
+    vi.stubGlobal('fetch', fetcher)
+
+    const dashboard = useDashboardStore()
+    dashboard.activeWorkspaceId = 'ws_active'
+    const store = useAiAgentStore()
+    await store.startSession()
+    await store.sendMessage('mostre um widget de CPU')
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      '/api/ai/agent/sessions/sess_1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          content: 'mostre um widget de CPU',
+          workspaceId: 'ws_active',
+        }),
+      }),
+    )
   })
 
   it('aggregates consecutive text deltas for the same step', async () => {

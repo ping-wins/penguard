@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { i18n } from '../i18n'
+import { useDashboardStore } from './useDashboardStore'
 import {
   type AgentSessionResponse,
   type AgentStreamEvent,
@@ -108,7 +109,12 @@ export const useAiAgentStore = defineStore('aiAgent', () => {
     trace.value.push({ kind: 'user', step: 0, content })
 
     try {
-      for await (const event of streamAgentMessage(session.value.sessionId, content)) {
+      const dashboardStore = useDashboardStore()
+      for await (const event of streamAgentMessage(
+        session.value.sessionId,
+        content,
+        { workspaceId: dashboardStore.activeWorkspaceId },
+      )) {
         consumeEvent(event)
       }
     } catch (e) {

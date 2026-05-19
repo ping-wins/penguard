@@ -53,15 +53,16 @@ _ROLES: dict[str, RoleConfig] = {
     "widget-builder": RoleConfig(
         id="widget-builder",
         label="Widget builder",
-        description="Draft custom workspace widgets from provider fields.",
+        description="Draft and add approved custom workspace widgets from provider fields.",
         tier="balanced",
-        allowed_tool_categories=frozenset({"read", "draft"}),
+        allowed_tool_categories=frozenset({"read", "draft", "write"}),
         token_budget=100_000,
         max_steps=12,
         locale_default="pt-BR",
         system_prompt=(
             f"{_BASE_RESTRICTIONS} Help draft workspace widgets using provider "
-            "fields and normalized payloads. Return drafts for human review."
+            "fields and normalized payloads. Return drafts for human review, and "
+            "use approved workspace write tools only after the user confirms the widget."
         ),
     ),
     "incident-triage": RoleConfig(
