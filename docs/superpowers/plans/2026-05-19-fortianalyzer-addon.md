@@ -13,19 +13,19 @@
 ### Task 1: Add FortiAnalyzer Connector Tests
 
 **Files:**
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/tests/test_connector.py`
+- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py`
 
 - [ ] **Step 1: Create package test directory**
 
 Run:
 
 ```bash
-mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/tests
+mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests
 ```
 
 - [ ] **Step 2: Write failing connector tests**
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/tests/test_connector.py` with tests for:
+Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py` with tests for:
 
 ```python
 from __future__ import annotations
@@ -210,7 +210,7 @@ Run:
 
 ```bash
 cd /home/guest/fortidashboard-addons
-python -m pytest fortianalyzer-core/1.0.0/tests/test_connector.py -q
+python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 ```
 
 Expected: FAIL because `connector/__init__.py` does not exist yet.
@@ -218,10 +218,10 @@ Expected: FAIL because `connector/__init__.py` does not exist yet.
 ### Task 2: Implement FortiAnalyzer Connector Package
 
 **Files:**
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/connector/__init__.py`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/connector/fortianalyzer_client.py`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/addon.json`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/README.md`
+- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector/__init__.py`
+- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector/fortianalyzer_client.py`
+- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`
+- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`
 - Modify: `/home/guest/fortidashboard-addons/catalog.json`
 
 - [ ] **Step 1: Create package directories**
@@ -229,7 +229,7 @@ Expected: FAIL because `connector/__init__.py` does not exist yet.
 Run:
 
 ```bash
-mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/connector
+mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector
 ```
 
 - [ ] **Step 2: Implement the client and connector**
@@ -434,16 +434,16 @@ def get_connector(config: dict[str, Any]) -> FortiAnalyzerConnector:
 
 - [ ] **Step 3: Add manifest, README, and catalog entry**
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/addon.json`:
+Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`:
 
 ```json
 {
   "id": "fortianalyzer-core",
-  "version": "1.0.0",
-  "name": "FortiAnalyzer Core",
+  "version": "0.1.0-beta.1",
+  "name": "FortiAnalyzer Core Beta",
   "vendor": "Fortinet",
   "category": "siem",
-  "description": "Connect FortiAnalyzer with a read-only JSON-RPC health probe using a REST API Admin key.",
+  "description": "SIEM analytics beta for FortiAnalyzer: marketplace listing, JSON-RPC health probe scaffold, preview widgets, and draft-only analyst playbook actions. Appliance validation is pending.",
   "icon": "fortinet",
   "minDashboardVersion": "0.1.0",
   "provider": {
@@ -476,11 +476,11 @@ Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/addon.json`:
   "compatibility": {
     "minProviderVersion": "7.6.0",
     "testedVersions": [],
-    "notes": "Unvalidated first package. Requires a FortiAnalyzer REST API Admin with JSON API read access and trusted hosts that allow the FortiDashboard API source IP. Health check uses POST /jsonrpc with url /sys/status."
+    "notes": "Beta/unvalidated marketplace preview. The team does not currently have a FortiAnalyzer appliance for validation. Requires a FortiAnalyzer REST API Admin with JSON API read access and trusted hosts that allow the FortiDashboard API source IP. Health check uses POST /jsonrpc with url /sys/status. Widgets and playbook actions are preview/draft-only and are not appliance-validated."
   },
   "capabilities": {
     "logSource": true,
-    "playbookTarget": false,
+    "playbookTarget": true,
     "managed": true
   },
   "routes": [
@@ -491,7 +491,12 @@ Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/addon.json`:
       "summary": "Read-only JSON-RPC get request with url /sys/status."
     }
   ],
-  "widgets": [],
+  "widgets": [
+    "fortianalyzer-health-preview",
+    "fortianalyzer-adom-log-posture",
+    "fortianalyzer-top-event-types",
+    "fortianalyzer-ingestion-readiness"
+  ],
   "siemEventTypes": [],
   "entrypoint": "connector",
   "requirements": [
@@ -500,12 +505,14 @@ Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/addon.json`:
 }
 ```
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/1.0.0/README.md`:
+Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`:
 
 ```markdown
-# FortiAnalyzer Core 1.0.0
+# FortiAnalyzer Core 0.1.0 Beta
 
-Read-only FortiAnalyzer marketplace add-on for FortiDashboard.
+Beta FortiAnalyzer marketplace listing for FortiDashboard. This package exists
+so FortiAnalyzer appears in the marketplace while appliance validation is still
+pending.
 
 ## Authentication
 
@@ -516,10 +523,15 @@ source IP.
 ## Current scope
 
 - Health probe: `POST /jsonrpc` with `method=get` and `url=/sys/status`.
-- Widget data: stable empty payload until FortiAnalyzer widgets are designed.
+- Marketplace listing and installable package metadata.
+- Preview widgets for health, ADOM/log posture, event taxonomy and ingestion
+  readiness. All widget payloads are marked `applianceValidated=false`.
 - Event ingestion: empty list until log/ADOM pagination is validated in a lab.
+- Draft-only playbook action for analyst signal review. It is always `dryRun`
+  and never changes FortiAnalyzer state.
 
-No configuration writes or playbook actions are included in this package.
+No configuration writes, live log ingestion, live widgets, or live playbook
+actions are included in this beta package.
 ```
 
 Add this object to root `/home/guest/fortidashboard-addons/catalog.json` after
@@ -528,13 +540,13 @@ the `fortiweb-core` entry and before Penguin entries:
 ```json
 {
   "id": "fortianalyzer-core",
-  "name": "FortiAnalyzer Core",
+  "name": "FortiAnalyzer Core Beta",
   "vendor": "Fortinet",
   "category": "siem",
   "icon": "fortinet",
-  "description": "Connect FortiAnalyzer with a read-only JSON-RPC health probe using a REST API Admin key.",
-  "latestVersion": "1.0.0",
-  "versions": ["1.0.0"],
+  "description": "SIEM analytics beta for FortiAnalyzer: marketplace listing, JSON-RPC health probe scaffold, preview widgets, and draft-only analyst playbook actions. Appliance validation is pending.",
+  "latestVersion": "0.1.0-beta.1",
+  "versions": ["0.1.0-beta.1"],
   "tagTemplate": "fortianalyzer-core-v{version}"
 }
 ```
@@ -545,7 +557,7 @@ Run:
 
 ```bash
 cd /home/guest/fortidashboard-addons
-python -m pytest fortianalyzer-core/1.0.0/tests/test_connector.py -q
+python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 ```
 
 Expected: all tests pass.
@@ -561,7 +573,7 @@ Run:
 
 ```bash
 cd /home/guest/fortidashboard-addons
-python -m pytest fortianalyzer-core/1.0.0/tests/test_connector.py -q
+python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 git diff --check
 git status -sb
 ```
@@ -576,7 +588,7 @@ Run:
 ```bash
 cd /home/guest/fortidashboard-addons
 git switch -c codex/fortianalyzer-core-addon
-git add catalog.json fortianalyzer-core/1.0.0
+git add catalog.json fortianalyzer-core/0.1.0-beta.1
 git commit -m "feat(fortianalyzer-core): add read-only connector"
 ```
 
@@ -585,5 +597,5 @@ git commit -m "feat(fortianalyzer-core): add read-only connector"
 Use the GitHub app or git push to publish branch
 `codex/fortianalyzer-core-addon` to `ping-wins/fortidashboard-addons` and open
 a draft PR against `main`. Do not create the release tag
-`fortianalyzer-core-v1.0.0` until the PR is merged or the user explicitly asks
+`fortianalyzer-core-v0.1.0-beta.1` until the PR is merged or the user explicitly asks
 for direct release tagging.

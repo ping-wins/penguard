@@ -4,10 +4,11 @@ Date: 2026-05-19
 
 ## Goal
 
-Create a first FortiAnalyzer marketplace package in
+Create a beta FortiAnalyzer marketplace package in
 `ping-wins/fortidashboard-addons` so FortiDashboard can list, install, and
-probe an on-prem FortiAnalyzer integration through the existing add-on loader.
-This first version is deliberately read-only and lab-unvalidated.
+preview an on-prem FortiAnalyzer integration through the existing add-on
+loader. This beta version is deliberately read-only and exists mainly so
+FortiAnalyzer appears in the marketplace while appliance validation is pending.
 
 ## Context
 
@@ -31,7 +32,7 @@ Reference:
 Add this package to `ping-wins/fortidashboard-addons`:
 
 ```txt
-fortianalyzer-core/1.0.0/
+fortianalyzer-core/0.1.0-beta.1/
   addon.json
   README.md
   connector/
@@ -42,10 +43,12 @@ fortianalyzer-core/1.0.0/
 Update root `catalog.json` with:
 
 - `id`: `fortianalyzer-core`
-- `name`: `FortiAnalyzer Core`
+- `name`: `FortiAnalyzer Core Beta`
 - `vendor`: `Fortinet`
 - `category`: `siem`
-- `latestVersion`: `1.0.0`
+- `description`: SIEM analytics beta with health-probe scaffold, preview
+  widgets and draft-only analyst playbook actions
+- `latestVersion`: `0.1.0-beta.1`
 - `tagTemplate`: `fortianalyzer-core-v{version}`
 
 ## Manifest
@@ -63,7 +66,7 @@ Provider and capabilities:
 - `provider.type`: `fortianalyzer`
 - `provider.auth.kind`: `apiKey`
 - `capabilities.logSource`: `true`
-- `capabilities.playbookTarget`: `false`
+- `capabilities.playbookTarget`: `true`
 - `capabilities.managed`: `true`
 
 Routes document the read-only JSON-RPC health probe:
@@ -71,9 +74,17 @@ Routes document the read-only JSON-RPC health probe:
 - `POST /jsonrpc`
 - JSON-RPC request target `url: "/sys/status"`
 
-Widgets and SIEM event types stay empty for `1.0.0` unless the existing
-dashboard already has FortiAnalyzer-specific widget IDs. This avoids presenting
-unverified log extraction as a real product path.
+Widgets are advertised for marketplace visibility and return preview payloads
+only:
+
+- `fortianalyzer-health-preview`
+- `fortianalyzer-adom-log-posture`
+- `fortianalyzer-top-event-types`
+- `fortianalyzer-ingestion-readiness`
+
+Every widget response includes `mode: "preview"`, `beta: true` and
+`applianceValidated: false`. SIEM event types stay empty because live log
+ingestion is not validated.
 
 ## Connector Behavior
 
@@ -100,15 +111,37 @@ close() -> None
 5. Returns `ok: false`, `status: "disconnected"`, and a sanitized message for
    HTTP, network, non-JSON, and JSON-RPC errors.
 
-`get_widget_data()` returns a ready empty payload:
+`get_widget_data()` returns preview payloads:
 
 ```json
-{"status": "ready", "data": {}, "meta": {"source": "fortianalyzer"}}
+{
+  "status": "preview",
+  "data": {
+    "title": "FortiAnalyzer health preview",
+    "applianceValidated": false,
+    "validationRequired": true
+  },
+  "meta": {
+    "source": "fortianalyzer",
+    "mode": "preview",
+    "applianceValidated": false,
+    "beta": true
+  }
+}
 ```
 
-`ingest_events()` returns an empty list in `1.0.0`. Pulling FortiAnalyzer logs
-or incidents is deferred until a real appliance/lab can validate endpoint
-paths, ADOM handling, filters, paging, and payload normalization.
+`ingest_events()` returns an empty list in `0.1.0-beta.1`. Pulling
+FortiAnalyzer logs or incidents is deferred until a real appliance/lab can
+validate endpoint paths, ADOM handling, filters, paging, and payload
+normalization.
+
+`list_playbook_actions()` exposes one draft-only action:
+
+- `review_fortianalyzer_signal`
+
+`run_playbook_action()` never changes FortiAnalyzer state. It returns
+`dryRun: true`, `status: "drafted"`, `applianceValidated: false`, sanitized
+params and analyst next steps for manual validation.
 
 ## Error Handling And Security
 
@@ -118,8 +151,10 @@ paths, ADOM handling, filters, paging, and payload normalization.
 - Treat HTTP 401 and 403 as credentials or trusted-host/profile failures.
 - Treat HTTP 404 as host/API path/firmware mismatch.
 - Include short response excerpts only for diagnostics, never secrets.
-- All behavior is read-only; no FortiAnalyzer configuration changes are
-  included in this package.
+- All behavior is read-only; no FortiAnalyzer configuration changes or
+  containment actions are included in this package.
+- Do not report credentials as validated unless the JSON-RPC health probe
+  actually succeeds against a FortiAnalyzer appliance.
 
 ## Testing
 
@@ -130,15 +165,19 @@ or direct monkeypatching:
 - Successful `/jsonrpc` response normalizes device metadata.
 - HTTP 401/403 returns a clear disconnected result.
 - JSON-RPC error status returns a disconnected result.
-- `get_widget_data()` and `ingest_events()` return stable empty shapes.
+- Manifest advertises the beta widgets and draft-only playbook capability.
+- `get_widget_data()` returns preview payloads marked unvalidated.
+- `run_playbook_action()` returns a dry-run draft and redacts secret params.
+- `ingest_events()` returns a stable empty list.
 
 Manual verification after publication:
 
-1. Install `fortianalyzer-core@1.0.0` from the marketplace.
+1. Install `fortianalyzer-core@0.1.0-beta.1` from the marketplace.
 2. Connect with a read-only FortiAnalyzer REST API Admin key.
 3. Confirm health check succeeds.
-4. Confirm no widgets or SIEM ingestion are advertised beyond the tested
-   health probe.
+4. Confirm widgets appear as beta preview data and do not claim live appliance
+   validation.
+5. Confirm the playbook action is draft-only and dry-run.
 
 ## Non-Goals
 
@@ -146,7 +185,7 @@ Manual verification after publication:
 - FortiAnalyzer Cloud OAuth/FortiCloud authentication.
 - Live log/event ingestion.
 - FortiAnalyzer policy/configuration writes.
-- Playbook actions.
+- Live playbook actions or containment.
 - Dashboard-side provider persistence changes beyond whatever the existing
   generic integration flow already supports.
 
