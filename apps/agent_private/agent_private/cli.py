@@ -19,6 +19,11 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from agent_private import windows_service
 from agent_private.control import AgentControlClient
+from agent_private.discovery import (
+    DEFAULT_DISCOVERY_PORT,
+    DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    discover_dashboard,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEMO_OCCURRED_AT = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
@@ -529,6 +534,45 @@ def print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def pair_with_dashboard(
+    *,
+    enrollment_token: str,
+    api_url: str | None = None,
+    discovery_timeout: float = DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    discovery_port: int = DEFAULT_DISCOVERY_PORT,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+):
+    from agent_private.tui import AgentPrivateConfig
+
+    resolved_api_url = api_url.rstrip("/") if api_url else discover_dashboard(
+        timeout_seconds=discovery_timeout,
+        port=discovery_port,
+    ).api_url
+    identity, ip_addresses = _identity_context()
+    response = httpx.post(
+        f"{resolved_api_url}/api/weapons/agent/pair",
+        json={
+            "enrollmentToken": enrollment_token,
+            "hostname": identity["hostname"],
+            "ipAddresses": ip_addresses,
+            "currentUser": identity["username"],
+            "os": identity["os"],
+            "agentVersion": "0.1.0",
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    endpoint_id = payload.get("endpointId")
+    if not isinstance(endpoint_id, str) or not endpoint_id:
+        raise RuntimeError("Pairing response did not include endpointId.")
+    return AgentPrivateConfig(
+        api_url=resolved_api_url,
+        endpoint_id=endpoint_id,
+        enrollment_token=enrollment_token,
+    )
+
+
 def run_tui() -> None:
     from agent_private.tui import run_tui as start_tui
 
@@ -619,6 +663,21 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["heartbeat", "processes", "connections", "windows-security", "all"],
     )
     collect_parser.add_argument("--control-url", default=DEFAULT_CONTROL_URL)
+    pair_parser = subparsers.add_parser(
+        "pair",
+        help="Discover FortiDashboard on the VMware network and save local agent config.",
+    )
+    pair_parser.add_argument("enrollment_token")
+    pair_parser.add_argument(
+        "--api-url",
+        help="Advanced fallback when UDP discovery is unavailable.",
+    )
+    pair_parser.add_argument(
+        "--discovery-timeout",
+        type=float,
+        default=DEFAULT_DISCOVERY_TIMEOUT_SECONDS,
+    )
+    pair_parser.add_argument("--discovery-port", type=int, default=DEFAULT_DISCOVERY_PORT)
     config_parser = subparsers.add_parser("config", help="Read or update local daemon config.")
     config_subparsers = config_parser.add_subparsers(dest="config_command")
     config_subparsers.add_parser("show")
@@ -683,6 +742,19 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_json(AgentControlClient(base_url=args.control_url).collect_now(args.kind))
         return
 
+    if args.command == "pair":
+        from agent_private.tui import save_config
+
+        config = pair_with_dashboard(
+            enrollment_token=args.enrollment_token,
+            api_url=args.api_url,
+            discovery_timeout=args.discovery_timeout,
+            discovery_port=args.discovery_port,
+        )
+        save_config(config)
+        print_json({"paired": True, **config.safe_summary()})
+        return
+
     if args.command == "config":
         from agent_private.tui import load_config, save_config
 
@@ -709,23 +781,29 @@ def main(argv: Sequence[str] | None = None) -> None:
         print_json(windows_service.run_service_command(args.service_action))
         return
 
-    endpoint_id = _require_endpoint_id(parser, args)
-
     if args.command == "daemon":
-        if not args.api_url:
+        from agent_private.daemon import AgentDaemon
+        from agent_private.runner import AgentRunConfig
+        from agent_private.tui import load_config
+
+        stored = load_config()
+        api_url = args.api_url or stored.api_url
+        endpoint_id = args.endpoint_id or stored.endpoint_id
+        enrollment_token = args.enrollment_token or stored.enrollment_token
+        if not api_url:
             parser.error("--api-url or AGENT_PRIVATE_API_URL is required with daemon")
-        if not args.enrollment_token:
+        if not endpoint_id:
+            parser.error("--endpoint-id or AGENT_PRIVATE_ENDPOINT_ID is required with daemon")
+        if not enrollment_token:
             parser.error(
                 "--enrollment-token or AGENT_PRIVATE_ENROLLMENT_TOKEN is required with daemon"
             )
-        from agent_private.daemon import AgentDaemon
-        from agent_private.runner import AgentRunConfig
 
         AgentDaemon(
             AgentRunConfig(
-                api_url=args.api_url,
+                api_url=api_url,
                 endpoint_id=endpoint_id,
-                enrollment_token=args.enrollment_token,
+                enrollment_token=enrollment_token,
                 heartbeat_interval=args.heartbeat_interval,
                 connection_interval=args.connection_interval,
                 process_interval=args.process_interval,
@@ -736,20 +814,28 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if args.command == "run-headless":
-        if not args.api_url:
+        from agent_private.runner import AgentRunConfig, run_agent
+        from agent_private.tui import load_config
+
+        stored = load_config()
+        api_url = args.api_url or stored.api_url
+        endpoint_id = args.endpoint_id or stored.endpoint_id
+        enrollment_token = args.enrollment_token or stored.enrollment_token
+        if not api_url:
             parser.error("--api-url or AGENT_PRIVATE_API_URL is required with run-headless")
-        if not args.enrollment_token:
+        if not endpoint_id:
+            parser.error("--endpoint-id or AGENT_PRIVATE_ENDPOINT_ID is required with run-headless")
+        if not enrollment_token:
             parser.error(
                 "--enrollment-token or AGENT_PRIVATE_ENROLLMENT_TOKEN is required with "
                 "run-headless"
             )
-        from agent_private.runner import AgentRunConfig, run_agent
 
         run_agent(
             AgentRunConfig(
-                api_url=args.api_url,
+                api_url=api_url,
                 endpoint_id=endpoint_id,
-                enrollment_token=args.enrollment_token,
+                enrollment_token=enrollment_token,
                 heartbeat_interval=args.heartbeat_interval,
                 connection_interval=args.connection_interval,
                 process_interval=args.process_interval,
@@ -759,6 +845,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             once=args.once,
         )
         return
+
+    endpoint_id = _require_endpoint_id(parser, args)
 
     if args.command == "simulate":
         events = build_simulated_events(endpoint_id)

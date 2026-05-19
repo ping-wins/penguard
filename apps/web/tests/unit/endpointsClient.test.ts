@@ -1,7 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  buildAgentRunCommand,
   createEndpointEnrollment,
   deleteEndpoint,
   getEndpointRelatedIncidents,
@@ -130,24 +129,6 @@ describe('endpoints client and store', () => {
     })
   })
 
-  it('builds a PowerShell-friendly agent run command', () => {
-    const command = buildAgentRunCommand({
-      id: 'enr_01',
-      displayName: 'Windows Server Lab',
-      hostnameHint: 'WIN-LAB-01',
-      createdAt: '2026-05-13T18:00:00.000Z',
-      token: 'enrollment-token',
-    }, 'http://localhost:8000')
-
-    expect(command).toBe(
-      'cd apps\\agent_private; '
-      + '$env:AGENT_PRIVATE_API_URL="http://localhost:8000"; '
-      + '$env:AGENT_PRIVATE_ENDPOINT_ID="enr_01"; '
-      + '$env:AGENT_PRIVATE_ENROLLMENT_TOKEN="enrollment-token"; '
-      + 'uv run agent-private run',
-    )
-  })
-
   it('keeps selected endpoint detail and timeline in the store', async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
@@ -218,9 +199,7 @@ describe('endpoints client and store', () => {
       hostnameHint: 'WIN-LAB-01',
       status: 'pending',
     })
-    expect(store.pendingEnrollments[0].command).toContain(
-      '$env:AGENT_PRIVATE_ENROLLMENT_TOKEN="enrollment-token"',
-    )
+    expect(store.pendingEnrollments[0].enrollmentToken).toBe('enrollment-token')
 
     await store.refresh()
 

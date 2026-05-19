@@ -1096,6 +1096,58 @@ def test_xdr_enrollment_gateway_does_not_log_token():
     }
 
 
+def test_xdr_agent_pair_gateway_forwards_token_without_session_or_csrf():
+    client = TestClient(app)
+    fake_xdr = FakeSocClient(
+        {
+            "enrollmentId": "enr_01",
+            "endpointId": "enr_01",
+            "displayName": "Windows Lab",
+            "hostnameHint": None,
+        }
+    )
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+
+    response = client.post(
+        "/api/weapons/agent/pair",
+        json={
+            "enrollmentToken": "secret-enrollment-token",
+            "hostname": "WIN-LAB-01",
+            "ipAddresses": ["192.168.56.101"],
+            "currentUser": "Administrator",
+            "os": "Windows",
+            "agentVersion": "0.1.0",
+        },
+    )
+    audit = auth_dependencies.get_auth_audit_store().list_events(action="xdr.enrollment.paired")
+
+    assert response.status_code == 200
+    assert response.json()["endpointId"] == "enr_01"
+    assert fake_xdr.calls == [
+        {
+            "method": "POST",
+            "path": "/enrollments/pair",
+            "json": {
+                "enrollmentToken": "secret-enrollment-token",
+                "hostname": "WIN-LAB-01",
+                "ipAddresses": ["192.168.56.101"],
+                "currentUser": "Administrator",
+                "os": "Windows",
+                "agentVersion": "0.1.0",
+            },
+            "params": None,
+            "headers": None,
+            "pass_through_statuses": {401},
+        }
+    ]
+    assert audit["items"][0]["details"] == {
+        "enrollmentId": "enr_01",
+        "endpointId": "enr_01",
+        "service": "xdr_rico",
+    }
+    assert "secret-enrollment-token" not in repr(audit["items"][0])
+
+
 def test_gateway_normalizes_internal_service_errors():
     client = TestClient(app)
     app.dependency_overrides[soc.get_siem_client] = lambda: FailingSocClient()

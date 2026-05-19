@@ -39,6 +39,45 @@ def test_enrollment_token_is_returned_once_and_not_persisted_in_plaintext():
     assert body["token"] not in repr(app.state.xdr_store.enrollments)
 
 
+def test_enrollment_pairing_returns_endpoint_id_without_revealing_token():
+    test_client = client()
+    enrollment_response = test_client.post("/enrollments", json={"displayName": "Windows Lab"})
+    token = enrollment_response.json()["token"]
+
+    response = test_client.post(
+        "/enrollments/pair",
+        json={
+            "enrollmentToken": token,
+            "hostname": "WIN-LAB-01",
+            "ipAddresses": ["192.168.56.101"],
+            "currentUser": "Administrator",
+            "os": "Windows",
+            "agentVersion": "0.1.0",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "enrollmentId": enrollment_response.json()["id"],
+        "endpointId": enrollment_response.json()["id"],
+        "displayName": "Windows Lab",
+        "hostnameHint": None,
+    }
+    assert token not in repr(body)
+
+    heartbeat = test_client.post(
+        "/endpoint-events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "endpointId": body["endpointId"],
+            "eventType": "heartbeat",
+            "occurredAt": "2026-05-08T12:00:00Z",
+        },
+    )
+    assert heartbeat.status_code == 201
+
+
 def test_endpoint_event_ingestion_upserts_endpoint_metadata():
     test_client = client()
     headers = enrollment_headers(test_client)

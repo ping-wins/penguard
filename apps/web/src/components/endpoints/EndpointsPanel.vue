@@ -10,7 +10,7 @@ import AgentEnrollmentModal from './AgentEnrollmentModal.vue'
 const { t } = useI18n()
 const store = useEndpointsStore()
 const isEnrollmentModalOpen = ref(false)
-const enrollmentCommand = ref<string | null>(null)
+const enrollmentToken = ref<string | null>(null)
 const enrollmentError = ref<string | null>(null)
 const isCreatingEnrollment = ref(false)
 const endpointDeleteError = ref<string | null>(null)
@@ -89,7 +89,7 @@ function sourceBadgeClass(badge: SourceBadge) {
 
 function openEnrollmentModal() {
   enrollmentError.value = null
-  enrollmentCommand.value = null
+  enrollmentToken.value = null
   isEnrollmentModalOpen.value = true
 }
 
@@ -99,8 +99,8 @@ async function submitEnrollment(payload: { displayName?: string; hostnameHint?: 
   try {
     const enrollment = await store.createEnrollment(payload)
     const pending = store.pendingEnrollments.find((item) => item.enrollmentId === enrollment.id)
-    enrollmentCommand.value = pending?.command ?? null
-    store.forgetEnrollmentCommand(enrollment.id)
+    enrollmentToken.value = pending?.enrollmentToken ?? null
+    store.forgetEnrollmentToken(enrollment.id)
   } catch (e: any) {
     enrollmentError.value = e?.message ?? t('endpoints.enrollment.error')
   } finally {
@@ -108,10 +108,10 @@ async function submitEnrollment(payload: { displayName?: string; hostnameHint?: 
   }
 }
 
-async function copyAgentCommand(command: string) {
+async function copyEnrollmentToken(token: string) {
   const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
   if (!clipboard?.writeText) return
-  await clipboard.writeText(command).catch(() => undefined)
+  await clipboard.writeText(token).catch(() => undefined)
 }
 
 function dismissPendingEnrollment(enrollmentId: string) {
@@ -437,12 +437,12 @@ async function deleteEndpointFromPanel(endpoint: Endpoint) {
 
     <AgentEnrollmentModal
       :open="isEnrollmentModalOpen"
-      :command="enrollmentCommand"
+      :enrollment-token="enrollmentToken"
       :is-creating="isCreatingEnrollment"
       :error="enrollmentError"
       @close="isEnrollmentModalOpen = false"
       @submit="submitEnrollment"
-      @copy="copyAgentCommand"
+      @copy="copyEnrollmentToken"
     />
   </section>
 </template>

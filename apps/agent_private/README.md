@@ -9,28 +9,34 @@ troubleshooting and dry-run demos.
 
 1. Open FortiDashboard, go to **Endpoints**, and choose **Add Windows Agent**.
 2. Enter a display name and optional hostname hint for the Windows host.
-3. Generate the enrollment and copy the one-time PowerShell command.
-4. Run the command from the repository root on the Windows host.
-5. Save config, install/start the Windows Service, then check local daemon
-   status with the CLI.
+3. Generate the enrollment and copy only the one-time enrollment token.
+4. Pair the agent from the repository root on the Windows host.
+5. Install/start the Windows Service, then check local daemon status with the
+   CLI.
 6. The cockpit moves the endpoint from pending to inventory after the first
    heartbeat.
 
-PowerShell command shape:
+PowerShell pairing shape:
 
 ```powershell
 cd apps\agent_private
-uv run agent-private config set --api-url "http://<fortidashboard-host>:8000" --endpoint-id "<enrollment-id>" --enrollment-token "<token-returned-once>"
+uv run agent-private pair "<token-returned-once>"
 uv run agent-private service install
 uv run agent-private service start
 uv run agent-private status
 ```
 
+`pair` discovers the FortiDashboard API by sending a UDP broadcast on the VMware
+management network. If broadcast is blocked, it automatically probes the likely
+VMware host addresses on the VM network before failing. It saves the discovered
+API URL, endpoint ID and enrollment token to the local config file, but prints
+only a masked token summary.
+
 For development or smoke tests without installing the Windows Service, run the
 daemon in the foreground:
 
 ```powershell
-uv run agent-private daemon --api-url "http://<fortidashboard-host>:8000" --endpoint-id "<enrollment-id>" --enrollment-token "<token-returned-once>"
+uv run agent-private daemon
 ```
 
 The foreground daemon exposes a loopback-only control API on `127.0.0.1:8765`.
@@ -54,12 +60,38 @@ uv run agent-private collect-now windows-security
 uv run agent-private collect-now all
 
 uv run agent-private config show
-uv run agent-private config set --api-url "http://localhost:8000"
+uv run agent-private pair "<token-returned-once>"
 ```
 
 The Windows Service wrapper uses `pywin32` on Windows only. Linux CI and local
 developer tests can import the service module safely, but service management
 commands require Windows.
+
+## VMware Discovery Network
+
+For labs, put the Windows Server VM and the FortiDashboard host on the same
+VMware host-only or NAT management network. Keep this separate from the traffic
+path used by FortiGate/FortiWeb/victim testing.
+
+Recommended shape:
+
+```txt
+Windows Server VM
+  NIC 1: VMware host-only/NAT management network -> FortiDashboard API discovery
+  NIC 2: lab traffic network, if needed
+
+FortiDashboard host
+  Docker API port: 8000/tcp
+  Agent discovery port: 8764/udp
+```
+
+The agent sends discovery broadcasts to the management network and builds the
+API URL from the UDP response source IP. If broadcast fails, it tries the common
+VMware host addresses for the VM subnet, such as `.1` and `.2`. Operators do not
+pass API URLs or environment variables during normal lab setup. If VMware or the
+host firewall blocks both paths, `agent-private pair --api-url
+http://<host-ip>:8000 "<token>"` remains available as a manual diagnostic
+fallback.
 
 Remote dashboard orchestration is pull-based: the daemon polls the BFF for
 typed XDR actions, executes only supported actions such as `collect_now` and

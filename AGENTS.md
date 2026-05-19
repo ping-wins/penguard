@@ -337,8 +337,10 @@ Purpose: optional endpoint sensor for lab/demo/customer telemetry.
 Current direction:
 
 - Cockpit owns endpoint onboarding.
-- Analysts create a Windows enrollment from the cockpit and receive a copyable
-  PowerShell/bootstrap command.
+- Analysts create a Windows enrollment from the cockpit and receive only the
+  one-time enrollment token.
+- Windows lab agents pair with `agent_private pair <token>` and discover the
+  dashboard API over the VMware management network before saving local config.
 - `agent_private run` is the operator-facing TUI.
 - `agent_private run-headless` is the automation/test entrypoint.
 - Onboarding environment variables from the cockpit override stale saved local

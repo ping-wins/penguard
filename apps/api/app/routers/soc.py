@@ -2133,6 +2133,33 @@ def create_enrollment(
     return response
 
 
+@router.post("/weapons/agent/pair")
+def pair_agent(
+    request: Request,
+    payload: Annotated[dict[str, Any], Body()],
+    client: Annotated[SocClient, Depends(get_xdr_client)],
+    audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
+) -> dict:
+    response = client.request(
+        "POST",
+        "/enrollments/pair",
+        json=payload,
+        pass_through_statuses={status.HTTP_401_UNAUTHORIZED},
+    )
+    audit_store.record(
+        action="xdr.enrollment.paired",
+        outcome="success",
+        client_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        details={
+            "enrollmentId": response.get("enrollmentId"),
+            "endpointId": response.get("endpointId"),
+            "service": "xdr_rico",
+        },
+    )
+    return response
+
+
 
 def _audit(
     audit_store: AuditStore,

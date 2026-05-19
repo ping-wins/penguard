@@ -46,6 +46,22 @@ class EnrollmentResponse(ApiModel):
     token: str
 
 
+class EnrollmentPairRequest(ApiModel):
+    enrollment_token: str = Field(alias="enrollmentToken", min_length=1)
+    hostname: str | None = None
+    ip_addresses: list[str] = Field(default_factory=list, alias="ipAddresses")
+    current_user: str | None = Field(default=None, alias="currentUser")
+    os_name: str | None = Field(default=None, alias="os")
+    agent_version: str | None = Field(default=None, alias="agentVersion")
+
+
+class EnrollmentPairResponse(ApiModel):
+    enrollment_id: str = Field(alias="enrollmentId")
+    endpoint_id: str = Field(alias="endpointId")
+    display_name: str | None = Field(default=None, alias="displayName")
+    hostname_hint: str | None = Field(default=None, alias="hostnameHint")
+
+
 class EnrollmentRecord(ApiModel):
     id: str
     display_name: str | None = Field(default=None, alias="displayName")
@@ -476,6 +492,40 @@ def create_enrollment(payload: EnrollmentCreate) -> EnrollmentResponse:
         hostnameHint=payload.hostname_hint,
         createdAt=created_at,
         token=token,
+    )
+
+
+@app.post("/enrollments/pair", response_model=EnrollmentPairResponse)
+def pair_enrollment(payload: EnrollmentPairRequest) -> EnrollmentPairResponse:
+    hashed_token = token_hash(payload.enrollment_token)
+    enrollment_payload = get_store().get_enrollment_by_token_hash(hashed_token)
+    if enrollment_payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Valid endpoint enrollment token required.",
+        )
+
+    enrollment = EnrollmentRecord(**enrollment_payload)
+    endpoint_id = enrollment.claimed_endpoint_id or enrollment.id
+    if enrollment.claimed_endpoint_id is None:
+        claimed_payload = get_store().claim_enrollment_endpoint(enrollment.id, endpoint_id)
+        if claimed_payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid endpoint enrollment token required.",
+            )
+
+    logger.info(
+        "xdr_enrollment_paired enrollment_id=%s endpoint_id=%s hostname=%s",
+        enrollment.id,
+        endpoint_id,
+        payload.hostname,
+    )
+    return EnrollmentPairResponse(
+        enrollmentId=enrollment.id,
+        endpointId=endpoint_id,
+        displayName=enrollment.display_name,
+        hostnameHint=enrollment.hostname_hint,
     )
 
 
