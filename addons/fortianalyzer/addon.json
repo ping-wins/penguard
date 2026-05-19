@@ -1,0 +1,68 @@
+{
+  "id": "fortianalyzer-core",
+  "version": "0.1.0",
+  "name": "FortiAnalyzer Core",
+  "vendor": "Fortinet",
+  "category": "siem",
+  "description": "Aggregate logs, alerts, incidents, managed-device telemetry and storage health from FortiAnalyzer across ADOMs.",
+  "icon": "fortinet",
+  "minDashboardVersion": "0.1.0",
+  "provider": {
+    "type": "fortianalyzer",
+    "auth": {
+      "kind": "apiKey",
+      "fields": [
+        { "id": "host", "label": "Host URL", "type": "url", "required": true, "placeholder": "https://192.168.0.200" },
+        { "id": "apiKey", "label": "API Key (Bearer)", "type": "secret", "required": true },
+        { "id": "adom", "label": "ADOM", "type": "text", "required": true, "default": "root", "placeholder": "root" },
+        { "id": "verifyTls", "label": "Verify TLS", "type": "boolean", "default": false }
+      ]
+    }
+  },
+  "compatibility": {
+    "minProviderVersion": "7.4.0",
+    "testedVersions": [],
+    "notes": "Untested against a live FortiAnalyzer. Routes target the FortiAnalyzer 7.4+ REST surface (/api/v2/...) where exposed; legacy deployments must front the JSON-RPC endpoint at /jsonrpc and translate paths in the connector. API key auth via Bearer header requires 7.2+; older firmwares need POST /jsonrpc with sys/login/user and session cookies. ADOM is interpolated into {adom} path segments and must match an ADOM the API key is scoped to."
+  },
+  "capabilities": {
+    "logSource": true,
+    "playbookTarget": false,
+    "managed": true
+  },
+  "routes": [
+    { "id": "system-status", "method": "GET", "path": "/api/v2/monitor/system/status", "summary": "FortiAnalyzer hostname, model, firmware, serial and HA role." },
+    { "id": "performance-status", "method": "GET", "path": "/api/v2/monitor/system/performance", "summary": "CPU, memory and disk utilization counters." },
+    { "id": "storage-usage", "method": "GET", "path": "/api/v2/monitor/system/storage", "summary": "Log storage usage, retention windows and rotation state." },
+    { "id": "adom-list", "method": "GET", "path": "/api/v2/cmdb/dvmdb/adom", "summary": "Configured ADOMs the API key can see." },
+    { "id": "managed-devices", "method": "GET", "path": "/api/v2/cmdb/dvmdb/adom/{adom}/device", "summary": "Devices registered to the ADOM with last-seen, IP and connection state." },
+    { "id": "log-volume", "method": "GET", "path": "/api/v2/monitor/logfetch/adom/{adom}/stats", "summary": "Aggregate logs-per-second and per-device counters.", "minProviderVersion": "7.4.0" },
+    { "id": "log-search", "method": "POST", "path": "/api/v2/logview/adom/{adom}/logsearch", "summary": "Submit a log query (filter, time range, device set); returns task id for paged retrieval.", "minProviderVersion": "7.4.0" },
+    { "id": "log-search-result", "method": "GET", "path": "/api/v2/logview/adom/{adom}/logsearch/{taskId}", "summary": "Fetch paged results for an existing log search task.", "params": [{ "name": "offset" }, { "name": "limit" }] },
+    { "id": "incidents", "method": "GET", "path": "/api/v2/incidentmgmt/adom/{adom}/incidents", "summary": "Incident list with status, severity, assignee and linked events.", "params": [{ "name": "status" }, { "name": "severity" }] },
+    { "id": "alerts", "method": "GET", "path": "/api/v2/eventmgmt/adom/{adom}/alerts", "summary": "Active alerts raised by event handlers (correlated log triggers)." },
+    { "id": "event-handlers", "method": "GET", "path": "/api/v2/eventmgmt/adom/{adom}/handlers", "summary": "Configured event handlers and their trigger conditions." },
+    { "id": "reports", "method": "GET", "path": "/api/v2/report/adom/{adom}/reports", "summary": "Generated report catalog (compliance, threat, traffic)." },
+    { "id": "fortiview-threats", "method": "GET", "path": "/api/v2/fortiview/adom/{adom}/threats", "summary": "FortiView top threats and indicators aggregated across managed devices." }
+  ],
+  "widgets": [
+    "fortianalyzer-system-status",
+    "fortianalyzer-storage-usage",
+    "fortianalyzer-managed-devices",
+    "fortianalyzer-log-volume",
+    "fortianalyzer-top-threats",
+    "fortianalyzer-active-incidents",
+    "fortianalyzer-alert-stream",
+    "fortianalyzer-event-handler-coverage",
+    "fortianalyzer-adom-summary",
+    "fortianalyzer-kpi-events-per-sec"
+  ],
+  "siemEventTypes": [
+    "incident.created",
+    "incident.updated",
+    "alert.triggered",
+    "device.disconnected",
+    "device.reconnected",
+    "log.aggregated",
+    "storage.threshold_reached"
+  ]
+}
