@@ -23,3 +23,13 @@ def test_service_status_delegates_to_service_util_on_windows():
     )
 
     assert status == {"service": windows_service.SERVICE_NAME, "status": "running"}
+
+
+def test_service_class_is_importable_by_module_name(monkeypatch):
+    monkeypatch.setattr(windows_service, "_win32serviceutil", object())
+
+    service_class = windows_service._service_class()
+
+    assert service_class is windows_service.AgentPrivateWindowsService
+    assert service_class.__module__ == "agent_private.windows_service"
+    assert service_class.__name__ == "AgentPrivateWindowsService"
