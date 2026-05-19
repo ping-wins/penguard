@@ -638,3 +638,6 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     assert payload["attributes"]["diagnostics"]["scConfig"]["stdout"] == (
         "sc.exe qc FortiDashboardAgent"
     )
+    assert payload["attributes"]["diagnostics"]["serviceRegistry"]["stdout"] == (
+        "reg.exe query HKLM\\SYSTEM\\CurrentControlSet\\Services\\FortiDashboardAgent /s"
+    )

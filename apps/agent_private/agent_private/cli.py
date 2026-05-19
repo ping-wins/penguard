@@ -700,6 +700,12 @@ def _service_diagnostics(outcome: str) -> dict[str, Any]:
     commands = {
         "scQuery": ["sc.exe", "queryex", windows_service.SERVICE_NAME],
         "scConfig": ["sc.exe", "qc", windows_service.SERVICE_NAME],
+        "serviceRegistry": [
+            "reg.exe",
+            "query",
+            f"HKLM\\SYSTEM\\CurrentControlSet\\Services\\{windows_service.SERVICE_NAME}",
+            "/s",
+        ],
         "systemEvents": [
             "wevtutil.exe",
             "qe",
