@@ -75,10 +75,6 @@ async function getCsrfToken(fetcher: Fetcher): Promise<string> {
   return data.csrfToken
 }
 
-function quotePowerShellValue(value: string): string {
-  return `"${value.replace(/`/g, '``').replace(/"/g, '`"')}"`
-}
-
 export async function listEndpoints(fetcher: Fetcher = fetch): Promise<Endpoint[]> {
   const data = await parseOrThrow<EndpointsResponse>(
     await fetcher('/api/weapons/endpoints', { credentials: 'include' }),
@@ -158,15 +154,4 @@ export async function deleteEndpoint(endpointId: string, fetcher: Fetcher = fetc
     }),
     'Failed to delete endpoint',
   )
-}
-
-export function buildAgentRunCommand(enrollment: EndpointEnrollment, apiUrl?: string): string {
-  const resolvedApiUrl = apiUrl ?? (typeof window !== 'undefined' ? window.location.origin : '')
-  return [
-    'cd apps\\agent_private',
-    `$env:AGENT_PRIVATE_API_URL=${quotePowerShellValue(resolvedApiUrl)}`,
-    `$env:AGENT_PRIVATE_ENDPOINT_ID=${quotePowerShellValue(enrollment.id)}`,
-    `$env:AGENT_PRIVATE_ENROLLMENT_TOKEN=${quotePowerShellValue(enrollment.token)}`,
-    'uv run agent-private run',
-  ].join('; ')
 }

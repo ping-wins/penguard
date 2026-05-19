@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.addons.bootstrap import bootstrap_installed_addons
 from app.addons.dependencies import get_connector_registry, get_loader
+from app.agent_discovery import start_agent_discovery_udp_responder
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.integrations.fortigate.syslog import (
@@ -59,12 +60,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     scheduler_task: asyncio.Task | None = None
     syslog_transport: asyncio.DatagramTransport | None = None
+    agent_discovery_transport: asyncio.DatagramTransport | None = None
     if _settings.fortigate_ingestion_scheduler_enabled:
         scheduler_task = asyncio.create_task(_fortigate_ingestion_scheduler_loop())
     syslog_transport = await _start_fortigate_syslog_collector()
+    if _settings.xdr_agent_discovery_enabled:
+        agent_discovery_transport = await start_agent_discovery_udp_responder(
+            host=_settings.xdr_agent_discovery_host,
+            port=_settings.xdr_agent_discovery_port,
+            api_scheme=_settings.xdr_agent_discovery_api_scheme,
+            api_port=_settings.xdr_agent_discovery_api_port,
+        )
     try:
         yield
     finally:
+        if agent_discovery_transport is not None:
+            agent_discovery_transport.close()
         if syslog_transport is not None:
             syslog_transport.close()
         if scheduler_task is not None:

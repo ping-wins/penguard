@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 
+import agent_private.tui as tui
 from agent_private import cli, runner
 from agent_private.cli import (
     build_connection_snapshot_payload,
@@ -22,6 +23,55 @@ def test_build_identity_payload_has_required_fields():
     assert payload["hostname"] == "demo-endpoint-01"
     assert payload["username"] == "SOC-DEMO\\analyst"
     assert payload["service"] == "agent_private"
+
+
+def test_pair_discovers_dashboard_posts_token_and_saves_config(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(tui, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        cli,
+        "discover_dashboard",
+        lambda **_kwargs: type("Discovery", (), {"api_url": "http://192.168.56.1:8000"})(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_identity_context",
+        lambda: (
+            {
+                "service": "agent_private",
+                "hostname": "WIN-LAB-01",
+                "username": "Administrator",
+                "os": "Windows",
+            },
+            ["192.168.56.101"],
+        ),
+    )
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"endpointId": "enr_01"}
+
+    def post(url, *, json, timeout):
+        assert url == "http://192.168.56.1:8000/api/weapons/agent/pair"
+        assert json["enrollmentToken"] == "secret-enrollment-token"
+        assert json["hostname"] == "WIN-LAB-01"
+        assert json["ipAddresses"] == ["192.168.56.101"]
+        assert timeout == cli.DEFAULT_TIMEOUT_SECONDS
+        return Response()
+
+    monkeypatch.setattr(cli.httpx, "post", post)
+
+    main(["pair", "secret-enrollment-token"])
+
+    output = capsys.readouterr().out
+    assert "secret-enrollment-token" not in output
+    stored = tui.load_config(config_path)
+    assert stored.api_url == "http://192.168.56.1:8000"
+    assert stored.endpoint_id == "enr_01"
+    assert stored.enrollment_token == "secret-enrollment-token"
 
 
 def test_build_heartbeat_payload_uses_identity_and_endpoint_id():

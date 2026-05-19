@@ -1,7 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  buildAgentRunCommand,
   createEndpointEnrollment,
   deleteEndpoint,
   getEndpointRelatedIncidents,
@@ -48,7 +47,7 @@ export type PendingEnrollment = {
   displayName: string
   hostnameHint: string | null
   createdAt: string
-  command: string
+  enrollmentToken: string
   status: 'pending' | 'online'
 }
 
@@ -138,16 +137,16 @@ export const useEndpointsStore = defineStore('endpoints', () => {
       displayName: enrollment.displayName ?? payload.displayName ?? enrollment.hostnameHint ?? 'Windows endpoint',
       hostnameHint: enrollment.hostnameHint ?? payload.hostnameHint ?? null,
       createdAt: enrollment.createdAt,
-      command: buildAgentRunCommand(enrollment),
+      enrollmentToken: enrollment.token,
       status: 'pending',
     })
     return enrollment
   }
 
-  function forgetEnrollmentCommand(enrollmentId: string) {
+  function forgetEnrollmentToken(enrollmentId: string) {
     pendingEnrollments.value = pendingEnrollments.value.map((pending) => {
       if (pending.enrollmentId !== enrollmentId) return pending
-      return { ...pending, command: '' }
+      return { ...pending, enrollmentToken: '' }
     })
   }
 
@@ -191,7 +190,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     latestProcessCount,
     refresh,
     createEnrollment,
-    forgetEnrollmentCommand,
+    forgetEnrollmentToken,
     dismissPendingEnrollment,
     removeEndpoint,
     selectEndpoint,

@@ -166,15 +166,12 @@ describe('EndpointsPanel', () => {
       credentials: 'include',
       headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf_01' }),
     }))
-    expect(wrapper.find('[data-test="agent-enrollment-command"]').text()).toContain(
-      '$env:AGENT_PRIVATE_ENROLLMENT_TOKEN="enrollment-token"',
+    expect(wrapper.find('[data-test="agent-enrollment-token"]').text()).toBe(
+      'enrollment-token',
     )
-    expect(wrapper.find('[data-test="agent-enrollment-command"]').text()).toContain(
-      'cd apps\\agent_private',
-    )
-    expect(wrapper.find('[data-test="copy-agent-command"]').exists()).toBe(true)
-    await wrapper.find('[data-test="copy-agent-command"]').trigger('click')
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('enrollment-token'))
+    expect(wrapper.find('[data-test="copy-agent-token"]').exists()).toBe(true)
+    await wrapper.find('[data-test="copy-agent-token"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith('enrollment-token')
     expect(wrapper.find('[data-test="pending-endpoint"]').text()).toContain('Windows Server Lab')
     expect(wrapper.find('[data-test="pending-endpoint"]').text()).toContain('Waiting for first heartbeat')
   })

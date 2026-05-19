@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     fortigate_syslog_collector_host: str = "0.0.0.0"
     fortigate_syslog_collector_public_host: str | None = None
     fortigate_syslog_collector_port: int = 5514
+    xdr_agent_discovery_enabled: bool = True
+    xdr_agent_discovery_host: str = "0.0.0.0"
+    xdr_agent_discovery_port: int = 8764
+    xdr_agent_discovery_api_scheme: str = "http"
+    xdr_agent_discovery_api_port: int = 8000
     enable_lab_demo_tools: bool = False
     ai_provider: str = ""
     ai_api_key: str = ""

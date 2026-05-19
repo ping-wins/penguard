@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   open: boolean
-  command: string | null
+  enrollmentToken: string | null
   isCreating: boolean
   error: string | null
 }>()
@@ -13,7 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   submit: [payload: { displayName?: string; hostnameHint?: string }]
-  copy: [command: string]
+  copy: [enrollmentToken: string]
 }>()
 
 const { t } = useI18n()
@@ -37,8 +37,8 @@ function submit() {
   })
 }
 
-function copyCommand() {
-  if (props.command) emit('copy', props.command)
+function copyEnrollmentToken() {
+  if (props.enrollmentToken) emit('copy', props.enrollmentToken)
 }
 </script>
 
@@ -108,21 +108,23 @@ function copyCommand() {
           {{ t('endpoints.enrollment.generate') }}
         </button>
 
-        <section v-if="command" class="space-y-2">
+        <section v-if="enrollmentToken" class="space-y-2">
           <div class="rounded border border-yellow-400/40 bg-yellow-400/10 p-2 text-xs leading-snug text-yellow-100">
             {{ t('endpoints.enrollment.oneTimeWarning') }}
           </div>
-          <div class="rounded border border-theme-border bg-theme-bg">
-            <pre
-              data-test="agent-enrollment-command"
-              class="max-h-44 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs text-theme-text"
-            >{{ command }}</pre>
+          <div class="rounded border border-theme-border bg-theme-bg p-3">
+            <div
+              data-test="agent-enrollment-token"
+              class="break-all font-mono text-lg font-semibold leading-snug text-theme-text"
+            >
+              {{ enrollmentToken }}
+            </div>
             <div class="flex justify-end border-t border-theme-border p-2">
               <button
                 type="button"
-                data-test="copy-agent-command"
+                data-test="copy-agent-token"
                 class="inline-flex items-center gap-2 rounded border border-theme-border px-3 py-1.5 text-xs font-semibold text-theme-text-muted transition-colors hover:bg-theme-border hover:text-theme-text"
-                @click="copyCommand"
+                @click="copyEnrollmentToken"
               >
                 <Copy :size="14" />
                 {{ t('endpoints.enrollment.copy') }}
