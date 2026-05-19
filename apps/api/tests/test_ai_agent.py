@@ -17,8 +17,8 @@ from app.ai.agent.backends.scripted import ScriptedBackend
 from app.ai.agent.registry import REGISTRY, AgentTool, ToolContext, register_tool
 from app.ai.agent.roles import get_role, list_roles
 from app.ai.agent.router import AgentNotConfiguredError, pick_backend
-from app.ai.agent.runner import AgentRunner
-from app.ai.agent.session import SessionStore, get_session_store
+from app.ai.agent.runner import AgentRunner, _history_snapshot
+from app.ai.agent.session import AgentMessage, SessionStore, get_session_store
 from app.ai.agent.settings import InMemoryAiAgentSettingsStore, get_ai_agent_settings_store
 
 # Side-effect: registers built-in tools.
@@ -1347,6 +1347,185 @@ def test_runner_aborts_when_role_token_budget_is_exhausted():
 
     assert events[-1]["kind"] == "error"
     assert events[-1]["code"] == "budget_exceeded"
+
+
+def test_runner_caps_gemini_output_tokens():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="gemini", role_id="chat")
+    seen: dict[str, Any] = {}
+
+    class GeminiLikeBackend:
+        name = "gemini"
+        model = "gemini-flash-latest"
+
+        async def stream_decide(self, **kwargs):
+            seen.update(kwargs)
+            yield TextDelta(text="ok")
+            yield Final(stop_reason="end_turn", tokens_in=5, tokens_out=2)
+
+    runner = AgentRunner(backend=GeminiLikeBackend(), session_store=store)
+    events = asyncio.run(
+        _collect(
+            runner,
+            session=session,
+            user_message="hello",
+            tool_context=ToolContext(user_id="user-1"),
+        )
+    )
+
+    assert events[-1]["kind"] == "done"
+    assert seen["max_output_tokens"] == 1024
+
+
+def test_runner_applies_gemini_session_budget_cap():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="gemini", role_id="soc-investigation")
+    session.tokens_in_total = 19_999
+    session.tokens_out_total = 1
+
+    class NeverCalledGeminiBackend:
+        name = "gemini"
+        model = "gemini-flash-latest"
+
+        async def stream_decide(self, **_kwargs):
+            raise AssertionError("backend must not be called after Gemini cap is exhausted")
+            yield  # pragma: no cover
+
+    runner = AgentRunner(backend=NeverCalledGeminiBackend(), session_store=store)
+    events = asyncio.run(
+        _collect(
+            runner,
+            session=session,
+            user_message="investigate",
+            tool_context=ToolContext(user_id="user-1"),
+        )
+    )
+
+    assert events[-1]["kind"] == "error"
+    assert events[-1]["code"] == "budget_exceeded"
+
+
+def test_runner_compacts_tool_results_before_reprompting_model():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="gemini", role_id="chat")
+
+    async def _large_tool(_ctx: ToolContext, _args: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "items": [
+                {
+                    "id": f"inc_{index}",
+                    "title": "Possible authentication brute force",
+                    "attributes": {"raw": "x" * 4000},
+                }
+                for index in range(8)
+            ],
+            "count": 8,
+        }
+
+    tool = AgentTool(
+        name="large_result_for_test",
+        description="Read tool with a large result.",
+        input_schema={"type": "object", "properties": {}},
+        impl=_large_tool,
+    )
+    original = REGISTRY.get(tool.name)
+    REGISTRY[tool.name] = tool
+
+    class ToolBackend:
+        name = "gemini"
+        model = "gemini-flash-latest"
+
+        async def stream_decide(self, **_kwargs):
+            if not session.history or session.history[-1].role != "tool":
+                yield ToolCall(call_id="call_large", tool_name="large_result_for_test", args={})
+                yield Final(stop_reason="tool_use", tokens_in=10, tokens_out=4)
+                return
+            yield TextDelta(text="resumido")
+            yield Final(stop_reason="end_turn", tokens_in=9, tokens_out=2)
+
+    try:
+        runner = AgentRunner(backend=ToolBackend(), session_store=store)
+        events = asyncio.run(
+            _collect(
+                runner,
+                session=session,
+                user_message="show incidents",
+                tool_context=ToolContext(user_id="user-1"),
+            )
+        )
+    finally:
+        if original is None:
+            REGISTRY.pop(tool.name, None)
+        else:
+            REGISTRY[tool.name] = original
+
+    event_result = next(event for event in events if event["kind"] == "tool_result")["result"]
+    assert len(event_result["items"]) == 8
+    tool_message = next(message for message in session.history if message.role == "tool")
+    encoded = json.dumps(tool_message.tool_result, ensure_ascii=False)
+    assert len(encoded) <= 3000
+    assert "inc_0" in encoded
+    assert "truncated" in encoded
+    assert len(encoded) < len(json.dumps(event_result, ensure_ascii=False))
+    assert events[-1]["kind"] == "done"
+
+
+def test_history_snapshot_keeps_recent_context_and_preserves_tool_pairs():
+    store = SessionStore()
+    session = store.create(user_id="user-1", backend="gemini", role_id="chat")
+    for index in range(14):
+        store.append_message(session, AgentMessage(role="user", content=f"old {index}"))
+    store.append_message(
+        session,
+        AgentMessage(
+            role="assistant",
+            tool_calls=[{"id": "call_1", "name": "list_incidents", "args": {}}],
+        ),
+    )
+    store.append_message(
+        session,
+        AgentMessage(
+            role="tool",
+            tool_call_id="call_1",
+            tool_name="list_incidents",
+            tool_result={"items": [{"id": "inc_1", "attributes": {"raw": "x" * 4000}}]},
+        ),
+    )
+
+    snapshot = _history_snapshot(session)
+
+    assert snapshot[0]["role"] == "user"
+    assert "Earlier conversation omitted" in snapshot[0]["content"]
+    assert snapshot[-2]["role"] == "assistant"
+    assert snapshot[-2]["tool_calls"][0]["id"] == "call_1"
+    assert snapshot[-1]["role"] == "tool"
+    assert len(json.dumps(snapshot[-1]["result"], ensure_ascii=False)) <= 3000
+
+    truncated_pair = store.create(user_id="user-1", backend="gemini", role_id="chat")
+    store.append_message(
+        truncated_pair,
+        AgentMessage(
+            role="assistant",
+            tool_calls=[{"id": "call_2", "name": "list_incidents", "args": {}}],
+        ),
+    )
+    store.append_message(
+        truncated_pair,
+        AgentMessage(
+            role="tool",
+            tool_call_id="call_2",
+            tool_name="list_incidents",
+            tool_result={"items": [{"id": "inc_2"}]},
+        ),
+    )
+    for index in range(11):
+        store.append_message(truncated_pair, AgentMessage(role="user", content=f"later {index}"))
+
+    pair_snapshot = _history_snapshot(truncated_pair)
+
+    assert pair_snapshot[1]["role"] == "assistant"
+    assert pair_snapshot[1]["tool_calls"][0]["id"] == "call_2"
+    assert pair_snapshot[2]["role"] == "tool"
 
 
 def test_runner_waits_for_write_tool_approval_before_invoking():

@@ -16,6 +16,7 @@ Write-category tools always pause on an approval future before invocation.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -47,8 +48,16 @@ from app.ai.agent.session import AgentMessage, AgentSession, SessionStore
 logger = logging.getLogger(__name__)
 
 MAX_STEPS_DEFAULT = 20
-PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS = 4096
+PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS = 2048
+PROVIDER_OUTPUT_TOKEN_CAPS = {"gemini": 1024}
+PROVIDER_SESSION_TOKEN_BUDGET_CAPS = {"gemini": 20_000}
 APPROVAL_TIMEOUT_SECONDS = 300
+MAX_MODEL_HISTORY_MESSAGES = 12
+MAX_MODEL_TEXT_CHARS = 2000
+MAX_MODEL_TOOL_RESULT_CHARS = 3000
+MAX_MODEL_TOOL_FIELD_CHARS = 500
+MAX_MODEL_TOOL_RESULT_ITEMS = 5
+MAX_MODEL_TOOL_RESULT_DEPTH = 4
 
 BackendPicker = Callable[[RoleConfig, str | None], AgentBackend]
 
@@ -118,9 +127,13 @@ class AgentRunner:
         used_tools: list[str] = []
         max_steps = self.max_steps if self.max_steps is not None else role.max_steps
         last_final_text = ""
+        token_budget = min(
+            role.token_budget,
+            PROVIDER_SESSION_TOKEN_BUDGET_CAPS.get(backend.name, role.token_budget),
+        )
 
         for step in range(1, max_steps + 1):
-            if session.tokens_in_total + session.tokens_out_total >= role.token_budget:
+            if session.tokens_in_total + session.tokens_out_total >= token_budget:
                 yield ErrorEvent(
                     step=step,
                     message="agent token budget exceeded",
@@ -128,18 +141,21 @@ class AgentRunner:
                 )
                 return
 
-            remaining_budget = role.token_budget - (
+            remaining_budget = token_budget - (
                 session.tokens_in_total + session.tokens_out_total
             )
             max_output_tokens = max(
                 1,
-                min(PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS, remaining_budget // 2),
+                min(
+                    PROVIDER_OUTPUT_TOKEN_CAPS.get(
+                        backend.name,
+                        PROVIDER_DEFAULT_MAX_OUTPUT_TOKENS,
+                    ),
+                    remaining_budget // 2,
+                ),
             )
             system_prompt = render_system_prompt(role, allowed_tools, locale=session.locale)
-            history = [
-                {"role": "system", "content": system_prompt},
-                *_history_snapshot(session),
-            ]
+            history = _history_snapshot(session)
             pending_tool_calls: list[ToolCall] = []
             text_chunks: list[str] = []
             final_event: Final | None = None
@@ -271,7 +287,7 @@ class AgentRunner:
                             tool_call_id=call.call_id,
                             tool_name=call.tool_name,
                             tool_args=dict(call.args),
-                            tool_result={"error": error_msg},
+                            tool_result=_model_tool_result({"error": error_msg}),
                         ),
                     )
                     continue
@@ -314,7 +330,7 @@ class AgentRunner:
                                 tool_call_id=call.call_id,
                                 tool_name=tool.name,
                                 tool_args=dict(call.args),
-                                tool_result=result_payload,
+                                tool_result=_model_tool_result(result_payload),
                             ),
                         )
                         self._record_tool_audit(
@@ -362,7 +378,7 @@ class AgentRunner:
                         tool_call_id=call.call_id,
                         tool_name=tool.name,
                         tool_args=dict(call.args),
-                        tool_result=result_payload,
+                        tool_result=_model_tool_result(result_payload),
                     ),
                 )
             continue
@@ -459,19 +475,182 @@ async def _invoke_tool(
 
 def _history_snapshot(session: AgentSession) -> list[dict[str, Any]]:
     snapshot: list[dict[str, Any]] = []
-    for message in session.history:
+    recent: list[dict[str, Any]] = []
+    omitted = max(0, len(session.history) - MAX_MODEL_HISTORY_MESSAGES)
+    if omitted:
+        snapshot.append(
+            {
+                "role": "user",
+                "content": (
+                    f"[Earlier conversation omitted from model context: "
+                    f"{omitted} messages. Use visible recent messages and tools only.]"
+                ),
+            }
+        )
+    for message in session.history[-MAX_MODEL_HISTORY_MESSAGES:]:
         entry: dict[str, Any] = {"role": message.role}
         if message.role == "tool":
             entry["tool_call_id"] = message.tool_call_id
             entry["tool_name"] = message.tool_name
-            entry["args"] = message.tool_args or {}
-            entry["result"] = message.tool_result
+            entry["args"] = _compact_for_model(
+                message.tool_args or {},
+                max_chars=MAX_MODEL_TEXT_CHARS,
+            )
+            entry["result"] = _model_tool_result(message.tool_result)
         else:
-            entry["content"] = message.content
+            entry["content"] = _trim_text(message.content, MAX_MODEL_TEXT_CHARS)
             if message.tool_calls:
-                entry["tool_calls"] = message.tool_calls
-        snapshot.append(entry)
-    return snapshot
+                entry["tool_calls"] = _compact_tool_calls(message.tool_calls)
+        recent.append(entry)
+    return [*snapshot, *_preserve_leading_tool_call_pairs(recent)]
+
+
+def _preserve_leading_tool_call_pairs(snapshot: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not snapshot or snapshot[0].get("role") != "tool":
+        return snapshot
+    tool_call_id = str(snapshot[0].get("tool_call_id") or "")
+    if not tool_call_id:
+        return snapshot[1:]
+    return [
+        {
+            "role": "assistant",
+            "content": "[Earlier assistant tool call omitted from compacted context.]",
+            "tool_calls": [
+                {
+                    "id": tool_call_id,
+                    "name": str(snapshot[0].get("tool_name") or ""),
+                    "args": snapshot[0].get("args") or {},
+                }
+            ],
+        },
+        *snapshot,
+    ]
+
+
+def _compact_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compacted: list[dict[str, Any]] = []
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        compacted_call = {
+            "id": call.get("id"),
+            "name": call.get("name"),
+            "args": _compact_for_model(call.get("args") or {}, max_chars=MAX_MODEL_TEXT_CHARS),
+        }
+        provider_metadata = call.get("providerMetadata") or call.get("provider_metadata")
+        if provider_metadata:
+            compacted_call["providerMetadata"] = provider_metadata
+        compacted.append(compacted_call)
+    return compacted
+
+
+def _model_tool_result(result: Any) -> Any:
+    compacted = _compact_for_model(
+        result,
+        max_chars=MAX_MODEL_TOOL_FIELD_CHARS,
+        max_items=MAX_MODEL_TOOL_RESULT_ITEMS,
+        max_depth=MAX_MODEL_TOOL_RESULT_DEPTH,
+    )
+    encoded = _json_size(compacted)
+    if encoded <= MAX_MODEL_TOOL_RESULT_CHARS:
+        return compacted
+    return {
+        "_compactNotice": (
+            "Tool result exceeded model context budget and was compacted. "
+            "Use exact ids from the preview or call a narrower get_* tool."
+        ),
+        "preview": _trim_text(
+            json.dumps(compacted, ensure_ascii=False, default=str),
+            MAX_MODEL_TOOL_RESULT_CHARS,
+        ),
+    }
+
+
+def _compact_for_model(
+    value: Any,
+    *,
+    max_chars: int,
+    max_items: int = MAX_MODEL_TOOL_RESULT_ITEMS,
+    max_depth: int = MAX_MODEL_TOOL_RESULT_DEPTH,
+) -> Any:
+    if max_depth <= 0:
+        return _summary_for_value(value)
+    if isinstance(value, str):
+        return _trim_text(value, max_chars)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, list):
+        items = [
+            _compact_for_model(
+                item,
+                max_chars=max_chars,
+                max_items=max_items,
+                max_depth=max_depth - 1,
+            )
+            for item in value[:max_items]
+        ]
+        if len(value) > max_items:
+            items.append({"_truncated": len(value) - max_items})
+        return items
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, raw in _ordered_model_items(value)[:32]:
+            out[str(key)] = _compact_for_model(
+                raw,
+                max_chars=max_chars,
+                max_items=max_items,
+                max_depth=max_depth - 1,
+            )
+        if len(value) > 32:
+            out["_truncatedKeys"] = len(value) - 32
+        return out
+    return _trim_text(str(value), max_chars)
+
+
+def _ordered_model_items(value: dict[Any, Any]) -> list[tuple[Any, Any]]:
+    priority = {
+        "id",
+        "incidentId",
+        "ticketId",
+        "title",
+        "severity",
+        "status",
+        "ticketStatus",
+        "triageLevel",
+        "source",
+        "createdAt",
+        "updatedAt",
+        "summary",
+        "count",
+        "items",
+        "error",
+    }
+    return sorted(
+        value.items(),
+        key=lambda item: (0 if str(item[0]) in priority else 1, str(item[0])),
+    )
+
+
+def _summary_for_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return {"_type": "list", "count": len(value)}
+    if isinstance(value, dict):
+        return {"_type": "object", "keys": [str(key) for key in list(value)[:12]]}
+    return _trim_text(str(value), 200)
+
+
+def _trim_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    omitted = len(value) - max_chars
+    return value[:max_chars].rstrip() + f"… [truncated {omitted} chars]"
+
+
+def _json_size(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, default=str))
+    except TypeError:
+        return len(str(value))
 
 
 def _role_for_session(role_id: str) -> RoleConfig | None:
