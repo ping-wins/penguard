@@ -555,4 +555,91 @@ def test_service_command_routes_to_windows_service(monkeypatch, capsys):
     main(["service", "status"])
 
     assert calls == ["status"]
-    assert json.loads(capsys.readouterr().out) == {"service": "FortiDashboardAgent"}
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "service": "FortiDashboardAgent",
+        "action": "status",
+        "outcome": "success",
+        "telemetry": {"sent": False, "reason": "agent config is incomplete"},
+    }
+
+
+def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    posted: list[dict] = []
+
+    tui.save_config(
+        tui.AgentPrivateConfig(
+            api_url="http://192.168.204.1:8000",
+            endpoint_id="enr_01",
+            enrollment_token="secret-token",
+        ),
+        config_path,
+    )
+    monkeypatch.setattr(tui, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(
+        cli,
+        "_identity_context",
+        lambda: (
+            {
+                "service": "agent_private",
+                "hostname": "WIN-LAB-01",
+                "username": "Administrator",
+                "os": "Windows",
+            },
+            ["192.168.204.77"],
+        ),
+    )
+
+    def fake_run_service_command(action):
+        assert action == "start"
+        print("Error starting service: The service did not respond in time.")
+        return {"service": "FortiDashboardAgent", "action": "start"}
+
+    def fake_post_endpoint_event(**kwargs):
+        posted.append(kwargs)
+
+    monkeypatch.setattr(cli.windows_service, "run_service_command", fake_run_service_command)
+    monkeypatch.setattr(
+        cli.windows_service,
+        "service_status",
+        lambda: {"service": "FortiDashboardAgent", "status": "stopped"},
+    )
+    monkeypatch.setattr(cli, "post_endpoint_event", fake_post_endpoint_event)
+
+    main(["service", "start"])
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["outcome"] == "failed"
+    assert output["serviceStatus"] == {"service": "FortiDashboardAgent", "status": "stopped"}
+    assert "did not respond" in output["stdout"]
+    assert output["telemetry"] == {"sent": True, "eventType": "health.signal"}
+    assert posted == [
+        {
+            "api_url": "http://192.168.204.1:8000",
+            "enrollment_token": "secret-token",
+            "payload": {
+                "endpointId": "enr_01",
+                "eventType": "health.signal",
+                "occurredAt": posted[0]["payload"]["occurredAt"],
+                "hostname": "WIN-LAB-01",
+                "ipAddresses": ["192.168.204.77"],
+                "currentUser": "Administrator",
+                "health": "warning",
+                "attributes": {
+                    "source": "agent_private.windows_service",
+                    "service": "FortiDashboardAgent",
+                    "serviceAction": "start",
+                    "outcome": "failed",
+                    "serviceStatus": {
+                        "service": "FortiDashboardAgent",
+                        "status": "stopped",
+                    },
+                    "stdout": "Error starting service: The service did not respond in time.",
+                    "stderr": None,
+                    "error": None,
+                    "os": "Windows",
+                },
+            },
+        }
+    ]

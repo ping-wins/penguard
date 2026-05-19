@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
+import io
 import json
 import os
 import platform
@@ -573,6 +575,121 @@ def pair_with_dashboard(
     )
 
 
+def run_service_command_with_reporting(service_action: str) -> dict[str, Any]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    error: BaseException | None = None
+    result: dict[str, Any]
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        try:
+            result = windows_service.run_service_command(service_action)
+        except BaseException as exc:  # noqa: BLE001
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            error = exc
+            result = {"service": windows_service.SERVICE_NAME, "action": service_action}
+
+    stdout_text = stdout.getvalue().strip()
+    stderr_text = stderr.getvalue().strip()
+    service_status_payload = _service_status_payload()
+    outcome = _service_command_outcome(
+        service_action,
+        stdout_text=stdout_text,
+        stderr_text=stderr_text,
+        error=error,
+        service_status_payload=service_status_payload,
+    )
+    payload: dict[str, Any] = {
+        **result,
+        "action": result.get("action", service_action),
+        "outcome": outcome,
+    }
+    if service_status_payload is not None:
+        payload["serviceStatus"] = service_status_payload
+    if stdout_text:
+        payload["stdout"] = _truncate_log(stdout_text)
+    if stderr_text:
+        payload["stderr"] = _truncate_log(stderr_text)
+    if error is not None:
+        payload["error"] = _truncate_log(str(error))
+
+    payload["telemetry"] = _report_service_command(payload)
+    return payload
+
+
+def _service_status_payload() -> dict[str, str] | None:
+    try:
+        return windows_service.service_status()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _service_command_outcome(
+    service_action: str,
+    *,
+    stdout_text: str,
+    stderr_text: str,
+    error: BaseException | None,
+    service_status_payload: dict[str, str] | None,
+) -> str:
+    if error is not None:
+        return "failed"
+    combined = f"{stdout_text}\n{stderr_text}".lower()
+    if "error " in combined or "error:" in combined or "traceback" in combined:
+        return "failed"
+    status_name = service_status_payload.get("status") if service_status_payload else None
+    if service_action == "start" and status_name != "running":
+        return "failed"
+    if service_action == "stop" and status_name not in {None, "stopped"}:
+        return "failed"
+    return "success"
+
+
+def _report_service_command(command_payload: dict[str, Any]) -> dict[str, Any]:
+    from agent_private.tui import load_config
+
+    config = load_config()
+    if not config.api_url or not config.endpoint_id or not config.enrollment_token:
+        return {"sent": False, "reason": "agent config is incomplete"}
+
+    identity, ip_addresses = _identity_context()
+    outcome = str(command_payload.get("outcome") or "unknown")
+    event = build_endpoint_event(
+        endpoint_id=config.endpoint_id,
+        event_type="health.signal",
+        hostname=identity["hostname"],
+        ip_addresses=ip_addresses,
+        current_user=identity["username"],
+        attributes={
+            "source": "agent_private.windows_service",
+            "service": command_payload.get("service"),
+            "serviceAction": command_payload.get("action"),
+            "outcome": outcome,
+            "serviceStatus": command_payload.get("serviceStatus"),
+            "stdout": command_payload.get("stdout"),
+            "stderr": command_payload.get("stderr"),
+            "error": command_payload.get("error"),
+            "os": identity["os"],
+        },
+    )
+    event["health"] = "warning" if outcome == "failed" else "healthy"
+    try:
+        post_endpoint_event(
+            api_url=config.api_url,
+            enrollment_token=config.enrollment_token,
+            payload=event,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"sent": False, "reason": _truncate_log(str(exc))}
+    return {"sent": True, "eventType": "health.signal"}
+
+
+def _truncate_log(value: str, limit: int = 4000) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}...<truncated>"
+
+
 def run_tui() -> None:
     from agent_private.tui import run_tui as start_tui
 
@@ -778,7 +895,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.error("config requires show or set")
 
     if args.command == "service":
-        print_json(windows_service.run_service_command(args.service_action))
+        print_json(run_service_command_with_reporting(args.service_action))
         return
 
     if args.command == "daemon":

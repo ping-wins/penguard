@@ -63,6 +63,11 @@ uv run agent-private config show
 uv run agent-private pair "<token-returned-once>"
 ```
 
+Service management commands capture `pywin32` stdout/stderr and publish a
+`health.signal` event to XDR when local pairing config exists. This makes failed
+`install`, `start`, `stop`, `status` or `uninstall` attempts visible in the
+endpoint timeline without copying terminal output from the Windows VM.
+
 The Windows Service wrapper uses `pywin32` on Windows only. Linux CI and local
 developer tests can import the service module safely, but service management
 commands require Windows.
