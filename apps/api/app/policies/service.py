@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import HTTPException, status
 
 from app.policies.adapters import PolicyProviderAdapter
@@ -9,6 +11,8 @@ from app.policies.models import (
     PolicyReviewCreateRequest,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class PolicyService:
     def __init__(self, adapters: list[PolicyProviderAdapter]) -> None:
@@ -16,24 +20,42 @@ class PolicyService:
 
     def list_providers(self, *, owner_user_id: str) -> dict:
         items = []
+        errors = []
         for adapter in self.adapters.values():
-            items.extend(
-                item.model_dump(mode="json", by_alias=True)
-                for item in adapter.provider_summary(owner_user_id=owner_user_id)
-            )
-        return {"items": items}
+            try:
+                items.extend(
+                    item.model_dump(mode="json", by_alias=True)
+                    for item in adapter.provider_summary(owner_user_id=owner_user_id)
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "policy_provider_summary_failed provider=%s error=%s",
+                    adapter.provider_type,
+                    exc,
+                )
+                errors.append(_provider_error(adapter.provider_type))
+        return {"items": items, "errors": errors}
 
     def list_policies(self, *, owner_user_id: str, filters: dict) -> dict:
         provider_type = filters.get("providerType")
         adapters = [self._adapter(provider_type)] if provider_type else list(self.adapters.values())
         rows = []
+        errors = []
         for adapter in adapters:
-            result: PolicyListResponse = adapter.list_policies(
-                owner_user_id=owner_user_id,
-                filters=filters,
-            )
-            rows.extend(row.model_dump(mode="json", by_alias=True) for row in result.items)
-        return {"items": rows, "nextCursor": None}
+            try:
+                result: PolicyListResponse = adapter.list_policies(
+                    owner_user_id=owner_user_id,
+                    filters=filters,
+                )
+                rows.extend(row.model_dump(mode="json", by_alias=True) for row in result.items)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "policy_inventory_failed provider=%s error=%s",
+                    adapter.provider_type,
+                    exc,
+                )
+                errors.append(_provider_error(adapter.provider_type))
+        return {"items": rows, "nextCursor": None, "errors": errors}
 
     def create_review(self, *, owner_user_id: str, payload: PolicyReviewCreateRequest) -> dict:
         review = self._adapter(payload.provider_type).create_review(
@@ -63,3 +85,10 @@ class PolicyService:
                 detail="Policy provider not available",
             )
         return self.adapters[provider_type]
+
+
+def _provider_error(provider_type: str) -> dict:
+    return {
+        "providerType": provider_type,
+        "message": "Policy provider unavailable",
+    }

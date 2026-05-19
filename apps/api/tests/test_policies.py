@@ -6,6 +6,7 @@ from app.main import app
 from app.policies.fortigate_adapter import FortiGatePolicyAdapter
 from app.policies.fortiweb_adapter import FortiWebPolicyAdapter
 from app.policies.models import PolicyReviewApplyRequest, PolicyReviewCreateRequest
+from app.policies.service import PolicyService
 from app.routers import policies as policies_router
 
 client = TestClient(app)
@@ -206,6 +207,47 @@ class FakeFortiGatePolicyService:
         assert integration_id == "int_fgt_01"
         assert owner_user_id == "usr_admin"
         return self.client
+
+
+class FailingPolicyProviderService:
+    def list(self, *, owner_user_id: str) -> dict:
+        assert owner_user_id == "usr_admin"
+        raise RuntimeError("provider offline")
+
+    def list_blocks(self, *, owner_user_id: str, integration_id: str) -> dict:
+        raise AssertionError("list_blocks should not be reached")
+
+
+def test_policy_service_lists_available_providers_when_one_adapter_fails() -> None:
+    service = PolicyService(
+        [
+            FortiGatePolicyAdapter(FakeFortiGatePolicyService(FakeFortiGatePolicyClient())),
+            FortiWebPolicyAdapter(FailingPolicyProviderService()),
+        ]
+    )
+
+    result = service.list_providers(owner_user_id="usr_admin")
+
+    assert [item["providerType"] for item in result["items"]] == ["fortigate"]
+    assert result["errors"] == [
+        {"providerType": "fortiweb", "message": "Policy provider unavailable"}
+    ]
+
+
+def test_policy_service_lists_available_inventory_when_one_adapter_fails() -> None:
+    service = PolicyService(
+        [
+            FortiGatePolicyAdapter(FakeFortiGatePolicyService(FakeFortiGatePolicyClient())),
+            FortiWebPolicyAdapter(FailingPolicyProviderService()),
+        ]
+    )
+
+    result = service.list_policies(owner_user_id="usr_admin", filters={})
+
+    assert [item["providerType"] for item in result["items"]] == ["fortigate"]
+    assert result["errors"] == [
+        {"providerType": "fortiweb", "message": "Policy provider unavailable"}
+    ]
 
 
 def test_fortigate_policy_adapter_normalizes_inventory() -> None:
