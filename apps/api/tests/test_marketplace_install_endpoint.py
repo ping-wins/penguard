@@ -24,7 +24,7 @@ from app.auth.dependencies import get_current_api_user, require_admin_user
 from app.db import models as _models  # noqa: F401 - register models on Base.metadata
 from app.db.base import Base
 from app.main import app
-from app.routers.marketplace import get_installed_index
+from app.routers.marketplace import _normalize_catalog_entry, get_installed_index
 
 
 def _admin_user() -> dict:
@@ -173,6 +173,25 @@ def test_remote_catalog_items_are_normalized_for_marketplace_ui(client):
     assert demo["siemEventTypes"] == []
     assert demo["provider"]["auth"]["fields"] == []
     assert demo["installed"] is False
+
+
+def test_remote_catalog_latest_version_overrides_bundled_version():
+    entry = {
+        "id": "fortigate-core",
+        "source": "remote",
+        "version": "0.2.0",
+        "latestVersion": "0.2.1",
+        "versions": ["0.2.1", "0.2.0"],
+        "name": "FortiGate Core",
+        "vendor": "Fortinet",
+        "category": "firewall",
+        "description": "...",
+    }
+
+    normalized = _normalize_catalog_entry(entry)
+
+    assert normalized["version"] == "0.2.1"
+    assert normalized["versions"] == ["0.2.1", "0.2.0"]
 
 
 def test_uninstall_clears_installed_flag(client):

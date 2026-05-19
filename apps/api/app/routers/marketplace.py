@@ -29,7 +29,10 @@ def _normalize_catalog_entry(entry: dict[str, Any]) -> dict[str, Any]:
     versions = entry.get("versions")
     if not isinstance(versions, list):
         versions = []
-    version = entry.get("version") or entry.get("latestVersion")
+    if entry.get("source") == "remote" and entry.get("latestVersion"):
+        version = entry.get("latestVersion")
+    else:
+        version = entry.get("version") or entry.get("latestVersion")
     if not version and versions:
         version = versions[0]
     if version and version not in versions:
