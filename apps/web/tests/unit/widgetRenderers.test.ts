@@ -64,6 +64,9 @@ describe('FortiGate widget renderers', () => {
 
   it('renders generic SOC bar, feed and status-list preset payloads', () => {
     const bar = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'soc-incidents-by-severity',
         data: {
@@ -81,6 +84,9 @@ describe('FortiGate widget renderers', () => {
     expect(bar.text()).toContain('2')
 
     const feed = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'soc-recent-incidents',
         data: {
@@ -99,6 +105,9 @@ describe('FortiGate widget renderers', () => {
     expect(feed.text()).toContain('open')
 
     const statusList = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'xdr-endpoint-health',
         data: {
@@ -178,6 +187,9 @@ describe('FortiGate widget renderers', () => {
 
   it('renders provenance badges for generic SOC rows with existing metadata', () => {
     const feed = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'soc-recent-incidents',
         data: {
@@ -218,14 +230,14 @@ describe('FortiGate widget renderers', () => {
   })
 
   it('maps provenance fields to source badge labels without cluttering unknown rows', () => {
-    expect(sourceBadgeFor({ attributes: { demoRunId: 'demo_01' } })?.label).toBe('Seeded demo')
-    expect(sourceBadgeFor({ origin: { kind: 'demo.replay' } })?.label).toBe('Seeded demo')
-    expect(sourceBadgeFor({ attributes: { source: 'demo.replay' } })?.label).toBe('Seeded demo')
-    expect(sourceBadgeFor({ source: 'simulator' })?.label).toBe('Simulator')
-    expect(sourceBadgeFor({ providerMode: 'scripted' })?.label).toBe('Scripted AI')
-    expect(sourceBadgeFor({ rawOutput: 'scripted' })?.label).toBe('Scripted AI')
-    expect(sourceBadgeFor({ raw_output: 'scripted' })?.label).toBe('Scripted AI')
-    expect(sourceBadgeFor({ origin: { kind: 'fortigate' } })?.label).toBe('Live')
+    expect(sourceBadgeFor({ attributes: { demoRunId: 'demo_01' } })?.labelKey).toBe('sourceBadges.seededDemo')
+    expect(sourceBadgeFor({ origin: { kind: 'demo.replay' } })?.labelKey).toBe('sourceBadges.seededDemo')
+    expect(sourceBadgeFor({ attributes: { source: 'demo.replay' } })?.labelKey).toBe('sourceBadges.seededDemo')
+    expect(sourceBadgeFor({ source: 'simulator' })?.labelKey).toBe('sourceBadges.simulator')
+    expect(sourceBadgeFor({ providerMode: 'scripted' })?.labelKey).toBe('sourceBadges.scriptedAi')
+    expect(sourceBadgeFor({ rawOutput: 'scripted' })?.labelKey).toBe('sourceBadges.scriptedAi')
+    expect(sourceBadgeFor({ raw_output: 'scripted' })?.labelKey).toBe('sourceBadges.scriptedAi')
+    expect(sourceBadgeFor({ origin: { kind: 'fortigate' } })?.labelKey).toBe('sourceBadges.live')
     expect(sourceBadgeFor({ source: 'manual' })).toBeNull()
     expect(sourceBadgeFor(null)).toBeNull()
   })
@@ -857,12 +869,18 @@ describe('FortiGate widget renderers', () => {
 
   it('explains empty SOC preset states with first-setup next actions', () => {
     const incidents = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'soc-incidents-by-severity',
         data: { items: [], total: 0 },
       },
     })
     const endpoints = mount(WidgetGenericData, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         catalogId: 'xdr-endpoint-health',
         data: { endpoints: [], summary: {}, total: 0 },
@@ -1128,6 +1146,9 @@ describe('FortiGate widget renderers', () => {
 
   it('renders FortiGate recent events feed', () => {
     const wrapper = mount(WidgetRecentEvents, {
+      global: {
+        plugins: [i18n],
+      },
       props: {
         data: {
           events: [
@@ -1212,6 +1233,9 @@ describe('FortiGate widget renderers', () => {
 
     for (const [Component, emptyLabel] of cases) {
       const wrapper = mount(Component, {
+        global: {
+          plugins: [i18n],
+        },
         props: {
           data: {
             summary: {},

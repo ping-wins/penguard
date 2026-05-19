@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Waves } from 'lucide-vue-next'
 import WidgetShell from '../shell/WidgetShell.vue'
 import WidgetEmptyState from '../shell/WidgetEmptyState.vue'
@@ -10,6 +11,8 @@ const props = defineProps<{
   integrationId: string
   catalogId: string
 }>()
+
+const { t, locale } = useI18n()
 
 type FeedItem = {
   id: string
@@ -39,7 +42,10 @@ function severityClass(severity: string): string {
 function formatTs(ts: string): string {
   if (!ts) return '—'
   try {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return new Date(ts).toLocaleTimeString(
+      locale.value,
+      { hour: '2-digit', minute: '2-digit', second: '2-digit' },
+    )
   } catch {
     return ts
   }
@@ -49,19 +55,19 @@ function formatTs(ts: string): string {
 <template>
   <WidgetShell
     :widget-id="catalogId"
-    title="WAF DoS Events"
-    subtitle="Live event feed"
+    :title="t('widgets.wafDosFeed.title')"
+    :subtitle="t('widgets.wafDosFeed.subtitle')"
     :icon="Waves"
     source="fortiweb"
     disable-drill
   >
     <template #glance>
       <div class="mb-1 flex items-center justify-between text-[10px] text-theme-text-muted">
-        <span>{{ items.length }} events</span>
+        <span>{{ t('widgets.wafDosFeed.eventCount', { count: items.length }) }}</span>
         <span>{{ source }}</span>
       </div>
       <div v-if="items.length === 0">
-        <WidgetEmptyState title="No DoS events." />
+        <WidgetEmptyState :title="t('widgets.wafDosFeed.emptyTitle')" />
       </div>
       <div v-else class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
         <div
@@ -88,8 +94,12 @@ function formatTs(ts: string): string {
 
     <template #detail>
       <div class="flex flex-col gap-2">
-        <div class="text-xs font-semibold uppercase tracking-wide text-theme-text-muted">All events</div>
-        <div v-if="items.length === 0" class="text-xs text-theme-text-muted">No data.</div>
+        <div class="text-xs font-semibold uppercase tracking-wide text-theme-text-muted">
+          {{ t('widgets.wafDosFeed.allEvents') }}
+        </div>
+        <div v-if="items.length === 0" class="text-xs text-theme-text-muted">
+          {{ t('widgets.wafDosFeed.noData') }}
+        </div>
         <div v-else class="max-h-80 overflow-y-auto no-scrollbar space-y-1">
           <div
             v-for="(item, idx) in items"

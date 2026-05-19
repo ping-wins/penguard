@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ListChecks } from 'lucide-vue-next'
 import WidgetShell from './shell/WidgetShell.vue'
 import WidgetEmptyState from './shell/WidgetEmptyState.vue'
 import WidgetSlaBadge from './shell/WidgetSlaBadge.vue'
 
 const props = defineProps<{ data: any, catalogId?: string }>()
+const { t } = useI18n()
 
 const events = computed(() => Array.isArray(props.data?.events) ? props.data.events : [])
 const summary = computed(() => ({
@@ -34,15 +36,15 @@ function severityClass(severity: string | undefined) {
 }
 
 function eventType(event: any) {
-  return [event?.type, event?.subtype].filter(Boolean).join(' / ') || 'event'
+  return [event?.type, event?.subtype].filter(Boolean).join(' / ') || t('widgets.recentEvents.typeFallback')
 }
 </script>
 
 <template>
   <WidgetShell
     :widget-id="props.catalogId || 'fortigate-recent-events'"
-    title="Recent Events"
-    subtitle="Normalized FortiGate event feed"
+    :title="t('widgets.recentEvents.title')"
+    :subtitle="t('widgets.recentEvents.subtitle')"
     :icon="ListChecks"
     source="fortigate"
     :disable-drill="true"
@@ -51,18 +53,18 @@ function eventType(event: any) {
     <template #glance>
       <div class="flex items-center justify-end text-xs text-theme-text-muted">
         <div class="text-right">
-          <div><span class="font-bold text-theme-text">{{ summary.total }}</span> total</div>
-          <div><span class="font-bold text-amber-200">{{ summary.highSeverity }}</span> high</div>
+          <div><span class="font-bold text-theme-text">{{ summary.total }}</span> {{ t('widgets.recentEvents.totalLabel') }}</div>
+          <div><span class="font-bold text-amber-200">{{ summary.highSeverity }}</span> {{ t('widgets.recentEvents.highLabel') }}</div>
         </div>
       </div>
 
       <div class="grid grid-cols-2 gap-2 text-xs">
         <div class="rounded-md bg-theme-text/5 p-2">
-          <div class="text-theme-text-muted">Blocked</div>
+          <div class="text-theme-text-muted">{{ t('widgets.recentEvents.blocked') }}</div>
           <div class="text-lg font-bold text-red-300">{{ summary.blocked }}</div>
         </div>
         <div class="rounded-md bg-theme-text/5 p-2">
-          <div class="text-theme-text-muted">High severity</div>
+          <div class="text-theme-text-muted">{{ t('widgets.recentEvents.highSeverity') }}</div>
           <div class="text-lg font-bold text-amber-200">{{ summary.highSeverity }}</div>
         </div>
       </div>
@@ -75,25 +77,25 @@ function eventType(event: any) {
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <div class="truncate font-semibold text-theme-text">{{ event.message || 'FortiGate event' }}</div>
+              <div class="truncate font-semibold text-theme-text">{{ event.message || t('widgets.recentEvents.eventFallback') }}</div>
               <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-theme-text-muted">
                 <WidgetSlaBadge :created-at="event.timestamp" />
                 <span>{{ eventType(event) }}</span>
                 <span v-if="event.sourceIp" class="font-mono">{{ event.sourceIp }}</span>
-                <span v-if="event.destinationIp" class="font-mono">to {{ event.destinationIp }}</span>
+                <span v-if="event.destinationIp" class="font-mono">{{ t('widgets.recentEvents.to', { ip: event.destinationIp }) }}</span>
                 <span v-if="event.action" class="uppercase">{{ event.action }}</span>
               </div>
             </div>
             <span class="shrink-0 rounded border px-2 py-1 text-xs font-bold uppercase" :class="severityClass(event.severity)">
-              {{ event.severity || 'unknown' }}
+              {{ event.severity || t('widgets.recentEvents.unknownSeverity') }}
             </span>
           </div>
         </div>
 
         <WidgetEmptyState
           v-if="events.length === 0"
-          title="No recent events returned."
-          hint="FortiGate event feed is currently empty for this integration."
+          :title="t('widgets.recentEvents.emptyTitle')"
+          :hint="t('widgets.recentEvents.emptyHint')"
         />
       </div>
     </template>

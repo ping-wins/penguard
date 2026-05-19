@@ -28,6 +28,12 @@ export default {
     all: 'All',
     you: 'You',
   },
+  sourceBadges: {
+    seededDemo: 'Seeded demo',
+    simulator: 'Simulator',
+    scriptedAi: 'Scripted AI',
+    live: 'Live',
+  },
   auth: {
     login: {
       title: 'Penguard',
@@ -495,6 +501,68 @@ export default {
     },
   },
   widgets: {
+    generic: {
+      rows: '{count} rows',
+      item: 'Item {number}',
+      columns: {
+        name: 'Name',
+        value: 'Value',
+        context: 'Context',
+      },
+      fallback: {
+        emptyTitle: 'No data yet',
+        emptyHint: 'The endpoint responded successfully, but there is nothing to display.',
+      },
+      presets: {
+        socIncidentsBySeverity: {
+          title: 'Incidents by Severity',
+          emptyTitle: 'No incidents yet',
+          emptyHint: 'Connect a SIEM or FortiGate provider and ingest real events to populate this chart.',
+        },
+        socRecentIncidents: {
+          title: 'Recent Incidents',
+          emptyTitle: 'No recent incidents yet',
+          emptyHint: 'Ingest live SIEM, FortiGate, or endpoint telemetry to create incident activity.',
+        },
+        socTopEntities: {
+          title: 'Top Entities',
+          emptyTitle: 'No entities yet',
+          emptyHint: 'Incidents are needed before top source IPs, hosts and users can be ranked.',
+        },
+        xdrEndpointHealth: {
+          title: 'Endpoint Health',
+          emptyTitle: 'No endpoints yet',
+          emptyHint: 'Enroll an endpoint and run agent_private to send live telemetry.',
+        },
+        soarActivePlaybookRuns: {
+          title: 'Active Playbook Runs',
+          emptyTitle: 'No active runs yet',
+          emptyHint: 'Simulate or run a SOAR playbook to show step status here.',
+        },
+      },
+    },
+    recentEvents: {
+      title: 'Recent Events',
+      subtitle: 'Normalized FortiGate event feed',
+      totalLabel: 'total',
+      highLabel: 'high',
+      blocked: 'Blocked',
+      highSeverity: 'High severity',
+      eventFallback: 'FortiGate event',
+      typeFallback: 'event',
+      to: 'to {ip}',
+      unknownSeverity: 'unknown',
+      emptyTitle: 'No recent events returned.',
+      emptyHint: 'FortiGate event feed is currently empty for this integration.',
+    },
+    wafDosFeed: {
+      title: 'WAF DoS Events',
+      subtitle: 'Live event feed',
+      eventCount: '{count} events',
+      emptyTitle: 'No DoS events.',
+      allEvents: 'All events',
+      noData: 'No data.',
+    },
     firewallPolicies: {
       title: 'Firewall Policies',
       subtitle: 'Active rules, blocks and logging',
@@ -944,6 +1012,40 @@ export default {
       title: 'Appearance',
       subtitle: 'Customize the workspace colors, layout and density.',
       openBuilder: 'Open theme builder',
+    },
+    themeBuilder: {
+      title: 'Design System Builder',
+      subtitle: 'Customize Penguard appearance in real time',
+      presetsTitle: 'Theme Presets',
+      customMode: 'Custom Mode',
+      colorPalette: 'Color Palette',
+      modeLabel: '{mode} Mode',
+      presets: {
+        custom: 'Custom Builder',
+        fortinet: 'Fortinet Classic',
+        cyber: 'Cyber Blue',
+        emerald: 'Toxic Emerald',
+        lightOcean: 'Light Ocean',
+        opera: 'Opera Pink',
+      },
+      modes: {
+        light: 'Light',
+        dark: 'Dark',
+      },
+      colors: {
+        primary: 'Primary',
+        secondary: 'Secondary',
+        neutral: 'Neutral (Base)',
+      },
+      preview: {
+        headline: 'Headline',
+        body: 'Body',
+        primaryButton: 'Primary',
+        secondaryButton: 'Secondary',
+        outlinedButton: 'Outlined',
+        neutralButton: 'Neutral',
+        searchPlaceholder: 'Search components...',
+      },
     },
     language: {
       title: 'Language',

@@ -1,5 +1,9 @@
 export type SourceBadge = {
-  label: 'Seeded demo' | 'Simulator' | 'Scripted AI' | 'Live'
+  labelKey:
+    | 'sourceBadges.seededDemo'
+    | 'sourceBadges.simulator'
+    | 'sourceBadges.scriptedAi'
+    | 'sourceBadges.live'
   tone: 'demo' | 'simulator' | 'ai' | 'live'
 }
 
@@ -33,11 +37,11 @@ export function sourceBadgeFor(value: unknown): SourceBadge | null {
     || hasValue(value.demoRunId)
     || hasValue(attributes.demoRunId)
   ) {
-    return { label: 'Seeded demo', tone: 'demo' }
+    return { labelKey: 'sourceBadges.seededDemo', tone: 'demo' }
   }
 
   if (source === 'simulator' || attributesSource === 'simulator' || originKind === 'simulator') {
-    return { label: 'Simulator', tone: 'simulator' }
+    return { labelKey: 'sourceBadges.simulator', tone: 'simulator' }
   }
 
   if (
@@ -46,7 +50,7 @@ export function sourceBadgeFor(value: unknown): SourceBadge | null {
     || normalized(value.rawOutput) === 'scripted'
     || normalized(value.raw_output) === 'scripted'
   ) {
-    return { label: 'Scripted AI', tone: 'ai' }
+    return { labelKey: 'sourceBadges.scriptedAi', tone: 'ai' }
   }
 
   if (
@@ -56,7 +60,7 @@ export function sourceBadgeFor(value: unknown): SourceBadge | null {
     || LIVE_VALUES.has(normalized(value.provider))
     || LIVE_VALUES.has(normalized(value.providerMode))
   ) {
-    return { label: 'Live', tone: 'live' }
+    return { labelKey: 'sourceBadges.live', tone: 'live' }
   }
 
   return null

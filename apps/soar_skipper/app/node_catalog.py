@@ -27,7 +27,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
         NodeTypeDefinition(
             id="condition.severity",
             label="Severity Condition",
-            description="Continues only when the incident severity matches one of the selected values.",
+            description=(
+                "Continues only when the incident severity matches one of the "
+                "selected values."
+            ),
             effectSummary="Routes or stops execution based on incident severity.",
             category="condition",
             boundary="decision_only",
@@ -37,7 +40,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
                     "severity": {
                         "type": "array",
                         "title": "Allowed severities",
-                        "description": "Incident severities that should continue through this condition.",
+                        "description": (
+                            "Incident severities that should continue through "
+                            "this condition."
+                        ),
                         "items": {"enum": ["low", "medium", "high", "critical"]},
                     }
                 },
@@ -45,13 +51,20 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
             },
             exampleConfig={"severity": ["high", "critical"]},
             requiredInputs=[
-                _input("severity", "Allowed severities", "The severity values allowed to continue."),
+                _input(
+                    "severity",
+                    "Allowed severities",
+                    "The severity values allowed to continue.",
+                ),
             ],
         ),
         NodeTypeDefinition(
             id="enrich.ip",
             label="Enrich IP",
-            description="Reads an IP-like value from the incident payload and exposes it to later nodes.",
+            description=(
+                "Reads an IP-like value from the incident payload and exposes "
+                "it to later nodes."
+            ),
             effectSummary="Resolves a field such as entities.sourceIp from the incident.",
             category="enrichment",
             boundary="enrichment_read_only",
@@ -84,7 +97,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
                     "template": {
                         "type": "string",
                         "title": "Note template",
-                        "description": "Text stored on the incident; placeholders like {incident.id} are supported.",
+                        "description": (
+                            "Text stored on the incident; placeholders like "
+                            "{incident.id} are supported."
+                        ),
                     }
                 },
                 "required": ["template"],
@@ -120,7 +136,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
         NodeTypeDefinition(
             id="approval.required",
             label="Require Approval",
-            description="Pauses the run until an authorized user approves the next sensitive action.",
+            description=(
+                "Pauses the run until an authorized user approves the next "
+                "sensitive action."
+            ),
             effectSummary="Creates an approval gate and prevents silent live response.",
             category="control",
             boundary="approval_gate",
@@ -141,8 +160,14 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
             id="notify.webhook",
             label="Notify Webhook",
             category="action",
-            description="Sends a notification to a configured outbound webhook destination such as Discord.",
-            effectSummary="Sends a real outbound notification through a configured webhook destination.",
+            description=(
+                "Sends a notification to a configured outbound webhook "
+                "destination such as Discord."
+            ),
+            effectSummary=(
+                "Sends a real outbound notification through a configured "
+                "webhook destination."
+            ),
             boundary="notification_dry_run",
             config_schema={
                 "type": "object",
@@ -150,12 +175,18 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
                     "destinationId": {
                         "type": "string",
                         "title": "Webhook destination",
-                        "description": "Configured destination ID; the secret URL stays server-side.",
+                        "description": (
+                            "Configured destination ID; the secret URL stays "
+                            "server-side."
+                        ),
                     },
                     "content": {
                         "type": "string",
                         "title": "Message content",
-                        "description": "Message sent to the webhook. Discord receives this as content.",
+                        "description": (
+                            "Message sent to the webhook. Discord receives "
+                            "this as content."
+                        ),
                     },
                     "username": {
                         "type": "string",
@@ -170,14 +201,21 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
                 "content": "Critical incident {incident.id} from {entities.sourceIp}",
             },
             requiredInputs=[
-                _input("destinationId", "Webhook destination", "A configured Discord or generic webhook destination."),
+                _input(
+                    "destinationId",
+                    "Webhook destination",
+                    "A configured Discord or generic webhook destination.",
+                ),
                 _input("content", "Message content", "Message body sent to the destination."),
             ],
         ),
         NodeTypeDefinition(
             id="fortigate.recommend_block",
             label="Recommend FortiGate Block",
-            description="Creates an analyst-facing FortiGate block recommendation without applying it.",
+            description=(
+                "Creates an analyst-facing FortiGate block recommendation "
+                "without applying it."
+            ),
             effectSummary="Produces a governed FortiGate policy review requirement.",
             category="action",
             sensitive=True,
@@ -201,7 +239,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
         NodeTypeDefinition(
             id="fortiweb.recommend_block",
             label="Recommend FortiWeb Block",
-            description="Creates an analyst-facing FortiWeb source-block recommendation without applying it.",
+            description=(
+                "Creates an analyst-facing FortiWeb source-block "
+                "recommendation without applying it."
+            ),
             effectSummary="Produces a governed FortiWeb policy review requirement.",
             category="action",
             sensitive=True,
@@ -232,7 +273,10 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
         NodeTypeDefinition(
             id="fortigate.temporary_block",
             label="FortiGate Temporary Block",
-            description="Requests a temporary FortiGate block through the governed policy workflow.",
+            description=(
+                "Requests a temporary FortiGate block through the governed "
+                "policy workflow."
+            ),
             effectSummary="Pauses for approval and then uses Penguard-owned policy orchestration.",
             category="action",
             sensitive=True,

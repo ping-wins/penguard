@@ -1325,7 +1325,7 @@ async function resetIncidents() {
                   class="rounded border px-1.5 py-0.5 text-[10px]"
                   :class="sourceBadgeClass(aiAnalysisBadge)"
                 >
-                  {{ aiAnalysisBadge.label }}
+                  {{ t(aiAnalysisBadge.labelKey) }}
                 </span>
                 <span class="text-xs font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
                   {{ t('tickets.ai.riskScore', { score: aiAnalysis.riskScore }) }}

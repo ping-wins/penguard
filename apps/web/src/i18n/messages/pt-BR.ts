@@ -28,6 +28,12 @@ export default {
     all: 'Todos',
     you: 'Você',
   },
+  sourceBadges: {
+    seededDemo: 'Demo semeado',
+    simulator: 'Simulador',
+    scriptedAi: 'IA roteirizada',
+    live: 'Ao vivo',
+  },
   auth: {
     login: {
       title: 'Penguard',
@@ -495,6 +501,68 @@ export default {
     },
   },
   widgets: {
+    generic: {
+      rows: '{count} linhas',
+      item: 'Item {number}',
+      columns: {
+        name: 'Nome',
+        value: 'Valor',
+        context: 'Contexto',
+      },
+      fallback: {
+        emptyTitle: 'Sem dados ainda',
+        emptyHint: 'O endpoint respondeu com sucesso, mas não há nada para exibir.',
+      },
+      presets: {
+        socIncidentsBySeverity: {
+          title: 'Incidentes por severidade',
+          emptyTitle: 'Nenhum incidente ainda',
+          emptyHint: 'Conecte um provedor SIEM ou FortiGate e ingira eventos reais para popular este gráfico.',
+        },
+        socRecentIncidents: {
+          title: 'Incidentes recentes',
+          emptyTitle: 'Nenhum incidente recente ainda',
+          emptyHint: 'Ingira telemetria ao vivo de SIEM, FortiGate ou endpoint para criar atividade de incidentes.',
+        },
+        socTopEntities: {
+          title: 'Principais entidades',
+          emptyTitle: 'Nenhuma entidade ainda',
+          emptyHint: 'Incidentes são necessários antes de ranquear IPs de origem, hosts e usuários.',
+        },
+        xdrEndpointHealth: {
+          title: 'Saúde dos endpoints',
+          emptyTitle: 'Nenhum endpoint ainda',
+          emptyHint: 'Faça o enrollment de um endpoint e execute o agent_private para enviar telemetria ao vivo.',
+        },
+        soarActivePlaybookRuns: {
+          title: 'Execuções de playbook ativas',
+          emptyTitle: 'Nenhuma execução ativa ainda',
+          emptyHint: 'Simule ou execute um playbook SOAR para exibir o status das etapas aqui.',
+        },
+      },
+    },
+    recentEvents: {
+      title: 'Eventos recentes',
+      subtitle: 'Feed normalizado de eventos FortiGate',
+      totalLabel: 'total',
+      highLabel: 'alta',
+      blocked: 'Bloqueados',
+      highSeverity: 'Alta severidade',
+      eventFallback: 'Evento FortiGate',
+      typeFallback: 'evento',
+      to: 'para {ip}',
+      unknownSeverity: 'desconhecida',
+      emptyTitle: 'Nenhum evento recente retornado.',
+      emptyHint: 'O feed de eventos FortiGate está vazio para esta integração.',
+    },
+    wafDosFeed: {
+      title: 'Eventos DoS WAF',
+      subtitle: 'Feed de eventos ao vivo',
+      eventCount: '{count} eventos',
+      emptyTitle: 'Nenhum evento DoS.',
+      allEvents: 'Todos os eventos',
+      noData: 'Sem dados.',
+    },
     firewallPolicies: {
       title: 'Firewall Policies',
       subtitle: 'Regras ativas, bloqueios e logging',
@@ -944,6 +1012,40 @@ export default {
       title: 'Aparência',
       subtitle: 'Customize cores, layout e densidade do workspace.',
       openBuilder: 'Abrir editor de tema',
+    },
+    themeBuilder: {
+      title: 'Builder de Design System',
+      subtitle: 'Personalize a aparência do Penguard em tempo real',
+      presetsTitle: 'Presets de tema',
+      customMode: 'Modo customizado',
+      colorPalette: 'Paleta de cores',
+      modeLabel: 'Modo {mode}',
+      presets: {
+        custom: 'Builder customizado',
+        fortinet: 'Fortinet clássico',
+        cyber: 'Azul cyber',
+        emerald: 'Esmeralda tóxica',
+        lightOcean: 'Oceano claro',
+        opera: 'Rosa opera',
+      },
+      modes: {
+        light: 'claro',
+        dark: 'escuro',
+      },
+      colors: {
+        primary: 'Primária',
+        secondary: 'Secundária',
+        neutral: 'Neutra (base)',
+      },
+      preview: {
+        headline: 'Headline',
+        body: 'Corpo',
+        primaryButton: 'Primário',
+        secondaryButton: 'Secundário',
+        outlinedButton: 'Contornado',
+        neutralButton: 'Neutro',
+        searchPlaceholder: 'Buscar componentes...',
+      },
     },
     language: {
       title: 'Idioma',

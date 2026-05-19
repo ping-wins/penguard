@@ -389,7 +389,7 @@ async function deleteEndpointFromPanel(endpoint: Endpoint) {
                           class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase"
                           :class="sourceBadgeClass(sourceBadgeFor(incident)!)"
                         >
-                          {{ sourceBadgeFor(incident)!.label }}
+                          {{ t(sourceBadgeFor(incident)!.labelKey) }}
                         </span>
                       </div>
                     </div>

@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import WidgetWafDosRate from '../../src/components/widgets/waf/WidgetWafDosRate.vue'
 import WidgetWafDosTopIps from '../../src/components/widgets/waf/WidgetWafDosTopIps.vue'
 import WidgetWafDosFeed from '../../src/components/widgets/waf/WidgetWafDosFeed.vue'
+import { i18n, setLocale } from '../../src/i18n'
 import { extractSeriesSample } from '../../src/lib/widgetSeries'
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  setLocale('en-US')
 })
 
 // ---------------------------------------------------------------------------
@@ -146,6 +148,9 @@ describe('WidgetWafDosTopIps', () => {
 describe('WidgetWafDosFeed', () => {
   it('renders event messages', () => {
     const wrapper = mount(WidgetWafDosFeed, {
+      global: {
+        plugins: [i18n],
+      },
       props: { ...DEFAULT_PROPS, data: { items: FEED_ITEMS } },
     })
     const text = wrapper.text()
@@ -156,6 +161,9 @@ describe('WidgetWafDosFeed', () => {
 
   it('critical badge has bg-red-500/20 class', () => {
     const wrapper = mount(WidgetWafDosFeed, {
+      global: {
+        plugins: [i18n],
+      },
       props: { ...DEFAULT_PROPS, data: { items: FEED_ITEMS } },
     })
     // Use querySelector with escaped slash for Tailwind class bg-red-500/20
@@ -166,6 +174,9 @@ describe('WidgetWafDosFeed', () => {
 
   it('high badge has bg-orange-500/20 class', () => {
     const wrapper = mount(WidgetWafDosFeed, {
+      global: {
+        plugins: [i18n],
+      },
       props: { ...DEFAULT_PROPS, data: { items: FEED_ITEMS } },
     })
     const el = wrapper.element.querySelector('.bg-orange-500\\/20')
@@ -184,6 +195,9 @@ describe('WidgetWafDosFeed', () => {
       policy: '',
     }
     const wrapper = mount(WidgetWafDosFeed, {
+      global: {
+        plugins: [i18n],
+      },
       props: { ...DEFAULT_PROPS, data: { items: [mediumItem] } },
     })
     const el = wrapper.element.querySelector('.bg-amber-500\\/20')
@@ -193,6 +207,9 @@ describe('WidgetWafDosFeed', () => {
 
   it('empty state when no items', () => {
     const wrapper = mount(WidgetWafDosFeed, {
+      global: {
+        plugins: [i18n],
+      },
       props: { ...DEFAULT_PROPS, data: { items: [] } },
     })
     expect(wrapper.text()).toContain('No DoS events')
