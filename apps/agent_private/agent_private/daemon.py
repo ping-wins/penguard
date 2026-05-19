@@ -19,13 +19,14 @@ from agent_private.runner import (
     build_identity_payload,
     build_payloads_for_kind,
     collect_connections,
+    collect_new_windows_security_events,
     collect_processes,
-    collect_windows_security_events,
     get_ip_addresses,
     post_endpoint_event,
 )
 
 LogFn = Callable[[str], None]
+REMOTE_ACTION_INTERVAL_SECONDS = 10.0
 
 
 class AgentDaemon:
@@ -39,7 +40,7 @@ class AgentDaemon:
         ip_provider: IpProvider = get_ip_addresses,
         process_collector: ProcessCollector = collect_processes,
         connection_collector: ConnectionCollector = collect_connections,
-        windows_security_collector: WindowsSecurityCollector = collect_windows_security_events,
+        windows_security_collector: WindowsSecurityCollector = collect_new_windows_security_events,
     ) -> None:
         self.config = config
         self.post = post
@@ -142,20 +143,57 @@ class AgentDaemon:
         )
         with server.running(port=control_port):
             self._log(f"agent_private daemon running for endpoint {self.config.endpoint_id}")
-            self.collect_now("all")
-            while not self._stop_event.wait(self.config.heartbeat_interval):
-                self.collect_now("heartbeat")
-                try:
-                    self.process_remote_action()
-                except Exception as exc:  # noqa: BLE001
-                    self.state.failed_count += 1
-                    error = _redact(str(exc), self.config.enrollment_token)
-                    self._log(f"remote action polling failed: {error}")
+            intervals = self._telemetry_intervals()
+            next_due = {kind: 0.0 for kind in intervals}
+            next_remote_action_due = 0.0
+            while not self._stop_event.is_set():
+                now = time.monotonic()
+                ran = False
+                for kind, interval in intervals.items():
+                    if now < next_due[kind]:
+                        continue
+                    self.collect_now(kind)
+                    next_due[kind] = now + interval
+                    ran = True
+                if now >= next_remote_action_due:
+                    next_remote_action_due = now + REMOTE_ACTION_INTERVAL_SECONDS
+                    ran = True
+                    self._process_remote_action_safely()
+                wait_seconds = _daemon_sleep_seconds(
+                    [*next_due.values(), next_remote_action_due],
+                    ran=ran,
+                )
+                self._stop_event.wait(wait_seconds)
+
+    def _telemetry_intervals(self) -> dict[str, float]:
+        intervals = {
+            "heartbeat": self.config.heartbeat_interval,
+            "connection.snapshot": self.config.connection_interval,
+            "process.snapshot": self.config.process_interval,
+        }
+        if self.config.windows_security_interval is not None:
+            intervals["windows-security"] = self.config.windows_security_interval
+        return intervals
+
+    def _process_remote_action_safely(self) -> None:
+        try:
+            self.process_remote_action()
+        except Exception as exc:  # noqa: BLE001
+            self.state.failed_count += 1
+            error = _redact(str(exc), self.config.enrollment_token)
+            self._log(f"remote action polling failed: {error}")
 
     def _log(self, message: str) -> None:
         safe_message = _redact(message, self.config.enrollment_token)
         append_agent_log(safe_message)
         self.log(safe_message)
+
+
+def _daemon_sleep_seconds(next_due_values: list[float], *, ran: bool) -> float:
+    if ran:
+        return 0.1
+    now = time.monotonic()
+    return max(0.1, min(1.0, min(next_due_values) - now))
 
 
 def _redact(value: str, secret: str) -> str:

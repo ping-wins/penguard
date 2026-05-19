@@ -92,6 +92,27 @@ def test_daemon_reports_collector_failure_without_crashing():
     assert "secret-token" not in "\n".join(logs)
 
 
+def test_daemon_telemetry_intervals_include_continuous_soc_sources():
+    daemon = AgentDaemon(
+        AgentRunConfig(
+            api_url="http://localhost:8000",
+            endpoint_id="end_win_01",
+            enrollment_token="secret-token",
+            heartbeat_interval=10,
+            connection_interval=20,
+            process_interval=30,
+            windows_security_interval=40,
+        )
+    )
+
+    assert daemon._telemetry_intervals() == {
+        "heartbeat": 10,
+        "connection.snapshot": 20,
+        "process.snapshot": 30,
+        "windows-security": 40,
+    }
+
+
 def test_daemon_claims_remote_collect_now_action_and_reports_result():
     posted: list[dict] = []
 

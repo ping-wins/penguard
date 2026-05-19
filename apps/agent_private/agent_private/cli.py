@@ -32,6 +32,7 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 DEMO_OCCURRED_AT = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
 WINDOWS_SECURITY_EVENT_IDS = (4625, 4672, 4663)
 DEFAULT_CONTROL_URL = "http://127.0.0.1:8765"
+SUSPICIOUS_REMOTE_PORTS = {1337, 4444, 5555, 6667, 31337}
 
 
 def format_timestamp(value: datetime | None = None) -> str:
@@ -191,7 +192,7 @@ def _connection_value(row: Any, key: str, default: Any = None) -> Any:
 def normalize_connection(row: Any) -> dict[str, Any]:
     local_address = _connection_value(row, "localAddress", _connection_value(row, "laddr"))
     remote_address = _connection_value(row, "remoteAddress", _connection_value(row, "raddr"))
-    return {
+    payload = {
         "fd": _connection_value(row, "fd"),
         "family": _socket_constant_name(socket.AddressFamily, _connection_value(row, "family", "")),
         "type": _socket_constant_name(socket.SocketKind, _connection_value(row, "type", "")),
@@ -200,6 +201,32 @@ def normalize_connection(row: Any) -> dict[str, Any]:
         "status": _connection_value(row, "status"),
         "pid": _connection_value(row, "pid"),
     }
+    suspicious_reason = _suspicious_connection_reason(payload)
+    if suspicious_reason:
+        remote_payload = payload.get("remoteAddress")
+        payload["suspicious"] = True
+        payload["suspiciousReason"] = suspicious_reason
+        if isinstance(remote_payload, dict):
+            payload["remoteIp"] = remote_payload.get("ip")
+            payload["remotePort"] = remote_payload.get("port")
+    return payload
+
+
+def _suspicious_connection_reason(connection: dict[str, Any]) -> str | None:
+    remote_payload = connection.get("remoteAddress")
+    if not isinstance(remote_payload, dict):
+        return None
+    remote_port = remote_payload.get("port")
+    try:
+        port = int(remote_port)
+    except (TypeError, ValueError):
+        return None
+    status = str(connection.get("status") or "").upper()
+    if status != "ESTABLISHED":
+        return None
+    if port in SUSPICIOUS_REMOTE_PORTS:
+        return f"established connection to high-risk remote port {port}"
+    return None
 
 
 def collect_connections() -> list[dict[str, Any]]:
@@ -923,22 +950,26 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="Run the endpoint daemon in the foreground.",
     )
-    daemon_parser.add_argument("--heartbeat-interval", type=float, default=30.0)
-    daemon_parser.add_argument("--connection-interval", type=float, default=60.0)
-    daemon_parser.add_argument("--process-interval", type=float, default=300.0)
+    daemon_parser.add_argument("--heartbeat-interval", type=float)
+    daemon_parser.add_argument("--connection-interval", type=float)
+    daemon_parser.add_argument("--process-interval", type=float)
     daemon_parser.add_argument("--windows-security-interval", type=float)
-    daemon_parser.add_argument("--windows-security-limit", type=int, default=50)
+    daemon_parser.add_argument("--windows-security-limit", type=int)
+    daemon_parser.add_argument("--allowed-admin-host", action="append", default=[])
+    daemon_parser.add_argument("--critical-path", action="append", default=[])
     daemon_parser.add_argument("--control-port", type=int, default=8765)
     run_parser = subparsers.add_parser(
         "run-headless",
         parents=[common],
         help="Run the foreground endpoint sensor loop without the TUI.",
     )
-    run_parser.add_argument("--heartbeat-interval", type=float, default=30.0)
-    run_parser.add_argument("--connection-interval", type=float, default=60.0)
-    run_parser.add_argument("--process-interval", type=float, default=300.0)
+    run_parser.add_argument("--heartbeat-interval", type=float)
+    run_parser.add_argument("--connection-interval", type=float)
+    run_parser.add_argument("--process-interval", type=float)
     run_parser.add_argument("--windows-security-interval", type=float)
-    run_parser.add_argument("--windows-security-limit", type=int, default=50)
+    run_parser.add_argument("--windows-security-limit", type=int)
+    run_parser.add_argument("--allowed-admin-host", action="append", default=[])
+    run_parser.add_argument("--critical-path", action="append", default=[])
     run_parser.add_argument("--once", action="store_true")
     status_parser = subparsers.add_parser("status", help="Read status from the local daemon.")
     status_parser.add_argument("--control-url", default=DEFAULT_CONTROL_URL)
@@ -973,6 +1004,9 @@ def build_parser() -> argparse.ArgumentParser:
     config_set.add_argument("--api-url")
     config_set.add_argument("--endpoint-id")
     config_set.add_argument("--enrollment-token")
+    config_set.add_argument("--allowed-admin-host", action="append")
+    config_set.add_argument("--critical-path", action="append")
+    config_set.add_argument("--windows-security-interval", type=float)
     service_parser = subparsers.add_parser("service", help="Manage the Windows Service.")
     service_parser.add_argument(
         "service_action",
@@ -1072,7 +1106,21 @@ def main(argv: Sequence[str] | None = None) -> None:
                 heartbeat_interval=current.heartbeat_interval,
                 connection_interval=current.connection_interval,
                 process_interval=current.process_interval,
-                windows_security_interval=current.windows_security_interval,
+                windows_security_interval=(
+                    args.windows_security_interval
+                    if args.windows_security_interval is not None
+                    else current.windows_security_interval
+                ),
+                allowed_admin_hosts=(
+                    tuple(args.allowed_admin_host)
+                    if args.allowed_admin_host is not None
+                    else current.allowed_admin_hosts
+                ),
+                critical_paths=(
+                    tuple(args.critical_path)
+                    if args.critical_path is not None
+                    else current.critical_paths
+                ),
             )
             save_config(updated)
             print_json(updated.safe_summary())
@@ -1094,9 +1142,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "daemon":
         from agent_private.daemon import AgentDaemon
         from agent_private.runner import AgentRunConfig
-        from agent_private.tui import load_config
+        from agent_private.tui import build_run_config, load_config
 
         stored = load_config()
+        base_config = build_run_config(stored)
         api_url = args.api_url or stored.api_url
         endpoint_id = args.endpoint_id or stored.endpoint_id
         enrollment_token = args.enrollment_token or stored.enrollment_token
@@ -1114,20 +1163,30 @@ def main(argv: Sequence[str] | None = None) -> None:
                 api_url=api_url,
                 endpoint_id=endpoint_id,
                 enrollment_token=enrollment_token,
-                heartbeat_interval=args.heartbeat_interval,
-                connection_interval=args.connection_interval,
-                process_interval=args.process_interval,
-                windows_security_interval=args.windows_security_interval,
-                windows_security_limit=args.windows_security_limit,
+                heartbeat_interval=args.heartbeat_interval or base_config.heartbeat_interval,
+                connection_interval=args.connection_interval or base_config.connection_interval,
+                process_interval=args.process_interval or base_config.process_interval,
+                windows_security_interval=(
+                    args.windows_security_interval
+                    if args.windows_security_interval is not None
+                    else base_config.windows_security_interval
+                ),
+                windows_security_limit=(
+                    args.windows_security_limit or base_config.windows_security_limit
+                ),
+                allowed_admin_hosts=tuple(args.allowed_admin_host)
+                or base_config.allowed_admin_hosts,
+                critical_paths=tuple(args.critical_path) or base_config.critical_paths,
             )
         ).run_foreground(control_port=args.control_port)
         return
 
     if args.command == "run-headless":
         from agent_private.runner import AgentRunConfig, run_agent
-        from agent_private.tui import load_config
+        from agent_private.tui import build_run_config, load_config
 
         stored = load_config()
+        base_config = build_run_config(stored)
         api_url = args.api_url or stored.api_url
         endpoint_id = args.endpoint_id or stored.endpoint_id
         enrollment_token = args.enrollment_token or stored.enrollment_token
@@ -1146,11 +1205,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 api_url=api_url,
                 endpoint_id=endpoint_id,
                 enrollment_token=enrollment_token,
-                heartbeat_interval=args.heartbeat_interval,
-                connection_interval=args.connection_interval,
-                process_interval=args.process_interval,
-                windows_security_interval=args.windows_security_interval,
-                windows_security_limit=args.windows_security_limit,
+                heartbeat_interval=args.heartbeat_interval or base_config.heartbeat_interval,
+                connection_interval=args.connection_interval or base_config.connection_interval,
+                process_interval=args.process_interval or base_config.process_interval,
+                windows_security_interval=(
+                    args.windows_security_interval
+                    if args.windows_security_interval is not None
+                    else base_config.windows_security_interval
+                ),
+                windows_security_limit=(
+                    args.windows_security_limit or base_config.windows_security_limit
+                ),
+                allowed_admin_hosts=tuple(args.allowed_admin_host)
+                or base_config.allowed_admin_hosts,
+                critical_paths=tuple(args.critical_path) or base_config.critical_paths,
             ),
             once=args.once,
         )

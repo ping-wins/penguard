@@ -13,11 +13,13 @@ from agent_private.cli import (
     build_windows_security_event_payloads,
     collect_connections,
     collect_processes,
-    collect_windows_security_events,
     get_ip_addresses,
     post_endpoint_event,
 )
 from agent_private.logs import append_agent_log
+from agent_private.windows_security import collect_new_windows_security_events
+
+DEFAULT_WINDOWS_SECURITY_INTERVAL = 60.0
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,8 @@ class AgentRunConfig:
     windows_security_interval: float | None = None
     process_limit: int | None = None
     windows_security_limit: int = 50
+    allowed_admin_hosts: tuple[str, ...] = ()
+    critical_paths: tuple[str, ...] = ()
 
 
 PostFn = Callable[..., None]
@@ -53,7 +57,7 @@ def run_agent(
     ip_provider: IpProvider = get_ip_addresses,
     process_collector: ProcessCollector = collect_processes,
     connection_collector: ConnectionCollector = collect_connections,
-    windows_security_collector: WindowsSecurityCollector = collect_windows_security_events,
+    windows_security_collector: WindowsSecurityCollector = collect_new_windows_security_events,
 ) -> None:
     intervals: dict[str, float] = {
         "heartbeat": config.heartbeat_interval,
@@ -165,6 +169,8 @@ def build_payloads_for_kind(
             hostname=hostname,
             ip_addresses=ip_addresses,
             events=windows_security_collector(config.windows_security_limit),
+            allowed_admin_hosts=config.allowed_admin_hosts,
+            critical_paths=config.critical_paths,
         )
     return []
 

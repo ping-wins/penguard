@@ -25,7 +25,7 @@ from agent_private.cli import (
     get_ip_addresses,
     post_endpoint_event,
 )
-from agent_private.runner import AgentRunConfig
+from agent_private.runner import DEFAULT_WINDOWS_SECURITY_INTERVAL, AgentRunConfig
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,9 @@ class AgentPrivateConfig:
     heartbeat_interval: float = 30.0
     connection_interval: float = 60.0
     process_interval: float = 300.0
-    windows_security_interval: float = 0.0
+    windows_security_interval: float = DEFAULT_WINDOWS_SECURITY_INTERVAL
+    allowed_admin_hosts: tuple[str, ...] = ()
+    critical_paths: tuple[str, ...] = ()
 
     def safe_summary(self) -> dict[str, str]:
         return {
@@ -47,6 +49,8 @@ class AgentPrivateConfig:
             "connectionInterval": f"{self.connection_interval:g}s",
             "processInterval": f"{self.process_interval:g}s",
             "windowsSecurityInterval": f"{self.windows_security_interval:g}s",
+            "allowedAdminHosts": ", ".join(self.allowed_admin_hosts),
+            "criticalPaths": ", ".join(self.critical_paths),
         }
 
 
@@ -96,9 +100,11 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
             payload,
             "windows_security_interval",
             "windowsSecurityInterval",
-            0.0,
+            DEFAULT_WINDOWS_SECURITY_INTERVAL,
             allow_zero=True,
         ),
+        allowed_admin_hosts=_list_value(payload, "allowed_admin_hosts", "allowedAdminHosts"),
+        critical_paths=_list_value(payload, "critical_paths", "criticalPaths"),
     )
     return AgentPrivateConfig(
         api_url=os.environ.get("AGENT_PRIVATE_API_URL") or stored.api_url,
@@ -110,6 +116,8 @@ def load_config(path: Path | None = None) -> AgentPrivateConfig:
         connection_interval=stored.connection_interval,
         process_interval=stored.process_interval,
         windows_security_interval=stored.windows_security_interval,
+        allowed_admin_hosts=stored.allowed_admin_hosts,
+        critical_paths=stored.critical_paths,
     )
 
 
@@ -143,10 +151,27 @@ def build_run_config(config: AgentPrivateConfig) -> AgentRunConfig:
         heartbeat_interval=config.heartbeat_interval,
         connection_interval=config.connection_interval,
         process_interval=config.process_interval,
-        windows_security_interval=(
-            config.windows_security_interval if config.windows_security_interval > 0 else None
+        windows_security_interval=_runtime_windows_security_interval(
+            config.windows_security_interval
         ),
+        allowed_admin_hosts=config.allowed_admin_hosts,
+        critical_paths=config.critical_paths,
     )
+
+
+def _runtime_windows_security_interval(value: float | None) -> float:
+    if value is None or value <= 0:
+        return DEFAULT_WINDOWS_SECURITY_INTERVAL
+    return value
+
+
+def _list_value(payload: dict[str, Any], snake_key: str, camel_key: str) -> tuple[str, ...]:
+    value = payload.get(snake_key, payload.get(camel_key, ()))
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.split(",") if item.strip())
+    if isinstance(value, list | tuple):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return ()
 
 
 def _interval_value(
@@ -474,7 +499,7 @@ class AgentPrivateTui(App[None]):
             ),
             windows_security_interval=_parse_interval(
                 self.query_one("#windows-security-interval", Input).value.strip(),
-                0.0,
+                DEFAULT_WINDOWS_SECURITY_INTERVAL,
                 allow_zero=True,
             ),
         )

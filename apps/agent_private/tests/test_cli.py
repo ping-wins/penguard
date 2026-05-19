@@ -230,6 +230,34 @@ def test_build_connection_snapshot_payload_preserves_collected_connection_dicts(
     assert payload["attributes"]["connections"] == connections
 
 
+def test_connection_snapshot_marks_high_risk_remote_port_as_suspicious():
+    occurred_at = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+
+    payload = build_connection_snapshot_payload(
+        endpoint_id="end_01",
+        hostname="demo-endpoint-01",
+        ip_addresses=["192.0.2.50"],
+        connections=[
+            {
+                "fd": 7,
+                "family": "AF_INET",
+                "type": "SOCK_STREAM",
+                "localAddress": {"ip": "192.0.2.50", "port": 54122},
+                "remoteAddress": {"ip": "10.10.10.10", "port": 4444},
+                "status": "ESTABLISHED",
+                "pid": 1200,
+            }
+        ],
+        occurred_at=occurred_at,
+    )
+
+    connection = payload["attributes"]["connections"][0]
+    assert connection["suspicious"] is True
+    assert connection["remoteIp"] == "10.10.10.10"
+    assert connection["remotePort"] == 4444
+    assert "high-risk remote port 4444" in connection["suspiciousReason"]
+
+
 def test_parse_windows_security_events_extracts_event_data_from_wevtutil_xml():
     raw_xml = """
     <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">

@@ -39,9 +39,11 @@ daemon in the foreground:
 uv run agent-private daemon
 ```
 
-The foreground daemon exposes a loopback-only control API on `127.0.0.1:8765`.
-The local CLI uses that API for status and immediate collection requests. The
-dashboard never connects inbound to the Windows host.
+As soon as the daemon starts, it posts continuous telemetry to the SOC path:
+heartbeat, process snapshots, connection snapshots and Windows Security Log
+events. The foreground daemon also exposes a loopback-only control API on
+`127.0.0.1:8765`. The local CLI uses that API for status and diagnostic
+collection requests. The dashboard never connects inbound to the Windows host.
 
 ## Daemon, Task And Service CLI
 
@@ -82,6 +84,17 @@ registry state, Task Scheduler output, SCM events, Application events, recent
 agent logs, Python/import checks, current process visibility and API reachability
 probes. This is intended to make the endpoint timeline sufficient for remote
 debugging without copying terminal output from the Windows VM.
+
+Normal SOC telemetry does not depend on `collect-now`. After the Scheduled Task
+or Windows Service starts, the daemon keeps posting on these default intervals:
+
+- heartbeat every 30 seconds.
+- connection snapshots every 60 seconds.
+- Windows Security Log deltas every 60 seconds.
+- process snapshots every 300 seconds.
+
+`collect-now` remains available only as a local diagnostic/control command when
+you need an immediate sample.
 
 The Windows Service wrapper uses `pywin32` on Windows only. Linux CI and local
 developer tests can import the service module safely, but service management
@@ -195,6 +208,32 @@ Supported Windows events:
 Windows audit policy must emit the target events before the command can collect
 them. For file changes, enable object access auditing and configure auditing on
 the directory being tested.
+
+The daemon stores a Windows Security cursor in the local state file and forwards
+only new records after the first daemon interval. This avoids turning old
+Security Log backlog into fake incidents when the agent starts.
+
+The BFF forwards endpoint telemetry to `siem_kowalski` when it can become a SOC
+incident:
+
+- `auth.failed_login` can trigger brute-force incidents when the grouped count
+  reaches the SIEM threshold.
+- `auth.privileged_logon` triggers when the host is outside the configured
+  admin-host baseline.
+- `file.change` triggers when the object path matches a configured critical
+  path.
+- `connection.snapshot` triggers when an established connection is marked
+  suspicious, including high-risk remote ports such as `4444` or `31337`.
+
+Optional baselines can be persisted once and will be used by the daemon on the
+next start:
+
+```powershell
+uv run agent-private config set --allowed-admin-host WIN-SOC-DC01
+uv run agent-private config set --critical-path C:\Sensitive
+uv run agent-private task stop
+uv run agent-private task start
+```
 
 ## CLI Posting Telemetry
 

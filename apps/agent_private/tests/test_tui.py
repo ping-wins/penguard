@@ -23,6 +23,8 @@ def test_config_roundtrip_masks_token(tmp_path):
         connection_interval=20,
         process_interval=30,
         windows_security_interval=40,
+        allowed_admin_hosts=("WIN-DC01",),
+        critical_paths=(r"C:\Sensitive",),
     )
 
     save_config(config, config_path)
@@ -40,6 +42,8 @@ def test_config_roundtrip_masks_token(tmp_path):
         "connectionInterval": "20s",
         "processInterval": "30s",
         "windowsSecurityInterval": "40s",
+        "allowedAdminHosts": "WIN-DC01",
+        "criticalPaths": r"C:\Sensitive",
     }
 
 
@@ -77,7 +81,7 @@ def test_load_config_prefers_onboarding_env_over_stale_saved_config(tmp_path, mo
     assert loaded.process_interval == 56
 
 
-def test_build_run_config_disables_windows_security_when_interval_is_zero():
+def test_build_run_config_enables_windows_security_for_legacy_zero_interval():
     config = AgentPrivateConfig(
         api_url="http://localhost:8000",
         endpoint_id="win-lab",
@@ -96,7 +100,7 @@ def test_build_run_config_disables_windows_security_when_interval_is_zero():
     assert run_config.heartbeat_interval == 10
     assert run_config.connection_interval == 20
     assert run_config.process_interval == 30
-    assert run_config.windows_security_interval is None
+    assert run_config.windows_security_interval == tui.DEFAULT_WINDOWS_SECURITY_INTERVAL
 
 
 def test_tui_renders_windows_friendly_navigation_and_field_labels(tmp_path):

@@ -1511,6 +1511,48 @@ def test_xdr_endpoint_event_gateway_forwards_suspicious_connection_snapshot_to_s
     )
 
 
+def test_xdr_endpoint_event_gateway_reads_nested_remote_address_for_suspicious_connection():
+    client = TestClient(app, client=("192.0.2.50", 55088))
+    fake_xdr = FakeSocClient(
+        {
+            "endpoint": {"id": "demo-endpoint-01"},
+            "timelineItem": {"id": "tl_conn_01", "eventType": "connection.snapshot"},
+        }
+    )
+    fake_siem = FakeSocClient({"id": "evt_conn_01"})
+    app.dependency_overrides[soc.get_xdr_client] = lambda: fake_xdr
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+
+    response = client.post(
+        "/api/weapons/endpoint-events",
+        headers={
+            **csrf_headers(client),
+            "Authorization": "Bearer demo-enrollment-token",
+        },
+        json={
+            "endpointId": "demo-endpoint-01",
+            "eventType": "connection.snapshot",
+            "occurredAt": "2026-05-12T13:35:00.000Z",
+            "hostname": "demo-endpoint-01",
+            "ipAddresses": ["192.0.2.50"],
+            "attributes": {
+                "source": "agent_private.connection_snapshot",
+                "connections": [
+                    {
+                        "remoteAddress": {"ip": "10.10.10.10", "port": 4444},
+                        "suspicious": True,
+                        "suspiciousReason": "high-risk remote port",
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["json"]["eventType"] == "endpoint.suspicious_connection"
+    assert fake_siem.calls[0]["json"]["entities"]["destinationIp"] == "10.10.10.10"
+
+
 def test_xdr_endpoint_event_gateway_requires_enrollment_authorization():
     client = TestClient(app)
     fake_xdr = FakeSocClient({"ok": True})

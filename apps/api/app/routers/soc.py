@@ -2034,6 +2034,9 @@ def _suspicious_endpoint_event_to_siem_event(
             suspicious_connection.get("remoteIp") if suspicious_connection else None,
             suspicious_connection.get("destinationIp") if suspicious_connection else None,
             suspicious_connection.get("dstIp") if suspicious_connection else None,
+            _nested_string(suspicious_connection, "remoteAddress", "ip")
+            if suspicious_connection
+            else None,
         )
         or _first_string(
             attributes.get("processRemoteIp"),
@@ -2093,6 +2096,15 @@ def _first_string(*values: Any) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+def _nested_string(payload: dict[str, Any] | None, key: str, nested_key: str) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    nested = payload.get(key)
+    if not isinstance(nested, dict):
+        return None
+    return _first_string(nested.get(nested_key))
 
 
 def _first_payload_ip(payload: dict[str, Any]) -> str | None:
