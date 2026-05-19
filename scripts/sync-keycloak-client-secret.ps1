@@ -109,3 +109,40 @@ try {
 }
 
 Write-Host "Done. The Keycloak client secret now matches PENGUARD_KEYCLOAK_CLIENT_SECRET in .env."
+
+# Disable Kerberos storage provider when running without a real AD/KDC.
+# The placeholder keytab signals a local-dev or lab setup where no Windows
+# Server is running. Leaving Kerberos enabled causes "Cannot locate KDC"
+# errors that block user creation and login.
+$keytabPath = if ($env_vars.ContainsKey('PENGUARD_KEYTAB_PATH')) { $env_vars['PENGUARD_KEYTAB_PATH'] } else { '' }
+if ($keytabPath -match 'empty-keytab|placeholder') {
+    Write-Host "Empty keytab detected — disabling Kerberos storage provider in realm $REALM..."
+    try {
+        $components = Invoke-RestMethod `
+            -Method Get `
+            -Uri "$KC_BASE/admin/realms/$REALM/components?name=kerberos-penguard" `
+            -Headers @{ Authorization = "Bearer $token" }
+    } catch {
+        Write-Warning "Kerberos component lookup failed (non-fatal): $_"
+        $components = @()
+    }
+    if ($components -and $components.Count -gt 0) {
+        $comp = $components[0]
+        if ($comp.config.enabled -contains 'true') {
+            $comp.config.enabled = @('false')
+            try {
+                Invoke-RestMethod `
+                    -Method Put `
+                    -Uri "$KC_BASE/admin/realms/$REALM/components/$($comp.id)" `
+                    -Headers @{ Authorization = "Bearer $token" } `
+                    -ContentType 'application/json' `
+                    -Body ($comp | ConvertTo-Json -Depth 10 -Compress) | Out-Null
+                Write-Host "Kerberos provider disabled. Enable it manually when a real AD/KDC is available."
+            } catch {
+                Write-Warning "Could not disable Kerberos provider (non-fatal): $_"
+            }
+        } else {
+            Write-Host "Kerberos provider already disabled."
+        }
+    }
+}

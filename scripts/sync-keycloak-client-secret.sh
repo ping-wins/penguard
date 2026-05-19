@@ -81,3 +81,36 @@ curl -s -f -X PUT \
   > /dev/null
 
 echo "Done. The Keycloak client secret now matches PENGUARD_KEYCLOAK_CLIENT_SECRET in .env."
+
+# Disable Kerberos storage provider when running without a real AD/KDC.
+# The placeholder keytab signals a local-dev or lab setup where no Windows
+# Server is running. Leaving Kerberos enabled causes "Cannot locate KDC"
+# errors that block user creation and login.
+KEYTAB_PATH="${PENGUARD_KEYTAB_PATH:-}"
+if echo "${KEYTAB_PATH}" | grep -qE 'empty-keytab|placeholder'; then
+  echo "Empty keytab detected — disabling Kerberos storage provider in realm ${REALM}…"
+  component_id="$(
+    curl -s -f -H "Authorization: Bearer ${token}" \
+         "${KC_BASE}/admin/realms/${REALM}/components?name=kerberos-penguard" \
+      | jq -r '.[0].id // empty'
+  )"
+  if [[ -n "${component_id}" && "${component_id}" != "null" ]]; then
+    component_json="$(
+      curl -s -f -H "Authorization: Bearer ${token}" \
+           "${KC_BASE}/admin/realms/${REALM}/components/${component_id}"
+    )"
+    is_enabled="$(echo "${component_json}" | jq -r '.config.enabled[0] // "false"')"
+    if [[ "${is_enabled}" == "true" ]]; then
+      updated="$(echo "${component_json}" | jq '.config.enabled = ["false"]')"
+      curl -s -f -X PUT \
+           -H "Authorization: Bearer ${token}" \
+           -H "Content-Type: application/json" \
+           --data "${updated}" \
+           "${KC_BASE}/admin/realms/${REALM}/components/${component_id}" > /dev/null \
+        && echo "Kerberos provider disabled. Enable it manually when a real AD/KDC is available." \
+        || echo "Warning: could not disable Kerberos provider (non-fatal)."
+    else
+      echo "Kerberos provider already disabled."
+    fi
+  fi
+fi

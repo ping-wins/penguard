@@ -62,7 +62,7 @@ class PenguinToolIntegrationStore(Protocol):
     ) -> dict[str, Any]:
         pass
 
-    def list_public(self) -> dict[str, list[dict[str, Any]]]:
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
         pass
 
     def get(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any] | None:
@@ -132,8 +132,8 @@ class PenguinToolIntegrationService:
             checked_at=self.clock(),
         )
 
-    def list(self) -> dict[str, list[dict[str, Any]]]:
-        return self.store.list_public()
+    def list(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
+        return self.store.list_public(owner_user_id=owner_user_id)
 
     def get(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any] | None:
         return self.store.get(integration_id=integration_id, owner_user_id=owner_user_id)
@@ -262,7 +262,8 @@ class SqlAlchemyPenguinToolIntegrationStore:
             db.refresh(model)
             return self._payload(model)
 
-    def list_public(self) -> dict[str, list[dict[str, Any]]]:
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
+        _ = owner_user_id
         with self.session_factory() as db:
             rows = db.execute(
                 select(PenguinToolIntegrationModel)

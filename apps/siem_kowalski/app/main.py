@@ -719,6 +719,96 @@ def _has_recent_http_flood_event(
     return False
 
 
+def _enrich_denied_port_scan(event: SecurityEvent) -> SecurityEvent:
+    if event.event_type != "network.deny":
+        return event
+
+    integration_id = event.attributes.get("integrationId") or event.entities.get("integrationId")
+    source_ip = event.attributes.get("sourceIp") or event.entities.get("sourceIp")
+    destination_ip = event.attributes.get("destinationIp") or event.entities.get("destinationIp")
+    destination_port = _coerce_int(event.attributes.get("destinationPort"))
+    if not integration_id or not source_ip or not destination_ip or destination_port is None:
+        return event
+
+    window_start = event.occurred_at - timedelta(seconds=ALLOWED_SCAN_WINDOW_SECONDS)
+    if _has_recent_denied_scan_event(
+        integration_id=integration_id,
+        source_ip=source_ip,
+        destination_ip=destination_ip,
+        window_start=window_start,
+        occurred_at=event.occurred_at,
+    ):
+        return event
+
+    ports: set[int] = {destination_port}
+    related_event_ids: list[str] = [event.id] if event.id else []
+    for payload in store.list_recent_events(
+        event_type="network.deny",
+        limit=ALLOWED_SCAN_EVENT_LIMIT,
+    ):
+        previous = _load_event(payload)
+        if previous.id == event.id:
+            continue
+        if previous.occurred_at < window_start or previous.occurred_at > event.occurred_at:
+            continue
+        if not _same_network_flow(event, previous):
+            continue
+
+        port = _coerce_int(previous.attributes.get("destinationPort"))
+        if port is None:
+            continue
+        ports.add(port)
+        if previous.id:
+            related_event_ids.append(previous.id)
+
+    if len(ports) < ALLOWED_SCAN_MIN_UNIQUE_PORTS:
+        return event
+
+    attributes = {
+        **event.attributes,
+        "integrationId": integration_id,
+        "sourceIp": source_ip,
+        "destinationIp": destination_ip,
+        "attackType": "denied_port_scan",
+        "destinationPorts": sorted(ports),
+        "uniqueDestinationPortCount": len(ports),
+        "scanWindowSeconds": ALLOWED_SCAN_WINDOW_SECONDS,
+        "relatedEventIds": related_event_ids,
+    }
+    return event.model_copy(
+        update={
+            "event_type": "network.scan",
+            "severity": "high",
+            "attributes": attributes,
+        }
+    )
+
+
+def _has_recent_denied_scan_event(
+    *,
+    integration_id: Any,
+    source_ip: Any,
+    destination_ip: Any,
+    window_start: datetime,
+    occurred_at: datetime,
+) -> bool:
+    for payload in store.list_recent_events(event_type="network.scan", limit=50):
+        previous = _load_event(payload)
+        if previous.occurred_at < window_start or previous.occurred_at > occurred_at:
+            continue
+        attributes = previous.attributes
+        if attributes.get("attackType") != "denied_port_scan":
+            continue
+        if attributes.get("integrationId") != integration_id:
+            continue
+        if attributes.get("sourceIp") != source_ip:
+            continue
+        if attributes.get("destinationIp") != destination_ip:
+            continue
+        return True
+    return False
+
+
 def _has_recent_allowed_scan_event(
     *,
     integration_id: Any,
@@ -1146,6 +1236,7 @@ def _ingest_event(event: SecurityEvent) -> tuple[SecurityEvent, Incident | None]
     stored_event = event.model_copy(update={"id": event.id or _new_id("evt")})
     stored_event = _enrich_failed_login_burst(stored_event)
     stored_event = _enrich_allowed_port_scan(stored_event)
+    stored_event = _enrich_denied_port_scan(stored_event)
     stored_event = _enrich_http_flood(stored_event)
     store.add_event(
         _dump(stored_event),

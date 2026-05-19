@@ -117,7 +117,8 @@ class SqlAlchemyFortiGateIntegrationStore:
             db.refresh(model)
             return self._created_payload(model)
 
-    def list_public(self) -> dict[str, list[dict[str, Any]]]:
+    def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
+        _ = owner_user_id
         with self.session_factory() as db:
             rows = db.execute(
                 select(FortiGateIntegrationModel)

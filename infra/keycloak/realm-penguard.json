@@ -51,7 +51,7 @@
         "subComponents": {},
         "config": {
           "priority": ["0"],
-          "enabled": ["true"],
+          "enabled": ["false"],
           "kerberosRealm": ["PENGUARD.LOCAL"],
           "serverPrincipal": ["HTTP/penguard.local@PENGUARD.LOCAL"],
           "keyTab": ["/opt/keycloak/conf/penguard.keytab"],

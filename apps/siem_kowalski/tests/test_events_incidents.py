@@ -507,6 +507,50 @@ def test_allowed_fortigate_traffic_burst_creates_port_scan_incident():
     assert 2219 in incident["attributes"]["destinationPorts"]
 
 
+def test_denied_fortigate_traffic_burst_creates_port_scan_incident():
+    client.post("/admin/reset")
+
+    for port in range(3300, 3320):
+        payload = _event_payload(
+            "network.deny",
+            severity="medium",
+            source_ip="10.10.40.10",
+        )
+        payload["entities"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "10.10.40.10",
+            "destinationIp": "10.10.10.10",
+        }
+        payload["attributes"] = {
+            "integrationId": "int_fgt_lab",
+            "sourceIp": "10.10.40.10",
+            "destinationIp": "10.10.10.10",
+            "destinationPort": port,
+            "action": "deny",
+            "subtype": "forward",
+        }
+        response = client.post("/events", json=payload)
+        assert response.status_code == 200
+
+    incidents = client.get("/incidents").json()
+    matching = [
+        incident
+        for incident in incidents
+        if incident["ruleId"] == "network_scan"
+        and incident["attributes"].get("sourceIp") == "10.10.40.10"
+        and incident["attributes"].get("destinationIp") == "10.10.10.10"
+    ]
+
+    assert len(matching) == 1
+    incident = matching[0]
+    assert incident["severity"] == "high"
+    assert incident["attributes"]["attackType"] == "denied_port_scan"
+    assert incident["attributes"]["uniqueDestinationPortCount"] == 20
+    assert incident["attributes"]["scanWindowSeconds"] == 60
+    assert 3300 in incident["attributes"]["destinationPorts"]
+    assert 3319 in incident["attributes"]["destinationPorts"]
+
+
 def test_fortigate_timeout_traffic_burst_creates_allowed_port_scan_incident():
     client.post("/admin/reset")
 
@@ -597,7 +641,7 @@ def test_fortigate_http_flow_burst_creates_waf_dos_incident():
 
     assert len(matching) == 1
     assert matching[0]["severity"] == "critical"
-    assert matching[0]["triageLevel"] == "T1"
+    assert matching[0]["triageLevel"] == "T3"
     assert matching[0]["attributes"]["attackType"] == "http_flood"
     assert matching[0]["attributes"]["ingestionMode"] == "fortigate_flow_inference"
 
@@ -785,13 +829,13 @@ def test_windows_ad_detection_rules_create_identity_and_file_incidents():
     assert any(
         incident["ruleId"] == "privileged_logon_unusual_host"
         and privileged["id"] in incident["eventIds"]
-        and incident["triageLevel"] == "T1"
+        and incident["triageLevel"] == "T3"
         for incident in incidents
     )
     assert any(
         incident["ruleId"] == "critical_server_file_change"
         and file_change["id"] in incident["eventIds"]
-        and incident["triageLevel"] == "T1"
+        and incident["triageLevel"] == "T3"
         for incident in incidents
     )
 
@@ -976,7 +1020,7 @@ def test_waf_attack_creates_incident():
     incident = response.json()["incident"]
     assert incident["title"] == "FortiWeb WAF attack blocked"
     assert incident["severity"] == "high"
-    assert incident["triageLevel"] == "T1"
+    assert incident["triageLevel"] == "T3"
     assert incident["entities"]["sourceIp"] == "203.0.113.50"
     assert incident["entities"]["httpHost"] == "landing.example.test"
     assert incident["attributes"]["policy"] == "landing-waf-policy"
@@ -1007,4 +1051,4 @@ def test_waf_dos_creates_critical_incident():
     incident = response.json()["incident"]
     assert incident["title"] == "FortiWeb DoS activity detected"
     assert incident["severity"] == "critical"
-    assert incident["triageLevel"] == "T1"
+    assert incident["triageLevel"] == "T3"

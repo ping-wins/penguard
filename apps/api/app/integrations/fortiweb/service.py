@@ -206,7 +206,8 @@ class MockFortiWebIntegrationService:
             },
         }
 
-    def list(self) -> dict[str, Any]:
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
+        _ = owner_user_id
         return {"items": []}
 
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
@@ -395,8 +396,8 @@ class FortiWebIntegrationService:
     def test_connection(self, *, host: str, api_key: str, verify_tls: bool) -> dict[str, Any]:
         return self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
 
-    def list(self) -> dict[str, Any]:
-        return self.store.list_public()
+    def list(self, *, owner_user_id: str) -> dict[str, Any]:
+        return self.store.list_public(owner_user_id=owner_user_id)
 
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
         return self.store.delete(owner_user_id=owner_user_id, integration_id=integration_id)
