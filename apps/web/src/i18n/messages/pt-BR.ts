@@ -477,12 +477,12 @@ export default {
       allSeverities: 'Toda severidade',
     },
     lanes: {
-      T1Label: 'T1 · Crítico',
-      T1Description: 'Severidade alta/crítica — resposta imediata',
+      T1Label: 'T1 · Monitorar',
+      T1Description: 'Baixa/informativa — backlog',
       T2Label: 'T2 · Investigar',
       T2Description: 'Severidade média — triagem necessária',
-      T3Label: 'T3 · Monitorar',
-      T3Description: 'Baixa/informativa — backlog',
+      T3Label: 'T3 · Crítico',
+      T3Description: 'Severidade alta/crítica — resposta imediata',
       empty: 'Sem tickets nesta lane.',
     },
     status: {

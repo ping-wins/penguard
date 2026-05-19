@@ -477,12 +477,12 @@ export default {
       allSeverities: 'All severities',
     },
     lanes: {
-      T1Label: 'T1 · Critical',
-      T1Description: 'High/critical severity — immediate response',
+      T1Label: 'T1 · Monitor',
+      T1Description: 'Low/informational — backlog',
       T2Label: 'T2 · Investigate',
       T2Description: 'Medium severity — analyst triage required',
-      T3Label: 'T3 · Monitor',
-      T3Description: 'Low/informational — backlog',
+      T3Label: 'T3 · Critical',
+      T3Description: 'High/critical severity — immediate response',
       empty: 'No tickets in this lane.',
     },
     status: {

@@ -162,9 +162,9 @@ function thresholdLabel(threshold: any): string {
 
 const lanes = computed<{ level: TriageLevel; label: string; description: string; color: string }[]>(() => [
   {
-    level: 'T1',
-    label: t('tickets.lanes.T1Label'),
-    description: t('tickets.lanes.T1Description'),
+    level: 'T3',
+    label: t('tickets.lanes.T3Label'),
+    description: t('tickets.lanes.T3Description'),
     color: 'border-red-500/40 bg-red-500/10 text-red-300',
   },
   {
@@ -174,9 +174,9 @@ const lanes = computed<{ level: TriageLevel; label: string; description: string;
     color: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
   },
   {
-    level: 'T3',
-    label: t('tickets.lanes.T3Label'),
-    description: t('tickets.lanes.T3Description'),
+    level: 'T1',
+    label: t('tickets.lanes.T1Label'),
+    description: t('tickets.lanes.T1Description'),
     color: 'border-sky-500/40 bg-sky-500/10 text-sky-300',
   },
 ])
