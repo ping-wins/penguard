@@ -19,6 +19,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 DEFAULT_TIMEOUT_SECONDS = 5.0
 DEMO_OCCURRED_AT = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
 WINDOWS_SECURITY_EVENT_IDS = (4625, 4672, 4663)
+SYSMON_EVENT_IDS = (3, 22)
 
 
 def format_timestamp(value: datetime | None = None) -> str:
@@ -238,7 +239,7 @@ def _parse_windows_system_time(value: str | None) -> str:
     return format_timestamp(datetime.fromisoformat(normalized).astimezone(UTC))
 
 
-def parse_windows_security_events(raw_xml: str) -> list[dict[str, Any]]:
+def _parse_windows_event_xml(raw_xml: str) -> list[dict[str, Any]]:
     sanitized = raw_xml.replace('<?xml version="1.0" encoding="utf-8"?>', "").strip()
     if not sanitized:
         return []
@@ -284,6 +285,10 @@ def parse_windows_security_events(raw_xml: str) -> list[dict[str, Any]]:
     return parsed
 
 
+def parse_windows_security_events(raw_xml: str) -> list[dict[str, Any]]:
+    return _parse_windows_event_xml(raw_xml)
+
+
 def collect_windows_security_events(limit: int = 50) -> list[dict[str, Any]]:
     if platform.system() != "Windows":
         return []
@@ -305,6 +310,39 @@ def collect_windows_security_events(limit: int = 50) -> list[dict[str, Any]]:
         text=True,
     )
     return parse_windows_security_events(result.stdout)
+
+
+def parse_sysmon_events(raw_xml: str) -> list[dict[str, Any]]:
+    return [
+        event
+        for event in _parse_windows_event_xml(raw_xml)
+        if event.get("eventId") in SYSMON_EVENT_IDS
+    ]
+
+
+def collect_sysmon_events(limit: int = 50) -> list[dict[str, Any]]:
+    if platform.system() != "Windows":
+        return []
+    query = (
+        "*[System[("
+        + " or ".join(f"EventID={event_id}" for event_id in SYSMON_EVENT_IDS)
+        + ")]]"
+    )
+    result = subprocess.run(
+        [
+            "wevtutil",
+            "qe",
+            "Microsoft-Windows-Sysmon/Operational",
+            f"/q:{query}",
+            "/f:xml",
+            f"/c:{limit}",
+            "/rd:true",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return parse_sysmon_events(result.stdout)
 
 
 def _first_present(data: dict[str, Any], *keys: str) -> str | None:
@@ -332,6 +370,126 @@ def _path_is_under(path: str, roots: Sequence[str]) -> bool:
         if normalized == root_normalized or normalized.startswith(f"{root_normalized}\\"):
             return True
     return False
+
+
+def _int_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+        try:
+            return int(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _process_name(image: str | None) -> str | None:
+    if not image:
+        return None
+    normalized = image.replace("/", "\\")
+    return normalized.rsplit("\\", maxsplit=1)[-1] or None
+
+
+def _dns_results(value: Any) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    return [item.strip() for item in value.split(";") if item.strip()]
+
+
+def _without_none(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def build_sysmon_event_payloads(
+    *,
+    endpoint_id: str,
+    hostname: str,
+    ip_addresses: Sequence[str],
+    events: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for event in events:
+        event_id = event.get("eventId")
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        occurred_at = str(event.get("occurredAt") or format_timestamp())
+        record_id = str(event.get("recordId") or "")
+        image = _first_present(data, "Image")
+        username = _first_present(data, "User")
+        common = {
+            "source": "agent_private.sysmon",
+            "recordId": record_id,
+            "processGuid": _first_present(data, "ProcessGuid"),
+            "processId": _int_value(data.get("ProcessId")),
+            "image": image,
+            "processName": _process_name(image),
+            "username": username,
+        }
+
+        if event_id == 3:
+            destination_ip = _first_present(data, "DestinationIp")
+            destination_hostname = _first_present(data, "DestinationHostname")
+            attributes = _without_none(
+                {
+                    **common,
+                    "sysmonEventId": 3,
+                    "protocol": _first_present(data, "Protocol"),
+                    "sourceIp": _first_present(data, "SourceIp"),
+                    "sourcePort": _int_value(data.get("SourcePort")),
+                    "destinationIp": destination_ip,
+                    "destinationHostname": destination_hostname,
+                    "destinationPort": _int_value(data.get("DestinationPort")),
+                    "ioc": {
+                        "type": "ip",
+                        "value": destination_ip,
+                        "relatedDomain": destination_hostname,
+                    }
+                    if destination_ip
+                    else None,
+                }
+            )
+            payloads.append(
+                build_endpoint_event(
+                    endpoint_id=endpoint_id,
+                    event_type="sysmon.network_connection",
+                    hostname=hostname,
+                    ip_addresses=ip_addresses,
+                    occurred_at=datetime.fromisoformat(occurred_at.replace("Z", "+00:00")),
+                    current_user=username,
+                    attributes=attributes,
+                )
+            )
+            continue
+
+        if event_id == 22:
+            query_name = _first_present(data, "QueryName")
+            attributes = _without_none(
+                {
+                    **common,
+                    "sysmonEventId": 22,
+                    "queryName": query_name,
+                    "queryStatus": _first_present(data, "QueryStatus"),
+                    "queryResults": _dns_results(data.get("QueryResults")),
+                    "ioc": {"type": "domain", "value": query_name} if query_name else None,
+                }
+            )
+            payloads.append(
+                build_endpoint_event(
+                    endpoint_id=endpoint_id,
+                    event_type="sysmon.dns_query",
+                    hostname=hostname,
+                    ip_addresses=ip_addresses,
+                    occurred_at=datetime.fromisoformat(occurred_at.replace("Z", "+00:00")),
+                    current_user=username,
+                    attributes=attributes,
+                )
+            )
+
+    return payloads
 
 
 def build_windows_security_event_payloads(
@@ -577,6 +735,12 @@ def build_parser() -> argparse.ArgumentParser:
     windows_security.add_argument("--limit", type=int, default=50)
     windows_security.add_argument("--allowed-admin-host", action="append", default=[])
     windows_security.add_argument("--critical-path", action="append", default=[])
+    sysmon = subparsers.add_parser(
+        "sysmon",
+        parents=[common],
+        help="Collect Sysmon network and DNS events and build endpoint events.",
+    )
+    sysmon.add_argument("--limit", type=int, default=50)
     subparsers.add_parser(
         "run",
         help="Open the interactive setup TUI and run the agent from there.",
@@ -591,6 +755,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--process-interval", type=float, default=300.0)
     run_parser.add_argument("--windows-security-interval", type=float)
     run_parser.add_argument("--windows-security-limit", type=int, default=50)
+    run_parser.add_argument("--sysmon-interval", type=float)
+    run_parser.add_argument("--sysmon-limit", type=int, default=50)
     run_parser.add_argument("--once", action="store_true")
     subparsers.add_parser("simulate", parents=[common], help="Print deterministic demo events.")
     return parser
@@ -658,6 +824,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 process_interval=args.process_interval,
                 windows_security_interval=args.windows_security_interval,
                 windows_security_limit=args.windows_security_limit,
+                sysmon_interval=args.sysmon_interval,
+                sysmon_limit=args.sysmon_limit,
             ),
             once=args.once,
         )
@@ -700,6 +868,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             events=collect_windows_security_events(limit=args.limit),
             allowed_admin_hosts=args.allowed_admin_host,
             critical_paths=args.critical_path,
+        )
+        if args.post:
+            for event in payloads:
+                _post_if_requested(parser, args, event)
+        print_json(payloads)
+        return
+    elif args.command == "sysmon":
+        payloads = build_sysmon_event_payloads(
+            endpoint_id=endpoint_id,
+            hostname=identity["hostname"],
+            ip_addresses=ip_addresses,
+            events=collect_sysmon_events(limit=args.limit),
         )
         if args.post:
             for event in payloads:

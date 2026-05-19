@@ -21,6 +21,8 @@ EndpointEventType = Literal[
     "login",
     "file.change",
     "suspicious.process",
+    "sysmon.network_connection",
+    "sysmon.dns_query",
     "health.signal",
 ]
 EndpointHealth = Literal["unknown", "healthy", "warning", "critical", "offline"]

@@ -7,8 +7,10 @@ from agent_private.cli import (
     build_heartbeat_payload,
     build_identity_payload,
     build_process_snapshot_payload,
+    build_sysmon_event_payloads,
     build_windows_security_event_payloads,
     main,
+    parse_sysmon_events,
     parse_windows_security_events,
 )
 
@@ -308,6 +310,245 @@ def test_build_windows_security_event_payloads_marks_privileged_and_critical_eve
     assert payloads[1]["attributes"]["objectName"] == r"C:\Sensitive\payroll.xlsx"
 
 
+def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml():
+    raw_xml = """
+    <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+      <System>
+        <Provider Name="Microsoft-Windows-Sysmon" />
+        <EventID>3</EventID>
+        <TimeCreated SystemTime="2026-05-19T12:10:00.0000000Z" />
+        <Computer>WIN-SOC-01.fortidashboard.local</Computer>
+        <EventRecordID>3001</EventRecordID>
+      </System>
+      <EventData>
+        <Data Name="RuleName">NetworkConnect</Data>
+        <Data Name="UtcTime">2026-05-19 12:10:00.000</Data>
+        <Data Name="ProcessGuid">{11111111-1111-1111-1111-111111111111}</Data>
+        <Data Name="ProcessId">1200</Data>
+        <Data Name="Image">C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe</Data>
+        <Data Name="User">FORTIDASHBOARD\\analyst</Data>
+        <Data Name="Protocol">tcp</Data>
+        <Data Name="SourceIp">192.0.2.50</Data>
+        <Data Name="SourcePort">54122</Data>
+        <Data Name="DestinationIp">198.51.100.20</Data>
+        <Data Name="DestinationHostname">suspicious.example</Data>
+        <Data Name="DestinationPort">443</Data>
+      </EventData>
+    </Event>
+    <Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+      <System>
+        <Provider Name="Microsoft-Windows-Sysmon" />
+        <EventID>22</EventID>
+        <TimeCreated SystemTime="2026-05-19T12:10:01.0000000Z" />
+        <Computer>WIN-SOC-01.fortidashboard.local</Computer>
+        <EventRecordID>3002</EventRecordID>
+      </System>
+      <EventData>
+        <Data Name="RuleName">DnsQuery</Data>
+        <Data Name="UtcTime">2026-05-19 12:10:01.000</Data>
+        <Data Name="ProcessGuid">{11111111-1111-1111-1111-111111111111}</Data>
+        <Data Name="ProcessId">1200</Data>
+        <Data Name="QueryName">suspicious.example</Data>
+        <Data Name="QueryStatus">0</Data>
+        <Data Name="QueryResults">198.51.100.20;</Data>
+        <Data Name="Image">C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe</Data>
+        <Data Name="User">FORTIDASHBOARD\\analyst</Data>
+      </EventData>
+    </Event>
+    """
+
+    events = parse_sysmon_events(raw_xml)
+
+    assert events == [
+        {
+            "eventId": 3,
+            "occurredAt": "2026-05-19T12:10:00.000Z",
+            "computer": "WIN-SOC-01.fortidashboard.local",
+            "recordId": "3001",
+            "data": {
+                "RuleName": "NetworkConnect",
+                "UtcTime": "2026-05-19 12:10:00.000",
+                "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
+                "ProcessId": "1200",
+                "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "User": r"FORTIDASHBOARD\analyst",
+                "Protocol": "tcp",
+                "SourceIp": "192.0.2.50",
+                "SourcePort": "54122",
+                "DestinationIp": "198.51.100.20",
+                "DestinationHostname": "suspicious.example",
+                "DestinationPort": "443",
+            },
+        },
+        {
+            "eventId": 22,
+            "occurredAt": "2026-05-19T12:10:01.000Z",
+            "computer": "WIN-SOC-01.fortidashboard.local",
+            "recordId": "3002",
+            "data": {
+                "RuleName": "DnsQuery",
+                "UtcTime": "2026-05-19 12:10:01.000",
+                "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
+                "ProcessId": "1200",
+                "QueryName": "suspicious.example",
+                "QueryStatus": "0",
+                "QueryResults": "198.51.100.20;",
+                "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "User": r"FORTIDASHBOARD\analyst",
+            },
+        },
+    ]
+
+
+def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
+    payloads = build_sysmon_event_payloads(
+        endpoint_id="end_win_01",
+        hostname="WIN-SOC-01",
+        ip_addresses=["192.0.2.50"],
+        events=[
+            {
+                "eventId": 3,
+                "occurredAt": "2026-05-19T12:10:00.000Z",
+                "computer": "WIN-SOC-01",
+                "recordId": "3001",
+                "data": {
+                    "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
+                    "ProcessId": "1200",
+                    "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    "User": r"FORTIDASHBOARD\analyst",
+                    "Protocol": "tcp",
+                    "SourceIp": "192.0.2.50",
+                    "SourcePort": "54122",
+                    "DestinationIp": "198.51.100.20",
+                    "DestinationHostname": "suspicious.example",
+                    "DestinationPort": "443",
+                },
+            },
+            {
+                "eventId": 22,
+                "occurredAt": "2026-05-19T12:10:01.000Z",
+                "computer": "WIN-SOC-01",
+                "recordId": "3002",
+                "data": {
+                    "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
+                    "ProcessId": "1200",
+                    "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    "User": r"FORTIDASHBOARD\analyst",
+                    "QueryName": "suspicious.example",
+                    "QueryStatus": "0",
+                    "QueryResults": "198.51.100.20;",
+                },
+            },
+        ],
+    )
+
+    assert payloads == [
+        {
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.network_connection",
+            "occurredAt": "2026-05-19T12:10:00.000Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": r"FORTIDASHBOARD\analyst",
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 3,
+                "recordId": "3001",
+                "processGuid": "{11111111-1111-1111-1111-111111111111}",
+                "processId": 1200,
+                "image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "processName": "chrome.exe",
+                "username": r"FORTIDASHBOARD\analyst",
+                "protocol": "tcp",
+                "sourceIp": "192.0.2.50",
+                "sourcePort": 54122,
+                "destinationIp": "198.51.100.20",
+                "destinationHostname": "suspicious.example",
+                "destinationPort": 443,
+                "ioc": {
+                    "type": "ip",
+                    "value": "198.51.100.20",
+                    "relatedDomain": "suspicious.example",
+                },
+            },
+        },
+        {
+            "endpointId": "end_win_01",
+            "eventType": "sysmon.dns_query",
+            "occurredAt": "2026-05-19T12:10:01.000Z",
+            "hostname": "WIN-SOC-01",
+            "ipAddresses": ["192.0.2.50"],
+            "currentUser": r"FORTIDASHBOARD\analyst",
+            "attributes": {
+                "source": "agent_private.sysmon",
+                "sysmonEventId": 22,
+                "recordId": "3002",
+                "processGuid": "{11111111-1111-1111-1111-111111111111}",
+                "processId": 1200,
+                "image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "processName": "chrome.exe",
+                "username": r"FORTIDASHBOARD\analyst",
+                "queryName": "suspicious.example",
+                "queryStatus": "0",
+                "queryResults": ["198.51.100.20"],
+                "ioc": {"type": "domain", "value": "suspicious.example"},
+            },
+        },
+    ]
+
+
+def test_sysmon_command_prints_normalized_payloads_without_posting(monkeypatch, capsys):
+    posted = False
+
+    def fail_if_posted(*args, **kwargs):
+        nonlocal posted
+        posted = True
+        raise AssertionError("dry-run should not post")
+
+    monkeypatch.setattr(cli, "post_endpoint_event", fail_if_posted)
+    monkeypatch.setattr(cli, "get_ip_addresses", lambda: ["192.0.2.50"])
+    monkeypatch.setattr(
+        cli,
+        "build_identity_payload",
+        lambda: {
+            "service": "agent_private",
+            "hostname": "WIN-SOC-01",
+            "username": "analyst",
+            "os": "Windows",
+        },
+    )
+    monkeypatch.setattr(
+        cli,
+        "collect_sysmon_events",
+        lambda limit=50: [
+            {
+                "eventId": 22,
+                "occurredAt": "2026-05-19T12:10:01.000Z",
+                "computer": "WIN-SOC-01",
+                "recordId": "3002",
+                "data": {
+                    "ProcessId": "1200",
+                    "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    "User": r"FORTIDASHBOARD\analyst",
+                    "QueryName": "suspicious.example",
+                    "QueryStatus": "0",
+                    "QueryResults": "198.51.100.20;",
+                },
+            }
+        ],
+    )
+
+    main(["sysmon", "--endpoint-id", "end_win_01", "--limit", "10"])
+
+    output = json.loads(capsys.readouterr().out)
+    assert posted is False
+    assert output[0]["eventType"] == "sysmon.dns_query"
+    assert output[0]["attributes"]["ioc"] == {
+        "type": "domain",
+        "value": "suspicious.example",
+    }
+
+
 def test_heartbeat_dry_run_prints_json_without_posting(monkeypatch, capsys):
     posted = False
 
@@ -443,6 +684,10 @@ def test_run_headless_command_calls_foreground_runner(monkeypatch):
             "4",
             "--windows-security-limit",
             "5",
+            "--sysmon-interval",
+            "6",
+            "--sysmon-limit",
+            "7",
             "--once",
         ]
     )
@@ -458,3 +703,5 @@ def test_run_headless_command_calls_foreground_runner(monkeypatch):
     assert config.process_interval == 3
     assert config.windows_security_interval == 4
     assert config.windows_security_limit == 5
+    assert config.sysmon_interval == 6
+    assert config.sysmon_limit == 7

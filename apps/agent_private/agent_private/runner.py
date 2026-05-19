@@ -10,9 +10,11 @@ from agent_private.cli import (
     build_heartbeat_payload,
     build_identity_payload,
     build_process_snapshot_payload,
+    build_sysmon_event_payloads,
     build_windows_security_event_payloads,
     collect_connections,
     collect_processes,
+    collect_sysmon_events,
     collect_windows_security_events,
     get_ip_addresses,
     post_endpoint_event,
@@ -28,8 +30,10 @@ class AgentRunConfig:
     connection_interval: float = 60.0
     process_interval: float = 300.0
     windows_security_interval: float | None = None
+    sysmon_interval: float | None = None
     process_limit: int | None = None
     windows_security_limit: int = 50
+    sysmon_limit: int = 50
 
 
 PostFn = Callable[..., None]
@@ -50,6 +54,7 @@ def run_agent(
     windows_security_collector: Callable[
         [int], list[dict[str, Any]]
     ] = collect_windows_security_events,
+    sysmon_collector: Callable[[int], list[dict[str, Any]]] = collect_sysmon_events,
 ) -> None:
     intervals: dict[str, float] = {
         "heartbeat": config.heartbeat_interval,
@@ -58,6 +63,8 @@ def run_agent(
     }
     if config.windows_security_interval is not None:
         intervals["windows-security"] = config.windows_security_interval
+    if config.sysmon_interval is not None:
+        intervals["sysmon"] = config.sysmon_interval
 
     next_due = {name: 0.0 for name in intervals}
     log(f"agent_private run started for endpoint {config.endpoint_id}")
@@ -76,6 +83,7 @@ def run_agent(
                 process_collector=process_collector,
                 connection_collector=connection_collector,
                 windows_security_collector=windows_security_collector,
+                sysmon_collector=sysmon_collector,
             ):
                 _post_payload(config, payload, post=post, log=log)
             next_due[name] = now + interval
@@ -96,6 +104,7 @@ def _build_due_payloads(
     process_collector: Callable[[int | None], list[dict[str, Any]]],
     connection_collector: Callable[[], list[dict[str, Any]]],
     windows_security_collector: Callable[[int], list[dict[str, Any]]],
+    sysmon_collector: Callable[[int], list[dict[str, Any]]],
 ) -> Sequence[dict[str, Any]]:
     identity = identity_provider()
     ip_addresses = ip_provider()
@@ -132,6 +141,13 @@ def _build_due_payloads(
             hostname=hostname,
             ip_addresses=ip_addresses,
             events=windows_security_collector(config.windows_security_limit),
+        )
+    if name == "sysmon":
+        return build_sysmon_event_payloads(
+            endpoint_id=config.endpoint_id,
+            hostname=hostname,
+            ip_addresses=ip_addresses,
+            events=sysmon_collector(config.sysmon_limit),
         )
     return []
 
