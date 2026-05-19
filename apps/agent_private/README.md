@@ -124,7 +124,8 @@ Navigation:
 Local config path:
 
 - Linux: `$XDG_CONFIG_HOME/agent_private/config.json` or `~/.config/agent_private/config.json`.
-- Windows: `%APPDATA%\agent_private\config.json`.
+- Windows: `%PROGRAMDATA%\agent_private\config.json`, so the Windows Service
+  and the administrator shell read the same agent configuration.
 
 ## CLI Dry-Run Usage
 

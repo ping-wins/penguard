@@ -52,10 +52,14 @@ class AgentPrivateConfig:
 
 def default_config_path() -> Path:
     if os.name == "nt":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        base = Path(_windows_config_base())
     else:
         base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base / "agent_private" / "config.json"
+
+
+def _windows_config_base() -> str:
+    return os.environ.get("PROGRAMDATA", "C:/ProgramData")
 
 
 def load_config(path: Path | None = None) -> AgentPrivateConfig:

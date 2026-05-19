@@ -43,6 +43,12 @@ def test_config_roundtrip_masks_token(tmp_path):
     }
 
 
+def test_windows_default_config_path_uses_programdata(monkeypatch):
+    monkeypatch.setenv("PROGRAMDATA", "C:/ProgramData")
+
+    assert tui._windows_config_base() == "C:/ProgramData"
+
+
 def test_load_config_prefers_onboarding_env_over_stale_saved_config(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     save_config(
