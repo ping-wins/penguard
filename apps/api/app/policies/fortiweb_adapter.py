@@ -16,7 +16,7 @@ from app.policies.models import (
 )
 
 _REVIEWS: dict[str, dict[str, Any]] = {}
-DEFAULT_WAF_DOS_INLINE_PROFILE = "FD Inline DoS Protection"
+DEFAULT_WAF_DOS_INLINE_PROFILE = "Penguard Inline DoS Protection"
 
 
 class FortiWebPolicyAdapter:
@@ -214,7 +214,7 @@ def _configured_policy_rows(integration: dict[str, Any]) -> list[PolicyRow]:
                 direction={},
                 scope={"serverPolicy": target_policy},
                 ownership=PolicyOwnership.EXTERNAL,
-                managedByFortiDashboard=False,
+                managedByPenguard=False,
                 isMutable=True,
                 supports=["edit"],
                 risk={"level": "medium", "reasons": ["WAF policy controls protected traffic"]},
@@ -228,7 +228,7 @@ def _configured_policy_rows(integration: dict[str, Any]) -> list[PolicyRow]:
         )
     ip_list_policy = _nullable_string(integration.get("managedIpListPolicy"))
     if ip_list_policy:
-        owned = ip_list_policy.startswith("FD_")
+        owned = ip_list_policy.startswith("PG_")
         rows.append(
             PolicyRow(
                 id=f"fortiweb:{integration_id}:ip-list:{ip_list_policy}",
@@ -241,10 +241,10 @@ def _configured_policy_rows(integration: dict[str, Any]) -> list[PolicyRow]:
                 action="block",
                 direction={},
                 scope={"serverPolicy": target_policy, "ipListPolicy": ip_list_policy},
-                ownership=PolicyOwnership.FORTIDASHBOARD
+                ownership=PolicyOwnership.PENGUARD
                 if owned
                 else PolicyOwnership.EXTERNAL,
-                managedByFortiDashboard=owned,
+                managedByPenguard=owned,
                 isMutable=owned,
                 supports=[],
                 risk={"level": "high", "reasons": ["IP list can deny traffic to protected apps"]},
@@ -280,8 +280,8 @@ def _block_row(*, integration_id: str, block: dict[str, Any]) -> PolicyRow:
             "ipListPolicy": intent.get("managedIpListPolicy"),
             "incidentId": block.get("incidentId"),
         },
-        ownership=PolicyOwnership.FORTIDASHBOARD,
-        managedByFortiDashboard=True,
+        ownership=PolicyOwnership.PENGUARD,
+        managedByPenguard=True,
         isMutable=block.get("status") == "active",
         supports=["delete"] if block.get("status") == "active" else [],
         risk={"level": "high", "reasons": ["Source IP is denied by FortiWeb"]},
@@ -374,7 +374,7 @@ def _create_waf_dos_review_response(
         ],
         warnings=warnings,
         rollback=[
-            "Run a new FortiDashboard policy review restoring the previous FortiWeb profile fields."
+            "Run a new Penguard policy review restoring the previous FortiWeb profile fields."
         ],
         reviewHash=review["reviewHash"],
     )

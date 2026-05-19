@@ -1,6 +1,6 @@
 export type PolicyProviderType = 'fortigate' | 'fortiweb'
 export type PolicyAction = 'create' | 'edit' | 'enable' | 'disable' | 'delete'
-export type PolicyOwnership = 'fortidashboard' | 'external' | 'unknown'
+export type PolicyOwnership = 'penguard' | 'external' | 'unknown'
 
 export type PolicyProviderSummary = {
   providerType: PolicyProviderType
@@ -22,7 +22,7 @@ export type PolicyRow = {
   direction: Record<string, unknown>
   scope: Record<string, unknown>
   ownership: PolicyOwnership
-  managedByFortiDashboard: boolean
+  managedByPenguard: boolean
   isMutable: boolean
   supports: string[]
   risk: Record<string, unknown>

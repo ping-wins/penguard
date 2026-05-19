@@ -23,10 +23,10 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        assert request.url.path == "/realms/penguard/protocol/openid-connect/token"
         form = dict(item.split("=") for item in request.content.decode().split("&"))
         assert form["grant_type"] == "password"
-        assert form["client_id"] == "fortidashboard-bff"
+        assert form["client_id"] == "penguard-bff"
         assert form["client_secret"] == "dev-client-secret"
         assert form["username"] == "analyst%40example.com"
         assert form["password"] == "correct-horse-battery-staple"
@@ -42,8 +42,8 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -63,7 +63,7 @@ def test_login_uses_keycloak_password_grant_without_exposing_tokens_to_browser_l
 
 def test_login_defaults_to_analyst_when_access_token_has_no_realm_roles():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        assert request.url.path == "/realms/penguard/protocol/openid-connect/token"
         return httpx.Response(
             200,
             json={
@@ -75,8 +75,8 @@ def test_login_defaults_to_analyst_when_access_token_has_no_realm_roles():
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -91,7 +91,7 @@ def test_login_defaults_to_analyst_when_access_token_has_no_realm_roles():
 
 def test_login_defaults_to_analyst_when_access_token_is_malformed():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        assert request.url.path == "/realms/penguard/protocol/openid-connect/token"
         return httpx.Response(
             200,
             json={
@@ -103,8 +103,8 @@ def test_login_defaults_to_analyst_when_access_token_is_malformed():
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -122,12 +122,12 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        if request.url.path == "/realms/fortidashboard/protocol/openid-connect/token":
+        if request.url.path == "/realms/penguard/protocol/openid-connect/token":
             form = dict(item.split("=") for item in request.content.decode().split("&"))
             assert form["grant_type"] == "client_credentials"
             return httpx.Response(200, json={"access_token": "admin-token", "expires_in": 300})
 
-        assert request.url.path == "/admin/realms/fortidashboard/users"
+        assert request.url.path == "/admin/realms/penguard/users"
         assert request.headers["authorization"] == "Bearer admin-token"
         payload = json.loads(request.content)
         assert payload["username"] == "analyst@example.com"
@@ -146,13 +146,13 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
         ]
         return httpx.Response(
             201,
-            headers={"Location": "http://keycloak.local/admin/realms/fortidashboard/users/usr_01"},
+            headers={"Location": "http://keycloak.local/admin/realms/penguard/users/usr_01"},
         )
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -164,8 +164,8 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
     )
 
     assert [request.url.path for request in requests] == [
-        "/realms/fortidashboard/protocol/openid-connect/token",
-        "/admin/realms/fortidashboard/users",
+        "/realms/penguard/protocol/openid-connect/token",
+        "/admin/realms/penguard/users",
     ]
     assert user.id == "usr_01"
     assert user.email == "analyst@example.com"
@@ -174,7 +174,7 @@ def test_create_user_uses_service_account_and_keycloak_admin_api():
 
 def test_login_maps_keycloak_invalid_credentials_to_auth_error():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/realms/fortidashboard/protocol/openid-connect/token"
+        assert request.url.path == "/realms/penguard/protocol/openid-connect/token"
         return httpx.Response(
             401,
             json={
@@ -185,8 +185,8 @@ def test_login_maps_keycloak_invalid_credentials_to_auth_error():
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -200,14 +200,14 @@ def test_login_maps_keycloak_invalid_credentials_to_auth_error():
 
 def test_create_user_maps_keycloak_conflict_to_duplicate_user_error():
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/realms/fortidashboard/protocol/openid-connect/token":
+        if request.url.path == "/realms/penguard/protocol/openid-connect/token":
             return httpx.Response(200, json={"access_token": "admin-token", "expires_in": 300})
         return httpx.Response(409, json={"errorMessage": "User exists with same username"})
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -225,14 +225,14 @@ def test_create_user_maps_keycloak_conflict_to_duplicate_user_error():
 
 def test_create_user_maps_admin_api_transport_failure_to_provider_unavailable():
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/realms/fortidashboard/protocol/openid-connect/token":
+        if request.url.path == "/realms/penguard/protocol/openid-connect/token":
             return httpx.Response(200, json={"access_token": "admin-token", "expires_in": 300})
         raise httpx.ConnectError("connection failed", request=request)
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
@@ -254,8 +254,8 @@ def test_get_userinfo_maps_transport_failure_to_provider_unavailable():
 
     client = KeycloakClient(
         base_url="http://keycloak.local",
-        realm="fortidashboard",
-        client_id="fortidashboard-bff",
+        realm="penguard",
+        client_id="penguard-bff",
         client_secret="dev-client-secret",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )

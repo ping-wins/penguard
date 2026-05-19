@@ -281,7 +281,7 @@ def ai_chat(
     audit_store: Annotated[Any, Depends(get_auth_audit_store)],
     _csrf: Annotated[None, Depends(require_csrf)],
     locale_header: Annotated[
-        str | None, Header(alias="X-FortiDashboard-Locale")
+        str | None, Header(alias="X-Penguard-Locale")
     ] = None,
     accept_language: Annotated[str | None, Header(alias="Accept-Language")] = None,
 ) -> ChatResponse:

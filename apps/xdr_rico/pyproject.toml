@@ -1,7 +1,7 @@
 [project]
 name = "xdr-rico"
 version = "0.1.0"
-description = "XDR/EDR-lite manager service for FortiDashboard"
+description = "XDR/EDR-lite manager service for Penguard"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

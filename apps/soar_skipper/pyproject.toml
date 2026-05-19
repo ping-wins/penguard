@@ -1,7 +1,7 @@
 [project]
 name = "soar-skipper"
 version = "0.1.0"
-description = "SOAR-lite service for FortiDashboard"
+description = "SOAR-lite service for Penguard"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

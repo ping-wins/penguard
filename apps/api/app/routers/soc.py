@@ -110,7 +110,7 @@ class PlaybookWebhookDestinationCreateRequest(BaseModel):
 
 
 class PlaybookWebhookDestinationTestRequest(BaseModel):
-    content: str = Field(default="FortiDashboard test", max_length=1800)
+    content: str = Field(default="Penguard test", max_length=1800)
 
 
 @lru_cache
@@ -430,7 +430,7 @@ def _recommended_template_playbook(
         steps.append(
             {
                 "title": "Prepare FortiGate temporary block",
-                "description": "Create a governed FortiDashboard policy review after approval.",
+                "description": "Create a governed Penguard policy review after approval.",
                 "playbookNodeType": "fortigate.temporary_block",
                 "severity": "high",
                 "requiresApproval": True,
@@ -501,10 +501,10 @@ def _recommended_template_playbook(
 
 def _request_locale(request: Request) -> str:
     """Resolve the locale to use for AI prompts. Trusts the
-    `X-FortiDashboard-Locale` header if present, otherwise falls back to a
+    `X-Penguard-Locale` header if present, otherwise falls back to a
     light `Accept-Language` parse, and finally defaults to `pt-BR`.
     """
-    explicit = request.headers.get("x-fortidashboard-locale")
+    explicit = request.headers.get("x-penguard-locale")
     if explicit and explicit.lower().startswith(("pt", "en")):
         return "en-US" if explicit.lower().startswith("en") else "pt-BR"
     accept = request.headers.get("accept-language", "")

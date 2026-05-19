@@ -2,5 +2,5 @@ This is not a Kerberos keytab.
 
 It exists only so the default Docker Compose stack can start on Linux and
 Windows before an Active Directory lab keytab is generated. For real Kerberos
-SSO, set FORTIDASHBOARD_KEYTAB_PATH=./fortidashboard.keytab in .env and keep
+SSO, set PENGUARD_KEYTAB_PATH=./penguard.keytab in .env and keep
 that keytab untracked.

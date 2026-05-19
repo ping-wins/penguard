@@ -47,9 +47,9 @@ def test_mock_mode_bypasses_check():
 @pytest.mark.parametrize(
     "field,value,expected",
     [
-        ("secret_key", "dev-only-change-me", "FORTIDASHBOARD_SECRET_KEY"),
-        ("secret_key", "change-me-in-local-env", "FORTIDASHBOARD_SECRET_KEY"),
-        ("keycloak_client_secret", "dev-client-secret", "FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET"),
+        ("secret_key", "dev-only-change-me", "PENGUARD_SECRET_KEY"),
+        ("secret_key", "change-me-in-local-env", "PENGUARD_SECRET_KEY"),
+        ("keycloak_client_secret", "dev-client-secret", "PENGUARD_KEYCLOAK_CLIENT_SECRET"),
     ],
 )
 def test_dangerous_default_is_rejected(field: str, value: str, expected: str) -> None:
@@ -63,17 +63,17 @@ def test_missing_token_encryption_key_is_rejected():
     s = _strong_settings(token_encryption_key=None)
     with pytest.raises(DangerousDefaultSecretError) as exc_info:
         _reject_dangerous_defaults(s)
-    assert "FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY" in str(exc_info.value)
+    assert "PENGUARD_TOKEN_ENCRYPTION_KEY" in str(exc_info.value)
 
 
 def test_get_settings_enforces_check(monkeypatch):
     # Clear the lru_cache so each call rebuilds Settings from the env.
     get_settings.cache_clear()
     for name, value in [
-        ("FORTIDASHBOARD_MOCK_MODE", "false"),
-        ("FORTIDASHBOARD_SECRET_KEY", "dev-only-change-me"),
-        ("FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY", ""),
-        ("FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET", "dev-client-secret"),
+        ("PENGUARD_MOCK_MODE", "false"),
+        ("PENGUARD_SECRET_KEY", "dev-only-change-me"),
+        ("PENGUARD_TOKEN_ENCRYPTION_KEY", ""),
+        ("PENGUARD_KEYCLOAK_CLIENT_SECRET", "dev-client-secret"),
     ]:
         monkeypatch.setenv(name, value)
 

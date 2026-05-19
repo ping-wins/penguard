@@ -1,7 +1,7 @@
 # Windows Server EDR + Sysmon Setup
 
 Este runbook descreve as configuracoes necessarias em um Windows Server para
-enviar telemetria de endpoint ao FortiDashboard e permitir enriquecimento de
+enviar telemetria de endpoint ao Penguard e permitir enriquecimento de
 IPs/dominios/URLs suspeitos com Threat Intel.
 
 Status atual:
@@ -21,7 +21,7 @@ Status atual:
 
 ## Objetivo
 
-Permitir que o FortiDashboard veja:
+Permitir que o Penguard veja:
 
 - quais processos abriram conexoes de rede;
 - quais IPs e portas foram acessados;
@@ -40,19 +40,19 @@ apps/api -> siem_kowalski, quando o verdict for suspicious/malicious
 
 ## Pre-requisitos
 
-No FortiDashboard:
+No Penguard:
 
 - `api`, `xdr-rico` e `siem-kowalski` rodando.
 - Endpoint enrollment criado no painel Endpoints.
 - URL do BFF acessivel a partir do Windows Server, por exemplo
-  `http://<fortidashboard-host>:8000`.
+  `http://<penguard-host>:8000`.
 
 No Windows Server:
 
 - Windows Server 2016 ou superior.
 - PowerShell executado como Administrador para instalar o Sysmon.
-- Permissao de saida HTTPS/HTTP ate o FortiDashboard BFF.
-- Checkout do repositorio FortiDashboard, ou pacote do `agent_private`, no host.
+- Permissao de saida HTTPS/HTTP ate o Penguard BFF.
+- Checkout do repositorio Penguard, ou pacote do `agent_private`, no host.
 - `uv` disponivel para executar `agent-private`.
 
 Nunca cole tokens reais em arquivos versionados. O token de enrollment e
@@ -69,11 +69,11 @@ https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
 Extraia em um diretorio operacional, por exemplo:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\FortiDashboard\Sysmon
+New-Item -ItemType Directory -Force C:\Penguard\Sysmon
 ```
 
 Copie `Sysmon64.exe` para esse diretorio e crie
-`C:\FortiDashboard\Sysmon\sysmon-fortidashboard.xml` com uma configuracao
+`C:\Penguard\Sysmon\sysmon-penguard.xml` com uma configuracao
 enxuta.
 
 Configuracao inicial recomendada:
@@ -116,14 +116,14 @@ Configuracao inicial recomendada:
 Instale:
 
 ```powershell
-Set-Location C:\FortiDashboard\Sysmon
-.\Sysmon64.exe -accepteula -i .\sysmon-fortidashboard.xml
+Set-Location C:\Penguard\Sysmon
+.\Sysmon64.exe -accepteula -i .\sysmon-penguard.xml
 ```
 
 Atualizar configuracao depois:
 
 ```powershell
-.\Sysmon64.exe -c .\sysmon-fortidashboard.xml
+.\Sysmon64.exe -c .\sysmon-penguard.xml
 ```
 
 Remover em laboratorio, se necessario:
@@ -134,7 +134,7 @@ Remover em laboratorio, se necessario:
 
 ## Eventos Sysmon usados
 
-O FortiDashboard deve consumir principalmente:
+O Penguard deve consumir principalmente:
 
 | Sysmon Event ID | Uso |
 | --- | --- |
@@ -204,7 +204,7 @@ explicita e auditavel.
 
 ## Configurar agent_private
 
-No painel Endpoints do FortiDashboard:
+No painel Endpoints do Penguard:
 
 1. Clique em adicionar endpoint Windows.
 2. Gere o enrollment.
@@ -215,7 +215,7 @@ Formato do comando:
 
 ```powershell
 cd apps\agent_private
-$env:AGENT_PRIVATE_API_URL = "http://<fortidashboard-host>:8000"
+$env:AGENT_PRIVATE_API_URL = "http://<penguard-host>:8000"
 $env:AGENT_PRIVATE_ENDPOINT_ID = "<enrollment-id>"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
 uv run agent-private run
@@ -232,7 +232,7 @@ Para modo headless em laboratorio:
 
 ```powershell
 cd apps\agent_private
-$env:AGENT_PRIVATE_API_URL = "http://<fortidashboard-host>:8000"
+$env:AGENT_PRIVATE_API_URL = "http://<penguard-host>:8000"
 $env:AGENT_PRIVATE_ENDPOINT_ID = "<enrollment-id>"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN = "<token-returned-once>"
 
@@ -267,13 +267,13 @@ testada. Nao monitore diretorios grandes sem filtro.
 
 ## Como o Threat Intel deve usar os dados
 
-Configure no `.env` do FortiDashboard:
+Configure no `.env` do Penguard:
 
 ```env
-FORTIDASHBOARD_THREAT_INTEL_PROVIDER=virustotal
-FORTIDASHBOARD_THREAT_INTEL_CACHE_TTL_SECONDS=3600
-FORTIDASHBOARD_VIRUSTOTAL_API_KEY=<sua-chave>
-FORTIDASHBOARD_VIRUSTOTAL_BASE_URL=https://www.virustotal.com
+PENGUARD_THREAT_INTEL_PROVIDER=virustotal
+PENGUARD_THREAT_INTEL_CACHE_TTL_SECONDS=3600
+PENGUARD_VIRUSTOTAL_API_KEY=<sua-chave>
+PENGUARD_VIRUSTOTAL_BASE_URL=https://www.virustotal.com
 ```
 
 Depois de editar variaveis da API em Docker, reconstrua o container:
@@ -314,7 +314,7 @@ evento XDR como `threatIntelVerdict` e cria evento SIEM
 - `threatIntelProvider`;
 - `xdrTimelineItemId`.
 
-## Validacao no FortiDashboard
+## Validacao no Penguard
 
 Depois de iniciar o agente:
 
@@ -331,7 +331,7 @@ Depois de iniciar o agente:
 6. Rode `uv run agent-private sysmon --post --limit 50` ou inicie o loop com
    `--sysmon-interval 60` e confirme que os dominios/IPs aparecem na timeline
    do endpoint.
-7. Enriqueca o incidente ou IoC no FortiDashboard e verifique o verdict.
+7. Enriqueca o incidente ou IoC no Penguard e verifique o verdict.
 
 ## Troubleshooting
 
@@ -353,7 +353,7 @@ Sem eventos `22`:
 - confira filtro `DnsQuery`;
 - teste resolucao DNS com `Resolve-DnsName example.com`.
 
-Endpoint nao aparece no FortiDashboard:
+Endpoint nao aparece no Penguard:
 
 - confira `AGENT_PRIVATE_API_URL`;
 - confira conectividade de rede ate `/health`;

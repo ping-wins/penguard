@@ -43,7 +43,7 @@ function localizedError(message: string, code?: string): string {
   return message
 }
 
-const STORAGE_KEY = 'fortidashboard.aiAgent.state'
+const STORAGE_KEY = 'penguard.aiAgent.state'
 
 type PersistedState = {
   session: AgentSessionResponse | null

@@ -7,7 +7,7 @@ import httpx
 
 from app.auth.errors import AuthProviderError
 
-FORTIDASHBOARD_REALM_ROLES = ("admin", "analyst")
+PENGUARD_REALM_ROLES = ("admin", "analyst")
 
 
 @dataclass(frozen=True)
@@ -153,9 +153,9 @@ class KeycloakClient:
             payload.get("email")
             or (preferred_username if "@" in preferred_username else None)
             or (
-                f"{preferred_username}@fortidashboard.local"
+                f"{preferred_username}@penguard.local"
                 if preferred_username
-                else f"{sub}@fortidashboard.local"
+                else f"{sub}@penguard.local"
             )
         )
         display_name = (
@@ -197,7 +197,7 @@ class KeycloakClient:
             return ["analyst"]
 
         product_roles = [
-            role for role in roles if isinstance(role, str) and role in FORTIDASHBOARD_REALM_ROLES
+            role for role in roles if isinstance(role, str) and role in PENGUARD_REALM_ROLES
         ]
         return product_roles or ["analyst"]
 
@@ -242,7 +242,7 @@ class KeycloakClient:
         if response.status_code in {401, 403} and context in {"service_account", "create_user"}:
             raise AuthProviderError(
                 status_code=502,
-                detail="Identity provider rejected FortiDashboard service account",
+                detail="Identity provider rejected Penguard service account",
                 audit_outcome="provider_configuration_error",
             )
 

@@ -1,7 +1,7 @@
 {
-  "realm": "fortidashboard",
+  "realm": "penguard",
   "enabled": true,
-  "displayName": "FortiDashboard",
+  "displayName": "Penguard",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -14,14 +14,14 @@
       },
       {
         "name": "admin",
-        "description": "FortiDashboard administrator role"
+        "description": "Penguard administrator role"
       }
     ]
   },
   "clients": [
     {
-      "clientId": "fortidashboard-bff",
-      "name": "FortiDashboard BFF",
+      "clientId": "penguard-bff",
+      "name": "Penguard BFF",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -32,29 +32,29 @@
       "implicitFlowEnabled": false,
       "redirectUris": [
         "http://localhost:8000/api/auth/sso/kerberos/callback",
-        "http://fortidashboard.local:8000/api/auth/sso/kerberos/callback",
+        "http://penguard.local:8000/api/auth/sso/kerberos/callback",
         "http://api:8000/api/auth/sso/kerberos/callback"
       ],
       "webOrigins": [
         "http://localhost:5173",
         "http://localhost:8000",
-        "http://fortidashboard.local:5173",
-        "http://fortidashboard.local:8000"
+        "http://penguard.local:5173",
+        "http://penguard.local:8000"
       ]
     }
   ],
   "components": {
     "org.keycloak.storage.UserStorageProvider": [
       {
-        "name": "kerberos-fortidashboard",
+        "name": "kerberos-penguard",
         "providerId": "kerberos",
         "subComponents": {},
         "config": {
           "priority": ["0"],
           "enabled": ["true"],
-          "kerberosRealm": ["FORTIDASHBOARD.LOCAL"],
-          "serverPrincipal": ["HTTP/fortidashboard.local@FORTIDASHBOARD.LOCAL"],
-          "keyTab": ["/opt/keycloak/conf/fortidashboard.keytab"],
+          "kerberosRealm": ["PENGUARD.LOCAL"],
+          "serverPrincipal": ["HTTP/penguard.local@PENGUARD.LOCAL"],
+          "keyTab": ["/opt/keycloak/conf/penguard.keytab"],
           "debug": ["false"],
           "allowPasswordAuthentication": ["false"],
           "updateProfileFirstLogin": ["false"],
@@ -66,9 +66,9 @@
   },
   "users": [
     {
-      "username": "service-account-fortidashboard-bff",
+      "username": "service-account-penguard-bff",
       "enabled": true,
-      "serviceAccountClientId": "fortidashboard-bff",
+      "serviceAccountClientId": "penguard-bff",
       "clientRoles": {
         "realm-management": ["manage-users", "view-users"]
       }

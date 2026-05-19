@@ -93,7 +93,7 @@ def test_fortiweb_client_accepts_named_resource_wrapped_in_single_result() -> No
             payload = json.loads(request.content.decode("utf-8"))
             assert payload == {
                 "data": {
-                    "name": "FD Inline DoS Protection",
+                    "name": "Penguard Inline DoS Protection",
                     "application-layer-dos-prevention": "Predefined",
                 }
             }
@@ -118,13 +118,13 @@ def test_fortiweb_client_accepts_named_resource_wrapped_in_single_result() -> No
     )
     created = client.create_inline_protection_profile(
         {
-            "name": "FD Inline DoS Protection",
+            "name": "Penguard Inline DoS Protection",
             "application-layer-dos-prevention": "Predefined",
         }
     )
 
     assert updated["web-protection-profile"] == "Inline Standard Protection"
-    assert created["name"] == "FD Inline DoS Protection"
+    assert created["name"] == "Penguard Inline DoS Protection"
     assert any("web-protection-profile.inline-protection" in path for _, path in seen)
 
 

@@ -103,7 +103,7 @@ describe('tickets realtime store', () => {
       eventId: 'evt_audit_01',
       ticket: {
         id: 'inc_audit_01',
-        title: 'Repeated failed FortiDashboard logins',
+        title: 'Repeated failed Penguard logins',
         severity: 'medium',
         triageLevel: 'T2',
         ticketStatus: 'new',

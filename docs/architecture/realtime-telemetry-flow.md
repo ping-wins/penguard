@@ -164,7 +164,7 @@ SSE snapshots for provider-triggered updates.
 ## FortiGate Metric Semantics
 
 FortiGate CPU, memory, sessions and uptime are not pushed by FortiGate as a
-native metric stream. FortiDashboard currently treats FortiGate syslog as the
+native metric stream. Penguard currently treats FortiGate syslog as the
 provider trigger:
 
 1. A syslog event arrives.
@@ -196,10 +196,10 @@ This means:
 ## Operational Notes
 
 - The API container exposes UDP `5514` by default for FortiGate syslog.
-- `FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST` and
-  `FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT` configure the collector
+- `PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_HOST` and
+  `PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT` configure the collector
   bind address.
-- `FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST` is used when showing
+- `PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST` is used when showing
   operators the collector address to configure on FortiGate.
 - The old scheduler settings still exist for fallback ingestion, but the
   dashboard should not depend on them for normal realtime UX.

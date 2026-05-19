@@ -34,7 +34,7 @@ function httpErrorKind(status: number): WidgetDataErrorKind {
 
 function httpErrorMessage(status: number) {
   if (status === 401 || status === 403) {
-    return 'Widget connection is not authorized. Check the FortiDashboard session or FortiGate integration.'
+    return 'Widget connection is not authorized. Check the Penguard session or FortiGate integration.'
   }
 
   if (status === 404) {

@@ -2,7 +2,7 @@
 
 Este guia leva o operador de lab ponta a ponta: provocar um incidente
 `repeated_failed_login` a partir de uma VM Debian atacante e confirmar o
-alerta resultante nos widgets do FortiDashboard. Assume que você é dono
+alerta resultante nos widgets do Penguard. Assume que você é dono
 da VM FortiGate e da VM Debian (uso autorizado de laboratório).
 
 Última atualização: 2026-05-14.
@@ -100,7 +100,7 @@ end
 `local-traffic enable` + `event enable` é o que faz tentativas SSH contra
 o próprio FortiGate aparecerem no event log.
 
-## Fase 2 — Conectar a integração no FortiDashboard
+## Fase 2 — Conectar a integração no Penguard
 
 No cockpit: Sidebar → Integrations → Add → **FortiGate**.
 
@@ -244,7 +244,7 @@ Padrões esperados:
 - Brute force é teste destrutivo. Só rode contra ativos que você
   controla.
 - Nunca commite a API key gerada nem as senhas do lab no repositório.
-  `.env.local`, `fortidashboard.keytab` e similares estão no gitignore
+  `.env.local`, `penguard.keytab` e similares estão no gitignore
   de propósito.
 - O CIDR do `trusthost` no usuário de API do FortiGate precisa
   permanecer estreito (`/24` da rede do BFF no máximo). Afrouxar isso

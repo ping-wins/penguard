@@ -73,7 +73,7 @@ def test_loader_uses_namespaced_module(tmp_path):
 
     loader.load(_record(addon_dir))
 
-    assert "fortidashboard_addons.demo-core" in sys.modules
+    assert "penguard_addons.demo-core" in sys.modules
 
 
 def test_loader_unload_clears_sys_modules(tmp_path):
@@ -83,7 +83,7 @@ def test_loader_unload_clears_sys_modules(tmp_path):
 
     loader.unload("demo-core")
 
-    assert "fortidashboard_addons.demo-core" not in sys.modules
+    assert "penguard_addons.demo-core" not in sys.modules
 
 
 def test_loader_rejects_missing_entrypoint(tmp_path):

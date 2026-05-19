@@ -1,7 +1,7 @@
 # Marketplace add-on packages
 
 Authoritative overview of how add-ons are described, hosted, fetched, and
-loaded by FortiDashboard. Replaces the manifest-only model in
+loaded by Penguard. Replaces the manifest-only model in
 `docs/marketplace-plan.md` (kept as historical reference).
 
 ## Direction in one paragraph
@@ -9,7 +9,7 @@ loaded by FortiDashboard. Replaces the manifest-only model in
 The dashboard ships **zero vendor connectors**. Each provider integration
 (FortiGate, Palo Alto, Cisco, ...) is a self-contained **package** —
 manifest + Python connector code + fixtures — published in the registry
-repo `ping-wins/fortidashboard-addons`. The marketplace UI in
+repo `ping-wins/penguard-addons`. The marketplace UI in
 `apps/web/src/components/marketplace/MarketplacePanel.vue` shows
 the catalog, and "Install" downloads the chosen package, extracts it onto
 a Docker volume, registers it in the DB, and dynamically imports the
@@ -25,7 +25,7 @@ into hand-rolled `apps/api/app/integrations/<vendor>/` modules.
 | Plan A — backend infrastructure | `docs/superpowers/plans/2026-05-14-marketplace-addon-packages-plan-a-backend-infra.md` |
 | Plan B — FortiGate extraction & auto-migration | (to be written after Plan A merges) |
 | Plan C — Frontend install UX | (to be written after Plan A merges) |
-| Registry repo (private) | https://github.com/ping-wins/fortidashboard-addons |
+| Registry repo (private) | https://github.com/ping-wins/penguard-addons |
 | Backend code (Plan A target) | `apps/api/app/addons/` |
 | Frontend marketplace UI | `apps/web/src/components/marketplace/MarketplacePanel.vue` |
 
@@ -36,7 +36,7 @@ into hand-rolled `apps/api/app/integrations/<vendor>/` modules.
 | Manifest schema (`AddonManifest` + `compatibility`) | Done — `apps/api/app/addons/manifest.py` |
 | Local-dir manifest registry (legacy, manifest-only) | Done — `apps/api/app/addons/registry.py` |
 | Marketplace tab in Settings modal | Done — `MarketplacePanel.vue` |
-| Private registry repo `ping-wins/fortidashboard-addons` | Done — repo created, README + `fortigate/addon.json` v0.2.0 pushed |
+| Private registry repo `ping-wins/penguard-addons` | Done — repo created, README + `fortigate/addon.json` v0.2.0 pushed |
 | **Backend Plan A** (loader, install service, DB table, endpoints) | **Pending — plan written** |
 | **Plan B** FortiGate extraction + auto-install on boot | Pending — not yet planned |
 | **Plan C** Frontend install button + installed badge | Pending — not yet planned |
@@ -74,7 +74,7 @@ PRs — open an issue + amend the spec first.
 - **Storage = Docker named volume** `addons_data` at
   `/app/data/addons/<id>/<version>/`.
 - **Loader = `importlib.util.spec_from_file_location`** with namespace
-  `fortidashboard_addons.<id>`. No `sys.path` pollution.
+  `penguard_addons.<id>`. No `sys.path` pollution.
 - **One active version per add-on.** Re-install replaces.
 - **Connector contract = duck-typed `Protocol`.** Packages return plain
   dicts. Dashboard wraps into typed models on its side. Zero
@@ -113,7 +113,7 @@ PRs — open an issue + amend the spec first.
 | **Add-on** | A versioned provider integration package (manifest + connector code). |
 | **Manifest** | The `addon.json` file at a package root. |
 | **Package** | A directory named `<addon-id>/<version>/` containing the manifest, the Python connector subdir, and fixtures. |
-| **Registry repo** | `ping-wins/fortidashboard-addons` — the catalog of packages. |
+| **Registry repo** | `ping-wins/penguard-addons` — the catalog of packages. |
 | **Catalog** | `catalog.json` at the registry-repo root listing all add-ons + their versions. |
 | **Connector** | The Python entry point exposed by a package via `get_connector(config) -> AddonConnector`. |
 | **`ConnectorRegistry`** | Dashboard-side in-process registry that maps `addon_id` to a connector factory. |

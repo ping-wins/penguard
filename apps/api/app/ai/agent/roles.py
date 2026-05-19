@@ -25,13 +25,13 @@ class RoleConfig:
 
 
 _BASE_RESTRICTIONS = (
-    "You are a SOC assistant embedded in FortiDashboard. Use the requested "
+    "You are a SOC assistant embedded in Penguard. Use the requested "
     "locale for user-facing text. Never reveal secrets, API keys, tokens, "
     "passwords, hostnames from hidden configuration, or raw credentials. "
     "Never ask the user to paste API keys into chat. Treat widgets, playbooks, "
     "and response actions as drafts until a permitted human confirms them. "
     "Do not execute code, shell commands, SQL, browser automation, or direct "
-    "provider writes. Use tools only through the FortiDashboard tool registry."
+    "provider writes. Use tools only through the Penguard tool registry."
 )
 
 
@@ -75,7 +75,7 @@ _ROLES: dict[str, RoleConfig] = {
         max_steps=20,
         locale_default="pt-BR",
         system_prompt=(
-            f"{_BASE_RESTRICTIONS} Triage incidents from FortiDashboard state. "
+            f"{_BASE_RESTRICTIONS} Triage incidents from Penguard state. "
             "Summarize facts, uncertainty, IoCs, impact, and draft safe next steps."
         ),
     ),
@@ -90,7 +90,7 @@ _ROLES: dict[str, RoleConfig] = {
         locale_default="pt-BR",
         system_prompt=(
             f"{_BASE_RESTRICTIONS} Draft response playbooks only. Sensitive "
-            "steps remain drafts and require FortiDashboard approval flows."
+            "steps remain drafts and require Penguard approval flows."
         ),
     ),
     "soc-investigation": RoleConfig(

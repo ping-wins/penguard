@@ -51,7 +51,7 @@ def _build_tarball(addon_id: str = "demo-core", version: str = "1.0.0") -> bytes
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        root = "ping-wins-fortidashboard-addons-deadbeef"
+        root = "ping-wins-penguard-addons-deadbeef"
 
         def add_bytes(name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name=name)
@@ -82,7 +82,7 @@ def test_install_extracts_and_registers(session, tmp_path):
     service = InstallService(
         session_factory=lambda: session,
         storage_dir=tmp_path,
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="t",
         loader=AddonLoader(),
         transport=_ok_transport(tarball),

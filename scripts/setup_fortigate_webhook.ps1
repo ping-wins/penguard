@@ -1,5 +1,5 @@
 # Provisions the FortiGate Automation Stitch that pushes admin-login-failed
-# events to the FortiDashboard BFF ingestion endpoint. Idempotent: deletes
+# events to the Penguard BFF ingestion endpoint. Idempotent: deletes
 # stitch+action+trigger first if they already exist, then re-creates them.
 #
 # Usage:
@@ -15,9 +15,9 @@ param(
     [Parameter(Mandatory)] [string] $FortiGateApiKey,
     [Parameter(Mandatory)] [string] $BffUrl,
     [Parameter(Mandatory)] [string] $IngestToken,
-    [string] $TriggerName = "FD-Brute-Force",
-    [string] $ActionName = "FD-Ingest-Webhook",
-    [string] $StitchName = "FD-Hydra-Detection",
+    [string] $TriggerName = "PG-Brute-Force",
+    [string] $ActionName = "PG-Ingest-Webhook",
+    [string] $StitchName = "PG-Hydra-Detection",
     [int] $LogId = 32002
 )
 
@@ -64,7 +64,7 @@ function Remove-IfExists {
     }
 }
 
-Write-Host "==> Cleaning previous FortiDashboard automation objects" -ForegroundColor Cyan
+Write-Host "==> Cleaning previous Penguard automation objects" -ForegroundColor Cyan
 Remove-IfExists -Path "/api/v2/cmdb/system/automation-stitch"  -Name $StitchName
 Remove-IfExists -Path "/api/v2/cmdb/system/automation-action"  -Name $ActionName
 Remove-IfExists -Path "/api/v2/cmdb/system/automation-trigger" -Name $TriggerName
@@ -72,7 +72,7 @@ Remove-IfExists -Path "/api/v2/cmdb/system/automation-trigger" -Name $TriggerNam
 Write-Host "==> Creating trigger '$TriggerName' (event-type: ssh-logs)" -ForegroundColor Cyan
 $triggerBody = @{
     name           = $TriggerName
-    description    = "FortiDashboard: fire on SSH/admin login activity (hydra brute-force)"
+    description    = "Penguard: fire on SSH/admin login activity (hydra brute-force)"
     "trigger-type" = "event-based"
     "event-type"   = "ssh-logs"
 }
@@ -84,7 +84,7 @@ $payloadTemplate = @'
 '@
 $actionBody = @{
     name           = $ActionName
-    description    = "POST FortiGate event log to FortiDashboard ingestion endpoint"
+    description    = "POST FortiGate event log to Penguard ingestion endpoint"
     "action-type"  = "webhook"
     protocol       = "http"
     method         = "post"

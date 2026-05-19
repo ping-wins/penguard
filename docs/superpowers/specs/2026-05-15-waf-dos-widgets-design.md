@@ -9,7 +9,7 @@ integration into the existing widget canvas.
 
 ## Context
 
-FortiWeb push telemetry already lands in FortiDashboard via
+FortiWeb push telemetry already lands in Penguard via
 `POST /api/soc/ingest/fortiweb`. The SIEM (`siem_kowalski`) classifies DoS
 events as `waf.dos` and creates `fortiweb_dos_activity` incidents. No widget
 exists yet to surface this data in the canvas. The lab topology

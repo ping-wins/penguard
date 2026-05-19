@@ -7,7 +7,7 @@
 
 ## Vision
 
-Make the AI agent in FortiDashboard actually useful: plug real LLM providers (Anthropic + OpenAI) into the streaming agent runner, route the right model per task automatically, stream tokens in real time, and let some agent roles do more than read — all with token budgets, per-tier tool capabilities, and a working approval gate for write actions.
+Make the AI agent in Penguard actually useful: plug real LLM providers (Anthropic + OpenAI) into the streaming agent runner, route the right model per task automatically, stream tokens in real time, and let some agent roles do more than read — all with token budgets, per-tier tool capabilities, and a working approval gate for write actions.
 
 Today `app/ai/agent/` only ships a `ScriptedBackend`; the real LLM code lives in a separate `app/ai/provider.py` used by `/api/ai/chat`'s incident analysis flow, not by the streaming agent runner. The cockpit chat experience is therefore mock-only end-to-end. This spec fixes that.
 
@@ -93,11 +93,11 @@ By convention only `deep`-tier roles include `write` in `allowed_tool_categories
 | balanced | `claude-sonnet-4-6` | `gpt-4o` |
 | deep | `claude-opus-4-7` | `gpt-4o` (alias; OpenAI has no Opus equivalent) |
 
-ENV escape hatch per role: `FORTIDASHBOARD_ROLE_<ROLE_ID>_TIER` overrides the tier without code change (e.g. `FORTIDASHBOARD_ROLE_CHAT_TIER=deep`).
+ENV escape hatch per role: `PENGUARD_ROLE_<ROLE_ID>_TIER` overrides the tier without code change (e.g. `PENGUARD_ROLE_CHAT_TIER=deep`).
 
 ### System prompts
 
-Hardcoded in `roles.py`. Each declares: identity ("SOC assistant for FortiDashboard"), locale-driven language, hard restrictions (drafts until user confirms; never emit secrets; never request API keys), tool catalogue (rendered from the filtered set), and stopping criteria.
+Hardcoded in `roles.py`. Each declares: identity ("SOC assistant for Penguard"), locale-driven language, hard restrictions (drafts until user confirms; never emit secrets; never request API keys), tool catalogue (rendered from the filtered set), and stopping criteria.
 
 ## Backend protocol
 
@@ -281,5 +281,5 @@ Phased delivery — each phase is independently shippable, ordered A→B→C→D
 4. `tokens_in_total + tokens_out_total > role.token_budget` aborts the session with `budget_exceeded`.
 5. A user without credentials falls back to `ScriptedBackend` without raising.
 6. Switching `UserAiPreference.provider` between `anthropic` and `openai` is picked up by the next session.
-7. `FORTIDASHBOARD_ROLE_CHAT_TIER=deep` forces the `chat` role to use the deep tier without code change.
+7. `PENGUARD_ROLE_CHAT_TIER=deep` forces the `chat` role to use the deep tier without code change.
 8. RBAC slug `ai.agent.approve` is required by the approvals endpoint, CSRF enforced.

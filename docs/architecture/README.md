@@ -17,7 +17,7 @@ status in `docs/product/`.
 
 | Decision | Covers |
 | --- | --- |
-| [ADR-2026-05-15-fortigate-policy-orchestration.md](decisions/ADR-2026-05-15-fortigate-policy-orchestration.md) | FortiGate traffic-policy writes as governed FortiDashboard orchestration instead of draft/mock-only guidance. |
+| [ADR-2026-05-15-fortigate-policy-orchestration.md](decisions/ADR-2026-05-15-fortigate-policy-orchestration.md) | FortiGate traffic-policy writes as governed Penguard orchestration instead of draft/mock-only guidance. |
 | [ADR-2026-05-17-admin-policy-manager.md](decisions/ADR-2026-05-17-admin-policy-manager.md) | Admin-controlled policy management across connected SOC providers, including external/customer-owned policies, with review and audit gates. |
 
 ## Update Rules

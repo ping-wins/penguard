@@ -19,15 +19,15 @@ Contract changes must update:
 
 Frontend login/register pages call FastAPI auth endpoints. The backend response body contains user/session context only; access and refresh tokens must never be returned to the browser.
 
-The backend owns the `Set-Cookie` behavior for `fortidashboard_session`. Frontend code should use `GET /api/auth/me` to hydrate the current user after page reloads.
+The backend owns the `Set-Cookie` behavior for `penguard_session`. Frontend code should use `GET /api/auth/me` to hydrate the current user after page reloads.
 
-In live mode (`FORTIDASHBOARD_MOCK_MODE=false`), FastAPI authenticates against Keycloak and persists the browser session in Postgres. Keycloak tokens are stored only in the `auth_sessions.token_blob` encrypted field, `expires_at` invalidates expired sessions, and tokens must never appear in JSON responses.
+In live mode (`PENGUARD_MOCK_MODE=false`), FastAPI authenticates against Keycloak and persists the browser session in Postgres. Keycloak tokens are stored only in the `auth_sessions.token_blob` encrypted field, `expires_at` invalidates expired sessions, and tokens must never appear in JSON responses.
 
 Before `POST /api/auth/register`, `POST /api/auth/login`, or `POST /api/auth/logout`, frontend code must call `GET /api/auth/csrf` and echo `csrfToken` in `X-CSRF-Token`. Failed CSRF checks return `403`; login/register rate limits return `429`; auth security events are recorded in `auth_audit_events` in live mode.
 
 ## FortiGate Integration Contract
 
-`POST /api/integrations/fortigate` accepts `name`, `host`, `apiKey`, and `verifyTls`. In mock mode, it returns the shared fixture. In live mode (`FORTIDASHBOARD_MOCK_MODE=false`), the backend persists the integration in Postgres and stores the API key only as encrypted `fortigate_integrations.api_key_blob`.
+`POST /api/integrations/fortigate` accepts `name`, `host`, `apiKey`, and `verifyTls`. In mock mode, it returns the shared fixture. In live mode (`PENGUARD_MOCK_MODE=false`), the backend persists the integration in Postgres and stores the API key only as encrypted `fortigate_integrations.api_key_blob`.
 
 Integration responses must never include `apiKey`.
 
@@ -45,9 +45,9 @@ The live FortiGate client currently targets these read endpoints:
 Normalized responses cover system status, interfaces, policies, and threat logs. If a lab token returns `401`, verify the FortiGate `api-user` token, `accprofile`, `vdom`, and `trusthost` before changing backend code.
 
 FortiGate policy orchestration is no longer a draft/mock-only contract. The
-current product path uses FortiDashboard-owned policy APIs that perform
+current product path uses Penguard-owned policy APIs that perform
 preflight reads, show a diff/summary, require admin confirmation, apply only
-approved FortiDashboard-owned policy changes and persist audit records. AI,
+approved Penguard-owned policy changes and persist audit records. AI,
 SIEM detections and background jobs must not apply policy changes without this
 human approval path.
 

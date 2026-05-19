@@ -63,7 +63,7 @@ describe('WidgetSocPolicyManager', () => {
               direction: { source: ['port2'], destination: ['port3'] },
               scope: { source: ['LAN_NET'], destination: ['WAN_NET'], service: ['HTTPS'] },
               ownership: 'external',
-              managedByFortiDashboard: false,
+              managedByPenguard: false,
               isMutable: true,
               supports: ['edit', 'disable', 'delete'],
               risk: { level: 'medium' },
@@ -81,7 +81,7 @@ describe('WidgetSocPolicyManager', () => {
               direction: {},
               scope: { source: ['203.0.113.10'] },
               ownership: 'external',
-              managedByFortiDashboard: false,
+              managedByPenguard: false,
               isMutable: true,
               supports: ['edit', 'disable', 'delete'],
               risk: { level: 'high' },
@@ -188,8 +188,8 @@ describe('WidgetSocPolicyManager', () => {
           status: 'pending_review',
           title: 'create FortiGate policy',
           before: null,
-          after: { summary: 'FD_WEB_ALLOW' },
-          diff: [{ field: 'name', before: null, after: 'FD_WEB_ALLOW' }],
+          after: { summary: 'PG_WEB_ALLOW' },
+          diff: [{ field: 'name', before: null, after: 'PG_WEB_ALLOW' }],
           warnings: [],
           rollback: ['Delete the created policy.'],
           reviewHash: 'hash_create_01',
@@ -217,7 +217,7 @@ describe('WidgetSocPolicyManager', () => {
     expect(wrapper.find('[data-test="policy-structured-form"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="policy-payload"]').exists()).toBe(false)
 
-    await wrapper.find('[data-test="policy-form-name"]').setValue('FD_WEB_ALLOW')
+    await wrapper.find('[data-test="policy-form-name"]').setValue('PG_WEB_ALLOW')
     await wrapper.find('[data-test="policy-form-srcintf"]').setValue('port2')
     await wrapper.find('[data-test="policy-form-dstintf"]').setValue('port3')
     await wrapper.find('[data-test="policy-form-srcaddr"]').setValue('LAN_NET')
@@ -233,7 +233,7 @@ describe('WidgetSocPolicyManager', () => {
       policyId: null,
       action: 'create',
       payload: {
-        name: 'FD_WEB_ALLOW',
+        name: 'PG_WEB_ALLOW',
         srcintf: [{ name: 'port2' }],
         dstintf: [{ name: 'port3' }],
         srcaddr: [{ name: 'LAN_NET' }],

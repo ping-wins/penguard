@@ -30,7 +30,7 @@ export default {
   },
   auth: {
     login: {
-      title: 'FortiDashboard',
+      title: 'Penguard',
       subtitle: 'Next-Gen SOC Analytics',
       emailLabel: 'Email Corporativo',
       emailPlaceholder: "analyst{'@'}soc.local",
@@ -523,7 +523,7 @@ export default {
       kinds: {
         temporaryBlock: 'Bloqueio temporário',
         labAllowLog: 'Lab permitir/log',
-        fortiDashboard: 'FortiDashboard',
+        penguard: 'Penguard',
         standard: 'Padrão',
       },
     },
@@ -586,7 +586,7 @@ export default {
         disabled: 'Desabilitada',
       },
       ownership: {
-        fortidashboard: 'FortiDashboard',
+        penguard: 'Penguard',
         external: 'Externa',
         unknown: 'Desconhecida',
       },
@@ -749,7 +749,7 @@ export default {
     },
     policy: {
       title: 'Revisão de policy FortiGate',
-      subtitle: 'Aprove a policy temporária do firewall a partir do ticket antes do FortiDashboard aplicar.',
+      subtitle: 'Aprove a policy temporária do firewall a partir do ticket antes do Penguard aplicar.',
       integrationId: 'Integração FortiGate',
       sourceInterface: 'Interface de origem',
       destinationInterface: 'Interface de destino',
@@ -930,7 +930,7 @@ export default {
     },
     profile: {
       title: 'Perfil do usuário',
-      subtitle: 'Informações da sua sessão atual no FortiDashboard.',
+      subtitle: 'Informações da sua sessão atual no Penguard.',
       emailLabel: 'Email',
       displayNameLabel: 'Nome de exibição',
       rolesLabel: 'Funções',

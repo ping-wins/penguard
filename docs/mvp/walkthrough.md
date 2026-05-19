@@ -11,7 +11,7 @@ The total demo runs in **2-3 minutes** including the AI containment walkthrough.
 
 - `docker compose up --build` brings up `api`, `web`, `siem-kowalski`,
   `soar-skipper`, `xdr-rico`, `db`, `redis`, `keycloak`.
-- Web served at `http://localhost:5173` (or `http://fortidashboard.local:5173`
+- Web served at `http://localhost:5173` (or `http://penguard.local:5173`
   if the Kerberos lab is configured).
 - A signed-in analyst user. Use `analyst@example.com` /
   `correct-horse-battery-staple` (realm seed) for the recording. The Keycloak
@@ -21,9 +21,9 @@ The total demo runs in **2-3 minutes** including the AI containment walkthrough.
 
   ```yaml
   # docker-compose.yml (api service env)
-  FORTIDASHBOARD_AI_PROVIDER: anthropic
-  FORTIDASHBOARD_AI_API_KEY: sk-ant-...
-  FORTIDASHBOARD_AI_MODEL: claude-3-5-haiku-latest
+  PENGUARD_AI_PROVIDER: anthropic
+  PENGUARD_AI_API_KEY: sk-ant-...
+  PENGUARD_AI_MODEL: claude-3-5-haiku-latest
   ```
 
   Default is the deterministic `scripted` adapter — the demo always works
@@ -61,7 +61,7 @@ directly so the analyst doesn't have to re-run docker compose. The reset is a
 single call:
 
 ```powershell
-$cookie = "fortidashboard_session=COOKIE"
+$cookie = "penguard_session=COOKIE"
 $csrf = (curl.exe -s -H "Cookie: $cookie" http://localhost:8000/api/auth/csrf | ConvertFrom-Json).csrfToken
 curl.exe -X POST -H "Cookie: $cookie" -H "X-CSRF-Token: $csrf" `
   http://localhost:8000/api/soc/demo/replay

@@ -39,14 +39,14 @@ which real SOC use cases should drive the next Penguin tools implementation.
 1. Preserve the current deterministic demo path, but label it as demo-only in
    UI, docs and logs.
 2. Add an operator setup path for Windows Server AD SSO:
-   AD DS/DNS, `fortidashboard.local`, SPN, keytab, Keycloak Kerberos provider,
+   AD DS/DNS, `penguard.local`, SPN, keytab, Keycloak Kerberos provider,
    browser intranet/SPNEGO settings and callback URL verification.
 3. Add a Windows-ready `agent_private` run mode with enrollment, heartbeat,
    process snapshot, connection snapshot and Windows event collection.
 4. Persist `soar_skipper` playbooks and run history in SQL tables.
 5. Add real but safe SOAR connector steps: case note, audit note, webhook
    dry-run, email/Teams notification dry-run and FortiGate policy
-   orchestration through FortiDashboard approval gates.
+   orchestration through Penguard approval gates.
 6. Add scheduled/manual FortiGate event ingestion with aggregation, not only
    one-off manual forwarding.
 7. Add UI labels that distinguish live provider data, seeded demo data and
@@ -134,7 +134,7 @@ Flow:
 FortiGate traffic logs -> apps/api FortiGate ingest
 apps/api aggregation by source/destination -> siem_kowalski network.deny
 denied_traffic_burst rule -> ticket T1
-soar_skipper requests approved FortiDashboard policy orchestration
+soar_skipper requests approved Penguard policy orchestration
 ```
 
 Required work:
@@ -206,10 +206,10 @@ Required work:
 ## Windows Server Lab Notes
 
 - Keep all AD lab values, keytabs, hostnames and IPs out of committed secrets.
-- Browser-facing SSO URLs may use `fortidashboard.local` because the Kerberos
+- Browser-facing SSO URLs may use `penguard.local` because the Kerberos
   service principal is host-sensitive.
 - The API container must still use `http://keycloak:8080` for
-  `FORTIDASHBOARD_KEYCLOAK_BASE_URL`.
+  `PENGUARD_KEYCLOAK_BASE_URL`.
 - Verify SSO in this order: DNS resolution, SPN/keytab, Keycloak provider,
   `/api/auth/sso/kerberos/init` redirect, callback state, BFF session cookie.
 

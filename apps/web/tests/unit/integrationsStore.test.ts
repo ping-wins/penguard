@@ -359,7 +359,7 @@ describe('useIntegrationsStore', () => {
     authStore.csrfToken = 'csrf_01'
     const preflightBody = {
       integration_id: 'int_fgt_01',
-      proposed_policy_name: 'FD_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL',
+      proposed_policy_name: 'PG_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL',
       review_hash: 'hash_01',
       changes: [],
     }
@@ -371,7 +371,7 @@ describe('useIntegrationsStore', () => {
     const applyBody = {
       request_id: 'fgpcr_01',
       status: 'applied',
-      applied_changes: [{ name: 'FD_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL' }],
+      applied_changes: [{ name: 'PG_LAB_ALLOW_192_0_2_50_TO_198_51_100_10_ALL' }],
     }
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Correlate `siem_kowalski` incidents with `xdr_rico` endpoints so FortiDashboard can show endpoint context for SOC investigations.
+**Goal:** Correlate `siem_kowalski` incidents with `xdr_rico` endpoints so Penguard can show endpoint context for SOC investigations.
 
 **Architecture:** `xdr_rico` owns endpoint matching because it owns endpoint identity, heartbeat and timeline state. `apps/api` exposes a browser-facing read endpoint that fetches an incident from `siem_kowalski`, sends its entities to `xdr_rico`, and returns a normalized context payload. This keeps the browser behind the BFF and avoids direct service calls.
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Generate a .env file with strong random secrets for a fresh FortiDashboard
+    Generate a .env file with strong random secrets for a fresh Penguard
     deployment.
 
 .DESCRIPTION
@@ -90,92 +90,92 @@ $content = @"
 # DO NOT COMMIT this file. .gitignore already lists .env, but double-check.
 
 # --- Database ---
-POSTGRES_USER=fortidashboard
+POSTGRES_USER=penguard
 POSTGRES_PASSWORD=$PostgresPassword
-POSTGRES_DB=fortidashboard
+POSTGRES_DB=penguard
 DATABASE_URL=postgresql://`${POSTGRES_USER}:`${POSTGRES_PASSWORD}@localhost:5432/`${POSTGRES_DB}
-FORTIDASHBOARD_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
+PENGUARD_DATABASE_URL=postgresql+psycopg://penguard:$PostgresPassword@db:5432/penguard
 
 # --- Cockpit ports ---
 API_HOST=http://localhost:8000
 FRONTEND_URL=http://localhost:5173
-FORTIDASHBOARD_API_PORT=8000
-FORTIDASHBOARD_WEB_PORT=5173
-FORTIDASHBOARD_KEYCLOAK_PORT=8080
-FORTIDASHBOARD_POSTGRES_PORT=5432
-FORTIDASHBOARD_REDIS_PORT=6379
+PENGUARD_API_PORT=8000
+PENGUARD_WEB_PORT=5173
+PENGUARD_KEYCLOAK_PORT=8080
+PENGUARD_POSTGRES_PORT=5432
+PENGUARD_REDIS_PORT=6379
 
 # --- BFF secrets (rotate via bootstrap-secrets.ps1 -Force) ---
-FORTIDASHBOARD_SECRET_KEY=$SecretKey
-FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY=$TokenEncryptionKey
-FORTIDASHBOARD_MOCK_MODE=false
-FORTIDASHBOARD_SESSION_COOKIE_NAME=fortidashboard_session
-FORTIDASHBOARD_SESSION_COOKIE_SECURE=false
-FORTIDASHBOARD_SESSION_COOKIE_SAMESITE=lax
-FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY=true
-FORTIDASHBOARD_CSRF_COOKIE_NAME=fortidashboard_csrf
-FORTIDASHBOARD_CSRF_HEADER_NAME=X-CSRF-Token
-FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
-FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS=60
+PENGUARD_SECRET_KEY=$SecretKey
+PENGUARD_TOKEN_ENCRYPTION_KEY=$TokenEncryptionKey
+PENGUARD_MOCK_MODE=false
+PENGUARD_SESSION_COOKIE_NAME=penguard_session
+PENGUARD_SESSION_COOKIE_SECURE=false
+PENGUARD_SESSION_COOKIE_SAMESITE=lax
+PENGUARD_SESSION_COOKIE_HTTPONLY=true
+PENGUARD_CSRF_COOKIE_NAME=penguard_csrf
+PENGUARD_CSRF_HEADER_NAME=X-CSRF-Token
+PENGUARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
+PENGUARD_AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 
 # --- Keycloak ---
 KC_BOOTSTRAP_ADMIN_USERNAME=admin
 KC_BOOTSTRAP_ADMIN_PASSWORD=$KcBootstrapAdminPassword
-FORTIDASHBOARD_KEYCLOAK_BASE_URL=http://localhost:8080
-FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
-FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL=http://localhost:8080
-FORTIDASHBOARD_KEYCLOAK_REALM=fortidashboard
-FORTIDASHBOARD_KEYCLOAK_CLIENT_ID=fortidashboard-bff
-FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET=$KeycloakClientSecret
-FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL=false
-FORTIDASHBOARD_KEYTAB_PATH=./infra/keycloak/empty-keytab.placeholder
+PENGUARD_KEYCLOAK_BASE_URL=http://localhost:8080
+PENGUARD_KEYCLOAK_INTERNAL_BASE_URL=http://keycloak:8080
+PENGUARD_KEYCLOAK_BROWSER_BASE_URL=http://localhost:8080
+PENGUARD_KEYCLOAK_REALM=penguard
+PENGUARD_KEYCLOAK_CLIENT_ID=penguard-bff
+PENGUARD_KEYCLOAK_CLIENT_SECRET=$KeycloakClientSecret
+PENGUARD_KEYCLOAK_VERIFY_SSL=false
+PENGUARD_KEYTAB_PATH=./infra/keycloak/empty-keytab.placeholder
 
 # --- Browser-facing SSO URLs ---
-FORTIDASHBOARD_OIDC_ISSUER=http://localhost:8080/realms/fortidashboard
-FORTIDASHBOARD_SSO_REDIRECT_URI=http://localhost:8000/api/auth/sso/kerberos/callback
-FORTIDASHBOARD_SSO_POST_LOGIN_URL=http://localhost:5173/
-FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL=http://localhost:5173/login
+PENGUARD_OIDC_ISSUER=http://localhost:8080/realms/penguard
+PENGUARD_SSO_REDIRECT_URI=http://localhost:8000/api/auth/sso/kerberos/callback
+PENGUARD_SSO_POST_LOGIN_URL=http://localhost:5173/
+PENGUARD_SSO_FAILURE_REDIRECT_URL=http://localhost:5173/login
 
 # --- SOC-lite services ---
-FORTIDASHBOARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
-FORTIDASHBOARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
-FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
-FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=false
-FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=10
-FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=30
-FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=10
-FORTIDASHBOARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS=3600
+PENGUARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
+PENGUARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
+PENGUARD_XDR_RICO_URL=http://xdr-rico:8000
+PENGUARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=false
+PENGUARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=10
+PENGUARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=30
+PENGUARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=10
+PENGUARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS=3600
 # UDP syslog collector binds inside the API container. PUBLIC_HOST is the
 # FortiGate-reachable host/IP. Bootstrap detects a best-effort local LAN IP;
 # override it in .env when using NAT, a reverse proxy, or another network.
-FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST=0.0.0.0
-FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST=$FortiGateSyslogPublicHost
-FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT=5514
-FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=false
-SIEM_KOWALSKI_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
-SOAR_SKIPPER_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
-XDR_RICO_DATABASE_URL=postgresql+psycopg://fortidashboard:$PostgresPassword@db:5432/fortidashboard
+PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_HOST=0.0.0.0
+PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST=$FortiGateSyslogPublicHost
+PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT=5514
+PENGUARD_ENABLE_LAB_DEMO_TOOLS=false
+SIEM_KOWALSKI_DATABASE_URL=postgresql+psycopg://penguard:$PostgresPassword@db:5432/penguard
+SOAR_SKIPPER_DATABASE_URL=postgresql+psycopg://penguard:$PostgresPassword@db:5432/penguard
+XDR_RICO_DATABASE_URL=postgresql+psycopg://penguard:$PostgresPassword@db:5432/penguard
 
 # --- AI provider ---
 # Default "scripted" works offline. Swap to a real model with one of the
 # recipes below. Compose must list these vars in the api environment block
 # (already done) for them to reach the container.
-FORTIDASHBOARD_AI_PROVIDER=scripted
-FORTIDASHBOARD_AI_API_KEY=
-FORTIDASHBOARD_AI_MODEL=
-FORTIDASHBOARD_AI_BASE_URL=
+PENGUARD_AI_PROVIDER=scripted
+PENGUARD_AI_API_KEY=
+PENGUARD_AI_MODEL=
+PENGUARD_AI_BASE_URL=
 #
 # Gemini via OpenAI-compat (key: https://aistudio.google.com/apikey):
-# FORTIDASHBOARD_AI_PROVIDER=openai_compat
-# FORTIDASHBOARD_AI_API_KEY=AIza...
-# FORTIDASHBOARD_AI_MODEL=gemini-2.5-flash
-# FORTIDASHBOARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+# PENGUARD_AI_PROVIDER=openai_compat
+# PENGUARD_AI_API_KEY=AIza...
+# PENGUARD_AI_MODEL=gemini-2.5-flash
+# PENGUARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 #
 # Anthropic (key: https://console.anthropic.com):
-# FORTIDASHBOARD_AI_PROVIDER=anthropic
-# FORTIDASHBOARD_AI_API_KEY=sk-ant-...
-# FORTIDASHBOARD_AI_MODEL=claude-haiku-4-5-20251001
-# FORTIDASHBOARD_AI_BASE_URL=https://api.anthropic.com
+# PENGUARD_AI_PROVIDER=anthropic
+# PENGUARD_AI_API_KEY=sk-ant-...
+# PENGUARD_AI_MODEL=claude-haiku-4-5-20251001
+# PENGUARD_AI_BASE_URL=https://api.anthropic.com
 "@
 
 # Write without BOM, LF endings, and tighten ACLs to current user only.
@@ -199,9 +199,9 @@ Write-Host ".env written to $EnvFile"
 Write-Host ''
 Write-Host 'Summary (values redacted):'
 Write-Host '  POSTGRES_PASSWORD                  = <24 bytes urlsafe>'
-Write-Host '  FORTIDASHBOARD_SECRET_KEY          = <48 bytes urlsafe>'
-Write-Host '  FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY = <fernet, 32 raw bytes base64>'
-Write-Host '  FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET = <32 bytes urlsafe>'
+Write-Host '  PENGUARD_SECRET_KEY          = <48 bytes urlsafe>'
+Write-Host '  PENGUARD_TOKEN_ENCRYPTION_KEY = <fernet, 32 raw bytes base64>'
+Write-Host '  PENGUARD_KEYCLOAK_CLIENT_SECRET = <32 bytes urlsafe>'
 Write-Host '  KC_BOOTSTRAP_ADMIN_PASSWORD        = <24 bytes urlsafe>'
 Write-Host ''
 Write-Host 'Next steps:'

@@ -410,7 +410,7 @@ def _build_response_candidates(
             riskLevel="low",
             requiresApproval=False,
             availableNow=True,
-            reason="Ticket triage updates are available in FortiDashboard.",
+            reason="Ticket triage updates are available in Penguard.",
             parameters={},
             mappedMitreTechniqueIds=[],
             playbookTemplateIds=[],
@@ -525,7 +525,7 @@ def _fortigate_candidates(
             id="fortigate.temporary_source_block",
             type="fortigate",
             label="Temporarily block source",
-            description="Create a FortiDashboard-owned temporary source block after approval.",
+            description="Create a Penguard-owned temporary source block after approval.",
             riskLevel="high",
             requiresApproval=True,
             availableNow=bool(integration_id and source_ip),
@@ -547,7 +547,7 @@ def _fortigate_candidates(
                 type="fortigate",
                 label="Temporarily block source to target",
                 description=(
-                    "Create a FortiDashboard-owned temporary block scoped to the "
+                    "Create a Penguard-owned temporary block scoped to the "
                     "observed source and destination after approval."
                 ),
                 riskLevel="high",

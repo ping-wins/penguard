@@ -1,6 +1,6 @@
-# FortiDashboard and Penguin Tools Data Flow
+# Penguard and Penguin Tools Data Flow
 
-FortiDashboard is the browser-facing cockpit and BFF. The Penguin tools are internal SOC-lite services behind `apps/api`; the browser must never call them directly.
+Penguard is the browser-facing cockpit and BFF. The Penguin tools are internal SOC-lite services behind `apps/api`; the browser must never call them directly.
 
 Current implementation status:
 
@@ -148,7 +148,7 @@ dry-run-only status and config schema metadata for the future n8n-like builder.
 
 All playbooks start disabled or draft until validated and activated by an
 authorized human. Sensitive FortiGate response nodes may become live only after
-approval and must call FortiDashboard-owned policy orchestration APIs. They must
+approval and must call Penguard-owned policy orchestration APIs. They must
 not bypass the BFF, RBAC, preflight, diff/summary or audit path.
 
 ### Endpoint Telemetry

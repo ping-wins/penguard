@@ -481,7 +481,7 @@ def test_allowed_fortigate_traffic_burst_creates_port_scan_incident():
             "destinationPort": port,
             "service": f"tcp/{port}",
             "action": "accept",
-            "policyId": "FD_LAB_ALLOW_SCAN",
+            "policyId": "PG_LAB_ALLOW_SCAN",
             "subtype": "forward",
             "logid": f"000000{port}",
         }
@@ -529,7 +529,7 @@ def test_fortigate_timeout_traffic_burst_creates_allowed_port_scan_incident():
             "service": f"tcp/{port}",
             "action": "timeout",
             "policyId": "1",
-            "policyName": "FD_LAB_ALLOW_32FD0707AD9A",
+            "policyName": "PG_LAB_ALLOW_32FD0707AD9A",
             "subtype": "forward",
         }
         response = client.post("/events", json=payload)
@@ -724,7 +724,7 @@ def test_windows_ad_detection_rules_create_identity_and_file_incidents():
             "entities": {
                 "endpointId": "end_win_dc01",
                 "hostname": "WIN-SOC-DC01",
-                "username": "FORTIDASHBOARD\\felipe",
+                "username": "PENGUARD\\felipe",
                 "sourceIp": "192.0.2.77",
             },
             "attributes": {
@@ -744,7 +744,7 @@ def test_windows_ad_detection_rules_create_identity_and_file_incidents():
             "entities": {
                 "endpointId": "end_win_file01",
                 "hostname": "WIN-SOC-FILE01",
-                "username": "FORTIDASHBOARD\\administrator",
+                "username": "PENGUARD\\administrator",
             },
             "attributes": {
                 "source": "agent_private.windows_security",
@@ -764,7 +764,7 @@ def test_windows_ad_detection_rules_create_identity_and_file_incidents():
             "entities": {
                 "endpointId": "end_win_file01",
                 "hostname": "WIN-SOC-FILE01",
-                "username": "FORTIDASHBOARD\\svc-backup",
+                "username": "PENGUARD\\svc-backup",
                 "filePath": r"C:\Sensitive\payroll.xlsx",
             },
             "attributes": {

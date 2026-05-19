@@ -1,12 +1,12 @@
 # Windows Server Agent Smoke Path
 
 Purpose: prove a VirtualBox Windows Server host can send real endpoint
-telemetry into FortiDashboard through `agent_private`, `apps/api` and
+telemetry into Penguard through `agent_private`, `apps/api` and
 `xdr_rico`.
 
 ## Preconditions
 
-- FortiDashboard stack is running and `api`, `xdr-rico` and `siem-kowalski`
+- Penguard stack is running and `api`, `xdr-rico` and `siem-kowalski`
   are healthy.
 - Windows Server VM can reach the host API, for example
   `http://192.168.56.1:8000` over the host-only adapter.

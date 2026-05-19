@@ -108,22 +108,22 @@ Accepted.
 
 ## Context
 
-FortiDashboard currently limits FortiGate policy writes to FortiDashboard-owned
+Penguard currently limits FortiGate policy writes to Penguard-owned
 objects. The product direction now requires an administrative workspace widget
 that can view and manage every policy exposed by connected SOC providers.
 
 ## Decision
 
-FortiDashboard may let permitted administrators create, edit, enable, disable
+Penguard may let permitted administrators create, edit, enable, disable
 and remove policies returned by connected SOC providers, including policies not
-created by FortiDashboard. Reordering policy priority remains out of scope for
+created by Penguard. Reordering policy priority remains out of scope for
 the MVP.
 
 Every write must go through the BFF with permission `policies.manage`, CSRF
 protection, preflight, provider-specific diff, explicit confirmation, audit
 events and rollback guidance. Audit details must identify provider type,
 integration id, native policy id, ownership and whether the policy was
-FortiDashboard-owned or external/customer-owned.
+Penguard-owned or external/customer-owned.
 
 AI, SIEM detections, background jobs and browser state may not apply or approve
 policy changes by themselves.
@@ -131,7 +131,7 @@ policy changes by themselves.
 ## Consequences
 
 The FortiGate policy orchestration ADR remains valid for governed writes, but
-its FortiDashboard-owned-only restriction is superseded for human-confirmed
+its Penguard-owned-only restriction is superseded for human-confirmed
 administrator actions through the SOC Policy Manager. Provider adapters must
 disable unsupported actions and must reject stale reviews if provider state
 changes between review and apply.
@@ -215,7 +215,7 @@ class FakePolicyService:
                     "direction": {"source": "port2", "destination": "port3"},
                     "scope": {"source": ["LAN_NET"], "destination": ["WAN_NET"], "service": ["HTTPS"]},
                     "ownership": "external",
-                    "managedByFortiDashboard": False,
+                    "managedByPenguard": False,
                     "isMutable": True,
                     "supports": ["edit", "disable", "delete"],
                     "risk": {"level": "medium", "reasons": ["Allows traffic"]},
@@ -349,7 +349,7 @@ class PolicyAction(StrEnum):
 
 
 class PolicyOwnership(StrEnum):
-    FORTIDASHBOARD = "fortidashboard"
+    PENGUARD = "penguard"
     EXTERNAL = "external"
     UNKNOWN = "unknown"
 
@@ -375,7 +375,7 @@ class PolicyRow(BaseModel):
     direction: dict[str, Any] = Field(default_factory=dict)
     scope: dict[str, Any] = Field(default_factory=dict)
     ownership: PolicyOwnership = PolicyOwnership.UNKNOWN
-    managed_by_fortidashboard: bool = Field(default=False, alias="managedByFortiDashboard")
+    managed_by_penguard: bool = Field(default=False, alias="managedByPenguard")
     is_mutable: bool = Field(default=False, alias="isMutable")
     supports: list[str] = Field(default_factory=list)
     risk: dict[str, Any] = Field(default_factory=dict)
@@ -706,7 +706,7 @@ def test_fortigate_policy_adapter_normalizes_inventory() -> None:
     assert row["id"] == "fortigate:int_fgt_01:policy:10"
     assert row["providerType"] == "fortigate"
     assert row["ownership"] == "external"
-    assert row["managedByFortiDashboard"] is False
+    assert row["managedByPenguard"] is False
     assert row["supports"] == ["edit", "disable", "delete"]
     assert row["scope"]["service"] == ["HTTPS"]
 
@@ -884,7 +884,7 @@ class FortiGatePolicyAdapter:
 def _row(integration_id: str, policy: dict[str, Any]) -> PolicyRow:
     native_id = str(policy.get("policyid") or policy.get("id") or policy.get("name"))
     name = str(policy.get("name") or f"Policy {native_id}")
-    owned = name.startswith("FD_") or "fortidashboard" in str(policy.get("comments") or "").lower()
+    owned = name.startswith("PG_") or "penguard" in str(policy.get("comments") or "").lower()
     return PolicyRow(
         id=f"fortigate:{integration_id}:policy:{native_id}",
         providerType="fortigate",
@@ -896,8 +896,8 @@ def _row(integration_id: str, policy: dict[str, Any]) -> PolicyRow:
         action=str(policy.get("action") or ""),
         direction={"source": _names(policy.get("srcintf")), "destination": _names(policy.get("dstintf"))},
         scope={"source": _names(policy.get("srcaddr")), "destination": _names(policy.get("dstaddr")), "service": _names(policy.get("service"))},
-        ownership=PolicyOwnership.FORTIDASHBOARD if owned else PolicyOwnership.EXTERNAL,
-        managedByFortiDashboard=owned,
+        ownership=PolicyOwnership.PENGUARD if owned else PolicyOwnership.EXTERNAL,
+        managedByPenguard=owned,
         isMutable=True,
         supports=["edit", "disable" if policy.get("status") in ("enable", "enabled") else "enable", "delete"],
         risk={"level": "medium", "reasons": ["Firewall policy controls traffic flow"]},

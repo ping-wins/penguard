@@ -39,7 +39,7 @@ class FakePolicyClient:
 
 
 def test_policy_orchestrator_normalizes_ipv4_address_objects():
-    assert normalize_address_name("192.0.2.50") == "FD_ADDR_192_0_2_50"
+    assert normalize_address_name("192.0.2.50") == "PG_ADDR_192_0_2_50"
     assert host_subnet("192.0.2.50") == "192.0.2.50 255.255.255.255"
 
 
@@ -59,7 +59,7 @@ def test_policy_orchestrator_plans_lab_allow_log_policy():
         )
     )
 
-    assert preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
+    assert preflight.proposed_policy_name.startswith("PG_LAB_ALLOW_")
     assert preflight.integration_id == "int_fgt_lab"
     assert len(preflight.proposed_policy_name) <= 35
     assert preflight.existing_policy_count == 0
@@ -76,15 +76,15 @@ def test_policy_orchestrator_plans_lab_allow_log_policy():
     assert policy["logtraffic"] == "all"
     assert policy["srcintf"] == [{"name": "port2"}]
     assert policy["dstintf"] == [{"name": "port3"}]
-    assert policy["srcaddr"] == [{"name": "FD_ADDR_192_0_2_50"}]
-    assert policy["dstaddr"] == [{"name": "FD_ADDR_198_51_100_10"}]
+    assert policy["srcaddr"] == [{"name": "PG_ADDR_192_0_2_50"}]
+    assert policy["dstaddr"] == [{"name": "PG_ADDR_198_51_100_10"}]
     assert policy["service"] == [{"name": "TCP_443"}]
 
 
 def test_policy_orchestrator_plans_source_only_temporary_block():
     client = FakePolicyClient(
-        policies=[{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}],
-        address_objects=[{"name": "FD_ADDR_192_0_2_50"}],
+        policies=[{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}],
+        address_objects=[{"name": "PG_ADDR_192_0_2_50"}],
     )
     orchestrator = FortiGatePolicyOrchestrator(client, integration_id="int_fgt_lab")
 
@@ -101,7 +101,7 @@ def test_policy_orchestrator_plans_source_only_temporary_block():
         )
     )
 
-    assert preflight.proposed_policy_name.startswith("FD_TMP_BLOCK_")
+    assert preflight.proposed_policy_name.startswith("PG_TMP_BLOCK_")
     assert len(preflight.proposed_policy_name) <= 35
     assert preflight.owned_policy_count == 1
     assert preflight.changes[0].operation == "reuse"
@@ -110,7 +110,7 @@ def test_policy_orchestrator_plans_source_only_temporary_block():
     assert policy["dstaddr"] == [{"name": "all"}]
     assert policy["service"] == [{"name": "ALL"}]
     assert policy["logtraffic"] == "all"
-    assert preflight.placement == "before first FortiDashboard-owned lab allow/log policy"
+    assert preflight.placement == "before first Penguard-owned lab allow/log policy"
 
 
 def test_policy_orchestrator_generates_short_distinct_policy_names():
@@ -140,8 +140,8 @@ def test_policy_orchestrator_generates_short_distinct_policy_names():
         )
     )
 
-    assert https_preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
-    assert ssh_preflight.proposed_policy_name.startswith("FD_LAB_ALLOW_")
+    assert https_preflight.proposed_policy_name.startswith("PG_LAB_ALLOW_")
+    assert ssh_preflight.proposed_policy_name.startswith("PG_LAB_ALLOW_")
     assert len(https_preflight.proposed_policy_name) <= 35
     assert len(ssh_preflight.proposed_policy_name) <= 35
     assert https_preflight.proposed_policy_name != ssh_preflight.proposed_policy_name
@@ -190,8 +190,8 @@ def test_policy_orchestrator_applies_planned_changes_in_order():
         "firewall.policy",
     ]
     assert [item["name"] for item in applied] == [
-        "FD_ADDR_192_0_2_50",
-        "FD_ADDR_198_51_100_10",
+        "PG_ADDR_192_0_2_50",
+        "PG_ADDR_198_51_100_10",
         preflight.proposed_policy_name,
     ]
     assert len(client.created_addresses) == 2

@@ -8,7 +8,7 @@ Server 2022 Desktop Experience host: PowerShell paste/focus behavior is awkward,
 the terminal must stay open, and the dashboard cannot clearly show that a
 background endpoint sensor is installed and manageable.
 
-FortiDashboard needs the Windows endpoint sensor to behave like an XDR agent:
+Penguard needs the Windows endpoint sensor to behave like an XDR agent:
 an explicit background process that sends telemetry, receives tightly scoped
 remote actions from the dashboard, and can be managed locally without using the
 TUI as the runtime.
@@ -26,7 +26,7 @@ TUI as the runtime.
 
 ## Non-Goals
 
-- No arbitrary remote PowerShell or shell execution from FortiDashboard.
+- No arbitrary remote PowerShell or shell execution from Penguard.
 - No stealth persistence, credential harvesting, hidden privilege escalation or
   destructive endpoint response.
 - No MSI/EXE packaging, code signing or auto-update in this cut.
@@ -36,7 +36,7 @@ TUI as the runtime.
 ## Architecture
 
 ```txt
-FortiDashboard Vue
+Penguard Vue
   -> apps/api BFF
     -> xdr_rico endpoint inventory, action queue and action results
 

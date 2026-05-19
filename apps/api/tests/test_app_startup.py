@@ -9,10 +9,10 @@ def test_api_application_imports_without_mock_mode() -> None:
     env = os.environ.copy()
     env.update(
         {
-            "FORTIDASHBOARD_MOCK_MODE": "false",
-            "FORTIDASHBOARD_SECRET_KEY": "test-secret-key-not-default",
-            "FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY": "test-token-encryption-key-not-default",
-            "FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET": "test-keycloak-secret-not-default",
+            "PENGUARD_MOCK_MODE": "false",
+            "PENGUARD_SECRET_KEY": "test-secret-key-not-default",
+            "PENGUARD_TOKEN_ENCRYPTION_KEY": "test-token-encryption-key-not-default",
+            "PENGUARD_KEYCLOAK_CLIENT_SECRET": "test-keycloak-secret-not-default",
         }
     )
 

@@ -8,7 +8,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@fortidashboard/contracts':
+      '@penguard/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@tanstack/vue-query':

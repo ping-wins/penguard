@@ -306,7 +306,7 @@ def audit_event_to_siem_event(event: AuthAuditEvent) -> dict[str, Any]:
         entities["user"] = event.email
 
     attributes: dict[str, Any] = {
-        "originKind": "fortidashboard.audit",
+        "originKind": "penguard.audit",
         "action": event.action,
         "outcome": event.outcome,
         "details": sanitize_audit_details(event.details or {}),
@@ -316,7 +316,7 @@ def audit_event_to_siem_event(event: AuthAuditEvent) -> dict[str, Any]:
         attributes["userAgent"] = event.user_agent
 
     return {
-        "source": "fortidashboard.audit",
+        "source": "penguard.audit",
         "eventType": _audit_siem_event_type(event),
         "severity": _audit_siem_severity(event),
         "occurredAt": _event_time(event),

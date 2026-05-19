@@ -3,7 +3,7 @@
 #
 # What this overlay does:
 #   - Adds a Caddy reverse proxy that terminates TLS on :443.
-#   - Flips `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` so the BFF cookie is
+#   - Flips `PENGUARD_SESSION_COOKIE_SECURE=true` so the BFF cookie is
 #     refused over plain HTTP.
 #   - Points the BFF Keycloak URLs and the SSO redirect at the public
 #     hostname so OIDC flows survive the proxy hop.
@@ -14,27 +14,27 @@
 #   - Disable the dev port publishes on `api`, `web` and `keycloak`. Compose
 #     v2 appends `ports` lists across overrides; firewall those ports at the
 #     host level (or run on a private network) for real internet exposure.
-#   - Replace the dev realm seed (`infra/keycloak/realm-fortidashboard.json`)
+#   - Replace the dev realm seed (`infra/keycloak/realm-penguard.json`)
 #     that ships with seeded analyst/admin users. Run
 #     `scripts/sync-keycloak-client-secret.sh` after first boot and disable
 #     `--import-realm` once the production users are created through the
 #     admin console.
 #
 # Required env vars (put them in .env or export before running compose):
-#   FORTIDASHBOARD_PUBLIC_HOSTNAME   public DNS name (e.g. forti.example.com)
+#   PENGUARD_PUBLIC_HOSTNAME   public DNS name (e.g. forti.example.com)
 #   CADDY_TLS_MODE                   `internal` (default, self-signed CA) or
 #                                    leave empty to let Caddy use ACME/Let's
 #                                    Encrypt against a real public DNS name.
 #   CADDY_ADMIN_EMAIL                ACME contact email when CADDY_TLS_MODE
 #                                    is empty.
-#   FORTIDASHBOARD_SESSION_COOKIE_SAMESITE  (optional; defaults to lax)
+#   PENGUARD_SESSION_COOKIE_SAMESITE  (optional; defaults to lax)
 
 services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
-      FORTIDASHBOARD_PUBLIC_HOSTNAME: ${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}
+      PENGUARD_PUBLIC_HOSTNAME: ${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}
       CADDY_TLS_MODE: ${CADDY_TLS_MODE:-internal}
       CADDY_ADMIN_EMAIL: ${CADDY_ADMIN_EMAIL:-admin@example.com}
     ports:
@@ -54,18 +54,18 @@ services:
 
   api:
     environment:
-      FORTIDASHBOARD_SESSION_COOKIE_SECURE: "true"
-      FORTIDASHBOARD_SESSION_COOKIE_SAMESITE: ${FORTIDASHBOARD_SESSION_COOKIE_SAMESITE:-lax}
-      FORTIDASHBOARD_KEYCLOAK_BASE_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth
-      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth
-      FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: "true"
-      FORTIDASHBOARD_OIDC_ISSUER: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/auth/realms/fortidashboard
-      FORTIDASHBOARD_SSO_REDIRECT_URI: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/api/auth/sso/kerberos/callback
-      FORTIDASHBOARD_SSO_POST_LOGIN_URL: https://${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}/
+      PENGUARD_SESSION_COOKIE_SECURE: "true"
+      PENGUARD_SESSION_COOKIE_SAMESITE: ${PENGUARD_SESSION_COOKIE_SAMESITE:-lax}
+      PENGUARD_KEYCLOAK_BASE_URL: https://${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}/auth
+      PENGUARD_KEYCLOAK_BROWSER_BASE_URL: https://${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}/auth
+      PENGUARD_KEYCLOAK_VERIFY_SSL: "true"
+      PENGUARD_OIDC_ISSUER: https://${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}/auth/realms/penguard
+      PENGUARD_SSO_REDIRECT_URI: https://${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}/api/auth/sso/kerberos/callback
+      PENGUARD_SSO_POST_LOGIN_URL: https://${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}/
 
   keycloak:
     environment:
-      KC_HOSTNAME: ${FORTIDASHBOARD_PUBLIC_HOSTNAME:-fortidashboard.local}
+      KC_HOSTNAME: ${PENGUARD_PUBLIC_HOSTNAME:-penguard.local}
       KC_HOSTNAME_STRICT: "true"
       KC_HOSTNAME_STRICT_HTTPS: "true"
       KC_PROXY_HEADERS: xforwarded

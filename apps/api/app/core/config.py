@@ -21,50 +21,50 @@ class DangerousDefaultSecretError(RuntimeError):
 
 
 class Settings(BaseSettings):
-    app_name: str = "FortiDashboard API"
+    app_name: str = "Penguard API"
     database_url: str = (
-        "postgresql+psycopg://fortidashboard:fortidashboard@localhost:5432/fortidashboard"
+        "postgresql+psycopg://penguard:penguard@localhost:5432/penguard"
     )
     secret_key: str = "dev-only-change-me"
     token_encryption_key: str | None = None
     mock_mode: bool = False
-    session_cookie_name: str = "fortidashboard_session"
+    session_cookie_name: str = "penguard_session"
     session_cookie_secure: bool = Field(
         default=False,
         validation_alias=AliasChoices(
-            "FORTIDASHBOARD_SESSION_COOKIE_SECURE",
+            "PENGUARD_SESSION_COOKIE_SECURE",
             "SESSION_COOKIE_SECURE",
         ),
     )
     session_cookie_samesite: str = Field(
         default="lax",
         validation_alias=AliasChoices(
-            "FORTIDASHBOARD_SESSION_COOKIE_SAMESITE",
+            "PENGUARD_SESSION_COOKIE_SAMESITE",
             "SESSION_COOKIE_SAMESITE",
         ),
     )
     session_cookie_httponly: bool = Field(
         default=True,
         validation_alias=AliasChoices(
-            "FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY",
+            "PENGUARD_SESSION_COOKIE_HTTPONLY",
             "SESSION_COOKIE_HTTPONLY",
         ),
     )
-    csrf_cookie_name: str = "fortidashboard_csrf"
+    csrf_cookie_name: str = "penguard_csrf"
     csrf_header_name: str = "X-CSRF-Token"
     auth_rate_limit_max_attempts: int = 10
     auth_rate_limit_window_seconds: int = 60
     keycloak_base_url: str = "http://localhost:8080"
     keycloak_browser_base_url: str = "http://localhost:8080"
-    keycloak_realm: str = "fortidashboard"
-    keycloak_client_id: str = "fortidashboard-bff"
+    keycloak_realm: str = "penguard"
+    keycloak_client_id: str = "penguard-bff"
     keycloak_client_secret: str = "dev-client-secret"
     keycloak_verify_ssl: bool = False
-    oidc_issuer: str = "http://localhost:8080/realms/fortidashboard"
+    oidc_issuer: str = "http://localhost:8080/realms/penguard"
     sso_redirect_uri: str = "http://localhost:8000/api/auth/sso/kerberos/callback"
     sso_post_login_url: str = "http://localhost:5173/"
     sso_failure_redirect_url: str = "http://localhost:5173/login"
-    sso_state_cookie_name: str = "fortidashboard_sso_state"
+    sso_state_cookie_name: str = "penguard_sso_state"
     siem_kowalski_url: str = "http://localhost:8011"
     soar_skipper_url: str = "http://localhost:8012"
     xdr_rico_url: str = "http://localhost:8013"
@@ -93,12 +93,12 @@ class Settings(BaseSettings):
     virustotal_base_url: str = "https://www.virustotal.com"
     soc_ingest_token: str = ""
     marketplace_gh_token: str | None = None
-    marketplace_registry_repo: str = "ping-wins/fortidashboard-addons"
+    marketplace_registry_repo: str = "ping-wins/penguard-addons"
     addons_storage_dir: Path = Path("/app/data/addons")
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_prefix="FORTIDASHBOARD_",
+        env_prefix="PENGUARD_",
         extra="ignore",
     )
 
@@ -113,14 +113,14 @@ def _reject_dangerous_defaults(settings: Settings) -> None:
 
     offenders: list[str] = []
     if settings.secret_key in DANGEROUS_DEFAULT_SECRETS:
-        offenders.append("FORTIDASHBOARD_SECRET_KEY")
+        offenders.append("PENGUARD_SECRET_KEY")
     if (
         not settings.token_encryption_key
         or settings.token_encryption_key in DANGEROUS_DEFAULT_SECRETS
     ):
-        offenders.append("FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY")
+        offenders.append("PENGUARD_TOKEN_ENCRYPTION_KEY")
     if settings.keycloak_client_secret in DANGEROUS_DEFAULT_SECRETS:
-        offenders.append("FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET")
+        offenders.append("PENGUARD_KEYCLOAK_CLIENT_SECRET")
 
     if offenders:
         joined = ", ".join(offenders)
@@ -128,7 +128,7 @@ def _reject_dangerous_defaults(settings: Settings) -> None:
             f"Refusing to start: the following secrets still use the dev "
             f"default: {joined}. Run `scripts/bootstrap-secrets.sh` (or "
             f"`scripts/bootstrap-secrets.ps1` on Windows) to generate a "
-            f"per-deploy .env, or set FORTIDASHBOARD_MOCK_MODE=true for "
+            f"per-deploy .env, or set PENGUARD_MOCK_MODE=true for "
             f"local development."
         )
 

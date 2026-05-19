@@ -6,20 +6,20 @@ Accepted.
 
 ## Context
 
-FortiDashboard is intended to orchestrate SOC tools, not only observe them. The
+Penguard is intended to orchestrate SOC tools, not only observe them. The
 previous contract treated FortiGate as effectively read-only except for syslog
 forwarding and allowed traffic-policy helpers to stop at draft CLI guidance.
 That does not match the product premise or the lab need to create a log-enabled
-traffic path for scan detection from inside FortiDashboard.
+traffic path for scan detection from inside Penguard.
 
 The FortiGate API credentials used by the connector may have the permissions
 needed to create or update firewall policy objects. That power must be governed
-inside FortiDashboard rather than hidden, mocked, or pushed out to manual
+inside Penguard rather than hidden, mocked, or pushed out to manual
 FortiGate UI work.
 
 ## Decision
 
-FortiDashboard may perform real FortiGate firewall traffic-policy orchestration.
+Penguard may perform real FortiGate firewall traffic-policy orchestration.
 Policy orchestration is a first-class product capability, not a draft/mock-only
 helper.
 
@@ -32,7 +32,7 @@ these controls:
   policies;
 - a human-readable diff or summary before apply;
 - explicit human confirmation;
-- FortiDashboard-owned objects/policies only, unless a later ADR expands scope;
+- Penguard-owned objects/policies only, unless a later ADR expands scope;
 - no silent overwrite of customer configuration;
 - audit events with secrets redacted, including target entities, before/after
   summary, FortiGate response and rollback guidance;
@@ -63,4 +63,4 @@ orchestration boundary for temporary source-IP containment after approval.
   fakes; lab validation must use a real FortiGate before marking the feature
   beta or production-ready.
 - Operations docs can keep CLI examples for manual recovery or troubleshooting,
-  but normal lab/customer validation should be possible from FortiDashboard.
+  but normal lab/customer validation should be possible from Penguard.

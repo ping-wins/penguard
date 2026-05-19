@@ -56,7 +56,7 @@ function isBlocking(policy: PolicyRecord): boolean {
 function isOwned(policy: PolicyRecord): boolean {
   const name = valueText(policy.name)
   const comments = valueText(policy.comments ?? policy.comment).toLowerCase()
-  return policy.isFortiDashboardOwned === true || name.startsWith('FD_') || comments.includes('fortidashboard owned')
+  return policy.isPenguardOwned === true || name.startsWith('PG_') || comments.includes('penguard owned')
 }
 
 function actionLabel(policy: PolicyRecord): string {
@@ -79,7 +79,7 @@ function policyKindLabel(policy: PolicyRecord): string {
   const kind = valueText(policy.policyKind)
   if (kind === 'temporary_block') return t('widgets.firewallPolicies.kinds.temporaryBlock')
   if (kind === 'lab_allow_log') return t('widgets.firewallPolicies.kinds.labAllowLog')
-  if (kind === 'fortidashboard') return t('widgets.firewallPolicies.kinds.fortiDashboard')
+  if (kind === 'penguard') return t('widgets.firewallPolicies.kinds.penguard')
   return t('widgets.firewallPolicies.kinds.standard')
 }
 
@@ -160,7 +160,7 @@ function loggingLabel(policy: PolicyRecord): string {
                   v-if="isOwned(policy)"
                   class="rounded border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-200"
                 >
-                  FortiDashboard
+                  Penguard
                 </span>
                 <span
                   v-if="policy.id"

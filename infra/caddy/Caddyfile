@@ -1,4 +1,4 @@
-# FortiDashboard reverse proxy — terminates TLS in front of api/web/keycloak.
+# Penguard reverse proxy — terminates TLS in front of api/web/keycloak.
 #
 # By default Caddy uses `tls internal` so the lab/on-prem deploy gets a self-
 # signed cert minted by Caddy's internal CA. For an internet-facing deploy,
@@ -14,7 +14,7 @@
     email {$CADDY_ADMIN_EMAIL:admin@example.com}
 }
 
-{$FORTIDASHBOARD_PUBLIC_HOSTNAME:fortidashboard.local} {
+{$PENGUARD_PUBLIC_HOSTNAME:penguard.local} {
     encode zstd gzip
 
     tls {$CADDY_TLS_MODE:internal}

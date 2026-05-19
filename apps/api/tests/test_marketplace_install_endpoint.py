@@ -103,7 +103,7 @@ def client(tmp_path):
     loader = AddonLoader()
     registry = ConnectorRegistry()
     catalog = CatalogFetcher(
-        repo="ping-wins/fortidashboard-addons", token="t", transport=transport
+        repo="ping-wins/penguard-addons", token="t", transport=transport
     )
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -126,7 +126,7 @@ def client(tmp_path):
     service = InstallService(
         session_factory=session_factory,
         storage_dir=tmp_path,
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="t",
         loader=loader,
         transport=transport,

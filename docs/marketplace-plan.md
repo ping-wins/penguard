@@ -2,7 +2,7 @@
 
 > **SUPERSEDED 2026-05-14.** This document describes the original
 > manifest-only marketplace. The current direction is **package-based**
-> (manifest + connector code, hosted in `ping-wins/fortidashboard-addons`,
+> (manifest + connector code, hosted in `ping-wins/penguard-addons`,
 > installed at runtime via dynamic import). For the authoritative
 > overview, read `docs/marketplace/README.md`. The design spec is at
 > `docs/superpowers/specs/2026-05-14-marketplace-addon-packages-design.md`.
@@ -22,13 +22,13 @@ add-on declares.
 
 ```
 github.com/ping-wins
-├── fortidashboard          # this repo — runtime, UI, gateway, SIEM
-└── fortidashboard-addons   # planned — only manifests, signed releases
+├── penguard          # this repo — runtime, UI, gateway, SIEM
+└── penguard-addons   # planned — only manifests, signed releases
 ```
 
 For the MVP every manifest lives in this repo under `addons/<id>/`.
 Once the manifest schema stops changing, the directory will move to
-the `ping-wins/fortidashboard-addons` repo. The dashboard registry will
+the `ping-wins/penguard-addons` repo. The dashboard registry will
 then fetch a signed release tarball (or a list of raw manifest URLs)
 from that external repo, with signature verification before loading.
 
@@ -119,7 +119,7 @@ Endpoints, Audit).
   the integrations service.
 - Dynamic connect form from `provider.auth.fields` inside the
   marketplace dialog (no detour through the Integrations tab).
-- Detached manifest registry under `ping-wins/fortidashboard-addons`
+- Detached manifest registry under `ping-wins/penguard-addons`
   with signed releases, and a registry loader that pulls + verifies
   signatures before activating.
 - Second connector (Palo Alto / Cisco / Sophos) to validate the

@@ -9,7 +9,7 @@
 
 ## Context
 
-FortiDashboard already has governed FortiGate policy orchestration, but the
+Penguard already has governed FortiGate policy orchestration, but the
 main creation flow lives in `apps/web/src/components/integrations/LabPolicyWizard.vue`
 inside the integrations drawer. That makes policy work feel like setup
 plumbing instead of a daily SOC/admin workflow. The canvas already has a
@@ -31,9 +31,9 @@ FortiGate and FortiWeb into the same internal object model.
 - It is administrative: users with the correct admin permission can view,
   create, edit, enable, disable and remove policies.
 - It shows the full policy inventory returned by each connected provider,
-  including policies not created by FortiDashboard.
+  including policies not created by Penguard.
 - Administrators can manage all provider policies in the MVP, not only
-  FortiDashboard-owned policies.
+  Penguard-owned policies.
 - Reordering policies is out of scope for the MVP.
 - FortiGate and FortiWeb are real first-cut providers.
 - The widget uses one common inventory and review UX, with provider-specific
@@ -43,7 +43,7 @@ FortiGate and FortiWeb into the same internal object model.
 
 ## Boundary Change
 
-The current FortiGate ADR limits live writes to FortiDashboard-owned objects and
+The current FortiGate ADR limits live writes to Penguard-owned objects and
 policies. This feature intentionally expands the administrator boundary:
 permitted administrators may manage any policy exposed by a connected SOC
 provider.
@@ -54,7 +54,7 @@ Before implementation is considered complete, add a new ADR or amend
 - admin policy management can target customer/provider-owned policies;
 - reordering stays excluded in the MVP;
 - every change must present a provider-specific diff and risk warning;
-- audit must distinguish FortiDashboard-owned from external/customer-owned
+- audit must distinguish Penguard-owned from external/customer-owned
   targets;
 - rollback guidance is mandatory for edit, disable and delete actions.
 
@@ -132,7 +132,7 @@ payloads for review.
     "service": ["HTTPS"]
   },
   "ownership": "external",
-  "managedByFortiDashboard": false,
+  "managedByPenguard": false,
   "isMutable": true,
   "supports": ["edit", "disable", "delete"],
   "risk": {
@@ -149,9 +149,9 @@ payloads for review.
 
 Field rules:
 
-- `id` is a stable FortiDashboard row id, not necessarily the native provider
+- `id` is a stable Penguard row id, not necessarily the native provider
   id.
-- `ownership` values: `fortidashboard`, `external`, `unknown`.
+- `ownership` values: `penguard`, `external`, `unknown`.
 - `isMutable` means the adapter believes the connected credential can attempt
   writes. A review can still fail.
 - `supports` is action-level capability: `create`, `edit`, `enable`, `disable`,
@@ -184,7 +184,7 @@ Every mutation creates a review before apply:
   "warnings": [
     {
       "severity": "high",
-      "message": "This policy was not created by FortiDashboard."
+      "message": "This policy was not created by Penguard."
     }
   ],
   "rollback": [
@@ -342,7 +342,7 @@ Inventory:
 
 - Use `FortiGateService` and the existing client `get_policies()` path.
 - Normalize native firewall policies into `firewall_policy` rows.
-- Detect FortiDashboard-owned policies via `FD_` prefixes and comments.
+- Detect Penguard-owned policies via `PG_` prefixes and comments.
 - Mark external policies as mutable if the integration credential supports
   policy writes.
 
@@ -374,7 +374,7 @@ Inventory:
 Actions:
 
 - `create`: create a source-IP block review, and create/manage a
-  FortiDashboard-managed IP list if missing.
+  Penguard-managed IP list if missing.
 - `edit`: edit block reason/metadata or managed IP list entries where the
   FortiWeb adapter supports it.
 - `enable` / `disable`: activate/deactivate a managed block or policy-supported
@@ -385,7 +385,7 @@ Review details:
 
 - Review should show target server policy, inline protection profile, managed
   IP list, source IP and whether the IP list is attached.
-- If the selected FortiWeb object is not managed by FortiDashboard, warn that
+- If the selected FortiWeb object is not managed by Penguard, warn that
   the admin is modifying provider/customer-owned configuration.
 - Apply/remove reuse the FortiWeb connector's review/apply/remove contracts once
   that branch is merged.

@@ -4,28 +4,28 @@
 
 **Goal:** Build and publish a read-only `fortianalyzer-core` marketplace add-on package with API-key health probing.
 
-**Architecture:** The package lives in the external registry checkout at `/home/guest/fortidashboard-addons`. It follows existing add-on package patterns: manifest + connector package + pytest tests, with no imports from FortiDashboard internals. The connector uses FortiAnalyzer JSON-RPC over `POST /jsonrpc` with bearer API-key auth and exposes stable empty widget/event methods until a real FortiAnalyzer lab validates ingestion.
+**Architecture:** The package lives in the external registry checkout at `/home/guest/penguard-addons`. It follows existing add-on package patterns: manifest + connector package + pytest tests, with no imports from Penguard internals. The connector uses FortiAnalyzer JSON-RPC over `POST /jsonrpc` with bearer API-key auth and exposes stable empty widget/event methods until a real FortiAnalyzer lab validates ingestion.
 
-**Tech Stack:** Python 3.12+, stdlib, `httpx`, `pytest`, GitHub registry repo `ping-wins/fortidashboard-addons`.
+**Tech Stack:** Python 3.12+, stdlib, `httpx`, `pytest`, GitHub registry repo `ping-wins/penguard-addons`.
 
 ---
 
 ### Task 1: Add FortiAnalyzer Connector Tests
 
 **Files:**
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py`
+- Create: `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py`
 
 - [ ] **Step 1: Create package test directory**
 
 Run:
 
 ```bash
-mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests
+mkdir -p /home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/tests
 ```
 
 - [ ] **Step 2: Write failing connector tests**
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py` with tests for:
+Create `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py` with tests for:
 
 ```python
 from __future__ import annotations
@@ -209,7 +209,7 @@ def test_widget_and_ingest_shapes_are_stable_empty_payloads():
 Run:
 
 ```bash
-cd /home/guest/fortidashboard-addons
+cd /home/guest/penguard-addons
 python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 ```
 
@@ -218,18 +218,18 @@ Expected: FAIL because `connector/__init__.py` does not exist yet.
 ### Task 2: Implement FortiAnalyzer Connector Package
 
 **Files:**
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector/__init__.py`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector/fortianalyzer_client.py`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`
-- Create: `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`
-- Modify: `/home/guest/fortidashboard-addons/catalog.json`
+- Create: `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/connector/__init__.py`
+- Create: `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/connector/fortianalyzer_client.py`
+- Create: `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`
+- Create: `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`
+- Modify: `/home/guest/penguard-addons/catalog.json`
 
 - [ ] **Step 1: Create package directories**
 
 Run:
 
 ```bash
-mkdir -p /home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/connector
+mkdir -p /home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/connector
 ```
 
 - [ ] **Step 2: Implement the client and connector**
@@ -434,7 +434,7 @@ def get_connector(config: dict[str, Any]) -> FortiAnalyzerConnector:
 
 - [ ] **Step 3: Add manifest, README, and catalog entry**
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`:
+Create `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/addon.json`:
 
 ```json
 {
@@ -476,7 +476,7 @@ Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.
   "compatibility": {
     "minProviderVersion": "7.6.0",
     "testedVersions": [],
-    "notes": "Beta/unvalidated marketplace preview. The team does not currently have a FortiAnalyzer appliance for validation. Requires a FortiAnalyzer REST API Admin with JSON API read access and trusted hosts that allow the FortiDashboard API source IP. Health check uses POST /jsonrpc with url /sys/status. Widgets and playbook actions are preview/draft-only and are not appliance-validated."
+    "notes": "Beta/unvalidated marketplace preview. The team does not currently have a FortiAnalyzer appliance for validation. Requires a FortiAnalyzer REST API Admin with JSON API read access and trusted hosts that allow the Penguard API source IP. Health check uses POST /jsonrpc with url /sys/status. Widgets and playbook actions are preview/draft-only and are not appliance-validated."
   },
   "capabilities": {
     "logSource": true,
@@ -505,19 +505,19 @@ Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/addon.
 }
 ```
 
-Create `/home/guest/fortidashboard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`:
+Create `/home/guest/penguard-addons/fortianalyzer-core/0.1.0-beta.1/README.md`:
 
 ```markdown
 # FortiAnalyzer Core 0.1.0 Beta
 
-Beta FortiAnalyzer marketplace listing for FortiDashboard. This package exists
+Beta FortiAnalyzer marketplace listing for Penguard. This package exists
 so FortiAnalyzer appears in the marketplace while appliance validation is still
 pending.
 
 ## Authentication
 
 Use a FortiAnalyzer REST API Admin API key with JSON API read access. Configure
-trusted hosts so FortiAnalyzer accepts requests from the FortiDashboard API
+trusted hosts so FortiAnalyzer accepts requests from the Penguard API
 source IP.
 
 ## Current scope
@@ -534,7 +534,7 @@ No configuration writes, live log ingestion, live widgets, or live playbook
 actions are included in this beta package.
 ```
 
-Add this object to root `/home/guest/fortidashboard-addons/catalog.json` after
+Add this object to root `/home/guest/penguard-addons/catalog.json` after
 the `fortiweb-core` entry and before Penguin entries:
 
 ```json
@@ -556,7 +556,7 @@ the `fortiweb-core` entry and before Penguin entries:
 Run:
 
 ```bash
-cd /home/guest/fortidashboard-addons
+cd /home/guest/penguard-addons
 python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 ```
 
@@ -565,14 +565,14 @@ Expected: all tests pass.
 ### Task 3: Validate And Publish
 
 **Files:**
-- Modify: Git metadata in `/home/guest/fortidashboard-addons`
+- Modify: Git metadata in `/home/guest/penguard-addons`
 
 - [ ] **Step 1: Run registry verification**
 
 Run:
 
 ```bash
-cd /home/guest/fortidashboard-addons
+cd /home/guest/penguard-addons
 python -m pytest fortianalyzer-core/0.1.0-beta.1/tests/test_connector.py -q
 git diff --check
 git status -sb
@@ -586,7 +586,7 @@ FortiAnalyzer package and catalog changes.
 Run:
 
 ```bash
-cd /home/guest/fortidashboard-addons
+cd /home/guest/penguard-addons
 git switch -c codex/fortianalyzer-core-addon
 git add catalog.json fortianalyzer-core/0.1.0-beta.1
 git commit -m "feat(fortianalyzer-core): add read-only connector"
@@ -595,7 +595,7 @@ git commit -m "feat(fortianalyzer-core): add read-only connector"
 - [ ] **Step 3: Publish to GitHub**
 
 Use the GitHub app or git push to publish branch
-`codex/fortianalyzer-core-addon` to `ping-wins/fortidashboard-addons` and open
+`codex/fortianalyzer-core-addon` to `ping-wins/penguard-addons` and open
 a draft PR against `main`. Do not create the release tag
 `fortianalyzer-core-v0.1.0-beta.1` until the PR is merged or the user explicitly asks
 for direct release tagging.

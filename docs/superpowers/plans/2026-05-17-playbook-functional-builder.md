@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the workspace playbook builder self-explanatory and make the safe node set execute real FortiDashboard effects, including Discord webhook notifications.
+**Goal:** Make the workspace playbook builder self-explanatory and make the safe node set execute real Penguard effects, including Discord webhook notifications.
 
 **Architecture:** Keep playbook graph storage and run history in `soar_skipper`, but execute external effects through the BFF because it owns auth, audit, SIEM access, policy orchestration and encrypted secrets. Store outbound webhook destinations in the API database with encrypted URLs; playbook nodes reference destination IDs rather than exposing Discord URLs in Vue state.
 

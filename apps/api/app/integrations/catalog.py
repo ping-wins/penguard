@@ -87,7 +87,7 @@ def _auth_fields(provider_type: str, fields: list[dict[str, Any]]) -> list[dict[
                 "id": "managedIpListPolicy",
                 "label": "Managed IP list policy",
                 "type": "text",
-                "default": "FD_IP_BLOCKLIST",
+                "default": "PG_IP_BLOCKLIST",
             },
         ]
     return fields

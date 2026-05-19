@@ -1,1 +1,1 @@
-"""HTTP routers for the FortiDashboard API."""
+"""HTTP routers for the Penguard API."""

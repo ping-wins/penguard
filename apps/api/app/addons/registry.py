@@ -12,7 +12,7 @@ DEFAULT_ADDONS_DIR = Path("/app/addons")
 
 
 def _addons_dir() -> Path:
-    override = os.environ.get("FORTIDASHBOARD_ADDONS_DIR")
+    override = os.environ.get("PENGUARD_ADDONS_DIR")
     if override:
         return Path(override)
     if DEFAULT_ADDONS_DIR.is_dir():

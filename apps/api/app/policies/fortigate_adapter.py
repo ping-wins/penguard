@@ -150,7 +150,7 @@ class FortiGatePolicyAdapter:
 def _row(integration_id: str, policy: dict[str, Any]) -> PolicyRow:
     native_id = str(policy.get("policyid") or policy.get("id") or policy.get("name"))
     name = str(policy.get("name") or f"Policy {native_id}")
-    owned = name.startswith("FD_") or "fortidashboard" in str(
+    owned = name.startswith("PG_") or "penguard" in str(
         policy.get("comments") or ""
     ).lower()
     status = "enabled" if policy.get("status") in ("enable", "enabled") else "disabled"
@@ -172,8 +172,8 @@ def _row(integration_id: str, policy: dict[str, Any]) -> PolicyRow:
             "destination": _names(policy.get("dstaddr")),
             "service": _names(policy.get("service")),
         },
-        ownership=PolicyOwnership.FORTIDASHBOARD if owned else PolicyOwnership.EXTERNAL,
-        managedByFortiDashboard=owned,
+        ownership=PolicyOwnership.PENGUARD if owned else PolicyOwnership.EXTERNAL,
+        managedByPenguard=owned,
         isMutable=True,
         supports=["edit", "disable" if status == "enabled" else "enable", "delete"],
         risk={"level": "medium", "reasons": ["Firewall policy controls traffic flow"]},

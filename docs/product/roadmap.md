@@ -6,7 +6,7 @@ and links to implementation plans. Detailed task lists stay in
 
 ## Now: Real Telemetry Stabilization
 
-Goal: FortiDashboard should feel live with real FortiGate and endpoint telemetry
+Goal: Penguard should feel live with real FortiGate and endpoint telemetry
 without synthetic replay or dashboard polling.
 
 Acceptance criteria:
@@ -25,7 +25,7 @@ Acceptance criteria:
   log-enabled lab/customer traffic paths, including preflight, diff/summary,
   approval and audit.
 - [ ] FortiWeb 8.0.5 trial protects the external landing page and forwards WAF
-  telemetry into SIEM incidents through FortiDashboard.
+  telemetry into SIEM incidents through Penguard.
 
 Links:
 

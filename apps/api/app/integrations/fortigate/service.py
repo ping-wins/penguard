@@ -298,7 +298,7 @@ class _MockFortiGatePolicyClient:
         return {}
 
     def get_policies(self) -> list[dict[str, Any]]:
-        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        return [{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}]
 
     def get_address_objects(self) -> list[dict[str, Any]]:
         return []
@@ -880,6 +880,6 @@ def _build_log_forwarding_payload(
         "warnings": [
             "This changes persistent FortiGate log forwarding configuration.",
             "Review collector reachability and existing syslog settings before applying.",
-            "FortiDashboard never exposes the FortiGate API key to the browser.",
+            "Penguard never exposes the FortiGate API key to the browser.",
         ],
     }

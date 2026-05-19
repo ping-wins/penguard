@@ -3,13 +3,13 @@ from pathlib import Path
 
 
 def test_bff_service_account_can_create_users_in_dev_realm():
-    realm = json.loads(Path("../../infra/keycloak/realm-fortidashboard.json").read_text())
+    realm = json.loads(Path("../../infra/keycloak/realm-penguard.json").read_text())
 
     service_account = next(
         (
             user
             for user in realm["users"]
-            if user.get("serviceAccountClientId") == "fortidashboard-bff"
+            if user.get("serviceAccountClientId") == "penguard-bff"
         ),
         None,
     )
@@ -22,7 +22,7 @@ def test_bff_service_account_can_create_users_in_dev_realm():
 
 
 def test_dev_realm_seeds_admin_user_for_audit_poc():
-    realm = json.loads(Path("../../infra/keycloak/realm-fortidashboard.json").read_text())
+    realm = json.loads(Path("../../infra/keycloak/realm-penguard.json").read_text())
 
     admin_user = next(
         (user for user in realm["users"] if user.get("username") == "admin@example.com"),

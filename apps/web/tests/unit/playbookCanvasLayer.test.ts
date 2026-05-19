@@ -114,7 +114,7 @@ describe('PlaybookCanvasLayer', () => {
     })
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
-      'application/x-fortidashboard-playbook-node',
+      'application/x-penguard-playbook-node',
       expect.stringContaining('"nodeType":"case.note"'),
     )
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'case.note')
@@ -167,7 +167,7 @@ describe('PlaybookCanvasLayer', () => {
       preventDefault: vi.fn(),
       dataTransfer: {
         getData: vi.fn((type: string) => (
-          type === 'application/x-fortidashboard-playbook-node'
+          type === 'application/x-penguard-playbook-node'
             ? JSON.stringify({
                 nodeType: 'case.note',
                 config: { template: 'Review incident.' },

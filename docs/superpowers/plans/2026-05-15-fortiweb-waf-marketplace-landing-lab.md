@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a real FortiWeb WAF integration, delivered as a marketplace add-on, that protects an external landing page, forwards WAF telemetry into FortiDashboard, creates SIEM incidents in realtime, and lets FortiDashboard drive approved response actions.
+**Goal:** Add a real FortiWeb WAF integration, delivered as a marketplace add-on, that protects an external landing page, forwards WAF telemetry into Penguard, creates SIEM incidents in realtime, and lets Penguard drive approved response actions.
 
-**Architecture:** The landing page lives outside this repository and is placed behind a FortiWeb trial VM/appliance in reverse-proxy mode. FortiWeb sends attack/traffic/event telemetry to FortiDashboard through a push/syslog ingestion path. FortiDashboard normalizes FortiWeb events into SIEM events, streams incidents to the cockpit through SSE, and presents SOAR/FortiGate/FortiWeb response actions behind explicit approval.
+**Architecture:** The landing page lives outside this repository and is placed behind a FortiWeb trial VM/appliance in reverse-proxy mode. FortiWeb sends attack/traffic/event telemetry to Penguard through a push/syslog ingestion path. Penguard normalizes FortiWeb events into SIEM events, streams incidents to the cockpit through SSE, and presents SOAR/FortiGate/FortiWeb response actions behind explicit approval.
 
-**Tech Stack:** FortiWeb trial, external landing app, FastAPI, Pydantic, SQLAlchemy, Vue 3, Pinia, `siem_kowalski`, `soar_skipper`, add-on registry packages from `ping-wins/fortidashboard-addons`, Docker Compose, Pytest, Vitest.
+**Tech Stack:** FortiWeb trial, external landing app, FastAPI, Pydantic, SQLAlchemy, Vue 3, Pinia, `siem_kowalski`, `soar_skipper`, add-on registry packages from `ping-wins/penguard-addons`, Docker Compose, Pytest, Vitest.
 
 ---
 
@@ -22,33 +22,33 @@
 
 In scope:
 
-- FortiWeb trial integration appears in the FortiDashboard marketplace as `fortiweb-waf`.
+- FortiWeb trial integration appears in the Penguard marketplace as `fortiweb-waf`.
 - Marketplace install downloads the add-on from the registry repo.
 - FortiWeb telemetry creates SIEM events and incidents.
 - Incidents appear in tickets, recent incident widgets, and incident toasts through existing SSE behavior.
 - A runbook explains how the external landing page must be placed behind FortiWeb.
-- SOAR presents response actions that are initiated and audited from FortiDashboard.
+- SOAR presents response actions that are initiated and audited from Penguard.
 
 Out of scope for this repo:
 
 - Building the landing page source code.
 - Hosting/domain/TLS automation for the landing page.
 - Running uncontrolled public DoS traffic.
-- Hidden FortiWeb/FortiGate changes outside FortiDashboard.
+- Hidden FortiWeb/FortiGate changes outside Penguard.
 
 Safety boundary:
 
 - The demo attack must target only lab-owned infrastructure.
 - DoS validation must be rate-limited and time-boxed.
 - FortiGate policy writes are allowed only through the accepted governed
-  FortiDashboard policy orchestration boundary: admin RBAC, preflight,
+  Penguard policy orchestration boundary: admin RBAC, preflight,
   diff/summary, explicit approval and audit.
 - FortiWeb policy writes still need their own accepted write contract before
   implementation.
 
 ## File Structure
 
-External registry repo `ping-wins/fortidashboard-addons`:
+External registry repo `ping-wins/penguard-addons`:
 
 - Create: `catalog.json`
   - Add `fortiweb-waf` entry and version metadata.
@@ -104,7 +104,7 @@ Create `docs/operations/fortiweb-landing-waf-lab.md`:
 ```markdown
 # FortiWeb Landing WAF Lab
 
-This runbook describes the lab topology used to demonstrate FortiDashboard with
+This runbook describes the lab topology used to demonstrate Penguard with
 FortiWeb protecting an external landing page.
 
 ## Topology
@@ -115,9 +115,9 @@ Internet or lab attacker
   -> external landing page origin
 
 FortiWeb
-  -> FortiDashboard API /api/soc/ingest/fortiweb
+  -> Penguard API /api/soc/ingest/fortiweb
   -> siem_kowalski
-  -> FortiDashboard cockpit through SSE
+  -> Penguard cockpit through SSE
 ```
 
 ## Landing Page Requirements
@@ -147,11 +147,11 @@ traffic against public infrastructure.
 ## Expected Result
 
 - FortiWeb records Attack or Traffic logs.
-- FortiDashboard receives FortiWeb telemetry.
+- Penguard receives FortiWeb telemetry.
 - `siem_kowalski` creates a WAF incident.
 - The dashboard shows an incident toast, recent incident, and ticket without a
   browser refresh.
-- SOAR proposes an approved response action from inside FortiDashboard.
+- SOAR proposes an approved response action from inside Penguard.
 ```
 
 - [ ] **Step 2: Run Markdown grep check**
@@ -175,7 +175,7 @@ git commit -m "docs(ops): add FortiWeb landing WAF lab runbook"
 
 ### Task 2: Add The FortiWeb Marketplace Package In The Registry Repo
 
-**Files in `ping-wins/fortidashboard-addons`:**
+**Files in `ping-wins/penguard-addons`:**
 - Create: `fortiweb-waf/0.1.0/addon.json`
 - Create: `fortiweb-waf/0.1.0/connector/__init__.py`
 - Create: `fortiweb-waf/0.1.0/fixtures/attack-log.json`
@@ -231,14 +231,14 @@ Create `fortiweb-waf/0.1.0/addon.json`:
   },
   "compatibility": {
     "testedVersions": ["7.4.x", "7.6.x", "8.0.x"],
-    "notes": "MVP telemetry path uses FortiWeb Attack, Traffic, and Event logs forwarded to FortiDashboard. REST health can be enabled when the FortiWeb trial exposes an API token."
+    "notes": "MVP telemetry path uses FortiWeb Attack, Traffic, and Event logs forwarded to Penguard. REST health can be enabled when the FortiWeb trial exposes an API token."
   },
   "routes": [
     {
       "id": "push-ingest",
       "method": "POST",
       "path": "/api/soc/ingest/fortiweb",
-      "summary": "FortiDashboard endpoint that receives FortiWeb WAF log payloads."
+      "summary": "Penguard endpoint that receives FortiWeb WAF log payloads."
     }
   ],
   "widgets": [
@@ -404,7 +404,7 @@ def test_fortiweb_attack_log_emits_waf_attack():
         "/api/soc/ingest/fortiweb",
         headers={
             "Authorization": "Bearer test-secret-token",
-            "X-FortiDashboard-Integration-Id": "int_fweb_landing",
+            "X-Penguard-Integration-Id": "int_fweb_landing",
         },
         json={
             "type": "attack",
@@ -561,7 +561,7 @@ def ingest_fortiweb_event(
     authorization: Annotated[str | None, Header()] = None,
     integration_id: Annotated[
         str | None,
-        Header(alias="X-FortiDashboard-Integration-Id"),
+        Header(alias="X-Penguard-Integration-Id"),
     ] = None,
     siem_client: SocClient = Depends(get_siem_client),
     audit_store: AuditStore = Depends(get_auth_audit_store),
@@ -977,7 +977,7 @@ Proposed
 
 ## Context
 
-FortiDashboard will ingest FortiWeb WAF telemetry from a FortiWeb trial
+Penguard will ingest FortiWeb WAF telemetry from a FortiWeb trial
 protecting the external landing page. SIEM incidents may require response
 actions such as blocking an abusive source IP or increasing WAF enforcement.
 FortiGate upstream blocking is governed separately by the accepted FortiGate
@@ -985,7 +985,7 @@ policy orchestration ADR.
 
 ## Decision
 
-All FortiWeb response actions must be initiated from FortiDashboard, require an
+All FortiWeb response actions must be initiated from Penguard, require an
 authenticated admin session, require explicit approval, and write audit events
 before and after the action.
 
@@ -1002,9 +1002,9 @@ accepted FortiGate policy orchestration boundary instead of this FortiWeb ADR.
 
 ## Consequences
 
-- The demo can show FortiWeb blocking attacks and FortiDashboard generating
+- The demo can show FortiWeb blocking attacks and Penguard generating
   incidents in realtime.
-- FortiDashboard remains the only place where response actions are requested.
+- Penguard remains the only place where response actions are requested.
 - The project does not silently modify customer WAF/firewall policy.
 ```
 
@@ -1102,7 +1102,7 @@ git commit -m "feat(soar): add FortiWeb response recommendation"
 Add row to `docs/product/feature-map.md`:
 
 ```markdown
-| Integrations | FortiWeb WAF marketplace add-on and push telemetry | `apps/api` + `apps/web` + external add-on registry | planned | yes | FortiWeb trial and external landing lab | `docs/operations/fortiweb-landing-waf-lab.md`, `ping-wins/fortidashboard-addons/fortiweb-waf` | `cd apps/api && uv run pytest -q tests/test_soc_ingest.py && cd ../siem_kowalski && uv run pytest -q tests/test_events_incidents.py` |
+| Integrations | FortiWeb WAF marketplace add-on and push telemetry | `apps/api` + `apps/web` + external add-on registry | planned | yes | FortiWeb trial and external landing lab | `docs/operations/fortiweb-landing-waf-lab.md`, `ping-wins/penguard-addons/fortiweb-waf` | `cd apps/api && uv run pytest -q tests/test_soc_ingest.py && cd ../siem_kowalski && uv run pytest -q tests/test_events_incidents.py` |
 ```
 
 - [ ] **Step 2: Add roadmap item**
@@ -1111,7 +1111,7 @@ Under `## Now: Real Telemetry Stabilization`, add:
 
 ```markdown
 - [ ] FortiWeb trial protects the external landing page and forwards WAF
-  telemetry into SIEM incidents through FortiDashboard.
+  telemetry into SIEM incidents through Penguard.
 ```
 
 - [ ] **Step 3: Add release note**
@@ -1146,7 +1146,7 @@ git commit -m "docs(product): plan FortiWeb WAF marketplace integration"
 - No source changes expected.
 - Update `docs/operations/fortiweb-landing-waf-lab.md` only if commands drift during validation.
 
-- [ ] **Step 1: Start FortiDashboard**
+- [ ] **Step 1: Start Penguard**
 
 ```bash
 docker compose up -d --build api web siem-kowalski soar-skipper redis db keycloak
@@ -1165,14 +1165,14 @@ server pool: external landing origin
 server policy: landing-waf-policy
 protection profile: SQLi/path traversal/DoS enabled
 logging: Attack, Traffic, Event enabled
-forwarding: POST/syslog to FortiDashboard API
+forwarding: POST/syslog to Penguard API
 ```
 
 Expected: browser can reach the landing page through FortiWeb.
 
 - [ ] **Step 3: Install FortiWeb add-on**
 
-In FortiDashboard:
+In Penguard:
 
 ```txt
 Settings -> Marketplace -> FortiWeb WAF -> Install

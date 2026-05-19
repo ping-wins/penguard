@@ -15,7 +15,7 @@ const endpoint = {
   id: 'win-server-01',
   hostname: 'WIN-T2D53C8JOKL',
   ipAddresses: ['10.0.2.15', '192.168.56.10'],
-  currentUser: 'FORTIDASHBOARD\\Administrator',
+  currentUser: 'PENGUARD\\Administrator',
   lastSeenAt: '2026-05-12T22:32:18.675000Z',
   health: 'unknown',
   attributes: { os: 'Windows', observedSourceIp: '192.168.56.10' },

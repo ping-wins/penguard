@@ -1,6 +1,6 @@
 # Penguin Tools Threat Model
 
-Scope: FortiDashboard plus `siem_kowalski`, `soar_skipper`, `xdr_rico` and `agent_private`.
+Scope: Penguard plus `siem_kowalski`, `soar_skipper`, `xdr_rico` and `agent_private`.
 
 Current foundation is local-development oriented. The main security boundary today is `apps/api`; internal Penguin service authentication is not implemented yet.
 
@@ -86,7 +86,7 @@ Controls:
 - Keep playbooks disabled or draft until authorized validation.
 - Require explicit approval for sensitive steps.
 - Limit FortiGate writes to governed policy orchestration: admin RBAC, preflight,
-  diff/summary, explicit approval, FortiDashboard-owned objects/policies and
+  diff/summary, explicit approval, Penguard-owned objects/policies and
   audit. Destructive FortiGate changes remain out of scope.
 
 Review checks:

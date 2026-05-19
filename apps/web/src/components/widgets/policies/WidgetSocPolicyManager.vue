@@ -213,7 +213,7 @@ function statusTone(status: string): string {
 }
 
 function ownershipTone(ownership: string): string {
-  if (ownership === 'fortidashboard') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+  if (ownership === 'penguard') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
   if (ownership === 'external') return 'border-amber-400/30 bg-amber-500/10 text-amber-100'
   return 'border-theme-border bg-theme-bg/70 text-theme-text-muted'
 }
@@ -267,7 +267,7 @@ function cancelAction() {
 function defaultCreatePayload(providerType: PolicyProviderType): Record<string, unknown> {
   if (providerType === 'fortigate') {
     return {
-      name: 'FD_MANAGED_POLICY',
+      name: 'PG_MANAGED_POLICY',
       srcintf: [],
       dstintf: [],
       srcaddr: [],
@@ -288,7 +288,7 @@ function defaultCreatePayload(providerType: PolicyProviderType): Record<string, 
 
 function defaultFortiGatePolicyForm(): FortiGatePolicyForm {
   return {
-    name: 'FD_MANAGED_POLICY',
+    name: 'PG_MANAGED_POLICY',
     srcintf: '',
     dstintf: '',
     srcaddr: '',
@@ -329,7 +329,7 @@ function defaultPayload(policy: PolicyRow, action: PolicyAction): Record<string,
       return {
         operation: 'prepare_waf_dos_policy',
         targetServerPolicy: policy.nativeId,
-        inlineProtectionProfile: 'FD Inline DoS Protection',
+        inlineProtectionProfile: 'Penguard Inline DoS Protection',
         dosPreventionPolicy: 'Predefined',
         reason: 'Prepare FortiWeb policy for WAF/DoS lab validation',
       }
@@ -505,7 +505,7 @@ async function applyReview(review: PolicyReview) {
             class="h-8 rounded border border-theme-border bg-theme-bg/80 px-2 text-xs text-theme-text outline-none focus:border-theme-primary"
           >
             <option value="">{{ t('widgets.policyManager.filters.allOwners') }}</option>
-            <option value="fortidashboard">{{ t('widgets.policyManager.ownership.fortidashboard') }}</option>
+            <option value="penguard">{{ t('widgets.policyManager.ownership.penguard') }}</option>
             <option value="external">{{ t('widgets.policyManager.ownership.external') }}</option>
             <option value="unknown">{{ t('widgets.policyManager.ownership.unknown') }}</option>
           </select>

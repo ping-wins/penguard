@@ -1,6 +1,6 @@
-# FortiDashboard
+# Penguard
 
-FortiDashboard é um dashboard modular para NG-SOC, focado em centralizar visibilidade de rede e inteligência de ameaças. O primeiro alvo de integração é FortiGate via REST API, com backend FastAPI e frontend Vue 3 + Vite.
+Penguard é um dashboard modular para NG-SOC, focado em centralizar visibilidade de rede e inteligência de ameaças. O primeiro alvo de integração é FortiGate via REST API, com backend FastAPI e frontend Vue 3 + Vite.
 
 > **Modelo de deploy:** single-tenant por instância. Cada cliente roda sua
 > própria stack (Postgres, Redis, Keycloak, BFF, lite services). Não é um
@@ -20,14 +20,14 @@ Antes de subir o stack, gere segredos fortes para a instalação:
 ```
 
 O script grava um `.env` na raiz (já no `.gitignore`) com valores aleatórios
-para `FORTIDASHBOARD_SECRET_KEY`, `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY`,
-`FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET`, `KC_BOOTSTRAP_ADMIN_PASSWORD` e
+para `PENGUARD_SECRET_KEY`, `PENGUARD_TOKEN_ENCRYPTION_KEY`,
+`PENGUARD_KEYCLOAK_CLIENT_SECRET`, `KC_BOOTSTRAP_ADMIN_PASSWORD` e
 `POSTGRES_PASSWORD`. Para rotacionar mais tarde, rode com `--force` (bash)
 ou `-Force` (PowerShell).
 
 A BFF **recusa subir** quando algum desses segredos ainda bate com o default
 de dev (`apps/api/app/core/config.py:DANGEROUS_DEFAULT_SECRETS`). Em
-desenvolvimento, defina `FORTIDASHBOARD_MOCK_MODE=true` para bypass.
+desenvolvimento, defina `PENGUARD_MOCK_MODE=true` para bypass.
 
 Depois do primeiro `docker compose up`, sincronize o client secret do
 Keycloak com o valor que está no `.env` (o realm import vem com o literal
@@ -44,7 +44,7 @@ Keycloak com o valor que está no `.env` (o realm import vem com o literal
 ```
 
 O script usa a admin REST API do Keycloak para sobrescrever o secret do
-client `fortidashboard-bff` com o que está no `.env`. Sem ele, BFF e
+client `penguard-bff` com o que está no `.env`. Sem ele, BFF e
 Keycloak ficam com secrets diferentes e qualquer chamada que toque o
 provider (login, register, callback SSO) falha com `invalid_client`
 (502 Bad Gateway na cockpit).
@@ -59,7 +59,7 @@ para o hostname público:
 ```bash
 # 1. Garanta que o .env já foi gerado pelo bootstrap-secrets
 # 2. Defina o hostname público
-export FORTIDASHBOARD_PUBLIC_HOSTNAME=forti.example.com
+export PENGUARD_PUBLIC_HOSTNAME=forti.example.com
 export CADDY_TLS_MODE=        # vazio = ACME / Let's Encrypt
 export CADDY_ADMIN_EMAIL=ops@example.com
 
@@ -88,17 +88,17 @@ A cockpit suporta provider de IA real para o chat do sidebar e os botões
 
 ```env
 # Gemini (free tier no AI Studio, key: https://aistudio.google.com/apikey)
-FORTIDASHBOARD_AI_PROVIDER=openai_compat
-FORTIDASHBOARD_AI_API_KEY=AIza...
-FORTIDASHBOARD_AI_MODEL=gemini-2.5-flash
-FORTIDASHBOARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+PENGUARD_AI_PROVIDER=openai_compat
+PENGUARD_AI_API_KEY=AIza...
+PENGUARD_AI_MODEL=gemini-2.5-flash
+PENGUARD_AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 ```
 
 ```env
 # Anthropic Claude (key: https://console.anthropic.com)
-FORTIDASHBOARD_AI_PROVIDER=anthropic
-FORTIDASHBOARD_AI_API_KEY=sk-ant-...
-FORTIDASHBOARD_AI_MODEL=claude-haiku-4-5-20251001
+PENGUARD_AI_PROVIDER=anthropic
+PENGUARD_AI_API_KEY=sk-ant-...
+PENGUARD_AI_MODEL=claude-haiku-4-5-20251001
 ```
 
 Depois:
@@ -115,7 +115,7 @@ mostra `<provider> · <model>` em verde quando o backend está ligado.
 
 ⚠️ Pegadinhas observadas:
 
-- **Gemini exige o sufixo `/v1beta/openai`** no `FORTIDASHBOARD_AI_BASE_URL`.
+- **Gemini exige o sufixo `/v1beta/openai`** no `PENGUARD_AI_BASE_URL`.
   Sem ele o endpoint vira 404 e o Google retorna 400 "API key not valid"
   como red herring.
 - **Claude Pro (claude.ai) ≠ API**. Assinatura UI não dá acesso à API.
@@ -148,7 +148,7 @@ Serviços locais:
 O Docker Compose sobe em modo live por padrão. Para usar fixtures mockadas de frontend de forma explícita:
 
 ```bash
-FORTIDASHBOARD_MOCK_MODE=true docker compose up -d --build api
+PENGUARD_MOCK_MODE=true docker compose up -d --build api
 ```
 
 A API aplica migrations Alembic no startup do container para desenvolvimento local.
@@ -156,7 +156,7 @@ A API aplica migrations Alembic no startup do container para desenvolvimento loc
 As portas podem ser trocadas sem editar o compose, útil quando outro serviço já usa a porta no Windows ou Linux:
 
 ```bash
-FORTIDASHBOARD_WEB_PORT=5174 FORTIDASHBOARD_API_PORT=8001 docker compose up --build
+PENGUARD_WEB_PORT=5174 PENGUARD_API_PORT=8001 docker compose up --build
 ```
 
 O serviço `web` usa uma imagem própria com `pnpm` pinado e mantém `node_modules` em volumes Docker para evitar diferenças entre filesystem Linux e Windows.
@@ -187,7 +187,7 @@ pnpm install
 pnpm dev
 ```
 
-O frontend pode usar fixtures de `packages/contracts/fixtures` quando `FORTIDASHBOARD_MOCK_MODE=true`, mas o default local valida Keycloak, sessão e conexão FortiGate reais.
+O frontend pode usar fixtures de `packages/contracts/fixtures` quando `PENGUARD_MOCK_MODE=true`, mas o default local valida Keycloak, sessão e conexão FortiGate reais.
 
 Widgets FortiGate em modo live são atualizados automaticamente pelo intervalo retornado em `meta.refreshIntervalSeconds`; métricas voláteis de sistema, sessões e rede usam polling curto de 2s.
 
@@ -201,11 +201,11 @@ O Vue implementa as telas próprias de login/register, mas chama FastAPI em vez 
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
 
-Para `register`, `login` e `logout`, chame `GET /api/auth/csrf` primeiro e envie o valor em `X-CSRF-Token`. A sessão do browser usa cookie `fortidashboard_session` com `HttpOnly`; tokens Keycloak ficam server-side e são persistidos em Postgres como `token_blob` criptografado.
+Para `register`, `login` e `logout`, chame `GET /api/auth/csrf` primeiro e envie o valor em `X-CSRF-Token`. A sessão do browser usa cookie `penguard_session` com `HttpOnly`; tokens Keycloak ficam server-side e são persistidos em Postgres como `token_blob` criptografado.
 
 No frontend, use `apps/web/src/services/authClient.ts` para o fluxo completo. Ele busca CSRF com cookie, faz uma nova tentativa quando o CSRF expira, chama `login/register/logout` com `credentials: include` e confirma `login/register` com `GET /api/auth/me`.
 
-Em modo live, o realm dev dá ao service account `fortidashboard-bff` permissão `manage-users`/`view-users` para criar usuários via BFF. Se você já tinha subido Keycloak antes dessa configuração, recrie os volumes para reimportar o realm:
+Em modo live, o realm dev dá ao service account `penguard-bff` permissão `manage-users`/`view-users` para criar usuários via BFF. Se você já tinha subido Keycloak antes dessa configuração, recrie os volumes para reimportar o realm:
 
 ```bash
 docker compose down -v

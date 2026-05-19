@@ -118,7 +118,7 @@ watch(
   workspaceName,
   (name) => {
     if (typeof document !== 'undefined') {
-      document.title = name ? `${name} · FortiDashboard` : 'FortiDashboard'
+      document.title = name ? `${name} · Penguard` : 'Penguard'
     }
   },
   { immediate: true },
@@ -216,7 +216,7 @@ const MINIMAP_WIDTH_PX = 160
 const MINIMAP_HEIGHT_PX = 104
 const MIN_ZOOM = 0.2
 const MAX_ZOOM = 3
-const WORKSPACE_WIDGET_DRAG_MIME = 'application/x-fortidashboard-widget'
+const WORKSPACE_WIDGET_DRAG_MIME = 'application/x-penguard-widget'
 
 const workspaceViewport = ref<HTMLElement | null>(null)
 const viewportScroll = ref({ x: 0, y: 0 })

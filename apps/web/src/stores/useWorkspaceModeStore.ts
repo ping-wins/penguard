@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const STORAGE_KEY = 'fortidashboard.workspaceMode'
-const LEGACY_COMPACT_KEY = 'fortidashboard.widgetCompact'
+const STORAGE_KEY = 'penguard.workspaceMode'
+const LEGACY_COMPACT_KEY = 'penguard.widgetCompact'
 
 export type WorkspaceMode = 'canvas' | 'grid'
 

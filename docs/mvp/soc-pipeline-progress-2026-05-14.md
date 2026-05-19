@@ -77,13 +77,13 @@ during lab iteration.
   port). Calls from Docker traverse `WSL2 → Windows → Wi-Fi → FG bridge`.
   The host-only IP `192.168.56.100` is unreachable from the Docker
   containers because the host-only adapter is not exposed inside WSL2.
-- Scheduler runs every 5 s (`FORTIDASHBOARD_FORTIGATE_INGESTION_*`
+- Scheduler runs every 5 s (`PENGUARD_FORTIGATE_INGESTION_*`
   environment variables in `.env`):
   ```
-  FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=true
-  FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=5
-  FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=5
-  FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=5
+  PENGUARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED=true
+  PENGUARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS=5
+  PENGUARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS=5
+  PENGUARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS=5
   ```
 
 ## Known follow-ups
@@ -118,11 +118,11 @@ during lab iteration.
 
 ```bash
 # Reset
-docker exec fortidashboard-db-1 psql -U fortidashboard -d fortidashboard \
+docker exec penguard-db-1 psql -U penguard -d penguard \
   -c "TRUNCATE siem_kowalski_incidents, siem_kowalski_events RESTART IDENTITY;"
 
 # Manual ingest from the API container (uses stored credentials)
-docker exec fortidashboard-api-1 uv run python -c "
+docker exec penguard-api-1 uv run python -c "
 import os
 os.chdir('/app/apps/api')
 from app.routers.integrations import (
@@ -148,6 +148,6 @@ print(r)
 "
 
 # Check incidents
-docker exec fortidashboard-db-1 psql -U fortidashboard -d fortidashboard \
+docker exec penguard-db-1 psql -U penguard -d penguard \
   -c "SELECT id, rule_id, severity, payload->'attributes'->'count' as cnt FROM siem_kowalski_incidents ORDER BY created_at DESC LIMIT 5;"
 ```

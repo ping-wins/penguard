@@ -218,8 +218,8 @@ def test_put_preferences_rejects_unsupported_provider():
 
 
 def test_resolve_ai_provider_falls_back_to_env(monkeypatch):
-    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
-    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "scripted")
+    monkeypatch.setenv("PENGUARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("PENGUARD_AI_PROVIDER", "scripted")
     from app.ai.provider import get_ai_provider
     from app.core.config import get_settings
 

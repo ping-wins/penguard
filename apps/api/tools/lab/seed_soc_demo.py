@@ -105,15 +105,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Seed local SOC-lite demo data.")
     parser.add_argument(
         "--siem-url",
-        default=os.getenv("FORTIDASHBOARD_SIEM_KOWALSKI_URL", DEFAULT_SIEM_URL),
+        default=os.getenv("PENGUARD_SIEM_KOWALSKI_URL", DEFAULT_SIEM_URL),
     )
     parser.add_argument(
         "--soar-url",
-        default=os.getenv("FORTIDASHBOARD_SOAR_SKIPPER_URL", DEFAULT_SOAR_URL),
+        default=os.getenv("PENGUARD_SOAR_SKIPPER_URL", DEFAULT_SOAR_URL),
     )
     parser.add_argument(
         "--xdr-url",
-        default=os.getenv("FORTIDASHBOARD_XDR_RICO_URL", DEFAULT_XDR_URL),
+        default=os.getenv("PENGUARD_XDR_RICO_URL", DEFAULT_XDR_URL),
     )
     parser.add_argument(
         "--dry-run",

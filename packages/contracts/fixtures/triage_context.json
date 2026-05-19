@@ -58,7 +58,7 @@
       "id": "fortigate.temporary_source_destination_block",
       "type": "fortigate",
       "label": "Temporarily block source to target",
-      "description": "Create a FortiDashboard-owned temporary block scoped to the observed source and destination after approval.",
+      "description": "Create a Penguard-owned temporary block scoped to the observed source and destination after approval.",
       "riskLevel": "high",
       "requiresApproval": true,
       "availableNow": true,

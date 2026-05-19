@@ -13,15 +13,15 @@ from app.integrations.fortigate.policy_models import (
     FortiGatePolicyPreflightResponse,
 )
 
-FD_LAB_PREFIX = "FD_LAB_ALLOW"
-FD_TMP_BLOCK_PREFIX = "FD_TMP_BLOCK"
-FD_ADDR_PREFIX = "FD_ADDR"
+PG_LAB_PREFIX = "PG_LAB_ALLOW"
+PG_TMP_BLOCK_PREFIX = "PG_TMP_BLOCK"
+PG_ADDR_PREFIX = "PG_ADDR"
 POLICY_NAME_DIGEST_LENGTH = 12
 
 
 def normalize_address_name(ip_value: str) -> str:
     address = ipaddress.ip_address(ip_value)
-    return f"{FD_ADDR_PREFIX}_{str(address).replace('.', '_').replace(':', '_')}"
+    return f"{PG_ADDR_PREFIX}_{str(address).replace('.', '_').replace(':', '_')}"
 
 
 def host_subnet(ip_value: str) -> str:
@@ -58,7 +58,7 @@ class FortiGatePolicyOrchestrator:
             integration_id=self.integration_id,
             existing_policy_count=len(policies),
             owned_policy_count=sum(
-                1 for policy in policies if str(policy.get("name") or "").startswith("FD_")
+                1 for policy in policies if str(policy.get("name") or "").startswith("PG_")
             ),
             proposed_policy_name=policy_name,
             placement=placement,
@@ -139,7 +139,7 @@ class FortiGatePolicyOrchestrator:
             payload={
                 "name": name,
                 "subnet": host_subnet(ip_value),
-                "comment": "FortiDashboard owned policy object",
+                "comment": "Penguard owned policy object",
             },
         )
 
@@ -170,9 +170,9 @@ class FortiGatePolicyOrchestrator:
 
     def _policy_name(self, request: FortiGatePolicyPreflightRequest) -> str:
         prefix = (
-            FD_LAB_PREFIX
+            PG_LAB_PREFIX
             if request.intent == FortiGatePolicyIntent.LAB_ALLOW_LOG
-            else FD_TMP_BLOCK_PREFIX
+            else PG_TMP_BLOCK_PREFIX
         )
         return f"{prefix}_{_policy_digest(request)}"
 
@@ -182,10 +182,10 @@ class FortiGatePolicyOrchestrator:
         policies: list[dict[str, Any]],
     ) -> str:
         if request.intent == FortiGatePolicyIntent.LAB_ALLOW_LOG:
-            return "append as FortiDashboard-owned allow/log policy"
-        if any(str(policy.get("name") or "").startswith(FD_LAB_PREFIX) for policy in policies):
-            return "before first FortiDashboard-owned lab allow/log policy"
-        return "append as FortiDashboard-owned temporary block policy"
+            return "append as Penguard-owned allow/log policy"
+        if any(str(policy.get("name") or "").startswith(PG_LAB_PREFIX) for policy in policies):
+            return "before first Penguard-owned lab allow/log policy"
+        return "append as Penguard-owned temporary block policy"
 
     def _warnings(
         self,
@@ -194,17 +194,17 @@ class FortiGatePolicyOrchestrator:
     ) -> list[str]:
         if request.intent != FortiGatePolicyIntent.TEMPORARY_BLOCK:
             return []
-        if not any(str(policy.get("name") or "").startswith(FD_LAB_PREFIX) for policy in policies):
+        if not any(str(policy.get("name") or "").startswith(PG_LAB_PREFIX) for policy in policies):
             return [
-                "No FortiDashboard-owned lab allow/log policy was found; "
+                "No Penguard-owned lab allow/log policy was found; "
                 "temporary block will be appended."
             ]
         return []
 
     def _comment(self, request: FortiGatePolicyPreflightRequest) -> str:
         if request.intent == FortiGatePolicyIntent.LAB_ALLOW_LOG:
-            return "FortiDashboard owned lab allow/log policy"
-        return "FortiDashboard owned temporary block policy"
+            return "Penguard owned lab allow/log policy"
+        return "Penguard owned temporary block policy"
 
     def _review_hash(
         self,

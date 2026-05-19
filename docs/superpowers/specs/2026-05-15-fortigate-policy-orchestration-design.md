@@ -2,7 +2,7 @@
 
 ## Context
 
-FortiDashboard is a SOC orchestrator. The FortiGate connector must be able to
+Penguard is a SOC orchestrator. The FortiGate connector must be able to
 create governed firewall policies from inside the cockpit instead of stopping at
 CLI drafts or manual FortiGate UI instructions.
 
@@ -10,7 +10,7 @@ The immediate lab need is a FortiGate-mediated nmap validation flow:
 
 ```txt
 BlackArch attacker -> FortiGate -> Arch victim
-FortiDashboard creates allow+log lab policy
+Penguard creates allow+log lab policy
 nmap crosses the FortiGate
 FortiGate emits accepted traffic logs
 SIEM detects an allowed port scan
@@ -27,7 +27,7 @@ CSRF protection, preflight, diff/summary, explicit human approval and audit.
 
 - Replace the current FortiGate traffic-policy draft helper with real governed
   policy orchestration.
-- Add a Lab Policy Wizard that creates a FortiDashboard-owned `allow + log`
+- Add a Lab Policy Wizard that creates a Penguard-owned `allow + log`
   policy between selected FortiGate interfaces and networks.
 - Add SIEM detection for allowed port scans by counting unique destination ports
   over a short window.
@@ -78,8 +78,8 @@ Wizard output before apply:
 Apply behavior:
 
 - Requires authenticated admin.
-- Creates or reuses FortiDashboard-owned address objects.
-- Creates or updates only FortiDashboard-owned lab policy objects.
+- Creates or reuses Penguard-owned address objects.
+- Creates or updates only Penguard-owned lab policy objects.
 - Does not alter customer-owned policies.
 - Writes audit before and after apply.
 - Returns FortiGate API response plus rollback guidance.
@@ -145,13 +145,13 @@ apply the policy.
 
 ## Policy Scope
 
-FortiDashboard-owned policies use stable prefixes and metadata:
+Penguard-owned policies use stable prefixes and metadata:
 
-- Lab allow/log policies: `FD_LAB_ALLOW_*`.
-- Temporary block policies: `FD_TMP_BLOCK_*`.
-- Address objects: `FD_ADDR_*`.
+- Lab allow/log policies: `PG_LAB_ALLOW_*`.
+- Temporary block policies: `PG_TMP_BLOCK_*`.
+- Address objects: `PG_ADDR_*`.
 - Comments include JSON-like metadata where FortiGate field limits allow:
-  `createdBy=FortiDashboard`, `incidentId`, `playbookRunId`, `expiresAt`,
+  `createdBy=Penguard`, `incidentId`, `playbookRunId`, `expiresAt`,
   `purpose`.
 
 First-release policy types:
@@ -161,8 +161,8 @@ First-release policy types:
 ```txt
 srcintf: selected source interface
 dstintf: selected destination interface
-srcaddr: FortiDashboard-owned source address object
-dstaddr: FortiDashboard-owned destination address object
+srcaddr: Penguard-owned source address object
+dstaddr: Penguard-owned destination address object
 service: selected service, default ALL
 action: accept
 schedule: always
@@ -183,7 +183,7 @@ action: deny
 schedule: always or generated temporary schedule
 logtraffic: all
 status: enable
-expiresAt: required in FortiDashboard metadata
+expiresAt: required in Penguard metadata
 ```
 
 ### Temporary Source To Destination/Service Block
@@ -197,14 +197,14 @@ preferred default when the incident has reliable `destinationIp` and
 Policy order is security-sensitive. The first release uses conservative
 placement:
 
-- Lab allow/log policy is created inside the FortiDashboard-owned lab policy
-  group or appended as a FortiDashboard-owned policy when no owned group exists.
-- Temporary block policy is placed before the matching FortiDashboard-owned
+- Lab allow/log policy is created inside the Penguard-owned lab policy
+  group or appended as a Penguard-owned policy when no owned group exists.
+- Temporary block policy is placed before the matching Penguard-owned
   lab allow/log policy when that policy exists.
-- If FortiDashboard cannot find a safe owned placement target, the review is
+- If Penguard cannot find a safe owned placement target, the review is
   blocked and asks the analyst to choose placement or create the lab policy
   first.
-- FortiDashboard does not reorder customer-owned policies silently.
+- Penguard does not reorder customer-owned policies silently.
 
 ## Backend Design
 
@@ -228,7 +228,7 @@ Extend the FortiGate API client with CMDB write helpers:
 
 - list/get/create/update firewall address objects.
 - list/get/create/update firewall policies.
-- optional move helper only for FortiDashboard-owned placement targets.
+- optional move helper only for Penguard-owned placement targets.
 
 BFF endpoints:
 
@@ -270,7 +270,7 @@ fortigate_policy_change_requests
 ```
 
 This table is not a policy source of truth. FortiGate remains the source of
-truth for live firewall state. The table records FortiDashboard's orchestration
+truth for live firewall state. The table records Penguard's orchestration
 decision and audit trail.
 
 ## Frontend Design
@@ -396,7 +396,7 @@ Frontend:
 
 Lab:
 
-- Create allow/log policy from FortiDashboard.
+- Create allow/log policy from Penguard.
 - Run nmap from attacker to victim.
 - Confirm FortiGate logs accepted traffic.
 - Confirm SIEM incident `Possible port scan`.

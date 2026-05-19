@@ -5,7 +5,7 @@
 > `docs/product/timeline.md` and `docs/product/release-notes.md`.
 > This file is kept as rationale/context and may mention older MVP framing.
 
-> Snapshot em 2026-05-13 da postura do FortiDashboard frente ao que um cliente
+> Snapshot em 2026-05-13 da postura do Penguard frente ao que um cliente
 > real precisaria para rodar em produção. Tudo aqui está aterrissado em
 > arquivos existentes do repo; nenhuma sugestão sem evidência.
 >
@@ -34,12 +34,12 @@ três grupos de problemas precisam fechar:
 
 Onde mora hoje:
 
-- `infra/keycloak/realm-fortidashboard.json:28` → `"secret": "dev-client-secret"`
-- `infra/keycloak/realm-fortidashboard.json:80` → senha `correct-horse-battery-staple`
+- `infra/keycloak/realm-penguard.json:28` → `"secret": "dev-client-secret"`
+- `infra/keycloak/realm-penguard.json:80` → senha `correct-horse-battery-staple`
   para `analyst@example.com` e `admin@example.com`.
 - `docker-compose.yml:159-160` → `KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD: admin/admin`.
-- `.env.example:16` → `FORTIDASHBOARD_SECRET_KEY=change-me-in-local-env`.
-- `.env.example:17` → `FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY=` (vazio).
+- `.env.example:16` → `PENGUARD_SECRET_KEY=change-me-in-local-env`.
+- `.env.example:17` → `PENGUARD_TOKEN_ENCRYPTION_KEY=` (vazio).
 
 Por que isso é bloqueador: qualquer auditoria estática (gitleaks, trivy,
 revisor humano de cliente) marca como `critical`. O fato de o Keycloak realm
@@ -75,7 +75,7 @@ Ação proposta: copiar o padrão SQL já usado em `siem_kowalski` e `xdr_rico`
 
 ### 1.3 Sem HTTPS e cookie inseguro
 
-- `docker-compose.yml:12` → `FORTIDASHBOARD_SESSION_COOKIE_SECURE: "false"`.
+- `docker-compose.yml:12` → `PENGUARD_SESSION_COOKIE_SECURE: "false"`.
 - Sem reverse-proxy TLS no compose. Tudo trafega em `http://...`.
 
 Em rede de cliente, a sessão HTTP-only ainda vaza no clear. Não atende
@@ -86,8 +86,8 @@ Ação proposta:
 - Adicionar service `traefik` (ou `caddy`) ao `docker-compose.prod.yml`
   com TLS automático via Let's Encrypt para deploys públicos, ou cert
   mTLS interno para deploys on-prem.
-- Flip `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` no prod override e
-  trocar nome do cookie para `__Host-fortidashboard_session`.
+- Flip `PENGUARD_SESSION_COOKIE_SECURE=true` no prod override e
+  trocar nome do cookie para `__Host-penguard_session`.
 
 ### 1.4 Sem CI
 

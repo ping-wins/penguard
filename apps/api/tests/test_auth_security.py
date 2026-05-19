@@ -26,7 +26,7 @@ def test_csrf_endpoint_issues_token_cookie_for_vue_forms():
     assert len(csrf_token) >= 32
 
     set_cookie = response.headers["set-cookie"]
-    assert "fortidashboard_csrf=" in set_cookie
+    assert "penguard_csrf=" in set_cookie
     assert "HttpOnly" not in set_cookie
     assert "SameSite=lax" in set_cookie
 

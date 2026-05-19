@@ -60,7 +60,7 @@ router = APIRouter(tags=["ai-agent"], prefix="/ai/agent")
 
 _API_KEY_MAX_LENGTH = 1024
 _PROBE_SYSTEM_PROMPT = (
-    "You are validating FortiDashboard SOC Assistant provider connectivity. "
+    "You are validating Penguard SOC Assistant provider connectivity. "
     "Reply with OK only."
 )
 _PROBE_USER_PROMPT = "Reply with OK."

@@ -6,14 +6,14 @@ Proposed
 
 ## Context
 
-FortiDashboard will ingest FortiWeb WAF telemetry from a FortiWeb 8.0.5 trial
+Penguard will ingest FortiWeb WAF telemetry from a FortiWeb 8.0.5 trial
 protecting the external landing page. SIEM incidents may require response
 suggestions such as blocking an abusive source IP, increasing WAF enforcement,
 or asking FortiGate to block traffic upstream.
 
 ## Decision
 
-All response actions must be initiated from FortiDashboard, require an
+All response actions must be initiated from Penguard, require an
 authenticated admin session, require explicit approval, and write audit events
 before and after the action.
 
@@ -29,7 +29,7 @@ paths, preflight reads, rollback behavior, audit fields, and permission checks.
 
 ## Consequences
 
-- The demo can show FortiWeb blocking attacks and FortiDashboard generating
+- The demo can show FortiWeb blocking attacks and Penguard generating
   incidents in realtime.
-- FortiDashboard remains the only place where response actions are requested.
+- Penguard remains the only place where response actions are requested.
 - The project does not silently modify customer WAF/firewall policy.

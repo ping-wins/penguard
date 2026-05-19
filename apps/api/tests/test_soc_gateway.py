@@ -124,7 +124,7 @@ class FakeFortiGatePolicyClient:
         self.created_policies: list[dict] = []
 
     def get_policies(self) -> list[dict]:
-        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        return [{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}]
 
     def get_address_objects(self) -> list[dict]:
         return []
@@ -169,7 +169,7 @@ def _user_with_roles(*roles: str) -> dict:
 
 
 def _enable_lab_demo_tools(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("PENGUARD_ENABLE_LAB_DEMO_TOOLS", "true")
     get_settings.cache_clear()
 
 
@@ -708,7 +708,7 @@ def test_endpoint_related_incidents_matches_endpoint_identity_and_excludes_unrel
         "id": "end_win_dc01",
         "hostname": "WIN-SOC-DC01",
         "ipAddresses": ["192.0.2.10", "10.0.2.15"],
-        "currentUser": "FORTIDASHBOARD\\felipe",
+        "currentUser": "PENGUARD\\felipe",
         "attributes": {"os": "Windows"},
     }
     incidents = [
@@ -734,7 +734,7 @@ def test_endpoint_related_incidents_matches_endpoint_identity_and_excludes_unrel
             "severity": "low",
             "triageLevel": "T3",
             "ticketStatus": "new",
-            "entities": {"username": "felipe@fortidashboard.local"},
+            "entities": {"username": "felipe@penguard.local"},
         },
         {
             "id": "inc_unrelated",
@@ -1147,7 +1147,7 @@ def test_playbook_run_policy_review_and_apply_link_ticket_to_fortigate_policy():
         "incidentId": "inc_123",
         "ticket": {"id": "inc_123", "ticketStatus": "contained"},
     }
-    assert fgt_client.created_policies[0]["name"].startswith("FD_TMP_BLOCK_")
+    assert fgt_client.created_policies[0]["name"].startswith("PG_TMP_BLOCK_")
     assert len(fgt_client.created_policies[0]["name"]) <= 35
     assert fake_siem.calls[-1]["path"] == "/incidents/inc_123/triage"
 
@@ -1471,7 +1471,7 @@ def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
             "occurredAt": "2026-05-12T13:30:00.000Z",
             "hostname": "WIN-SOC-DC01",
             "ipAddresses": ["192.0.2.10"],
-            "currentUser": "FORTIDASHBOARD\\felipe",
+            "currentUser": "PENGUARD\\felipe",
             "attributes": {
                 "source": "agent_private.windows_security",
                 "windowsEventId": 4625,
@@ -1499,7 +1499,7 @@ def test_xdr_endpoint_event_gateway_forwards_windows_security_events_to_siem():
                 "entities": {
                     "endpointId": "end_win_dc01",
                     "hostname": "WIN-SOC-DC01",
-                    "username": "FORTIDASHBOARD\\felipe",
+                    "username": "PENGUARD\\felipe",
                     "sourceIp": "192.0.2.77",
                 },
                 "attributes": {
@@ -1738,7 +1738,7 @@ def test_xdr_endpoint_event_gateway_forwards_malicious_sysmon_network_to_siem():
             "occurredAt": "2026-05-19T12:10:00.000Z",
             "hostname": "WIN-SOC-01",
             "ipAddresses": ["192.0.2.50"],
-            "currentUser": "FORTIDASHBOARD\\analyst",
+            "currentUser": "PENGUARD\\analyst",
             "attributes": {
                 "source": "agent_private.sysmon",
                 "sysmonEventId": 3,

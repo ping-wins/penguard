@@ -149,7 +149,7 @@ class FortiWebIntegrationCreate(FortiWebAuthPayload):
     )
     managed_ip_list_policy: str = Field(
         alias="managedIpListPolicy",
-        default="FD_IP_BLOCKLIST",
+        default="PG_IP_BLOCKLIST",
         min_length=1,
         max_length=255,
         pattern=r"^[A-Za-z0-9_. -]+$",
@@ -1490,8 +1490,8 @@ def _build_fortigate_traffic_policy_draft(
     except ValueError as exc:
         raise ValueError("sourceSubnet and destinationSubnet must be valid CIDR ranges") from exc
 
-    source_name = _address_object_name("FD_SRC", source_network)
-    destination_name = _address_object_name("FD_DST", destination_network)
+    source_name = _address_object_name("PG_SRC", source_network)
+    destination_name = _address_object_name("PG_DST", destination_network)
     policy = {
         "name": payload.name,
         "sourceInterface": payload.source_interface,
@@ -1534,7 +1534,7 @@ def _build_fortigate_traffic_policy_draft(
         "policy": policy,
         "cliCommands": cli_commands,
         "warnings": [
-            "FortiDashboard does not apply this policy automatically.",
+            "Penguard does not apply this policy automatically.",
             (
                 "Paste the CLI on the FortiGate only after reviewing interface names, "
                 "address ranges and policy order."

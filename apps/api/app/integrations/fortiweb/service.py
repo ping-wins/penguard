@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from app.integrations.fortiweb.client import FortiWebApiClient, FortiWebApiError
 from app.integrations.fortiweb.store import FORTIWEB_CAPABILITIES
 
-FORTIDASHBOARD_WAF_DOS_INLINE_PROFILE = "FD Inline DoS Protection"
+PENGUARD_WAF_DOS_INLINE_PROFILE = "Penguard Inline DoS Protection"
 
 
 class FortiWebIntegrationStore(Protocol):
@@ -171,7 +171,7 @@ class MockFortiWebIntegrationService:
         api_key: str,
         verify_tls: bool,
         target_server_policy: str = "lab-waf-policy",
-        managed_ip_list_policy: str = "FD_IP_BLOCKLIST",
+        managed_ip_list_policy: str = "PG_IP_BLOCKLIST",
     ) -> dict[str, Any]:
         _ = (owner_user_id, host, api_key, verify_tls)
         return {
@@ -288,19 +288,19 @@ class MockFortiWebIntegrationService:
             "sourceIp": normalized_ip,
             "incidentId": incident_id,
             "targetServerPolicy": "lab-waf-policy",
-            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "managedIpListPolicy": "PG_IP_BLOCKLIST",
             "reason": reason,
         }
         preflight_summary = {
             "integrationId": integration_id,
             "serverPolicy": "lab-waf-policy",
             "inlineProtectionProfile": "lab-inline-protection",
-            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "managedIpListPolicy": "PG_IP_BLOCKLIST",
             "ipListAttached": True,
             "ipListExists": True,
             "alreadyBlocked": False,
         }
-        proposed_changes = [_update_ip_list_change("FD_IP_BLOCKLIST", normalized_ip)]
+        proposed_changes = [_update_ip_list_change("PG_IP_BLOCKLIST", normalized_ip)]
         review_hash = _review_hash(intent, preflight_summary, proposed_changes)
         return {
             "id": "fweb_block_01",
@@ -373,7 +373,7 @@ class FortiWebIntegrationService:
         api_key: str,
         verify_tls: bool,
         target_server_policy: str = "lab-waf-policy",
-        managed_ip_list_policy: str = "FD_IP_BLOCKLIST",
+        managed_ip_list_policy: str = "PG_IP_BLOCKLIST",
     ) -> dict[str, Any]:
         telemetry_token = _generate_telemetry_token()
         probe = self._probe_connection(host=host, api_key=api_key, verify_tls=verify_tls)
@@ -599,7 +599,7 @@ class FortiWebIntegrationService:
         owner_user_id: str,
         integration_id: str,
         target_server_policy: str | None = None,
-        inline_protection_profile: str = FORTIDASHBOARD_WAF_DOS_INLINE_PROFILE,
+        inline_protection_profile: str = PENGUARD_WAF_DOS_INLINE_PROFILE,
         dos_prevention_policy: str = "Predefined",
         reason: str | None = None,
     ) -> dict[str, Any]:
@@ -716,7 +716,7 @@ class FortiWebIntegrationService:
             if _is_read_only_fortiweb_object(inline_profile):
                 raise PermissionError(
                     "FortiWeb inline protection profile is read-only; "
-                    "choose a FortiDashboard-owned profile"
+                    "choose a Penguard-owned profile"
                 )
             client.update_inline_protection_profile(
                 inline_profile_name,
@@ -804,7 +804,7 @@ class FortiWebIntegrationService:
         attached_ip_list = _profile_ip_list_policy(profile)
         if attached_ip_list and attached_ip_list != managed_ip_list_policy:
             raise PermissionError(
-                "Target FortiWeb profile already uses a non-FortiDashboard IP list policy"
+                "Target FortiWeb profile already uses a non-Penguard IP list policy"
             )
         ip_list_exists = True
         try:
@@ -823,7 +823,7 @@ class FortiWebIntegrationService:
                     "operation": "create_ip_list",
                     "target": managed_ip_list_policy,
                     "summary": (
-                        "Create FortiDashboard managed FortiWeb IP list "
+                        "Create Penguard managed FortiWeb IP list "
                         f"{managed_ip_list_policy}"
                     ),
                 }
@@ -899,7 +899,7 @@ def _update_ip_list_change(managed_ip_list_policy: str, source_ip: str) -> dict[
     return {
         "operation": "update_ip_list",
         "target": managed_ip_list_policy,
-        "summary": f"Add {source_ip} to FortiDashboard managed FortiWeb IP list",
+        "summary": f"Add {source_ip} to Penguard managed FortiWeb IP list",
         "sourceIp": source_ip,
         "member": _block_member(source_ip),
     }
@@ -1023,7 +1023,7 @@ def _inline_profile_create_payload(*, name: str, dos_policy: str) -> dict[str, A
         "rdt-reason": "disable",
         "jwt-token-location": "token-location-header",
         "application-layer-dos-prevention": dos_policy,
-        "comment": "Created by FortiDashboard for WAF/DoS lab validation",
+        "comment": "Created by Penguard for WAF/DoS lab validation",
     }
 
 
@@ -1047,7 +1047,7 @@ def _waf_dos_policy_changes(
                 "before": None,
                 "after": dos_policy,
                 "summary": (
-                    f"Create FortiDashboard-owned FortiWeb profile {inline_profile} "
+                    f"Create Penguard-owned FortiWeb profile {inline_profile} "
                     f"with {dos_policy} DoS prevention"
                 ),
             }

@@ -118,7 +118,7 @@ def test_connect_returns_per_destination_wiring(monkeypatch) -> None:
                 "name": "WAF",
                 "auth": {
                     "host": "https://fw.local",
-                    "username": "fortidashboard-api",
+                    "username": "penguard-api",
                     "password": "secret",
                     "vdom": "root",
                     "verifyTls": False,

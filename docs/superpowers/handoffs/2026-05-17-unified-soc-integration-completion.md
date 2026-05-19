@@ -8,7 +8,7 @@
 
 Tasks **1.4 through 3.5** are complete.
 
-### PKGS (`ping-wins/fortidashboard-addons`)
+### PKGS (`ping-wins/penguard-addons`)
 
 - `300db5d` `feat(fortiweb-core): self-contained connector package 8.0.5`
 - `c7302de` `feat(penguin): self-contained SIEM/XDR/SOAR connector packages 1.0.0`
@@ -20,7 +20,7 @@ Pushed tags:
 - `penguin-xdr-v1.0.0`
 - `penguin-soar-v1.0.0`
 
-### DASH (`ping-wins/fortidashboard`)
+### DASH (`ping-wins/penguard`)
 
 - `0d4793a` `test(addons): parity smoke for vendor connector packages`
 - `303a86b` `feat(integrations): wizard catalog from installed package manifests`

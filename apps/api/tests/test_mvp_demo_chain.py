@@ -208,7 +208,7 @@ class FakeSoar:
 def _stub_user() -> dict[str, Any]:
     return {
         "id": "usr_demo",
-        "email": "demo@fortidashboard.local",
+        "email": "demo@penguard.local",
         "displayName": "Demo",
         "roles": ["admin", "analyst"],
     }
@@ -233,8 +233,8 @@ def _lab_chain_app(siem: FakeSiem, soar: FakeSoar) -> FastAPI:
 def test_mvp_demo_chain_runs_end_to_end(monkeypatch):
     siem = FakeSiem()
     soar = FakeSoar()
-    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
-    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "scripted")
+    monkeypatch.setenv("PENGUARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("PENGUARD_AI_PROVIDER", "scripted")
     get_settings.cache_clear()
     soc_router.get_ai_provider.cache_clear()
     client = TestClient(_lab_chain_app(siem, soar))

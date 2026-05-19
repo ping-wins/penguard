@@ -72,7 +72,7 @@ def normalize_policies(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "logging": _string(item, "logtraffic", "logTraffic", default="") or "",
                 "comments": comments,
                 "isBlocking": _policy_is_blocking(action),
-                "isFortiDashboardOwned": _policy_is_fortidashboard_owned(name, comments),
+                "isPenguardOwned": _policy_is_penguard_owned(name, comments),
                 "policyKind": _policy_kind(name),
             }
         )
@@ -361,17 +361,17 @@ def _policy_is_blocking(action: str) -> bool:
     return action.lower() in {"deny", "block", "blocked", "reject"}
 
 
-def _policy_is_fortidashboard_owned(name: str, comments: str) -> bool:
-    return name.startswith("FD_") or "fortidashboard owned" in comments.lower()
+def _policy_is_penguard_owned(name: str, comments: str) -> bool:
+    return name.startswith("PG_") or "penguard owned" in comments.lower()
 
 
 def _policy_kind(name: str) -> str:
-    if name.startswith("FD_TMP_BLOCK_"):
+    if name.startswith("PG_TMP_BLOCK_"):
         return "temporary_block"
-    if name.startswith("FD_LAB_ALLOW_"):
+    if name.startswith("PG_LAB_ALLOW_"):
         return "lab_allow_log"
-    if name.startswith("FD_"):
-        return "fortidashboard"
+    if name.startswith("PG_"):
+        return "penguard"
     return "standard"
 
 

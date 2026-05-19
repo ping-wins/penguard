@@ -12,7 +12,7 @@ class MemoryFortiWebBlockStore:
             "api_key": "fweb_api_key_from_user",
             "verify_tls": False,
             "target_server_policy": "lab-waf-policy",
-            "managed_ip_list_policy": "FD_IP_BLOCKLIST",
+            "managed_ip_list_policy": "PG_IP_BLOCKLIST",
         }
         self.requests: dict[str, dict[str, Any]] = {}
 
@@ -101,7 +101,7 @@ class FortiWebBlockClient:
         }
         self.inline_profile = {
             "name": "lab-inline-protection",
-            "ip-list-policy": "FD_IP_BLOCKLIST",
+            "ip-list-policy": "PG_IP_BLOCKLIST",
         }
         self.standard_inline_profile = {
             "name": "Inline Standard Protection",
@@ -117,7 +117,7 @@ class FortiWebBlockClient:
             "enable-layer4-dos-prevention": "enable",
         }
         self.ip_list = {
-            "name": "FD_IP_BLOCKLIST",
+            "name": "PG_IP_BLOCKLIST",
             "members": [],
         }
         self.server_updates: list[dict[str, Any]] = []
@@ -143,7 +143,7 @@ class FortiWebBlockClient:
             return dict(self.standard_inline_profile)
         if name in self.extra_inline_profiles:
             return dict(self.extra_inline_profiles[name])
-        if name == "FD Inline DoS Protection":
+        if name == "Penguard Inline DoS Protection":
             raise FortiWebApiError("The entry is not found.")
         raise AssertionError(f"unexpected profile {name}")
 
@@ -176,7 +176,7 @@ class FortiWebBlockClient:
         return dict(self.server_policy)
 
     def get_ip_list(self, name: str):
-        assert name == "FD_IP_BLOCKLIST"
+        assert name == "PG_IP_BLOCKLIST"
         return {
             **self.ip_list,
             "members": [dict(member) for member in self.ip_list["members"]],
@@ -188,7 +188,7 @@ class FortiWebBlockClient:
         return dict(self.ip_list)
 
     def update_ip_list(self, name: str, payload: dict[str, Any]):
-        assert name == "FD_IP_BLOCKLIST"
+        assert name == "PG_IP_BLOCKLIST"
         self.ip_list.update(payload)
         self.ip_list_updates.append(dict(payload))
         return dict(self.ip_list)
@@ -220,15 +220,15 @@ def test_review_source_block_prepares_managed_ip_list_change_without_ttl():
         "sourceIp": "10.10.10.10",
         "incidentId": "inc_dos_01",
         "targetServerPolicy": "lab-waf-policy",
-        "managedIpListPolicy": "FD_IP_BLOCKLIST",
+        "managedIpListPolicy": "PG_IP_BLOCKLIST",
         "reason": "DoS lab attack source",
     }
     assert "expiresAt" not in review["intent"]
     assert review["proposedChanges"] == [
         {
             "operation": "update_ip_list",
-            "target": "FD_IP_BLOCKLIST",
-            "summary": "Add 10.10.10.10 to FortiDashboard managed FortiWeb IP list",
+            "target": "PG_IP_BLOCKLIST",
+            "summary": "Add 10.10.10.10 to Penguard managed FortiWeb IP list",
             "sourceIp": "10.10.10.10",
             "member": {
                 "ip": "10.10.10.10",
@@ -313,7 +313,7 @@ def test_review_waf_dos_policy_prepares_server_policy_and_profile_changes():
     assert review["intent"] == {
         "action": "prepare_waf_dos_policy",
         "targetServerPolicy": "lab-waf-policy",
-        "inlineProtectionProfile": "FD Inline DoS Protection",
+        "inlineProtectionProfile": "Penguard Inline DoS Protection",
         "dosPreventionPolicy": "Predefined",
         "reason": "Lab DoS validation",
     }
@@ -321,7 +321,7 @@ def test_review_waf_dos_policy_prepares_server_policy_and_profile_changes():
         "integrationId": "int_fweb_lab",
         "serverPolicy": "lab-waf-policy",
         "currentInlineProtectionProfile": None,
-        "desiredInlineProtectionProfile": "FD Inline DoS Protection",
+        "desiredInlineProtectionProfile": "Penguard Inline DoS Protection",
         "desiredInlineProtectionProfileExists": False,
         "currentDosPreventionPolicy": None,
         "desiredDosPreventionPolicy": "Predefined",
@@ -353,19 +353,19 @@ def test_apply_waf_dos_policy_updates_fortiweb_through_confirmed_review():
     )
 
     assert applied["applied"] is True
-    assert fake_client.server_policy["web-protection-profile"] == "FD Inline DoS Protection"
+    assert fake_client.server_policy["web-protection-profile"] == "Penguard Inline DoS Protection"
     assert (
-        fake_client.extra_inline_profiles["FD Inline DoS Protection"][
+        fake_client.extra_inline_profiles["Penguard Inline DoS Protection"][
             "application-layer-dos-prevention"
         ]
         == "Predefined"
     )
     assert fake_client.server_updates == [
-        {"web-protection-profile": "FD Inline DoS Protection", "tlog": "enable"}
+        {"web-protection-profile": "Penguard Inline DoS Protection", "tlog": "enable"}
     ]
     assert fake_client.inline_updates == [
         {
-            "name": "FD Inline DoS Protection",
+            "name": "Penguard Inline DoS Protection",
             "client-management": "enable",
             "amf3-protocol-detection": "disable",
             "mobile-app-identification": "",
@@ -376,6 +376,6 @@ def test_apply_waf_dos_policy_updates_fortiweb_through_confirmed_review():
             "rdt-reason": "disable",
             "jwt-token-location": "token-location-header",
             "application-layer-dos-prevention": "Predefined",
-            "comment": "Created by FortiDashboard for WAF/DoS lab validation",
+            "comment": "Created by Penguard for WAF/DoS lab validation",
         }
     ]

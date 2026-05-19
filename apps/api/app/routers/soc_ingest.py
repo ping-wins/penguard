@@ -5,7 +5,7 @@ a low-latency path: the device fires an HTTP webhook on each interesting log
 line (e.g. admin-login-failure) and the BFF translates that to a SIEM event,
 which siem-kowalski matches against detection rules.
 
-Auth is a single shared bearer token (`FORTIDASHBOARD_SOC_INGEST_TOKEN`); the
+Auth is a single shared bearer token (`PENGUARD_SOC_INGEST_TOKEN`); the
 endpoint is unauthenticated otherwise and skips CSRF because FortiGate
 Automation Stitches cannot carry session cookies or CSRF headers.
 
@@ -155,7 +155,7 @@ def _verify_token(authorization: str | None) -> None:
     if not expected:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="SOC ingest endpoint is disabled. Set FORTIDASHBOARD_SOC_INGEST_TOKEN.",
+            detail="SOC ingest endpoint is disabled. Set PENGUARD_SOC_INGEST_TOKEN.",
         )
     presented = ""
     if authorization:
@@ -356,7 +356,7 @@ def ingest_fortigate_webhook(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     integration_header: Annotated[
         str | None,
-        Header(alias="X-FortiDashboard-Integration-Id"),
+        Header(alias="X-Penguard-Integration-Id"),
     ] = None,
 ) -> dict[str, Any]:
     _verify_token(authorization)
@@ -514,7 +514,7 @@ def ingest_fortiweb_event(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     integration_header: Annotated[
         str | None,
-        Header(alias="X-FortiDashboard-Integration-Id"),
+        Header(alias="X-Penguard-Integration-Id"),
     ] = None,
 ) -> dict[str, Any]:
     _verify_token(authorization)

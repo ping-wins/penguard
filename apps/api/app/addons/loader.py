@@ -1,6 +1,6 @@
 """Dynamic loader for installed add-on packages.
 
-Each add-on is imported as `fortidashboard_addons.<id>` via
+Each add-on is imported as `penguard_addons.<id>` via
 `importlib.util.spec_from_file_location` to keep it off the global
 `sys.path`. Submodule lookup is scoped to the package directory.
 """
@@ -19,7 +19,7 @@ from app.addons.manifest import AddonManifest
 
 logger = logging.getLogger(__name__)
 
-_MODULE_NAMESPACE = "fortidashboard_addons"
+_MODULE_NAMESPACE = "penguard_addons"
 
 
 class AddonLoader:

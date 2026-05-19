@@ -1,1 +1,1 @@
-"""FortiDashboard FastAPI application package."""
+"""Penguard FastAPI application package."""

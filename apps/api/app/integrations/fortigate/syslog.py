@@ -320,11 +320,11 @@ async def send_fortigate_syslog_probe(
 def _build_probe_syslog_line(*, integration_id: str, sent_at: datetime) -> str:
     return (
         f'<189>date={sent_at:%Y-%m-%d} time={sent_at:%H:%M:%S} '
-        'devname="FortiDashboardCollectorProbe" type="traffic" subtype="forward" '
+        'devname="PenguardCollectorProbe" type="traffic" subtype="forward" '
         'level="information" srcip=127.0.0.1 dstip=127.0.0.1 '
         'srcport=55140 dstport=5514 proto=17 service="SYSLOG" action="accept" '
         f'integrationid="{integration_id}" probe=true '
-        'msg="FortiDashboard synthetic syslog collector probe"'
+        'msg="Penguard synthetic syslog collector probe"'
     )
 
 

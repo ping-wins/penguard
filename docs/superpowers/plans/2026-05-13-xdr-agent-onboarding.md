@@ -261,7 +261,7 @@ Expected: agent tests and lint pass.
 
 ```powershell
 cd apps\agent_private
-$env:AGENT_PRIVATE_API_URL="http://<fortidashboard-host>:8000"
+$env:AGENT_PRIVATE_API_URL="http://<penguard-host>:8000"
 $env:AGENT_PRIVATE_ENDPOINT_ID="<enrollment-id>"
 $env:AGENT_PRIVATE_ENROLLMENT_TOKEN="<token-returned-once>"
 uv run agent-private run
@@ -300,7 +300,7 @@ cd apps/agent_private && uv run ruff check agent_private tests
 
 ```bash
 git diff --check
-docker compose config >/tmp/fortidashboard-compose.yml
+docker compose config >/tmp/penguard-compose.yml
 ```
 
 Expected: all commands pass.

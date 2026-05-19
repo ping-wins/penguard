@@ -423,7 +423,7 @@ describe('FortiGate widget renderers', () => {
               id: 'fortigate.temporary_source_destination_block',
               type: 'fortigate',
               label: 'Temporarily block source to target',
-              description: 'Create a FortiDashboard-owned temporary block scoped to the observed source and destination after approval.',
+              description: 'Create a Penguard-owned temporary block scoped to the observed source and destination after approval.',
               riskLevel: 'high',
               requiresApproval: true,
               availableNow: true,
@@ -788,12 +788,12 @@ describe('FortiGate widget renderers', () => {
           integration_id: 'int_fgt_lab',
           existing_policy_count: 3,
           owned_policy_count: 1,
-          proposed_policy_name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10',
-          placement: 'before first FortiDashboard-owned lab allow/log policy',
+          proposed_policy_name: 'PG_TMP_BLOCK_192_0_2_50_TO_198_51_100_10',
+          placement: 'before first Penguard-owned lab allow/log policy',
           warnings: [],
           changes: [
-            { operation: 'create', object_type: 'firewall.address', name: 'FD_ADDR_192_0_2_50', payload: {} },
-            { operation: 'create', object_type: 'firewall.policy', name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10', payload: {} },
+            { operation: 'create', object_type: 'firewall.address', name: 'PG_ADDR_192_0_2_50', payload: {} },
+            { operation: 'create', object_type: 'firewall.policy', name: 'PG_TMP_BLOCK_192_0_2_50_TO_198_51_100_10', payload: {} },
           ],
           review_hash: 'hash_01',
           runId: 'run_01',
@@ -813,7 +813,7 @@ describe('FortiGate widget renderers', () => {
           policy: {
             request_id: 'fgpcr_01',
             status: 'applied',
-            applied_changes: [{ name: 'FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10' }],
+            applied_changes: [{ name: 'PG_TMP_BLOCK_192_0_2_50_TO_198_51_100_10' }],
           },
           ticketUpdate: {
             status: 'contained',
@@ -847,7 +847,7 @@ describe('FortiGate widget renderers', () => {
 
     await wrapper.get('[data-test="ticket-create-policy-review"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="ticket-policy-review"]').text()).toContain('FD_TMP_BLOCK_192_0_2_50_TO_198_51_100_10')
+    expect(wrapper.get('[data-test="ticket-policy-review"]').text()).toContain('PG_TMP_BLOCK_192_0_2_50_TO_198_51_100_10')
 
     await wrapper.get('[data-test="ticket-apply-policy-review"]').trigger('click')
     await flushPromises()
@@ -929,18 +929,18 @@ describe('FortiGate widget renderers', () => {
           policies: [
             {
               id: 1,
-              name: 'FD_TMP_BLOCK_32FD0707AD9A',
+              name: 'PG_TMP_BLOCK_32FD0707AD9A',
               sourceInterfaces: ['port2'],
               destinationInterfaces: ['port3'],
-              sourceAddresses: ['FD_ADDR_10_10_10_10'],
-              destinationAddresses: ['FD_ADDR_10_10_20_10'],
+              sourceAddresses: ['PG_ADDR_10_10_10_10'],
+              destinationAddresses: ['PG_ADDR_10_10_20_10'],
               services: ['ALL'],
               schedule: 'always',
               logging: 'all',
-              comments: 'FortiDashboard owned temporary block policy',
+              comments: 'Penguard owned temporary block policy',
               policyKind: 'temporary_block',
               isBlocking: true,
-              isFortiDashboardOwned: true,
+              isPenguardOwned: true,
               action: 'deny',
               status: 'enabled',
             },
@@ -963,13 +963,13 @@ describe('FortiGate widget renderers', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('FD_TMP_BLOCK_32FD0707AD9A')
+    expect(wrapper.text()).toContain('PG_TMP_BLOCK_32FD0707AD9A')
     expect(wrapper.text()).toContain('Block')
     expect(wrapper.text()).toContain('Temporary block')
-    expect(wrapper.text()).toContain('FortiDashboard')
+    expect(wrapper.text()).toContain('Penguard')
     expect(wrapper.text()).toContain('port2 -> port3')
-    expect(wrapper.text()).toContain('FD_ADDR_10_10_10_10')
-    expect(wrapper.text()).toContain('FD_ADDR_10_10_20_10')
+    expect(wrapper.text()).toContain('PG_ADDR_10_10_10_10')
+    expect(wrapper.text()).toContain('PG_ADDR_10_10_20_10')
     expect(wrapper.text()).toContain('Log all')
     expect(wrapper.text()).toContain('ALL')
     expect(wrapper.text()).toContain('Allow SOC outbound')

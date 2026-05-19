@@ -21,11 +21,11 @@ BlackArch attacker -> FortiGate -> FortiWeb -> Arch victim/origin
 Current canonical management path:
 
 ```txt
-Host/FortiDashboard -> FortiGate port1 bridged
-Host/FortiDashboard -> FortiWeb port2 bridged
+Host/Penguard -> FortiGate port1 bridged
+Host/Penguard -> FortiWeb port2 bridged
 ```
 
-FortiDashboard manages FortiGate lab policies directly through the governed
+Penguard manages FortiGate lab policies directly through the governed
 FortiGate API orchestration path. FortiManager is optional/future lab
 infrastructure, not a blocker for telemetry, policy validation or containment
 tests.

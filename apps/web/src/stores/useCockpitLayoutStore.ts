@@ -5,7 +5,7 @@ import { ref, watch } from 'vue'
 // widths, build pane width, minimap collapsed flag. Persisted in localStorage
 // so the layout survives a reload without round-tripping through the BFF.
 
-const STORAGE_KEY = 'fortidashboard:cockpit-layout'
+const STORAGE_KEY = 'penguard:cockpit-layout'
 
 const DEFAULT_SIDEBAR_DRAWER_WIDTH = 360
 const DEFAULT_BUILD_PANE_WIDTH = 300

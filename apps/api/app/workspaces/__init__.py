@@ -1,1 +1,1 @@
-"""Workspace persistence for FortiDashboard."""
+"""Workspace persistence for Penguard."""

@@ -1,6 +1,6 @@
 # FortiWeb DoS Lab: Attacker -> FortiGate -> FortiWeb -> Victim
 
-Runbook para validar DoS/WAF com telemetria real no FortiDashboard usando o
+Runbook para validar DoS/WAF com telemetria real no Penguard usando o
 laboratorio VMware canonical:
 
 - `docs/operations/vmware-soc-lab-blackarch-arch.md`
@@ -21,7 +21,7 @@ BlackArch attacker 10.10.10.10
 Gestao fica fora do caminho de ataque:
 
 ```txt
-Host FortiDashboard/Docker
+Host Penguard/Docker
   -> FortiGate port1 <FGT_MGMT_IP> bridged
   -> FortiWeb port2 <FWEB_MGMT_IP> bridged
 ```
@@ -36,12 +36,12 @@ Regras do lab:
 
 ## Pre-requisitos
 
-1. FortiDashboard stack rodando no host.
-2. FortiGate conectado no FortiDashboard e com syslog/log-forwarding saudavel.
+1. Penguard stack rodando no host.
+2. FortiGate conectado no Penguard e com syslog/log-forwarding saudavel.
 3. FortiWeb configurado com:
-   - `FD_VIP_LANDING` em `10.10.20.30/24` na `port1`.
+   - `PG_VIP_LANDING` em `10.10.20.30/24` na `port1`.
    - `victim-pool` apontando para `10.10.40.10:8080`.
-   - `lab-vserver` usando `FD_VIP_LANDING`.
+   - `lab-vserver` usando `PG_VIP_LANDING`.
    - `lab-waf-policy` usando `victim-pool`.
 4. Victim servindo landing em `10.10.40.10:8080`.
 5. BlackArch com rota para `10.10.20.0/24` via `10.10.10.1`.
@@ -52,21 +52,21 @@ Para a demo WAF, permita e logue HTTP/HTTPS do atacante para o VIP:
 
 ```txt
 config firewall address
-  edit "FD_HOST_ATTACKER"
+  edit "PG_HOST_ATTACKER"
     set subnet 10.10.10.10 255.255.255.255
   next
-  edit "FD_HOST_FORTIWEB_VIP"
+  edit "PG_HOST_FORTIWEB_VIP"
     set subnet 10.10.20.30 255.255.255.255
   next
 end
 
 config firewall policy
   edit 0
-    set name "FD_LAB_ALLOW_ATTACK_TO_WAF_WEB"
+    set name "PG_LAB_ALLOW_ATTACK_TO_WAF_WEB"
     set srcintf "port2"
     set dstintf "port3"
-    set srcaddr "FD_HOST_ATTACKER"
-    set dstaddr "FD_HOST_FORTIWEB_VIP"
+    set srcaddr "PG_HOST_ATTACKER"
+    set dstaddr "PG_HOST_FORTIWEB_VIP"
     set action accept
     set schedule "always"
     set service "HTTP" "HTTPS"
@@ -76,7 +76,7 @@ end
 ```
 
 Para validacao de port-scan SIEM, use uma policy temporaria `ALL` para o mesmo
-VIP criada pela orquestracao de policies do FortiDashboard e remova/desabilite
+VIP criada pela orquestracao de policies do Penguard e remova/desabilite
 depois.
 
 ## Victim: Landing Simples
@@ -99,7 +99,7 @@ python -m http.server 8080 --bind 10.10.40.10
 Use o runbook base para configurar as interfaces. O resumo dos objetos:
 
 ```txt
-system vip:             FD_VIP_LANDING -> 10.10.20.30/24 on port1
+system vip:             PG_VIP_LANDING -> 10.10.20.30/24 on port1
 server-policy vserver:  lab-vserver
 server pool:            victim-pool -> 10.10.40.10:8080
 server policy:          lab-waf-policy
@@ -108,10 +108,10 @@ server policy:          lab-waf-policy
 O `server-policy policy` precisa ter `set replacemsg "Predefined"`, porque
 FortiWeb pode recusar `next` quando `replacemsg` fica vazio.
 
-## FortiWeb: Log Push Para FortiDashboard
+## FortiWeb: Log Push Para Penguard
 
-Ao conectar o FortiWeb no FortiDashboard, o BFF cria um canal de telemetria da
-propria integracao. Nao configure `FORTIDASHBOARD_SOC_INGEST_TOKEN` para esse
+Ao conectar o FortiWeb no Penguard, o BFF cria um canal de telemetria da
+propria integracao. Nao configure `PENGUARD_SOC_INGEST_TOKEN` para esse
 fluxo. Use o endpoint e o token exibidos no wizard de conexao ou no botao de
 rotacao de token da integracao FortiWeb.
 
@@ -243,5 +243,5 @@ Verifique token, URL do trigger e conectividade do FortiWeb `port2` ate
 
 - Atacar apenas `10.10.20.30`.
 - Nao usar flood sem limite de tempo ou contagem.
-- Nao expor o endpoint `:8000` do FortiDashboard para fora da rede local.
-- Live response continua exigindo aprovacao explicita no FortiDashboard.
+- Nao expor o endpoint `:8000` do Penguard para fora da rede local.
+- Live response continua exigindo aprovacao explicita no Penguard.

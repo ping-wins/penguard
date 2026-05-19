@@ -2,7 +2,7 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Remove customer-visible demo/mock/synthetic behavior from FortiDashboard runtime and make SOC detections depend on live FortiGate, live endpoint agent, real persisted services, and explicitly configured AI providers.
+**Goal:** Remove customer-visible demo/mock/synthetic behavior from Penguard runtime and make SOC detections depend on live FortiGate, live endpoint agent, real persisted services, and explicitly configured AI providers.
 
 **Architecture:** Keep test fixtures and unit-test fakes, but remove or gate every runtime/demo surface from production builds. Replace synthetic replay/simulator paths with operator flows that validate live integrations, ingestion health, endpoint enrollment, and real telemetry arrival. Fail closed when a real provider is not configured instead of silently falling back to scripted/demo output.
 

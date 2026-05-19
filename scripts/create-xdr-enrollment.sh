@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create an xdr_rico enrollment token through the FortiDashboard BFF.
+# Create an xdr_rico enrollment token through the Penguard BFF.
 #
 # The token is returned only once by xdr_rico. Treat it as a secret and pass it
 # to agent_private as AGENT_PRIVATE_ENROLLMENT_TOKEN.
@@ -15,17 +15,17 @@ Usage:
   scripts/create-xdr-enrollment.sh [options]
 
 Options:
-  --api-url URL          FortiDashboard API URL (default: API_HOST/.env or http://localhost:8000)
-  --email EMAIL          FortiDashboard login email (or FORTIDASHBOARD_LOGIN_EMAIL)
-  --password PASSWORD    FortiDashboard login password (or FORTIDASHBOARD_LOGIN_PASSWORD)
+  --api-url URL          Penguard API URL (default: API_HOST/.env or http://localhost:8000)
+  --email EMAIL          Penguard login email (or PENGUARD_LOGIN_EMAIL)
+  --password PASSWORD    Penguard login password (or PENGUARD_LOGIN_PASSWORD)
   --display-name NAME    Enrollment display name (default: Agent Private)
   --hostname-hint NAME   Optional endpoint hostname hint
   --raw-token            Print only the enrollment token
   -h, --help             Show this help
 
 Example:
-  FORTIDASHBOARD_LOGIN_EMAIL=analyst@example.com \
-  FORTIDASHBOARD_LOGIN_PASSWORD='correct-horse-battery-staple' \
+  PENGUARD_LOGIN_EMAIL=analyst@example.com \
+  PENGUARD_LOGIN_PASSWORD='correct-horse-battery-staple' \
     scripts/create-xdr-enrollment.sh --display-name "Windows Server Lab"
 EOF
 }
@@ -35,9 +35,9 @@ if [[ -f "${ENV_FILE}" ]]; then
   source "${ENV_FILE}"
 fi
 
-API_URL="${FORTIDASHBOARD_API_URL:-${API_HOST:-http://localhost:8000}}"
-LOGIN_EMAIL="${FORTIDASHBOARD_LOGIN_EMAIL:-}"
-LOGIN_PASSWORD="${FORTIDASHBOARD_LOGIN_PASSWORD:-}"
+API_URL="${PENGUARD_API_URL:-${API_HOST:-http://localhost:8000}}"
+LOGIN_EMAIL="${PENGUARD_LOGIN_EMAIL:-}"
+LOGIN_PASSWORD="${PENGUARD_LOGIN_PASSWORD:-}"
 DISPLAY_NAME="Agent Private"
 HOSTNAME_HINT=""
 RAW_TOKEN=0
@@ -89,19 +89,19 @@ done
 
 if [[ -z "${LOGIN_EMAIL}" ]]; then
   if [[ -t 0 ]]; then
-    read -r -p "FortiDashboard email: " LOGIN_EMAIL
+    read -r -p "Penguard email: " LOGIN_EMAIL
   else
-    echo "error: set FORTIDASHBOARD_LOGIN_EMAIL or pass --email." >&2
+    echo "error: set PENGUARD_LOGIN_EMAIL or pass --email." >&2
     exit 1
   fi
 fi
 
 if [[ -z "${LOGIN_PASSWORD}" ]]; then
   if [[ -t 0 ]]; then
-    read -r -s -p "FortiDashboard password: " LOGIN_PASSWORD
+    read -r -s -p "Penguard password: " LOGIN_PASSWORD
     echo
   else
-    echo "error: set FORTIDASHBOARD_LOGIN_PASSWORD or pass --password." >&2
+    echo "error: set PENGUARD_LOGIN_PASSWORD or pass --password." >&2
     exit 1
   fi
 fi

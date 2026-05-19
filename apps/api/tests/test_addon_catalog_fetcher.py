@@ -31,13 +31,13 @@ def _transport(handler):
 
 def test_fetch_returns_catalog():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/repos/ping-wins/fortidashboard-addons/contents/catalog.json"
+        assert request.url.path == "/repos/ping-wins/penguard-addons/contents/catalog.json"
         assert request.headers["authorization"] == "Bearer test-token"
         assert request.headers["accept"] == "application/vnd.github.raw+json"
         return httpx.Response(200, json=_catalog_payload())
 
     fetcher = CatalogFetcher(
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="test-token",
         transport=_transport(handler),
     )

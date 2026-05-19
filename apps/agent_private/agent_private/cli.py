@@ -1057,7 +1057,7 @@ def _common_parent() -> argparse.ArgumentParser:
     parent.add_argument(
         "--api-url",
         default=os.environ.get("AGENT_PRIVATE_API_URL"),
-        help="Base URL for FortiDashboard API, for example http://localhost:8000.",
+        help="Base URL for Penguard API, for example http://localhost:8000.",
     )
     parent.add_argument(
         "--endpoint-id",
@@ -1074,7 +1074,7 @@ def _common_parent() -> argparse.ArgumentParser:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-private",
-        description="Safe explicit FortiDashboard endpoint telemetry CLI.",
+        description="Safe explicit Penguard endpoint telemetry CLI.",
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("tui", help="Open the interactive endpoint sensor TUI.")
@@ -1150,7 +1150,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect_parser.add_argument("--control-url", default=DEFAULT_CONTROL_URL)
     pair_parser = subparsers.add_parser(
         "pair",
-        help="Discover FortiDashboard on the VMware network and save local agent config.",
+        help="Discover Penguard on the VMware network and save local agent config.",
     )
     pair_parser.add_argument("enrollment_token")
     pair_parser.add_argument(

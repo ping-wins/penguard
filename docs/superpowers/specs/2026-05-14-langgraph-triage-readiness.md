@@ -6,7 +6,7 @@ Date: 2026-05-14
 
 Document what is already ready for a future LangGraph ticket triage workflow and
 what still needs a dedicated implementation slice. The workflow should reuse the
-same audited FortiDashboard boundaries that the cockpit uses today; it must not
+same audited Penguard boundaries that the cockpit uses today; it must not
 call SIEM, SOAR, XDR or FortiGate internals directly from a model runtime.
 
 ## Ready Boundaries

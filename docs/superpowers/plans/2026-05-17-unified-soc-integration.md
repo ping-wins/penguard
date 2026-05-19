@@ -4,7 +4,7 @@
 
 **Goal:** Replace the three hardcoded integration forms (FortiGate / FortiWeb / Penguin tools) with one add-on-driven wizard that picks a machine type + version from installed marketplace add-ons, tests the connection, persists it, and auto-wires SIEM/SOAR per-destination.
 
-**Architecture:** Add-on packages are 100% self-contained in the **external** repo `ping-wins/fortidashboard-addons` (cloned at `../fortidashboard-addons`). The dashboard stays thin — no vendor connector code ships in it; the marketplace install flow fetches a package tarball by git tag. Phase 1 authors the 5 packages (fortigate-core, fortiweb-core, penguin-siem, penguin-xdr, penguin-soar) by porting the relevant in-repo client logic into each package. Phase 2 adds a generic `/api/integrations/connect` flow + the Vue wizard. Phase 3 adds per-destination auto-wiring (SIEM log-forwarding + SOAR target registration).
+**Architecture:** Add-on packages are 100% self-contained in the **external** repo `ping-wins/penguard-addons` (cloned at `../penguard-addons`). The dashboard stays thin — no vendor connector code ships in it; the marketplace install flow fetches a package tarball by git tag. Phase 1 authors the 5 packages (fortigate-core, fortiweb-core, penguin-siem, penguin-xdr, penguin-soar) by porting the relevant in-repo client logic into each package. Phase 2 adds a generic `/api/integrations/connect` flow + the Vue wizard. Phase 3 adds per-destination auto-wiring (SIEM log-forwarding + SOAR target registration).
 
 **Tech Stack:** FastAPI + SQLAlchemy + Alembic + Pydantic v2 (backend), Vue 3 + Pinia + Vitest (web), pytest (api), Docker Compose. External package repo is plain Python (stdlib + `httpx`).
 
@@ -12,7 +12,7 @@
 
 ### Locked decisions (clarified with user, deviations from spec noted)
 
-- **Packaging:** external repo only. `../fortidashboard-addons` current content is throwaway test — rewrite entirely. Each package = `{id}/{version}/addon.json` + `{id}/{version}/connector/__init__.py` exposing `get_connector(config)`. Tag = `{id}-v{version}`.
+- **Packaging:** external repo only. `../penguard-addons` current content is throwaway test — rewrite entirely. Each package = `{id}/{version}/addon.json` + `{id}/{version}/connector/__init__.py` exposing `get_connector(config)`. Tag = `{id}-v{version}`.
 - **Connector code:** **ported** (copied) into each package. No `import app.*` from a package. Dashboard keeps legacy `app.integrations.*` code until Phase 2 cutover.
 - **Wizard catalog (spec deviation):** spec said catalog = `list_installed() ∩ list_addons()`. `list_addons()` reads only the local `addons/` dir, so external-only packages would never intersect. **Corrected:** catalog is derived from each *installed* record's own `addon.json` at `record.path` (authoritative, version-specific). No local manifest stubs required.
 - **SOAR wiring (spec concretization):** spec said "register `list_playbook_actions()` with the SOAR catalog". Concretely: store actions in a dashboard-owned `soar_targets` table and expose `GET /api/integrations/{id}/soar-actions`. No dependency on Skipper internals.
@@ -20,8 +20,8 @@
 ### Repo layout note
 
 Two working trees:
-- **DASH** = `C:\Users\lucas\Desktop\PingWins-FortiDashboard\FortiDashboard` (this repo).
-- **PKGS** = `C:\Users\lucas\Desktop\PingWins-FortiDashboard\fortidashboard-addons` (external repo, already cloned).
+- **DASH** = `C:\Users\lucas\Desktop\PingWins-Penguard\Penguard` (this repo).
+- **PKGS** = `C:\Users\lucas\Desktop\PingWins-Penguard\penguard-addons` (external repo, already cloned).
 
 Backend has **no source bind mount** — after every DASH backend edit run `docker compose up -d --build api` (see project memory). API tests run in-container: `docker compose exec api pytest <path> -q`.
 
@@ -148,20 +148,20 @@ git commit -m "feat(addons): add capabilities block to manifest schema"
 
 ### Task 1.2: Rewrite the external repo scaffold (catalog + README + cleanup)
 
-**Files (PKGS = `../fortidashboard-addons`):**
+**Files (PKGS = `../penguard-addons`):**
 - Delete: `fortigate/`, `fortiweb-waf/`
 - Modify: `catalog.json`, `README.md`
 
 - [ ] **Step 1: Remove the throwaway test packages**
 
 ```bash
-cd ../fortidashboard-addons
+cd ../penguard-addons
 git rm -r fortigate fortiweb-waf
 ```
 
 - [ ] **Step 2: Write `catalog.json`**
 
-Overwrite `../fortidashboard-addons/catalog.json`:
+Overwrite `../penguard-addons/catalog.json`:
 
 ```json
 {
@@ -227,12 +227,12 @@ Overwrite `../fortidashboard-addons/catalog.json`:
 
 - [ ] **Step 3: Write `README.md`**
 
-Overwrite `../fortidashboard-addons/README.md`:
+Overwrite `../penguard-addons/README.md`:
 
 ```markdown
-# FortiDashboard Add-ons
+# Penguard Add-ons
 
-Marketplace add-on packages installed by FortiDashboard at runtime.
+Marketplace add-on packages installed by Penguard at runtime.
 
 ## Layout
 
@@ -252,14 +252,14 @@ Tag a version so the dashboard install flow can fetch it:
 
     git tag <addon-id>-v<version> && git push origin <addon-id>-v<version>
 
-The dashboard fetches `https://api.github.com/repos/ping-wins/fortidashboard-addons/tarball/<tag>`
+The dashboard fetches `https://api.github.com/repos/ping-wins/penguard-addons/tarball/<tag>`
 and expects the package at `<addon-id>/<version>/` inside the tarball.
 ```
 
 - [ ] **Step 4: Commit (PKGS)**
 
 ```bash
-cd ../fortidashboard-addons
+cd ../penguard-addons
 git add -A
 git commit -m "chore: reset registry, add unified SOC catalog"
 ```
@@ -277,7 +277,7 @@ git commit -m "chore: reset registry, add unified SOC catalog"
 
 - [ ] **Step 1: Write `fortigate-core/0.2.0/addon.json`**
 
-Use the exact manifest currently at `../fortidashboard-addons` history (`git show aff30c9:fortigate/addon.json`) **plus** a `capabilities` block. Write `../fortidashboard-addons/fortigate-core/0.2.0/addon.json`:
+Use the exact manifest currently at `../penguard-addons` history (`git show aff30c9:fortigate/addon.json`) **plus** a `capabilities` block. Write `../penguard-addons/fortigate-core/0.2.0/addon.json`:
 
 ```json
 {
@@ -331,17 +331,17 @@ Use the exact manifest currently at `../fortidashboard-addons` history (`git sho
 Copy the dashboard client verbatim, then strip any `app.*` imports (the file uses only `httpx`/stdlib; verify after copy):
 
 ```bash
-mkdir -p ../fortidashboard-addons/fortigate-core/0.2.0/connector
+mkdir -p ../penguard-addons/fortigate-core/0.2.0/connector
 cp apps/api/app/integrations/fortigate/client.py \
-   ../fortidashboard-addons/fortigate-core/0.2.0/connector/fortigate_client.py
-grep -n '^from app\.\|^import app\.' ../fortidashboard-addons/fortigate-core/0.2.0/connector/fortigate_client.py
+   ../penguard-addons/fortigate-core/0.2.0/connector/fortigate_client.py
+grep -n '^from app\.\|^import app\.' ../penguard-addons/fortigate-core/0.2.0/connector/fortigate_client.py
 ```
 
 Expected: the `grep` prints nothing. If it prints any line, replace that import by inlining the referenced symbol into `fortigate_client.py` (the FortiGate client depends only on `httpx`; any `app.*` import is a normalizer helper — copy the needed function from `apps/api/app/integrations/fortigate/normalizers.py` into `fortigate_client.py`).
 
 - [ ] **Step 3: Write `connector/__init__.py`**
 
-`../fortidashboard-addons/fortigate-core/0.2.0/connector/__init__.py`:
+`../penguard-addons/fortigate-core/0.2.0/connector/__init__.py`:
 
 ```python
 from datetime import datetime
@@ -412,7 +412,7 @@ def get_connector(config: dict[str, Any]) -> FortiGateConnector:
 - [ ] **Step 4: Smoke-test the connector imports standalone**
 
 ```bash
-cd ../fortidashboard-addons/fortigate-core/0.2.0
+cd ../penguard-addons/fortigate-core/0.2.0
 python -c "import connector; c=connector.get_connector({'host':''}); print(c.health_check())"
 ```
 
@@ -421,7 +421,7 @@ Expected: prints `{'ok': False, 'status': 'missing_host', ...}` (no ImportError)
 - [ ] **Step 5: Tag + commit (PKGS)**
 
 ```bash
-cd ../fortidashboard-addons
+cd ../penguard-addons
 git add fortigate-core
 git commit -m "feat(fortigate-core): self-contained connector package 0.2.0"
 git tag fortigate-core-v0.2.0
@@ -481,17 +481,17 @@ git push origin main fortigate-core-v0.2.0
 - [ ] **Step 2: Port the FortiWeb client**
 
 ```bash
-mkdir -p ../fortidashboard-addons/fortiweb-core/8.0.5/connector
+mkdir -p ../penguard-addons/fortiweb-core/8.0.5/connector
 cp apps/api/app/integrations/fortiweb/client.py \
-   ../fortidashboard-addons/fortiweb-core/8.0.5/connector/fortiweb_client.py
-grep -n '^from app\.\|^import app\.' ../fortidashboard-addons/fortiweb-core/8.0.5/connector/fortiweb_client.py
+   ../penguard-addons/fortiweb-core/8.0.5/connector/fortiweb_client.py
+grep -n '^from app\.\|^import app\.' ../penguard-addons/fortiweb-core/8.0.5/connector/fortiweb_client.py
 ```
 
 Expected: `grep` prints nothing (client uses only `httpx`/stdlib). If it prints, inline the symbol as in Task 1.3 Step 2.
 
 - [ ] **Step 3: Write `connector/__init__.py`**
 
-`../fortidashboard-addons/fortiweb-core/8.0.5/connector/__init__.py`:
+`../penguard-addons/fortiweb-core/8.0.5/connector/__init__.py`:
 
 ```python
 from datetime import datetime
@@ -566,7 +566,7 @@ def get_connector(config: dict[str, Any]) -> FortiWebConnector:
 - [ ] **Step 4: Smoke-test**
 
 ```bash
-cd ../fortidashboard-addons/fortiweb-core/8.0.5
+cd ../penguard-addons/fortiweb-core/8.0.5
 python -c "import connector; print(connector.get_connector({'host':''}).health_check())"
 ```
 
@@ -575,7 +575,7 @@ Expected: `{'ok': False, 'status': 'missing_host', ...}`.
 - [ ] **Step 5: Tag + commit (PKGS)**
 
 ```bash
-cd ../fortidashboard-addons
+cd ../penguard-addons
 git add fortiweb-core
 git commit -m "feat(fortiweb-core): self-contained connector package 8.0.5"
 git tag fortiweb-core-v8.0.5
@@ -597,9 +597,9 @@ git push origin main fortiweb-core-v8.0.5
 
 ```bash
 for id in penguin-siem penguin-xdr penguin-soar; do
-  mkdir -p ../fortidashboard-addons/$id/1.0.0/connector
-  cp apps/api/app/soc/client.py ../fortidashboard-addons/$id/1.0.0/connector/soc_client.py
-  grep -n '^from app\.\|^import app\.' ../fortidashboard-addons/$id/1.0.0/connector/soc_client.py
+  mkdir -p ../penguard-addons/$id/1.0.0/connector
+  cp apps/api/app/soc/client.py ../penguard-addons/$id/1.0.0/connector/soc_client.py
+  grep -n '^from app\.\|^import app\.' ../penguard-addons/$id/1.0.0/connector/soc_client.py
 done
 ```
 
@@ -607,7 +607,7 @@ Expected: `grep` prints nothing for each. If it does, inline the referenced symb
 
 - [ ] **Step 2: Write the 3 manifests**
 
-`../fortidashboard-addons/penguin-siem/1.0.0/addon.json`:
+`../penguard-addons/penguin-siem/1.0.0/addon.json`:
 
 ```json
 {
@@ -625,7 +625,7 @@ Expected: `grep` prints nothing for each. If it does, inline the referenced symb
 }
 ```
 
-`../fortidashboard-addons/penguin-xdr/1.0.0/addon.json`:
+`../penguard-addons/penguin-xdr/1.0.0/addon.json`:
 
 ```json
 {
@@ -643,7 +643,7 @@ Expected: `grep` prints nothing for each. If it does, inline the referenced symb
 }
 ```
 
-`../fortidashboard-addons/penguin-soar/1.0.0/addon.json`:
+`../penguard-addons/penguin-soar/1.0.0/addon.json`:
 
 ```json
 {
@@ -663,7 +663,7 @@ Expected: `grep` prints nothing for each. If it does, inline the referenced symb
 
 - [ ] **Step 3: Write the shared connector for each (3 copies, differing only in `_SERVICE`)**
 
-For `penguin-siem` write `../fortidashboard-addons/penguin-siem/1.0.0/connector/__init__.py`:
+For `penguin-siem` write `../penguard-addons/penguin-siem/1.0.0/connector/__init__.py`:
 
 ```python
 from datetime import datetime
@@ -738,7 +738,7 @@ Copy this file to `penguin-xdr/1.0.0/connector/__init__.py` (change `_SERVICE = 
 
 ```bash
 for id in penguin-siem penguin-xdr penguin-soar; do
-  (cd ../fortidashboard-addons/$id/1.0.0 && python -c "import connector; print(connector.get_connector({'host':''}).health_check())")
+  (cd ../penguard-addons/$id/1.0.0 && python -c "import connector; print(connector.get_connector({'host':''}).health_check())")
 done
 ```
 
@@ -747,7 +747,7 @@ Expected: each prints `{'ok': False, 'status': 'missing_host', ...}`.
 - [ ] **Step 5: Tag + commit (PKGS)**
 
 ```bash
-cd ../fortidashboard-addons
+cd ../penguard-addons
 git add penguin-siem penguin-xdr penguin-soar
 git commit -m "feat(penguin): self-contained SIEM/XDR/SOAR connector packages 1.0.0"
 git tag penguin-siem-v1.0.0 && git tag penguin-xdr-v1.0.0 && git tag penguin-soar-v1.0.0
@@ -774,7 +774,7 @@ from pathlib import Path
 import pytest
 
 # PKGS repo sits next to the dashboard repo.
-PKGS = Path(__file__).resolve().parents[3] / "fortidashboard-addons"
+PKGS = Path(__file__).resolve().parents[3] / "penguard-addons"
 
 CASES = [
     ("fortigate-core", "0.2.0"),
@@ -821,7 +821,7 @@ def test_soar_package_exposes_playbook_actions():
 - [ ] **Step 2: Run — expect pass (packages exist from Tasks 1.3–1.5)**
 
 Run: `docker compose exec api pytest tests/test_addon_vendor_connectors.py -q`
-Expected: PASS. (If the test runs in a container where `../fortidashboard-addons` is not mounted, the parametrized tests `skip`; in that case run locally instead: `cd apps/api && .venv/Scripts/python -m pytest tests/test_addon_vendor_connectors.py -q` from the host where both repos are checked out.)
+Expected: PASS. (If the test runs in a container where `../penguard-addons` is not mounted, the parametrized tests `skip`; in that case run locally instead: `cd apps/api && .venv/Scripts/python -m pytest tests/test_addon_vendor_connectors.py -q` from the host where both repos are checked out.)
 
 - [ ] **Step 3: Commit**
 

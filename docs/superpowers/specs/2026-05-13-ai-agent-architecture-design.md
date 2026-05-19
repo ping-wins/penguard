@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build FortiDashboard's AI layer as a safe SOC copilot that can inspect dashboard
+Build Penguard's AI layer as a safe SOC copilot that can inspect dashboard
 state, draft widgets, assist ticket triage and prepare containment playbooks
 without becoming an autonomous operator.
 
@@ -17,7 +17,7 @@ Use three layers with different responsibilities:
   triage, endpoint correlation, containment planning, human approval pauses and
   retryable AI/provider failures.
 - **MCP server, later:** public tool surface for customers who want to connect
-  their own agents to FortiDashboard. MCP must only expose stable, audited,
+  their own agents to Penguard. MCP must only expose stable, audited,
   permission-aware tools.
 
 The first implementation cut is not a full agent runtime. It establishes the

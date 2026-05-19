@@ -4,78 +4,78 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      FORTIDASHBOARD_DATABASE_URL: ${FORTIDASHBOARD_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
-      FORTIDASHBOARD_SECRET_KEY: ${FORTIDASHBOARD_SECRET_KEY:-change-me-in-local-env}
-      FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY: ${FORTIDASHBOARD_TOKEN_ENCRYPTION_KEY:-}
-      FORTIDASHBOARD_MOCK_MODE: ${FORTIDASHBOARD_MOCK_MODE:-false}
-      FORTIDASHBOARD_SESSION_COOKIE_NAME: ${FORTIDASHBOARD_SESSION_COOKIE_NAME:-fortidashboard_session}
-      FORTIDASHBOARD_SESSION_COOKIE_SECURE: ${FORTIDASHBOARD_SESSION_COOKIE_SECURE:-false}
-      FORTIDASHBOARD_SESSION_COOKIE_SAMESITE: ${FORTIDASHBOARD_SESSION_COOKIE_SAMESITE:-lax}
-      FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY: ${FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY:-true}
-      SESSION_COOKIE_SECURE: ${FORTIDASHBOARD_SESSION_COOKIE_SECURE:-false}
-      SESSION_COOKIE_SAMESITE: ${FORTIDASHBOARD_SESSION_COOKIE_SAMESITE:-lax}
-      SESSION_COOKIE_HTTPONLY: ${FORTIDASHBOARD_SESSION_COOKIE_HTTPONLY:-true}
-      FORTIDASHBOARD_CSRF_COOKIE_NAME: ${FORTIDASHBOARD_CSRF_COOKIE_NAME:-fortidashboard_csrf}
-      FORTIDASHBOARD_CSRF_HEADER_NAME: ${FORTIDASHBOARD_CSRF_HEADER_NAME:-X-CSRF-Token}
-      FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS:-10}
-      FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${FORTIDASHBOARD_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
+      PENGUARD_DATABASE_URL: ${PENGUARD_DATABASE_URL:-postgresql+psycopg://penguard:penguard@db:5432/penguard}
+      PENGUARD_SECRET_KEY: ${PENGUARD_SECRET_KEY:-change-me-in-local-env}
+      PENGUARD_TOKEN_ENCRYPTION_KEY: ${PENGUARD_TOKEN_ENCRYPTION_KEY:-}
+      PENGUARD_MOCK_MODE: ${PENGUARD_MOCK_MODE:-false}
+      PENGUARD_SESSION_COOKIE_NAME: ${PENGUARD_SESSION_COOKIE_NAME:-penguard_session}
+      PENGUARD_SESSION_COOKIE_SECURE: ${PENGUARD_SESSION_COOKIE_SECURE:-false}
+      PENGUARD_SESSION_COOKIE_SAMESITE: ${PENGUARD_SESSION_COOKIE_SAMESITE:-lax}
+      PENGUARD_SESSION_COOKIE_HTTPONLY: ${PENGUARD_SESSION_COOKIE_HTTPONLY:-true}
+      SESSION_COOKIE_SECURE: ${PENGUARD_SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAMESITE: ${PENGUARD_SESSION_COOKIE_SAMESITE:-lax}
+      SESSION_COOKIE_HTTPONLY: ${PENGUARD_SESSION_COOKIE_HTTPONLY:-true}
+      PENGUARD_CSRF_COOKIE_NAME: ${PENGUARD_CSRF_COOKIE_NAME:-penguard_csrf}
+      PENGUARD_CSRF_HEADER_NAME: ${PENGUARD_CSRF_HEADER_NAME:-X-CSRF-Token}
+      PENGUARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS: ${PENGUARD_AUTH_RATE_LIMIT_MAX_ATTEMPTS:-10}
+      PENGUARD_AUTH_RATE_LIMIT_WINDOW_SECONDS: ${PENGUARD_AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
       # Internal container-to-container URL. Do not point this at localhost or
-      # fortidashboard.local; the API container must reach the Keycloak service
+      # penguard.local; the API container must reach the Keycloak service
       # on the Docker network.
-      FORTIDASHBOARD_KEYCLOAK_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080}
-      FORTIDASHBOARD_KEYCLOAK_REALM: ${FORTIDASHBOARD_KEYCLOAK_REALM:-fortidashboard}
-      FORTIDASHBOARD_KEYCLOAK_CLIENT_ID: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_ID:-fortidashboard-bff}
-      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
-      FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL: ${FORTIDASHBOARD_KEYCLOAK_VERIFY_SSL:-false}
+      PENGUARD_KEYCLOAK_BASE_URL: ${PENGUARD_KEYCLOAK_INTERNAL_BASE_URL:-http://keycloak:8080}
+      PENGUARD_KEYCLOAK_REALM: ${PENGUARD_KEYCLOAK_REALM:-penguard}
+      PENGUARD_KEYCLOAK_CLIENT_ID: ${PENGUARD_KEYCLOAK_CLIENT_ID:-penguard-bff}
+      PENGUARD_KEYCLOAK_CLIENT_SECRET: ${PENGUARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
+      PENGUARD_KEYCLOAK_VERIFY_SSL: ${PENGUARD_KEYCLOAK_VERIFY_SSL:-false}
       # Browser-facing URLs. Defaults work on Linux/Windows host browsers via
-      # localhost. For AD/Kerberos SSO, override these to fortidashboard.local
+      # localhost. For AD/Kerberos SSO, override these to penguard.local
       # in .env so the SPN and browser origin match.
-      FORTIDASHBOARD_OIDC_ISSUER: ${FORTIDASHBOARD_OIDC_ISSUER:-http://localhost:8080/realms/fortidashboard}
-      FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL: ${FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL:-http://localhost:8080}
-      FORTIDASHBOARD_SSO_REDIRECT_URI: ${FORTIDASHBOARD_SSO_REDIRECT_URI:-http://localhost:8000/api/auth/sso/kerberos/callback}
-      FORTIDASHBOARD_SSO_POST_LOGIN_URL: ${FORTIDASHBOARD_SSO_POST_LOGIN_URL:-http://localhost:5173/}
-      FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL: ${FORTIDASHBOARD_SSO_FAILURE_REDIRECT_URL:-http://localhost:5173/login}
+      PENGUARD_OIDC_ISSUER: ${PENGUARD_OIDC_ISSUER:-http://localhost:8080/realms/penguard}
+      PENGUARD_KEYCLOAK_BROWSER_BASE_URL: ${PENGUARD_KEYCLOAK_BROWSER_BASE_URL:-http://localhost:8080}
+      PENGUARD_SSO_REDIRECT_URI: ${PENGUARD_SSO_REDIRECT_URI:-http://localhost:8000/api/auth/sso/kerberos/callback}
+      PENGUARD_SSO_POST_LOGIN_URL: ${PENGUARD_SSO_POST_LOGIN_URL:-http://localhost:5173/}
+      PENGUARD_SSO_FAILURE_REDIRECT_URL: ${PENGUARD_SSO_FAILURE_REDIRECT_URL:-http://localhost:5173/login}
       # AI provider settings. Compose does NOT auto-forward .env keys to
       # containers — they must be listed here so Pydantic Settings sees
-      # them. Without this block, FORTIDASHBOARD_AI_PROVIDER falls back
+      # them. Without this block, PENGUARD_AI_PROVIDER falls back
       # to "scripted" and the cockpit chat returns the canned offline
       # message even when a real key exists in .env.
-      FORTIDASHBOARD_AI_PROVIDER: ${FORTIDASHBOARD_AI_PROVIDER:-scripted}
-      FORTIDASHBOARD_AI_API_KEY: ${FORTIDASHBOARD_AI_API_KEY:-}
-      FORTIDASHBOARD_AI_MODEL: ${FORTIDASHBOARD_AI_MODEL:-}
-      FORTIDASHBOARD_AI_BASE_URL: ${FORTIDASHBOARD_AI_BASE_URL:-}
-      FORTIDASHBOARD_THREAT_INTEL_PROVIDER: ${FORTIDASHBOARD_THREAT_INTEL_PROVIDER:-virustotal}
-      FORTIDASHBOARD_THREAT_INTEL_CACHE_TTL_SECONDS: ${FORTIDASHBOARD_THREAT_INTEL_CACHE_TTL_SECONDS:-3600}
-      FORTIDASHBOARD_VIRUSTOTAL_API_KEY: ${FORTIDASHBOARD_VIRUSTOTAL_API_KEY:-}
-      FORTIDASHBOARD_VIRUSTOTAL_BASE_URL: ${FORTIDASHBOARD_VIRUSTOTAL_BASE_URL:-https://www.virustotal.com}
-      FORTIDASHBOARD_SOC_INGEST_TOKEN: ${FORTIDASHBOARD_SOC_INGEST_TOKEN:-}
-      FORTIDASHBOARD_SIEM_KOWALSKI_URL: ${FORTIDASHBOARD_SIEM_KOWALSKI_URL:-http://siem-kowalski:8000}
-      FORTIDASHBOARD_SOAR_SKIPPER_URL: ${FORTIDASHBOARD_SOAR_SKIPPER_URL:-http://soar-skipper:8000}
-      FORTIDASHBOARD_XDR_RICO_URL: ${FORTIDASHBOARD_XDR_RICO_URL:-http://xdr-rico:8000}
-      FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED: ${FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED:-false}
-      FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS: ${FORTIDASHBOARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS:-10}
-      FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS: ${FORTIDASHBOARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS:-30}
-      FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS: ${FORTIDASHBOARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS:-10}
-      FORTIDASHBOARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS: ${FORTIDASHBOARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS:-3600}
-      FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST: ${FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_HOST:-0.0.0.0}
-      FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST: ${FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST:-}
-      FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT: ${FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}
-      FORTIDASHBOARD_XDR_AGENT_DISCOVERY_ENABLED: ${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_ENABLED:-true}
-      FORTIDASHBOARD_XDR_AGENT_DISCOVERY_HOST: ${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_HOST:-0.0.0.0}
-      FORTIDASHBOARD_XDR_AGENT_DISCOVERY_PORT: ${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_PORT:-8764}
-      FORTIDASHBOARD_XDR_AGENT_DISCOVERY_API_PORT: ${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_API_PORT:-${FORTIDASHBOARD_API_PORT:-8000}}
-      FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS: ${FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS:-false}
-      FORTIDASHBOARD_MARKETPLACE_GH_TOKEN: ${MARKETPLACE_GH_TOKEN:-}
-      FORTIDASHBOARD_MARKETPLACE_REGISTRY_REPO: ${MARKETPLACE_REGISTRY_REPO:-ping-wins/fortidashboard-addons}
-      FORTIDASHBOARD_ADDONS_STORAGE_DIR: /app/data/addons
+      PENGUARD_AI_PROVIDER: ${PENGUARD_AI_PROVIDER:-scripted}
+      PENGUARD_AI_API_KEY: ${PENGUARD_AI_API_KEY:-}
+      PENGUARD_AI_MODEL: ${PENGUARD_AI_MODEL:-}
+      PENGUARD_AI_BASE_URL: ${PENGUARD_AI_BASE_URL:-}
+      PENGUARD_THREAT_INTEL_PROVIDER: ${PENGUARD_THREAT_INTEL_PROVIDER:-virustotal}
+      PENGUARD_THREAT_INTEL_CACHE_TTL_SECONDS: ${PENGUARD_THREAT_INTEL_CACHE_TTL_SECONDS:-3600}
+      PENGUARD_VIRUSTOTAL_API_KEY: ${PENGUARD_VIRUSTOTAL_API_KEY:-}
+      PENGUARD_VIRUSTOTAL_BASE_URL: ${PENGUARD_VIRUSTOTAL_BASE_URL:-https://www.virustotal.com}
+      PENGUARD_SOC_INGEST_TOKEN: ${PENGUARD_SOC_INGEST_TOKEN:-}
+      PENGUARD_SIEM_KOWALSKI_URL: ${PENGUARD_SIEM_KOWALSKI_URL:-http://siem-kowalski:8000}
+      PENGUARD_SOAR_SKIPPER_URL: ${PENGUARD_SOAR_SKIPPER_URL:-http://soar-skipper:8000}
+      PENGUARD_XDR_RICO_URL: ${PENGUARD_XDR_RICO_URL:-http://xdr-rico:8000}
+      PENGUARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED: ${PENGUARD_FORTIGATE_INGESTION_SCHEDULER_ENABLED:-false}
+      PENGUARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS: ${PENGUARD_FORTIGATE_INGESTION_SCHEDULER_TICK_SECONDS:-10}
+      PENGUARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS: ${PENGUARD_FORTIGATE_INGESTION_DEFAULT_INTERVAL_SECONDS:-30}
+      PENGUARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS: ${PENGUARD_FORTIGATE_INGESTION_MIN_INTERVAL_SECONDS:-10}
+      PENGUARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS: ${PENGUARD_FORTIGATE_INGESTION_MAX_INTERVAL_SECONDS:-3600}
+      PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_HOST: ${PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_HOST:-0.0.0.0}
+      PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST: ${PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PUBLIC_HOST:-}
+      PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT: ${PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}
+      PENGUARD_XDR_AGENT_DISCOVERY_ENABLED: ${PENGUARD_XDR_AGENT_DISCOVERY_ENABLED:-true}
+      PENGUARD_XDR_AGENT_DISCOVERY_HOST: ${PENGUARD_XDR_AGENT_DISCOVERY_HOST:-0.0.0.0}
+      PENGUARD_XDR_AGENT_DISCOVERY_PORT: ${PENGUARD_XDR_AGENT_DISCOVERY_PORT:-8764}
+      PENGUARD_XDR_AGENT_DISCOVERY_API_PORT: ${PENGUARD_XDR_AGENT_DISCOVERY_API_PORT:-${PENGUARD_API_PORT:-8000}}
+      PENGUARD_ENABLE_LAB_DEMO_TOOLS: ${PENGUARD_ENABLE_LAB_DEMO_TOOLS:-false}
+      PENGUARD_MARKETPLACE_GH_TOKEN: ${MARKETPLACE_GH_TOKEN:-}
+      PENGUARD_MARKETPLACE_REGISTRY_REPO: ${MARKETPLACE_REGISTRY_REPO:-ping-wins/penguard-addons}
+      PENGUARD_ADDONS_STORAGE_DIR: /app/data/addons
     volumes:
       - addons_data:/app/data/addons
     ports:
-      - "${FORTIDASHBOARD_API_PORT:-8000}:8000"
-      - "${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_PORT:-8764}:${FORTIDASHBOARD_XDR_AGENT_DISCOVERY_PORT:-8764}/udp"
-      - "${FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}:${FORTIDASHBOARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}/udp"
+      - "${PENGUARD_API_PORT:-8000}:8000"
+      - "${PENGUARD_XDR_AGENT_DISCOVERY_PORT:-8764}:${PENGUARD_XDR_AGENT_DISCOVERY_PORT:-8764}/udp"
+      - "${PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}:${PENGUARD_FORTIGATE_SYSLOG_COLLECTOR_PORT:-5514}/udp"
     extra_hosts:
-      - "fortidashboard.local:host-gateway"
+      - "penguard.local:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -99,7 +99,7 @@ services:
       - web_app_node_modules:/app/apps/web/node_modules
       - web_pnpm_store:/pnpm/store
     ports:
-      - "${FORTIDASHBOARD_WEB_PORT:-5173}:5173"
+      - "${PENGUARD_WEB_PORT:-5173}:5173"
     environment:
       CI: "true"
       NODE_ENV: development
@@ -108,7 +108,7 @@ services:
       API_HOST: http://api:8000
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     command: >
-      sh -c "pnpm install --frozen-lockfile && pnpm --filter @fortidashboard/web dev --host 0.0.0.0"
+      sh -c "pnpm install --frozen-lockfile && pnpm --filter @penguard/web dev --host 0.0.0.0"
     depends_on:
       api:
         condition: service_healthy
@@ -118,10 +118,10 @@ services:
       context: .
       dockerfile: apps/siem_kowalski/Dockerfile
     ports:
-      - "${FORTIDASHBOARD_SIEM_KOWALSKI_PORT:-8011}:8000"
+      - "${PENGUARD_SIEM_KOWALSKI_PORT:-8011}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
-      SIEM_KOWALSKI_DATABASE_URL: ${SIEM_KOWALSKI_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
+      SIEM_KOWALSKI_DATABASE_URL: ${SIEM_KOWALSKI_DATABASE_URL:-postgresql+psycopg://penguard:penguard@db:5432/penguard}
     depends_on:
       redis:
         condition: service_healthy
@@ -139,10 +139,10 @@ services:
       context: .
       dockerfile: apps/soar_skipper/Dockerfile
     ports:
-      - "${FORTIDASHBOARD_SOAR_SKIPPER_PORT:-8012}:8000"
+      - "${PENGUARD_SOAR_SKIPPER_PORT:-8012}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
-      SOAR_SKIPPER_DATABASE_URL: ${SOAR_SKIPPER_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
+      SOAR_SKIPPER_DATABASE_URL: ${SOAR_SKIPPER_DATABASE_URL:-postgresql+psycopg://penguard:penguard@db:5432/penguard}
     depends_on:
       redis:
         condition: service_healthy
@@ -160,10 +160,10 @@ services:
       context: .
       dockerfile: apps/xdr_rico/Dockerfile
     ports:
-      - "${FORTIDASHBOARD_XDR_RICO_PORT:-8013}:8000"
+      - "${PENGUARD_XDR_RICO_PORT:-8013}:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
-      XDR_RICO_DATABASE_URL: ${XDR_RICO_DATABASE_URL:-postgresql+psycopg://fortidashboard:fortidashboard@db:5432/fortidashboard}
+      XDR_RICO_DATABASE_URL: ${XDR_RICO_DATABASE_URL:-postgresql+psycopg://penguard:penguard@db:5432/penguard}
     depends_on:
       redis:
         condition: service_healthy
@@ -179,7 +179,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${FORTIDASHBOARD_REDIS_PORT:-6379}:6379"
+      - "${PENGUARD_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -189,15 +189,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fortidashboard}
-      POSTGRES_USER: ${POSTGRES_USER:-fortidashboard}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fortidashboard}
+      POSTGRES_DB: ${POSTGRES_DB:-penguard}
+      POSTGRES_USER: ${POSTGRES_USER:-penguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-penguard}
     ports:
-      - "${FORTIDASHBOARD_POSTGRES_PORT:-5432}:5432"
+      - "${PENGUARD_POSTGRES_PORT:-5432}:5432"
     volumes:
-      - fortidashboard_db:/var/lib/postgresql/data
+      - penguard_db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fortidashboard -d fortidashboard"]
+      test: ["CMD-SHELL", "pg_isready -U penguard -d penguard"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -212,26 +212,26 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
-      FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET: ${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
+      PENGUARD_KEYCLOAK_CLIENT_SECRET: ${PENGUARD_KEYCLOAK_CLIENT_SECRET:-dev-client-secret}
       KRB5_CONFIG: /etc/krb5.conf
       JAVA_OPTS_APPEND: >-
         -Dsun.security.krb5.allowWeakCrypto=true
         -Djava.security.krb5.conf=/etc/krb5.conf
         -Djava.security.properties=/opt/keycloak/conf/java-security-override.properties
     ports:
-      - "${FORTIDASHBOARD_KEYCLOAK_PORT:-8080}:8080"
+      - "${PENGUARD_KEYCLOAK_PORT:-8080}:8080"
     extra_hosts:
-      - "fortidashboard.local:192.168.56.10"
-      - "dc01.fortidashboard.local:192.168.56.10"
+      - "penguard.local:192.168.56.10"
+      - "dc01.penguard.local:192.168.56.10"
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./infra/keycloak/realm-fortidashboard.json:/opt/keycloak/data/import/realm-fortidashboard.json:ro
-      - ${FORTIDASHBOARD_KEYTAB_PATH:-./infra/keycloak/empty-keytab.placeholder}:/opt/keycloak/conf/fortidashboard.keytab:ro
+      - ./infra/keycloak/realm-penguard.json:/opt/keycloak/data/import/realm-penguard.json:ro
+      - ${PENGUARD_KEYTAB_PATH:-./infra/keycloak/empty-keytab.placeholder}:/opt/keycloak/conf/penguard.keytab:ro
       - ./krb5.conf:/etc/krb5.conf:ro
       - ./infra/keycloak/java-security-override.properties:/opt/keycloak/conf/java-security-override.properties:ro
 
 volumes:
-  fortidashboard_db:
+  penguard_db:
   keycloak_data:
   web_node_modules:
   web_app_node_modules:

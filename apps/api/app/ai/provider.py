@@ -137,7 +137,7 @@ def _is_english(locale: str | None) -> bool:
 def _chat_system_prompt(locale: str | None) -> str:
     if _is_english(locale):
         return (
-            "You are an embedded SOC assistant inside the FortiDashboard "
+            "You are an embedded SOC assistant inside the Penguard "
             "cockpit. Answer concisely (1-3 short paragraphs) and stay on "
             "topic for incident response, FortiGate operations, detection "
             "engineering and SOC workflows. If the analyst asks about a "
@@ -147,7 +147,7 @@ def _chat_system_prompt(locale: str | None) -> str:
             "that change firewall state; only describe them at a high level."
         )
     return (
-        "Você é um assistente SOC embarcado na cockpit do FortiDashboard. "
+        "Você é um assistente SOC embarcado na cockpit do Penguard. "
         "Responda de forma concisa (1-3 parágrafos curtos), mantendo o foco "
         "em resposta a incidentes, operações de FortiGate, engenharia de "
         "detecção e workflows de SOC. Se o analista perguntar sobre um "
@@ -460,14 +460,14 @@ class ScriptedAIProvider:
         if _is_english(locale):
             return (
                 "Scripted assistant: I cannot reach a live model in this "
-                "environment. Configure FORTIDASHBOARD_AI_PROVIDER + "
-                "FORTIDASHBOARD_AI_API_KEY to enable a real backend. "
+                "environment. Configure PENGUARD_AI_PROVIDER + "
+                "PENGUARD_AI_API_KEY to enable a real backend. "
                 f"You asked: \"{user_message[:200]}\"."
             )
         return (
             "Assistente scripted: não consigo alcançar um modelo real neste "
-            "ambiente. Configure FORTIDASHBOARD_AI_PROVIDER + "
-            "FORTIDASHBOARD_AI_API_KEY para habilitar um backend de verdade. "
+            "ambiente. Configure PENGUARD_AI_PROVIDER + "
+            "PENGUARD_AI_API_KEY para habilitar um backend de verdade. "
             f"Sua pergunta: \"{user_message[:200]}\"."
         )
 
@@ -1138,8 +1138,8 @@ def get_ai_provider() -> AIProvider:
 
     if not provider_name:
         raise AIConfigurationError(
-            "AI provider is not configured. Set FORTIDASHBOARD_AI_PROVIDER to "
-            "anthropic, gemini or openai-compatible and provide FORTIDASHBOARD_AI_API_KEY."
+            "AI provider is not configured. Set PENGUARD_AI_PROVIDER to "
+            "anthropic, gemini or openai-compatible and provide PENGUARD_AI_API_KEY."
         )
 
     if provider_name == "scripted":
@@ -1147,14 +1147,14 @@ def get_ai_provider() -> AIProvider:
             return ScriptedAIProvider()
         raise AIConfigurationError(
             "The scripted AI provider is lab-only. Set "
-            "FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=true for isolated lab runs, "
+            "PENGUARD_ENABLE_LAB_DEMO_TOOLS=true for isolated lab runs, "
             "or configure a real AI provider."
         )
 
     if provider_name == "anthropic":
         if not api_key:
             raise AIConfigurationError(
-                "FORTIDASHBOARD_AI_API_KEY is required when FORTIDASHBOARD_AI_PROVIDER=anthropic."
+                "PENGUARD_AI_API_KEY is required when PENGUARD_AI_PROVIDER=anthropic."
             )
         return AnthropicAIProvider(
             api_key=api_key,
@@ -1164,7 +1164,7 @@ def get_ai_provider() -> AIProvider:
     if provider_name in {"gemini", "google", "google_ai", "google_gemini"}:
         if not api_key:
             raise AIConfigurationError(
-                "FORTIDASHBOARD_AI_API_KEY is required when FORTIDASHBOARD_AI_PROVIDER=gemini."
+                "PENGUARD_AI_API_KEY is required when PENGUARD_AI_PROVIDER=gemini."
             )
         return GeminiAIProvider(
             api_key=api_key,
@@ -1174,8 +1174,8 @@ def get_ai_provider() -> AIProvider:
     if provider_name in {"openai", "openai_compat", "openai_compatible"}:
         if not api_key:
             raise AIConfigurationError(
-                "FORTIDASHBOARD_AI_API_KEY is required when "
-                "FORTIDASHBOARD_AI_PROVIDER is OpenAI-compatible."
+                "PENGUARD_AI_API_KEY is required when "
+                "PENGUARD_AI_PROVIDER is OpenAI-compatible."
             )
         return OpenAICompatibleAIProvider(
             api_key=api_key,

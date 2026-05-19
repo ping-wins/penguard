@@ -67,12 +67,12 @@ def test_persist_fortiweb_generates_authorization_from_credentials() -> None:
         name="WAF",
         auth={
             "host": "https://fw",
-            "username": "fortidashboard-api",
+            "username": "penguard-api",
             "password": "secret",
             "vdom": "root",
             "verifyTls": False,
             "targetServerPolicy": "lab-waf-policy",
-            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "managedIpListPolicy": "PG_IP_BLOCKLIST",
         },
         device={},
         services={"fortiweb": service},
@@ -83,7 +83,7 @@ def test_persist_fortiweb_generates_authorization_from_credentials() -> None:
     assert call["api_key"] != "secret"
     assert "password" not in call
     assert call["target_server_policy"] == "lab-waf-policy"
-    assert call["managed_ip_list_policy"] == "FD_IP_BLOCKLIST"
+    assert call["managed_ip_list_policy"] == "PG_IP_BLOCKLIST"
 
 
 def test_persist_penguin_routes_to_legacy_service() -> None:

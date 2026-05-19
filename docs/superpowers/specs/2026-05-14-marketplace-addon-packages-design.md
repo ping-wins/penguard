@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-14
 **Status:** design — awaiting user review
-**Repos affected:** `ping-wins/fortidashboard`, `ping-wins/fortidashboard-addons`
+**Repos affected:** `ping-wins/penguard`, `ping-wins/penguard-addons`
 
 ## Problem
 
@@ -23,7 +23,7 @@ Uninstall reverses everything.
 
 - Replace the manifest-only marketplace with a package-based install flow.
 - Move FortiGate vendor code out of the monorepo into the first
-  add-on package, hosted in `ping-wins/fortidashboard-addons`.
+  add-on package, hosted in `ping-wins/penguard-addons`.
 - Keep the install/uninstall surface small (3 endpoints) and the loader
   isolated (no `sys.path` pollution, no global state past the registry).
 - Provide a clean migration that does not force users to re-configure their
@@ -44,7 +44,7 @@ Uninstall reverses everything.
 ## Architecture overview
 
 ```
-ping-wins/fortidashboard-addons        # registry repo (private)
+ping-wins/penguard-addons        # registry repo (private)
   catalog.json                         # lightweight index
   fortigate-core/
     7.6.0/
@@ -78,10 +78,10 @@ Single active version per add-on. Re-install replaces the previous version.
 
 ## Package format
 
-Layout in `fortidashboard-addons`:
+Layout in `penguard-addons`:
 
 ```
-fortidashboard-addons/
+penguard-addons/
 ├── catalog.json
 ├── README.md
 └── fortigate-core/
@@ -168,7 +168,7 @@ gRPC roadmap).
 ### Catalog fetch
 
 ```
-GET https://api.github.com/repos/ping-wins/fortidashboard-addons/contents/catalog.json
+GET https://api.github.com/repos/ping-wins/penguard-addons/contents/catalog.json
 Authorization: Bearer $MARKETPLACE_GH_TOKEN
 Accept: application/vnd.github.raw+json
 ```
@@ -180,7 +180,7 @@ and `installedVersion: "7.6.0"`.
 ### Install fetch
 
 ```
-GET https://api.github.com/repos/ping-wins/fortidashboard-addons/tarball/<tag>
+GET https://api.github.com/repos/ping-wins/penguard-addons/tarball/<tag>
 tag = "<addon-id>-v<version>"
 ```
 
@@ -245,7 +245,7 @@ class AddonLoader:
         entry_dir = addon_root / (manifest.entrypoint or "connector")
         entry = entry_dir / "__init__.py"
         spec = importlib.util.spec_from_file_location(
-            f"fortidashboard_addons.{install.id}",
+            f"penguard_addons.{install.id}",
             entry,
             submodule_search_locations=[str(entry_dir)],
         )
@@ -297,7 +297,7 @@ hands them config; they hand back data.
 
 ## Migration: extract FortiGate to package
 
-### In `fortidashboard-addons` repo
+### In `penguard-addons` repo
 
 1. Create `fortigate-core/7.6.0/` with the new layout.
 2. Copy `client.py`, `normalizers.py` verbatim. Rename `widgets.py` to
@@ -364,7 +364,7 @@ hands them config; they hand back data.
 
 ## Trust model + security
 
-- Repo `ping-wins/fortidashboard-addons` is private. Only org members can
+- Repo `ping-wins/penguard-addons` is private. Only org members can
   push.
 - Dashboard authenticates with a PAT in `MARKETPLACE_GH_TOKEN`
   (`repo:read` scope). Token rotatable via env without rebuild.
@@ -391,7 +391,7 @@ hands them config; they hand back data.
 ### Unit (dashboard)
 
 - `AddonLoader.load` with a tmpdir fixture add-on. Confirms namespacing
-  (`fortidashboard_addons.<id>` only) and no leakage into other modules.
+  (`penguard_addons.<id>` only) and no leakage into other modules.
 - `AddonLoader.unload` cleans `sys.modules`.
 - `ConnectorRegistry` lookup and error paths (404 on unknown id).
 - `install_service` happy path; rollback when sha mismatch / extract
@@ -407,7 +407,7 @@ hands them config; they hand back data.
 - Full round-trip: install → loader registers → widget data fetch via
   registry → uninstall → loader cleans up.
 
-### Package CI (`fortidashboard-addons` repo)
+### Package CI (`penguard-addons` repo)
 
 - Each `<id>/<version>/tests/` runs `pytest` against local fixtures with
   `respx`. CI workflow on the registry repo runs them per push to ensure
@@ -453,7 +453,7 @@ Dashboard:
 - `docker-compose.yml` (named volume `addons_data`)
 - `addons/` (deleted from monorepo; superseded by remote registry)
 
-Registry repo (`fortidashboard-addons`):
+Registry repo (`penguard-addons`):
 
 - `catalog.json` (new)
 - `fortigate-core/7.6.0/{addon.json, connector/, fixtures/,

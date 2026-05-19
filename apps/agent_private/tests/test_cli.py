@@ -267,12 +267,12 @@ def test_parse_windows_security_events_extracts_event_data_from_wevtutil_xml():
         <Provider Name="Microsoft-Windows-Security-Auditing" />
         <EventID>4625</EventID>
         <TimeCreated SystemTime="2026-05-12T13:30:00.0000000Z" />
-        <Computer>WIN-SOC-DC01.fortidashboard.local</Computer>
+        <Computer>WIN-SOC-DC01.penguard.local</Computer>
         <EventRecordID>1001</EventRecordID>
       </System>
       <EventData>
         <Data Name="TargetUserName">felipe</Data>
-        <Data Name="TargetDomainName">FORTIDASHBOARD</Data>
+        <Data Name="TargetDomainName">PENGUARD</Data>
         <Data Name="IpAddress">192.0.2.77</Data>
         <Data Name="LogonType">3</Data>
         <Data Name="Status">0xc000006d</Data>
@@ -286,11 +286,11 @@ def test_parse_windows_security_events_extracts_event_data_from_wevtutil_xml():
         {
             "eventId": 4625,
             "occurredAt": "2026-05-12T13:30:00.000Z",
-            "computer": "WIN-SOC-DC01.fortidashboard.local",
+            "computer": "WIN-SOC-DC01.penguard.local",
             "recordId": "1001",
             "data": {
                 "TargetUserName": "felipe",
-                "TargetDomainName": "FORTIDASHBOARD",
+                "TargetDomainName": "PENGUARD",
                 "IpAddress": "192.0.2.77",
                 "LogonType": "3",
                 "Status": "0xc000006d",
@@ -308,7 +308,7 @@ def test_build_windows_security_event_payloads_aggregates_failed_logons():
             "recordId": str(index),
             "data": {
                 "TargetUserName": "felipe",
-                "TargetDomainName": "FORTIDASHBOARD",
+                "TargetDomainName": "PENGUARD",
                 "IpAddress": "192.0.2.77",
             },
         }
@@ -329,12 +329,12 @@ def test_build_windows_security_event_payloads_aggregates_failed_logons():
             "occurredAt": "2026-05-12T13:30:00.000Z",
             "hostname": "WIN-SOC-DC01",
             "ipAddresses": ["192.0.2.10"],
-            "currentUser": "FORTIDASHBOARD\\felipe",
+            "currentUser": "PENGUARD\\felipe",
             "attributes": {
                 "source": "agent_private.windows_security",
                 "windowsEventId": 4625,
                 "count": 6,
-                "username": "FORTIDASHBOARD\\felipe",
+                "username": "PENGUARD\\felipe",
                 "sourceIp": "192.0.2.77",
                 "recordIds": ["1", "2", "3", "4", "5", "6"],
             },
@@ -351,7 +351,7 @@ def test_build_windows_security_event_payloads_marks_privileged_and_critical_eve
             "recordId": "2001",
             "data": {
                 "SubjectUserName": "administrator",
-                "SubjectDomainName": "FORTIDASHBOARD",
+                "SubjectDomainName": "PENGUARD",
                 "PrivilegeList": "SeBackupPrivilege SeDebugPrivilege",
             },
         },
@@ -362,7 +362,7 @@ def test_build_windows_security_event_payloads_marks_privileged_and_critical_eve
             "recordId": "2002",
             "data": {
                 "SubjectUserName": "svc-backup",
-                "SubjectDomainName": "FORTIDASHBOARD",
+                "SubjectDomainName": "PENGUARD",
                 "ObjectName": r"C:\Sensitive\payroll.xlsx",
                 "Accesses": "WriteData",
             },
@@ -395,7 +395,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         <Provider Name="Microsoft-Windows-Sysmon" />
         <EventID>3</EventID>
         <TimeCreated SystemTime="2026-05-19T12:10:00.0000000Z" />
-        <Computer>WIN-SOC-01.fortidashboard.local</Computer>
+        <Computer>WIN-SOC-01.penguard.local</Computer>
         <EventRecordID>3001</EventRecordID>
       </System>
       <EventData>
@@ -404,7 +404,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         <Data Name="ProcessGuid">{11111111-1111-1111-1111-111111111111}</Data>
         <Data Name="ProcessId">1200</Data>
         <Data Name="Image">C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe</Data>
-        <Data Name="User">FORTIDASHBOARD\\analyst</Data>
+        <Data Name="User">PENGUARD\\analyst</Data>
         <Data Name="Protocol">tcp</Data>
         <Data Name="SourceIp">192.0.2.50</Data>
         <Data Name="SourcePort">54122</Data>
@@ -418,7 +418,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         <Provider Name="Microsoft-Windows-Sysmon" />
         <EventID>22</EventID>
         <TimeCreated SystemTime="2026-05-19T12:10:01.0000000Z" />
-        <Computer>WIN-SOC-01.fortidashboard.local</Computer>
+        <Computer>WIN-SOC-01.penguard.local</Computer>
         <EventRecordID>3002</EventRecordID>
       </System>
       <EventData>
@@ -430,7 +430,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         <Data Name="QueryStatus">0</Data>
         <Data Name="QueryResults">198.51.100.20;</Data>
         <Data Name="Image">C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe</Data>
-        <Data Name="User">FORTIDASHBOARD\\analyst</Data>
+        <Data Name="User">PENGUARD\\analyst</Data>
       </EventData>
     </Event>
     """
@@ -441,7 +441,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         {
             "eventId": 3,
             "occurredAt": "2026-05-19T12:10:00.000Z",
-            "computer": "WIN-SOC-01.fortidashboard.local",
+            "computer": "WIN-SOC-01.penguard.local",
             "recordId": "3001",
             "data": {
                 "RuleName": "NetworkConnect",
@@ -449,7 +449,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
                 "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
                 "ProcessId": "1200",
                 "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                "User": r"FORTIDASHBOARD\analyst",
+                "User": r"PENGUARD\analyst",
                 "Protocol": "tcp",
                 "SourceIp": "192.0.2.50",
                 "SourcePort": "54122",
@@ -461,7 +461,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
         {
             "eventId": 22,
             "occurredAt": "2026-05-19T12:10:01.000Z",
-            "computer": "WIN-SOC-01.fortidashboard.local",
+            "computer": "WIN-SOC-01.penguard.local",
             "recordId": "3002",
             "data": {
                 "RuleName": "DnsQuery",
@@ -472,7 +472,7 @@ def test_parse_sysmon_events_extracts_network_and_dns_records_from_wevtutil_xml(
                 "QueryStatus": "0",
                 "QueryResults": "198.51.100.20;",
                 "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                "User": r"FORTIDASHBOARD\analyst",
+                "User": r"PENGUARD\analyst",
             },
         },
     ]
@@ -493,7 +493,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
                     "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
                     "ProcessId": "1200",
                     "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                    "User": r"FORTIDASHBOARD\analyst",
+                    "User": r"PENGUARD\analyst",
                     "Protocol": "tcp",
                     "SourceIp": "192.0.2.50",
                     "SourcePort": "54122",
@@ -511,7 +511,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
                     "ProcessGuid": "{11111111-1111-1111-1111-111111111111}",
                     "ProcessId": "1200",
                     "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                    "User": r"FORTIDASHBOARD\analyst",
+                    "User": r"PENGUARD\analyst",
                     "QueryName": "suspicious.example",
                     "QueryStatus": "0",
                     "QueryResults": "198.51.100.20;",
@@ -527,7 +527,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
             "occurredAt": "2026-05-19T12:10:00.000Z",
             "hostname": "WIN-SOC-01",
             "ipAddresses": ["192.0.2.50"],
-            "currentUser": r"FORTIDASHBOARD\analyst",
+            "currentUser": r"PENGUARD\analyst",
             "attributes": {
                 "source": "agent_private.sysmon",
                 "sysmonEventId": 3,
@@ -536,7 +536,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
                 "processId": 1200,
                 "image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                 "processName": "chrome.exe",
-                "username": r"FORTIDASHBOARD\analyst",
+                "username": r"PENGUARD\analyst",
                 "protocol": "tcp",
                 "sourceIp": "192.0.2.50",
                 "sourcePort": 54122,
@@ -556,7 +556,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
             "occurredAt": "2026-05-19T12:10:01.000Z",
             "hostname": "WIN-SOC-01",
             "ipAddresses": ["192.0.2.50"],
-            "currentUser": r"FORTIDASHBOARD\analyst",
+            "currentUser": r"PENGUARD\analyst",
             "attributes": {
                 "source": "agent_private.sysmon",
                 "sysmonEventId": 22,
@@ -565,7 +565,7 @@ def test_build_sysmon_event_payloads_normalizes_network_and_dns_events():
                 "processId": 1200,
                 "image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                 "processName": "chrome.exe",
-                "username": r"FORTIDASHBOARD\analyst",
+                "username": r"PENGUARD\analyst",
                 "queryName": "suspicious.example",
                 "queryStatus": "0",
                 "queryResults": ["198.51.100.20"],
@@ -607,7 +607,7 @@ def test_sysmon_command_prints_normalized_payloads_without_posting(monkeypatch, 
                 "data": {
                     "ProcessId": "1200",
                     "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                    "User": r"FORTIDASHBOARD\analyst",
+                    "User": r"PENGUARD\analyst",
                     "QueryName": "suspicious.example",
                     "QueryStatus": "0",
                     "QueryResults": "198.51.100.20;",
@@ -824,7 +824,7 @@ def test_service_command_routes_to_windows_service(monkeypatch, capsys):
     monkeypatch.setattr(
         cli.windows_service,
         "run_service_command",
-        lambda action: calls.append(action) or {"service": "FortiDashboardAgent"},
+        lambda action: calls.append(action) or {"service": "PenguardAgent"},
     )
 
     main(["service", "status"])
@@ -832,7 +832,7 @@ def test_service_command_routes_to_windows_service(monkeypatch, capsys):
     assert calls == ["status"]
     output = json.loads(capsys.readouterr().out)
     assert output == {
-        "service": "FortiDashboardAgent",
+        "service": "PenguardAgent",
         "action": "status",
         "outcome": "success",
         "telemetry": {"sent": False, "reason": "agent config is incomplete"},
@@ -869,7 +869,7 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     def fake_run_service_command(action):
         assert action == "start"
         print("Error starting service: The service did not respond in time.")
-        return {"service": "FortiDashboardAgent", "action": "start"}
+        return {"service": "PenguardAgent", "action": "start"}
 
     def fake_post_endpoint_event(**kwargs):
         posted.append(kwargs)
@@ -878,7 +878,7 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         cli.windows_service,
         "service_status",
-        lambda: {"service": "FortiDashboardAgent", "status": "stopped"},
+        lambda: {"service": "PenguardAgent", "status": "stopped"},
     )
     monkeypatch.setattr(cli, "post_endpoint_event", fake_post_endpoint_event)
     monkeypatch.setattr(
@@ -891,7 +891,7 @@ def test_service_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
 
     output = json.loads(capsys.readouterr().out)
     assert output["outcome"] == "failed"
-    assert output["serviceStatus"] == {"service": "FortiDashboardAgent", "status": "stopped"}
+    assert output["serviceStatus"] == {"service": "PenguardAgent", "status": "stopped"}
     assert "did not respond" in output["stdout"]
     assert output["diagnostics"] == {
         "reason": "service.command",
@@ -940,7 +940,7 @@ def test_task_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
         cli.windows_task,
         "run_task_command",
         lambda action: {
-            "task": "FortiDashboardAgentDaemon",
+            "task": "PenguardAgentDaemon",
             "action": action,
             "run": {"returnCode": 1, "stderr": "task not found"},
         },
@@ -948,7 +948,7 @@ def test_task_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         cli.windows_task,
         "task_status",
-        lambda: {"task": "FortiDashboardAgentDaemon", "status": "missing"},
+        lambda: {"task": "PenguardAgentDaemon", "status": "missing"},
     )
     monkeypatch.setattr(
         cli,
@@ -967,7 +967,7 @@ def test_task_command_reports_failure_to_xdr(monkeypatch, tmp_path, capsys):
     assert payload["attributes"]["source"] == "agent_private.windows_task"
     assert payload["attributes"]["taskAction"] == "start"
     assert payload["attributes"]["taskStatus"] == {
-        "task": "FortiDashboardAgentDaemon",
+        "task": "PenguardAgentDaemon",
         "status": "missing",
     }
 

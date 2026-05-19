@@ -121,7 +121,7 @@ def test_windows_security_endpoint_events_are_accepted_and_timeline_visible():
             "occurredAt": "2026-05-12T13:30:00Z",
             "hostname": "WIN-SOC-DC01",
             "ipAddresses": ["192.0.2.10"],
-            "currentUser": "FORTIDASHBOARD\\felipe",
+            "currentUser": "PENGUARD\\felipe",
             "health": "warning",
             "attributes": {
                 "source": "agent_private.windows_security",
@@ -153,7 +153,7 @@ def test_sysmon_endpoint_events_are_accepted_and_timeline_visible():
             "occurredAt": "2026-05-19T12:10:01Z",
             "hostname": "WIN-SOC-01",
             "ipAddresses": ["192.0.2.50"],
-            "currentUser": "FORTIDASHBOARD\\analyst",
+            "currentUser": "PENGUARD\\analyst",
             "attributes": {
                 "source": "agent_private.sysmon",
                 "sysmonEventId": 22,

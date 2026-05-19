@@ -43,7 +43,7 @@ describe('usePoliciesStore', () => {
             direction: { source: ['port2'], destination: ['port3'] },
             scope: { source: ['LAN_NET'], destination: ['WAN_NET'], service: ['HTTPS'] },
             ownership: 'external',
-            managedByFortiDashboard: false,
+            managedByPenguard: false,
             isMutable: true,
             supports: ['edit', 'disable', 'delete'],
             risk: { level: 'medium', reasons: ['Allows traffic'] },

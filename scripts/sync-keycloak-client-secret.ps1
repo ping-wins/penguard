@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Align the Keycloak `fortidashboard-bff` client secret with the value in
+    Align the Keycloak `penguard-bff` client secret with the value in
     .env after the first `docker compose up`.
 
 .DESCRIPTION
@@ -37,10 +37,10 @@ foreach ($line in Get-Content $EnvFile) {
 }
 
 $required = @(
-    'FORTIDASHBOARD_KEYCLOAK_BASE_URL',
-    'FORTIDASHBOARD_KEYCLOAK_REALM',
-    'FORTIDASHBOARD_KEYCLOAK_CLIENT_ID',
-    'FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET',
+    'PENGUARD_KEYCLOAK_BASE_URL',
+    'PENGUARD_KEYCLOAK_REALM',
+    'PENGUARD_KEYCLOAK_CLIENT_ID',
+    'PENGUARD_KEYCLOAK_CLIENT_SECRET',
     'KC_BOOTSTRAP_ADMIN_USERNAME',
     'KC_BOOTSTRAP_ADMIN_PASSWORD'
 )
@@ -50,10 +50,10 @@ foreach ($name in $required) {
     }
 }
 
-$KC_BASE = $env_vars['FORTIDASHBOARD_KEYCLOAK_BASE_URL'].TrimEnd('/')
-$REALM   = $env_vars['FORTIDASHBOARD_KEYCLOAK_REALM']
-$CLIENT  = $env_vars['FORTIDASHBOARD_KEYCLOAK_CLIENT_ID']
-$SECRET  = $env_vars['FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET']
+$KC_BASE = $env_vars['PENGUARD_KEYCLOAK_BASE_URL'].TrimEnd('/')
+$REALM   = $env_vars['PENGUARD_KEYCLOAK_REALM']
+$CLIENT  = $env_vars['PENGUARD_KEYCLOAK_CLIENT_ID']
+$SECRET  = $env_vars['PENGUARD_KEYCLOAK_CLIENT_SECRET']
 $ADMIN_U = $env_vars['KC_BOOTSTRAP_ADMIN_USERNAME']
 $ADMIN_P = $env_vars['KC_BOOTSTRAP_ADMIN_PASSWORD']
 
@@ -108,4 +108,4 @@ try {
     throw "PUT /clients/$clientUuid failed: $_"
 }
 
-Write-Host "Done. The Keycloak client secret now matches FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET in .env."
+Write-Host "Done. The Keycloak client secret now matches PENGUARD_KEYCLOAK_CLIENT_SECRET in .env."

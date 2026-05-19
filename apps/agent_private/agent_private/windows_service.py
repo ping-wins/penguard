@@ -17,9 +17,9 @@ except ImportError:
     _win32service = None
     _win32serviceutil = None
 
-SERVICE_NAME = "FortiDashboardAgent"
-SERVICE_DISPLAY_NAME = "FortiDashboard XDR Agent"
-SERVICE_DESCRIPTION = "FortiDashboard endpoint telemetry agent for Windows lab hosts."
+SERVICE_NAME = "PenguardAgent"
+SERVICE_DISPLAY_NAME = "Penguard XDR Agent"
+SERVICE_DESCRIPTION = "Penguard endpoint telemetry agent for Windows lab hosts."
 
 _STATUS_NAMES = {
     1: "stopped",

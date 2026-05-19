@@ -4,7 +4,7 @@
 # inside a Linux container that can't see the host's `claude.exe` /
 # `codex.exe` or its auth state. To use Settings -> Assistente IA -> CLI,
 # the backend must run on the host. This script:
-#   1. Loads secrets from .env (POSTGRES_*, FORTIDASHBOARD_*).
+#   1. Loads secrets from .env (POSTGRES_*, PENGUARD_*).
 #   2. Points DATABASE_URL + sister-service URLs at localhost ports
 #      exposed by `docker compose up -d db keycloak siem-kowalski
 #      soar-skipper xdr-rico redis`.
@@ -44,24 +44,24 @@ Get-Content $envFile | ForEach-Object {
 }
 
 # Override URLs so the native backend talks to the docker-exposed ports.
-# Postgres is published on FORTIDASHBOARD_POSTGRES_PORT (defaults to 5432
+# Postgres is published on PENGUARD_POSTGRES_PORT (defaults to 5432
 # but most local envs remap it via .env to dodge a host Postgres conflict).
 $pgUser = $env:POSTGRES_USER
 $pgPass = $env:POSTGRES_PASSWORD
 $pgDb   = $env:POSTGRES_DB
-$pgPort = if ($env:FORTIDASHBOARD_POSTGRES_PORT) { $env:FORTIDASHBOARD_POSTGRES_PORT } else { "5432" }
-$kcPort = if ($env:FORTIDASHBOARD_KEYCLOAK_PORT) { $env:FORTIDASHBOARD_KEYCLOAK_PORT } else { "8080" }
-$siemPort = if ($env:FORTIDASHBOARD_SIEM_KOWALSKI_PORT) { $env:FORTIDASHBOARD_SIEM_KOWALSKI_PORT } else { "8011" }
-$soarPort = if ($env:FORTIDASHBOARD_SOAR_SKIPPER_PORT) { $env:FORTIDASHBOARD_SOAR_SKIPPER_PORT } else { "8012" }
-$xdrPort  = if ($env:FORTIDASHBOARD_XDR_RICO_PORT)     { $env:FORTIDASHBOARD_XDR_RICO_PORT }     else { "8013" }
+$pgPort = if ($env:PENGUARD_POSTGRES_PORT) { $env:PENGUARD_POSTGRES_PORT } else { "5432" }
+$kcPort = if ($env:PENGUARD_KEYCLOAK_PORT) { $env:PENGUARD_KEYCLOAK_PORT } else { "8080" }
+$siemPort = if ($env:PENGUARD_SIEM_KOWALSKI_PORT) { $env:PENGUARD_SIEM_KOWALSKI_PORT } else { "8011" }
+$soarPort = if ($env:PENGUARD_SOAR_SKIPPER_PORT) { $env:PENGUARD_SOAR_SKIPPER_PORT } else { "8012" }
+$xdrPort  = if ($env:PENGUARD_XDR_RICO_PORT)     { $env:PENGUARD_XDR_RICO_PORT }     else { "8013" }
 
 $dbUrl = "postgresql+psycopg://${pgUser}:${pgPass}@localhost:${pgPort}/${pgDb}"
-$env:FORTIDASHBOARD_DATABASE_URL = $dbUrl
-$env:FORTIDASHBOARD_KEYCLOAK_BASE_URL = "http://localhost:$kcPort"
-$env:FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL = "http://localhost:$kcPort"
-$env:FORTIDASHBOARD_SIEM_KOWALSKI_URL = "http://localhost:$siemPort"
-$env:FORTIDASHBOARD_SOAR_SKIPPER_URL = "http://localhost:$soarPort"
-$env:FORTIDASHBOARD_XDR_RICO_URL = "http://localhost:$xdrPort"
+$env:PENGUARD_DATABASE_URL = $dbUrl
+$env:PENGUARD_KEYCLOAK_BASE_URL = "http://localhost:$kcPort"
+$env:PENGUARD_KEYCLOAK_BROWSER_BASE_URL = "http://localhost:$kcPort"
+$env:PENGUARD_SIEM_KOWALSKI_URL = "http://localhost:$siemPort"
+$env:PENGUARD_SOAR_SKIPPER_URL = "http://localhost:$soarPort"
+$env:PENGUARD_XDR_RICO_URL = "http://localhost:$xdrPort"
 $env:SIEM_KOWALSKI_DATABASE_URL = $dbUrl
 $env:SOAR_SKIPPER_DATABASE_URL = $dbUrl
 $env:XDR_RICO_DATABASE_URL = $dbUrl

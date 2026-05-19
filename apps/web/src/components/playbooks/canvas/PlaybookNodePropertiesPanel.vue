@@ -163,7 +163,7 @@ async function testDestination(destinationId: string) {
   try {
     const content = typeof guidedConfig.value.content === 'string' && guidedConfig.value.content.trim()
       ? guidedConfig.value.content
-      : 'FortiDashboard playbook webhook test'
+      : 'Penguard playbook webhook test'
     const result = await playbooksStore.testWebhookDestination(destinationId, content)
     destinationStatus.value = result.ok
       ? t('playbooks.canvas.destinationTestSucceeded', { statusCode: result.statusCode })

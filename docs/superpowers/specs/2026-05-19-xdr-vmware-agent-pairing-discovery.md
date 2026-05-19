@@ -2,7 +2,7 @@
 
 ## Goal
 
-Windows Server lab operators should not pass FortiDashboard host URLs,
+Windows Server lab operators should not pass Penguard host URLs,
 endpoint IDs or environment variables during normal setup. The cockpit shows
 only the one-time enrollment token. The Windows agent discovers the dashboard
 host on the VMware management network, pairs with that token and saves local
@@ -12,7 +12,7 @@ daemon configuration.
 
 Use a VMware host-only or NAT management network shared by:
 
-- the machine hosting FortiDashboard Docker Compose;
+- the machine hosting Penguard Docker Compose;
 - the Windows Server 2022 Desktop Experience VM running `agent_private`.
 
 Keep this management network separate from the FortiGate/FortiWeb/victim traffic
@@ -24,7 +24,7 @@ path when the lab needs multiple NICs.
 2. Cockpit displays only the enrollment token returned once by `xdr_rico`.
 3. Operator runs `agent-private pair "<token>"` from the Windows checkout.
 4. Agent sends a UDP discovery request on the VMware management network.
-5. FortiDashboard API replies with product metadata and API port.
+5. Penguard API replies with product metadata and API port.
 6. Agent builds the API URL from the UDP response source IP.
 7. If UDP discovery fails, agent probes likely VMware host addresses for the VM
    subnet, such as `.1` and `.2`, via `/health`.
@@ -40,7 +40,7 @@ Request:
 
 ```json
 {
-  "type": "fortidashboard.agent_discovery.v1",
+  "type": "penguard.agent_discovery.v1",
   "nonce": "random",
   "service": "agent_private"
 }
@@ -50,8 +50,8 @@ Response:
 
 ```json
 {
-  "type": "fortidashboard.agent_discovery.response.v1",
-  "product": "FortiDashboard",
+  "type": "penguard.agent_discovery.response.v1",
+  "product": "Penguard",
   "apiScheme": "http",
   "apiPort": 8000,
   "apiBasePath": "/api",

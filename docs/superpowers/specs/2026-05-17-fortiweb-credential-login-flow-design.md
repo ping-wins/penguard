@@ -7,7 +7,7 @@
 
 Replace the FortiWeb integration form that asks operators to paste an API token
 with a normal dashboard-managed login flow. The operator enters FortiWeb
-credentials once, FortiDashboard turns them into the FortiWeb REST
+credentials once, Penguard turns them into the FortiWeb REST
 `Authorization` value internally, probes the device, then stores only an
 encrypted secret.
 
@@ -35,7 +35,7 @@ an implementation detail of the FortiWeb adapter.
 
 ## Non-Goals
 
-- No iframe or embedded FortiWeb GUI inside FortiDashboard.
+- No iframe or embedded FortiWeb GUI inside Penguard.
 - No browser redirect or SSO bridge to the FortiWeb management UI.
 - No storage of plaintext FortiWeb passwords.
 - No automatic creation of FortiWeb administrator accounts.
@@ -55,13 +55,13 @@ Password
 VDOM/ADOM default root
 Verify TLS certificate
 Target server policy default lab-waf-policy
-Managed IP list policy default FD_IP_BLOCKLIST
+Managed IP list policy default PG_IP_BLOCKLIST
 ```
 
 User-facing copy should say that this should be a dedicated FortiWeb automation
 account. In lab mode, using `admin` is acceptable for quick validation, but the
 production path should guide operators to restrict Trusted Host to the
-FortiDashboard API host or management subnet and grant only the permissions
+Penguard API host or management subnet and grant only the permissions
 needed for the enabled capabilities.
 
 The UI never shows, exports, or logs the generated authorization value. After a
@@ -75,11 +75,11 @@ successful save, the card shows sanitized metadata:
   "host": "https://fortiweb.example",
   "auth": {
     "scheme": "fortiweb-v2-authorization",
-    "username": "fortidashboard-api",
+    "username": "penguard-api",
     "vdom": "root"
   },
   "targetServerPolicy": "lab-waf-policy",
-  "managedIpListPolicy": "FD_IP_BLOCKLIST"
+  "managedIpListPolicy": "PG_IP_BLOCKLIST"
 }
 ```
 
@@ -100,7 +100,7 @@ Test request:
 ```json
 {
   "host": "https://10.10.20.30",
-  "username": "fortidashboard-api",
+  "username": "penguard-api",
   "password": "redacted",
   "vdom": "root",
   "verifyTls": false
@@ -113,12 +113,12 @@ Create request:
 {
   "name": "Lab FortiWeb",
   "host": "https://10.10.20.30",
-  "username": "fortidashboard-api",
+  "username": "penguard-api",
   "password": "redacted",
   "vdom": "root",
   "verifyTls": false,
   "targetServerPolicy": "lab-waf-policy",
-  "managedIpListPolicy": "FD_IP_BLOCKLIST"
+  "managedIpListPolicy": "PG_IP_BLOCKLIST"
 }
 ```
 

@@ -73,7 +73,7 @@ describe('fetchWidgetData', () => {
     })).resolves.toEqual({
       state: 'error',
       errorKind: 'invalid_connection',
-      errorMessage: 'Widget connection is not authorized. Check the FortiDashboard session or FortiGate integration.',
+      errorMessage: 'Widget connection is not authorized. Check the Penguard session or FortiGate integration.',
     })
   })
 })

@@ -64,7 +64,7 @@ class FakeSiemClient:
                 "event": event,
                 "incident": {
                     "id": "inc_audit_01",
-                    "title": "Repeated failed FortiDashboard logins",
+                    "title": "Repeated failed Penguard logins",
                     "severity": "medium",
                     "triageLevel": "T2",
                     "ticketStatus": "new",
@@ -192,7 +192,7 @@ def test_audit_store_forwards_sanitized_platform_events_to_siem():
             "method": "POST",
             "path": "/events/ingest",
             "json": {
-                "source": "fortidashboard.audit",
+                "source": "penguard.audit",
                 "eventType": "platform.audit_action",
                 "severity": "medium",
                 "occurredAt": primary.events[0].created_at.isoformat(
@@ -204,7 +204,7 @@ def test_audit_store_forwards_sanitized_platform_events_to_siem():
                     "user": "owner@example.com",
                 },
                 "attributes": {
-                    "originKind": "fortidashboard.audit",
+                    "originKind": "penguard.audit",
                     "action": "integration.fortigate.log_forwarding_applied",
                     "outcome": "success",
                     "userAgent": "pytest",
@@ -231,7 +231,7 @@ def test_audit_store_forwards_sanitized_platform_events_to_siem():
             ).replace("+00:00", "Z"),
             "ticket": {
                 "id": "inc_audit_01",
-                "title": "Repeated failed FortiDashboard logins",
+                "title": "Repeated failed Penguard logins",
                 "severity": "medium",
                 "triageLevel": "T2",
                 "ticketStatus": "new",
@@ -259,7 +259,7 @@ def test_audit_store_maps_failed_login_to_siem_failed_login_event():
     )
 
     forwarded = siem.calls[0]["json"]
-    assert forwarded["source"] == "fortidashboard.audit"
+    assert forwarded["source"] == "penguard.audit"
     assert forwarded["eventType"] == "auth.failed_login"
     assert forwarded["severity"] == "medium"
     assert forwarded["entities"] == {

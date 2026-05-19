@@ -7,7 +7,7 @@ def identity() -> dict[str, str]:
     return {
         "service": "agent_private",
         "hostname": "WIN-LAB-01",
-        "username": "FORTIDASHBOARD\\Administrator",
+        "username": "PENGUARD\\Administrator",
         "os": "Windows",
     }
 
@@ -81,7 +81,7 @@ def test_run_agent_once_posts_windows_security_when_enabled():
                 "recordId": "1",
                 "data": {
                     "TargetUserName": "felipe",
-                    "TargetDomainName": "FORTIDASHBOARD",
+                    "TargetDomainName": "PENGUARD",
                     "IpAddress": "192.0.2.10",
                 },
             }
@@ -125,7 +125,7 @@ def test_run_agent_once_posts_sysmon_when_enabled():
                 "data": {
                     "ProcessId": "1200",
                     "Image": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                    "User": r"FORTIDASHBOARD\Administrator",
+                    "User": r"PENGUARD\Administrator",
                     "QueryName": "suspicious.example",
                     "QueryStatus": "0",
                     "QueryResults": "198.51.100.20;",

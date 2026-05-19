@@ -11,11 +11,11 @@
 ## Goal
 
 Turn the current SOAR playbook console into a first-class, n8n-like automation
-experience inside the FortiDashboard workspace canvas. Analysts should be able
+experience inside the Penguard workspace canvas. Analysts should be able
 to place widgets and playbook nodes side by side, connect automation edges,
 configure nodes through safe forms, run or simulate playbooks, inspect node-level
 run state, and use inbound and outbound webhooks without bypassing
-FortiDashboard RBAC, audit, approval, or provider orchestration boundaries.
+Penguard RBAC, audit, approval, or provider orchestration boundaries.
 
 ## Context
 
@@ -32,7 +32,7 @@ separate SOAR application.
 
 ## Decisions
 
-- Build a FortiDashboard-owned n8n-like builder and runtime. Do not embed the
+- Build a Penguard-owned n8n-like builder and runtime. Do not embed the
   real n8n product in the MVP.
 - Keep widgets and playbook nodes in the same workspace canvas.
 - Evolve `soar_skipper` into a graph runtime with branches, loops, retries,
@@ -66,7 +66,7 @@ Current docs checked while shaping this design:
 
 Vue Flow is the recommended frontend graph library because it is Vue-native and
 already provides the graph interaction primitives this feature needs. The
-runtime and safety model remain FortiDashboard-owned.
+runtime and safety model remain Penguard-owned.
 
 ## Workspace Model
 

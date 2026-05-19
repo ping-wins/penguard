@@ -1,5 +1,5 @@
 {
-  "name": "@fortidashboard/web",
+  "name": "@penguard/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fortidashboard/contracts": "workspace:*",
+    "@penguard/contracts": "workspace:*",
     "@tanstack/vue-query": "^5.100.10",
     "@vue-flow/background": "^1.3.2",
     "@vue-flow/controls": "^1.1.3",

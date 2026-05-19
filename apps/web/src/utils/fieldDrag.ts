@@ -1,6 +1,6 @@
 import type { WidgetFieldBinding } from '../types/dashboard'
 
-export const PROVIDER_FIELD_DRAG_MIME = 'application/x-fortidashboard-provider-field'
+export const PROVIDER_FIELD_DRAG_MIME = 'application/x-penguard-provider-field'
 
 export function serializeFieldBinding(binding: WidgetFieldBinding) {
   return JSON.stringify(binding)

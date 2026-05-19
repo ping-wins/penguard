@@ -1,6 +1,6 @@
 # Product Documentation
 
-`docs/product/` is the source of truth for what FortiDashboard is, what is
+`docs/product/` is the source of truth for what Penguard is, what is
 shipping now, what comes next and what changed for users.
 
 ## Canonical Files

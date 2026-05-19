@@ -5,7 +5,7 @@ import enUS from './messages/en-US'
 export const SUPPORTED_LOCALES = ['pt-BR', 'en-US'] as const
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
 
-const STORAGE_KEY = 'fortidashboard:locale'
+const STORAGE_KEY = 'penguard:locale'
 
 function detectInitialLocale(): SupportedLocale {
   if (typeof window === 'undefined') return 'pt-BR'

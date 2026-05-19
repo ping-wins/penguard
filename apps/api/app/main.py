@@ -240,9 +240,9 @@ async def _start_fortigate_syslog_collector() -> asyncio.DatagramTransport:
 
 
 app = FastAPI(
-    title="FortiDashboard API",
+    title="Penguard API",
     version="0.1.0",
-    description="Backend API for FortiDashboard Fortinet integrations and widgets.",
+    description="Backend API for Penguard Fortinet integrations and widgets.",
     lifespan=lifespan,
 )
 

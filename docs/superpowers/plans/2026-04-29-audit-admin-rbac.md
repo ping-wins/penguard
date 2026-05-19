@@ -16,7 +16,7 @@
 - Modify `apps/api/app/auth/dependencies.py`: add `require_admin_user`.
 - Modify `apps/api/app/auth/audit.py`: support optional filters for audit listing.
 - Modify `apps/api/app/routers/audit.py`: add `/admin/audit/events`.
-- Modify `infra/keycloak/realm-fortidashboard.json`: seed dev admin user.
+- Modify `infra/keycloak/realm-penguard.json`: seed dev admin user.
 - Modify `apps/api/tests/test_keycloak_client.py`: role extraction tests.
 - Modify `apps/api/tests/test_keycloak_realm_config.py`: dev admin config tests.
 - Modify `apps/api/tests/test_audit_log.py`: admin endpoint, filters, redaction, and audit-read event tests.
@@ -103,7 +103,7 @@ Expected: PASS.
 ## Task 4: Keycloak Dev Admin User
 
 **Files:**
-- Modify: `infra/keycloak/realm-fortidashboard.json`
+- Modify: `infra/keycloak/realm-penguard.json`
 - Test: `apps/api/tests/test_keycloak_realm_config.py`
 
 - [ ] **Step 1: Write failing realm config test**
@@ -162,7 +162,7 @@ Expected: no output.
 Run:
 
 ```bash
-git add AGENTS.md docs/superpowers/plans/2026-04-29-audit-admin-rbac.md apps/api/app/auth/keycloak.py apps/api/app/auth/service.py apps/api/app/auth/dependencies.py apps/api/app/auth/audit.py apps/api/app/routers/audit.py infra/keycloak/realm-fortidashboard.json apps/api/tests/test_keycloak_client.py apps/api/tests/test_auth_service.py apps/api/tests/test_keycloak_realm_config.py apps/api/tests/test_audit_log.py
+git add AGENTS.md docs/superpowers/plans/2026-04-29-audit-admin-rbac.md apps/api/app/auth/keycloak.py apps/api/app/auth/service.py apps/api/app/auth/dependencies.py apps/api/app/auth/audit.py apps/api/app/routers/audit.py infra/keycloak/realm-penguard.json apps/api/tests/test_keycloak_client.py apps/api/tests/test_auth_service.py apps/api/tests/test_keycloak_realm_config.py apps/api/tests/test_audit_log.py
 git commit -m "feat(audit): add admin rbac audit view"
 ```
 

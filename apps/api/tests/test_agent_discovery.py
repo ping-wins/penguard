@@ -30,7 +30,7 @@ def test_agent_discovery_protocol_replies_with_api_port_and_nonce():
     assert addr == ("192.168.56.101", 50123)
     assert json.loads(data.decode("utf-8")) == {
         "type": DISCOVERY_RESPONSE_TYPE,
-        "product": "FortiDashboard",
+        "product": "Penguard",
         "apiScheme": "http",
         "apiPort": 8000,
         "apiBasePath": "/api",

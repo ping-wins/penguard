@@ -74,7 +74,7 @@ function setMode(mode: ThemeMode) {
       <header class="flex justify-between items-center p-6 border-b border-theme-border bg-theme-panel transition-colors duration-300">
         <div>
           <h2 class="text-2xl font-bold">Design System Builder</h2>
-          <p class="text-theme-text-muted text-sm mt-1">Personalize a aparência do FortiDashboard em tempo real</p>
+          <p class="text-theme-text-muted text-sm mt-1">Personalize a aparência do Penguard em tempo real</p>
         </div>
         <button @click="emit('close')" class="p-2 rounded-lg hover:bg-theme-border text-theme-text-muted hover:text-theme-text transition-colors">
           <X :size="24" />

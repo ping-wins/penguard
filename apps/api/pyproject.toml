@@ -1,7 +1,7 @@
 [project]
-name = "fortidashboard-api"
+name = "penguard-api"
 version = "0.1.0"
-description = "FastAPI backend for FortiDashboard"
+description = "FastAPI backend for Penguard"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13.0",

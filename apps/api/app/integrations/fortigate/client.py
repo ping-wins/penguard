@@ -38,7 +38,7 @@ def _http_status_error_message(response: httpx.Response) -> str:
 def _auth_error_message(status_code: int, response: httpx.Response) -> str:
     """401 and 403 both surface as a single 'rejected' error today; FortiGate
     treats them differently. 401 ⇒ token invalid/expired. 403 ⇒ token accepted
-    but the request is forbidden, almost always because the FortiDashboard
+    but the request is forbidden, almost always because the Penguard
     source IP is not in the api-user's trusthost list. Include FortiGate's
     response body so the operator can see the real reason ("trusted host
     check failed", etc.)."""
@@ -51,7 +51,7 @@ def _auth_error_message(status_code: int, response: httpx.Response) -> str:
     else:
         hint = (
             "FortiGate refused the request (HTTP 403 — token accepted but "
-            "request forbidden). Most common cause: FortiDashboard's source "
+            "request forbidden). Most common cause: Penguard's source "
             "IP is not in the api-user's `trusthost` allowlist; check "
             "`config system api-user / edit <name> / set trusthost1 ...`. "
             "Less common: api-user profile lacks read scope for the path."

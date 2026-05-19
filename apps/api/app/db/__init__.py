@@ -1,1 +1,1 @@
-"""Database setup for FortiDashboard."""
+"""Database setup for Penguard."""

@@ -15,7 +15,7 @@ telemetry.
 
 ## Goals
 
-- Let an analyst onboard a Windows endpoint from the FortiDashboard cockpit.
+- Let an analyst onboard a Windows endpoint from the Penguard cockpit.
 - Keep endpoint enrollment tokens secret, one-time visible and auditable.
 - Make the first heartbeat visible in the UI without grepping container logs.
 - Make `agent_private` behave like a lightweight foreground agent before adding

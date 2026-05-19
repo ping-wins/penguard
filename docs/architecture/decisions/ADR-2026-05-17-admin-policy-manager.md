@@ -6,9 +6,9 @@ Accepted.
 
 ## Context
 
-FortiDashboard currently treats live policy writes as narrow governed
+Penguard currently treats live policy writes as narrow governed
 orchestration. FortiGate policy orchestration is limited to
-FortiDashboard-owned objects, and the FortiWeb response boundary still describes
+Penguard-owned objects, and the FortiWeb response boundary still describes
 live WAF writes as a follow-up decision.
 
 The product direction now requires an administrative workspace widget that can
@@ -18,9 +18,9 @@ future provider policy objects.
 
 ## Decision
 
-FortiDashboard may let permitted administrators create, edit, enable, disable
+Penguard may let permitted administrators create, edit, enable, disable
 and remove policies returned by connected SOC providers, including policies not
-created by FortiDashboard. Reordering policy priority remains out of scope for
+created by Penguard. Reordering policy priority remains out of scope for
 the MVP.
 
 Every write must go through the BFF with permission `policies.manage`, CSRF
@@ -33,7 +33,7 @@ Audit details must identify:
 - integration id;
 - native policy id;
 - policy ownership;
-- whether the policy was FortiDashboard-owned or external/customer-owned;
+- whether the policy was Penguard-owned or external/customer-owned;
 - before/after summary;
 - rollback guidance;
 - provider response status with secrets redacted.
@@ -44,7 +44,7 @@ policy changes by themselves.
 ## Consequences
 
 The FortiGate policy orchestration ADR remains valid for governed writes, but
-its FortiDashboard-owned-only restriction is superseded for human-confirmed
+its Penguard-owned-only restriction is superseded for human-confirmed
 administrator actions through the SOC Policy Manager.
 
 The proposed FortiWeb response boundary remains valid for non-admin automation,

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the backend plumbing (loader, install service, connector registry, DB table, endpoints) so an arbitrary add-on package can be downloaded from `ping-wins/fortidashboard-addons`, registered, dynamically imported, and queried via a Protocol-typed connector — verified end-to-end with a synthetic test add-on, without touching FortiGate code yet.
+**Goal:** Build the backend plumbing (loader, install service, connector registry, DB table, endpoints) so an arbitrary add-on package can be downloaded from `ping-wins/penguard-addons`, registered, dynamically imported, and queried via a Protocol-typed connector — verified end-to-end with a synthetic test add-on, without touching FortiGate code yet.
 
 **Architecture:** New `apps/api/app/addons/` modules implement five concerns kept in separate files for clarity: Protocol contracts, dynamic loader (importlib), GitHub catalog fetcher, install service (fetch + extract + validate + atomic move + DB upsert), and a process-wide connector registry. The existing local-dir manifest registry stays untouched — it continues to serve bundled `addons/fortigate/addon.json` while Plan A only adds parallel infrastructure for installed packages. Migration of FortiGate to a package and removal of the local-dir loader is Plan B.
 
@@ -49,7 +49,7 @@ Plan B and C depend on A being merged and green. They do not depend on each othe
 | `apps/api/app/addons/manifest.py` | Add optional `entrypoint` (default `"connector"`) and `requirements: list[str]` fields. |
 | `apps/api/app/routers/marketplace.py` | Add `POST /addons/{id}/install`, `DELETE /addons/{id}`. Update `GET /addons` to merge installed state. |
 | `apps/api/app/main.py` | On startup, call `InstallService.bootstrap_installed()` to load all installed packages. |
-| `apps/api/app/core/config.py` | Add `marketplace_gh_token: str | None`, `marketplace_registry_repo: str` (default `ping-wins/fortidashboard-addons`), `addons_storage_dir: Path` (default `/app/data/addons`). |
+| `apps/api/app/core/config.py` | Add `marketplace_gh_token: str | None`, `marketplace_registry_repo: str` (default `ping-wins/penguard-addons`), `addons_storage_dir: Path` (default `/app/data/addons`). |
 | `docker-compose.yml` | Add named volume `addons_data` mounted at `/app/data/addons`; pass `MARKETPLACE_GH_TOKEN` env to `api`. |
 
 ---
@@ -196,7 +196,7 @@ Expected output ends with `Running upgrade 20260513_0010 -> 20260514_0011, creat
 - [ ] **Step 3: Verify the table exists**
 
 ```bash
-docker compose exec -T db psql -U fortidashboard -d fortidashboard -c "\d installed_addons"
+docker compose exec -T db psql -U penguard -d penguard -c "\d installed_addons"
 ```
 
 Expected: table description with all 7 columns and `id` as primary key.
@@ -589,7 +589,7 @@ def test_loader_uses_namespaced_module(tmp_path):
 
     loader.load(_record(addon_dir))
 
-    assert "fortidashboard_addons.demo-core" in sys.modules
+    assert "penguard_addons.demo-core" in sys.modules
 
 
 def test_loader_unload_clears_sys_modules(tmp_path):
@@ -599,7 +599,7 @@ def test_loader_unload_clears_sys_modules(tmp_path):
 
     loader.unload("demo-core")
 
-    assert "fortidashboard_addons.demo-core" not in sys.modules
+    assert "penguard_addons.demo-core" not in sys.modules
 
 
 def test_loader_rejects_missing_entrypoint(tmp_path):
@@ -669,7 +669,7 @@ Create `apps/api/app/addons/loader.py`:
 ```python
 """Dynamic loader for installed add-on packages.
 
-Each add-on is imported as `fortidashboard_addons.<id>` via
+Each add-on is imported as `penguard_addons.<id>` via
 `importlib.util.spec_from_file_location` to keep it off the global
 `sys.path`. Submodule lookup is scoped to the package directory.
 """
@@ -688,7 +688,7 @@ from app.addons.manifest import AddonManifest
 
 logger = logging.getLogger(__name__)
 
-_MODULE_NAMESPACE = "fortidashboard_addons"
+_MODULE_NAMESPACE = "penguard_addons"
 
 
 class AddonLoader:
@@ -781,7 +781,7 @@ Open `apps/api/app/core/config.py` and locate the `Settings` class. Add (preserv
 
 ```python
     marketplace_gh_token: str | None = None
-    marketplace_registry_repo: str = "ping-wins/fortidashboard-addons"
+    marketplace_registry_repo: str = "ping-wins/penguard-addons"
     addons_storage_dir: Path = Path("/app/data/addons")
 ```
 
@@ -826,13 +826,13 @@ def _transport(handler):
 
 def test_fetch_returns_catalog():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/repos/ping-wins/fortidashboard-addons/contents/catalog.json"
+        assert request.url.path == "/repos/ping-wins/penguard-addons/contents/catalog.json"
         assert request.headers["authorization"] == "Bearer test-token"
         assert request.headers["accept"] == "application/vnd.github.raw+json"
         return httpx.Response(200, json=_catalog_payload())
 
     fetcher = CatalogFetcher(
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="test-token",
         transport=_transport(handler),
     )
@@ -1076,8 +1076,8 @@ def _build_tarball(addon_id: str = "demo-core", version: str = "1.0.0") -> bytes
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        # Simulate GitHub's top-level dir like "ping-wins-fortidashboard-addons-abc1234/"
-        root = "ping-wins-fortidashboard-addons-deadbeef"
+        # Simulate GitHub's top-level dir like "ping-wins-penguard-addons-abc1234/"
+        root = "ping-wins-penguard-addons-deadbeef"
 
         def add_bytes(name: str, data: bytes) -> None:
             info = tarfile.TarInfo(name=name)
@@ -1108,7 +1108,7 @@ def test_install_extracts_and_registers(session, tmp_path):
     service = InstallService(
         session_factory=lambda: session,
         storage_dir=tmp_path,
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="t",
         loader=AddonLoader(),
         transport=_ok_transport(tarball),
@@ -2065,11 +2065,11 @@ def client(tmp_path):
 
     loader = AddonLoader()
     registry = ConnectorRegistry()
-    catalog = CatalogFetcher(repo="ping-wins/fortidashboard-addons", token="t", transport=transport)
+    catalog = CatalogFetcher(repo="ping-wins/penguard-addons", token="t", transport=transport)
     service = InstallService(
         session_factory=lambda: __import__("app.db.session", fromlist=["SessionLocal"]).SessionLocal(),
         storage_dir=tmp_path,
-        repo="ping-wins/fortidashboard-addons",
+        repo="ping-wins/penguard-addons",
         token="t",
         loader=loader,
         transport=transport,

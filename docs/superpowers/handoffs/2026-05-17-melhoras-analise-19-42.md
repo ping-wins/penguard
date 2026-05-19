@@ -3,7 +3,7 @@
 **Date:** 2026-05-17
 **Base analyzed:** `origin/main` at `be0a79aa84a25669a36fb8b2d6aff8729fa5dd4c`
 **Commit subject:** `fix(fortiweb): probe supported system status endpoint`
-**Worktree:** `/tmp/fortidashboard-main-analysis`
+**Worktree:** `/tmp/penguard-main-analysis`
 
 ## Context
 
@@ -29,7 +29,7 @@ Verification that could not run in the local environment:
 
 ### 1. CSRF is missing on administrative mutating endpoints
 
-FortiDashboard's BFF model requires CSRF protection for browser-originated
+Penguard's BFF model requires CSRF protection for browser-originated
 mutations. Most SOC routes follow this, but the newer administrative surfaces do
 not consistently include `Depends(require_csrf)`.
 
@@ -64,7 +64,7 @@ Recommended fix:
 ### 2. The multi-step AI agent exposes scripted mode outside the lab gate
 
 The legacy AI provider factory blocks `scripted` unless
-`FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=true`. The newer `/api/ai/agent/*`
+`PENGUARD_ENABLE_LAB_DEMO_TOOLS=true`. The newer `/api/ai/agent/*`
 runtime exposes only `scripted`, marks it ready, and allows sessions without
 checking the lab flag.
 
@@ -154,7 +154,7 @@ Recommended fix:
 ### 5. Vendor connector tests depend on a sibling private repository
 
 `apps/api/tests/test_addon_vendor_connectors.py` reads packages from a sibling
-`fortidashboard-addons` checkout. Some test cases skip when the package is
+`penguard-addons` checkout. Some test cases skip when the package is
 missing, but the FortiWeb-specific tests read files directly without a skip.
 
 Impact:
@@ -209,7 +209,7 @@ Impact:
 Recommended fix:
 
 - Move these host mappings to a lab override compose file, or parameterize them
-  with `${FORTIDASHBOARD_LAB_DC_IP:-...}` only in a clearly labeled lab path.
+  with `${PENGUARD_LAB_DC_IP:-...}` only in a clearly labeled lab path.
 
 ### 8. New cockpit UI strings are not fully localized
 

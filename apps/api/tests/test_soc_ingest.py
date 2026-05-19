@@ -56,7 +56,7 @@ class FakeFortiWebTelemetryService:
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
-    monkeypatch.setenv("FORTIDASHBOARD_SOC_INGEST_TOKEN", "test-secret-token")
+    monkeypatch.setenv("PENGUARD_SOC_INGEST_TOKEN", "test-secret-token")
     get_settings.cache_clear()
     fresh_aggregator = BruteForceAggregator(
         window_seconds=60.0,
@@ -70,7 +70,7 @@ def _reset(monkeypatch):
 
 
 def test_missing_token_when_disabled_returns_503(monkeypatch):
-    monkeypatch.delenv("FORTIDASHBOARD_SOC_INGEST_TOKEN", raising=False)
+    monkeypatch.delenv("PENGUARD_SOC_INGEST_TOKEN", raising=False)
     get_settings.cache_clear()
     client = TestClient(app)
 
@@ -84,7 +84,7 @@ def test_missing_token_when_disabled_returns_503(monkeypatch):
 
 
 def test_fortiweb_native_ingest_uses_integration_token_without_global_env(monkeypatch):
-    monkeypatch.delenv("FORTIDASHBOARD_SOC_INGEST_TOKEN", raising=False)
+    monkeypatch.delenv("PENGUARD_SOC_INGEST_TOKEN", raising=False)
     get_settings.cache_clear()
     fake_siem = FakeSiemClient()
     fake_fortiweb = FakeFortiWebTelemetryService()
@@ -257,7 +257,7 @@ def test_integration_id_header_propagates_to_event():
             "/api/soc/ingest/fortigate",
             headers={
                 "Authorization": "Bearer test-secret-token",
-                "X-FortiDashboard-Integration-Id": "int_fgt_lab01",
+                "X-Penguard-Integration-Id": "int_fgt_lab01",
             },
             json={
                 "logid": "0100040704",
@@ -323,7 +323,7 @@ def test_fortiweb_attack_log_emits_waf_attack():
         "/api/soc/ingest/fortiweb",
         headers={
             "Authorization": "Bearer test-secret-token",
-            "X-FortiDashboard-Integration-Id": "int_fweb_landing",
+            "X-Penguard-Integration-Id": "int_fweb_landing",
         },
         json={
             "type": "attack",

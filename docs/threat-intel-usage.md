@@ -1,4 +1,4 @@
-# Como usar Threat Intel no FortiDashboard
+# Como usar Threat Intel no Penguard
 
 Este guia descreve o que precisa estar configurado para usar o enriquecimento
 de incidentes com Threat Intel e para transformar telemetria Sysmon suspeita em
@@ -24,10 +24,10 @@ incidentes SOC.
 Edite o `.env` local ou o segredo equivalente do deploy:
 
 ```env
-FORTIDASHBOARD_THREAT_INTEL_PROVIDER=virustotal
-FORTIDASHBOARD_THREAT_INTEL_CACHE_TTL_SECONDS=3600
-FORTIDASHBOARD_VIRUSTOTAL_API_KEY=<sua-chave>
-FORTIDASHBOARD_VIRUSTOTAL_BASE_URL=https://www.virustotal.com
+PENGUARD_THREAT_INTEL_PROVIDER=virustotal
+PENGUARD_THREAT_INTEL_CACHE_TTL_SECONDS=3600
+PENGUARD_VIRUSTOTAL_API_KEY=<sua-chave>
+PENGUARD_VIRUSTOTAL_BASE_URL=https://www.virustotal.com
 ```
 
 Nao versionar chave real. A chave deve ficar apenas em `.env`, secret manager
@@ -39,7 +39,7 @@ Depois de alterar variaveis da API em Docker:
 docker compose up -d --build api
 ```
 
-Sem `FORTIDASHBOARD_VIRUSTOTAL_API_KEY`, o recurso continua disponivel na UI,
+Sem `PENGUARD_VIRUSTOTAL_API_KEY`, o recurso continua disponivel na UI,
 mas retorna `providerConfigured=false` e nao faz chamada externa.
 
 ## Preparar telemetria Windows
@@ -48,7 +48,7 @@ Para ver sites/destinos suspeitos acessados pelo Windows Server:
 
 1. Instale Sysmon no Windows.
 2. Habilite eventos `NetworkConnect` e `DnsQuery`.
-3. Enrole o host no FortiDashboard pelo painel Endpoints.
+3. Enrole o host no Penguard pelo painel Endpoints.
 4. Rode o `agent_private` com Sysmon:
 
 ```powershell
@@ -80,8 +80,8 @@ Backend:
 
 ```bash
 cd apps/api
-UV_CACHE_DIR=/home/guest/fortidashboard/.uv-cache \
-RUFF_CACHE_DIR=/home/guest/fortidashboard/.ruff-cache \
+UV_CACHE_DIR=/home/guest/penguard/.uv-cache \
+RUFF_CACHE_DIR=/home/guest/penguard/.ruff-cache \
 uv run pytest tests/test_threat_intel.py tests/test_soc_gateway.py -q
 ```
 

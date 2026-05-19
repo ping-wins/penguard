@@ -4,7 +4,7 @@ Date: 2026-05-15
 
 ## Context
 
-FortiDashboard is moving from a port-scan-only SOC demo into a generic SOC lab
+Penguard is moving from a port-scan-only SOC demo into a generic SOC lab
 and orchestration cockpit. The current SIEM and ticket flow already detects
 multiple alert types, including network scans, denied traffic bursts, repeated
 failed logins, suspicious endpoint connections and FortiGate resource pressure.

@@ -2,7 +2,7 @@
 
 > **For Hermes:** Use test-driven-development for every behavior change and commit each completed slice.
 
-**Goal:** Close the highest-risk gaps found in the 2026-05-14 codebase review so FortiDashboard moves from demo-only toward a trustworthy MVP.
+**Goal:** Close the highest-risk gaps found in the 2026-05-14 codebase review so Penguard moves from demo-only toward a trustworthy MVP.
 
 **Architecture:** Treat this as a hardening sprint, not a rewrite. Fix server-side trust boundaries first, then persistence/error handling, contracts, CI and UX truthfulness. Keep safety defaults: FortiGate policy writes go through governed orchestration, SOAR starts dry-run until approval, AI output remains draft/confirmed.
 
@@ -103,7 +103,7 @@ Status: **implemented** in commit `fix(api): honor secure session cookie setting
 
 **TDD steps:**
 
-1. Add a failing test that reloads/builds the app with `FORTIDASHBOARD_SESSION_COOKIE_SECURE=true` and verifies `SessionMiddleware` is configured with `https_only=True`.
+1. Add a failing test that reloads/builds the app with `PENGUARD_SESSION_COOKIE_SECURE=true` and verifies `SessionMiddleware` is configured with `https_only=True`.
 2. Implement settings-driven `same_site` and `https_only` in `app.main`.
 3. Run targeted test and API suite.
 4. Commit: `fix(auth): honor secure setting for oauth state cookie`.

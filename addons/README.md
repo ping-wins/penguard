@@ -9,7 +9,7 @@ under `/api/marketplace/addons`.
 The marketplace lives inside this monorepo while the manifest schema is
 unstable. Once routes, auth, widget bindings and SIEM event types stop
 changing, extract the directory into a public registry repo
-(e.g. `hendrixes/fortidashboard-addons`) and switch the registry loader
+(e.g. `hendrixes/penguard-addons`) and switch the registry loader
 to fetch from a signed GitHub release asset. Until then, every add-on
 ships with the dashboard build and benefits from the same code review
 as the gateway code that consumes its routes.

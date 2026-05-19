@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 # The external packages repo sits next to the dashboard checkout.
-PKGS = Path(__file__).resolve().parents[4] / "fortidashboard-addons"
+PKGS = Path(__file__).resolve().parents[4] / "penguard-addons"
 
 CASES = [
     ("fortigate-core", "0.2.0"),

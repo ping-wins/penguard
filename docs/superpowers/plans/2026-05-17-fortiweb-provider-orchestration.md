@@ -58,7 +58,7 @@
 - Create: `apps/api/tests/test_fortiweb_block_workflow.py`
 
 - [ ] Add failing tests for preflight, review, admin-only apply, active persistence, admin-only remove, and remove persistence.
-- [ ] Implement source-IP validation and `FD_IP_BLOCKLIST` diff creation.
+- [ ] Implement source-IP validation and `PG_IP_BLOCKLIST` diff creation.
 - [ ] Implement apply using FortiWeb client methods for managed IP list creation/update.
 - [ ] Implement remove using FortiWeb client methods and local state transitions.
 - [ ] Add audit events for review/apply/remove success and failure.

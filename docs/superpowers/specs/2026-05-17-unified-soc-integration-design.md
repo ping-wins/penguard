@@ -7,7 +7,7 @@
 
 ## Vision
 
-Replace the three separate, hardcoded integration forms (FortiGate, FortiWeb, Penguin tools) with one unified wizard. The user picks a **machine type + version** from the marketplace add-ons they have installed (e.g. *FortiGate 7.6.6*, *FortiWeb 8.0.5*), supplies credentials, the system tests the connection, then wires that machine's connector into FortiDashboard and the sister tools (SIEM log consumption, SOAR playbook execution) via per-destination toggles.
+Replace the three separate, hardcoded integration forms (FortiGate, FortiWeb, Penguin tools) with one unified wizard. The user picks a **machine type + version** from the marketplace add-ons they have installed (e.g. *FortiGate 7.6.6*, *FortiWeb 8.0.5*), supplies credentials, the system tests the connection, then wires that machine's connector into Penguard and the sister tools (SIEM log consumption, SOAR playbook execution) via per-destination toggles.
 
 ## Decisions locked with user
 

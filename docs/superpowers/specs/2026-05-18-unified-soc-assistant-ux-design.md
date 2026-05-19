@@ -11,7 +11,7 @@
 ## Goal
 
 Replace the visible multi-agent/backend experience with one operational **SOC
-Assistant**. The assistant should be able to inspect and manage FortiDashboard
+Assistant**. The assistant should be able to inspect and manage Penguard
 through governed tools, while inheriting the logged-in user's permissions and
 requiring human confirmation before any state-changing action.
 
@@ -22,7 +22,7 @@ because the frontend can force a backend that the backend only supports for
 `scripted`. The redesign makes the product promise simple:
 
 > The SOC Assistant can help do what the logged-in user is allowed to do in
-> FortiDashboard, and writes happen only after review and confirmation.
+> Penguard, and writes happen only after review and confirmation.
 
 ## Decisions
 
@@ -430,5 +430,5 @@ Integration:
    node types and graph schemas.
 9. Assistant-created playbooks persist only after confirmation and default to
    disabled.
-10. Policy orchestration tools keep the existing FortiDashboard BFF governance
+10. Policy orchestration tools keep the existing Penguard BFF governance
     boundary.

@@ -2,7 +2,7 @@
 
 ## Context
 
-FortiDashboard already records audit events for authentication, FortiGate integration changes, workspace updates, and audit reads through the FastAPI BFF. The current audit endpoint is intentionally scoped to the authenticated user, which is enough for analyst self-audit but not enough for SOC administration or insider-threat review.
+Penguard already records audit events for authentication, FortiGate integration changes, workspace updates, and audit reads through the FastAPI BFF. The current audit endpoint is intentionally scoped to the authenticated user, which is enough for analyst self-audit but not enough for SOC administration or insider-threat review.
 
 This cut promotes audit visibility to an administrator-only capability while keeping the existing browser-session model: Vue never receives Keycloak tokens, and FastAPI remains the only component that talks to Keycloak.
 
@@ -18,7 +18,7 @@ This cut promotes audit visibility to an administrator-only capability while kee
 ## Non-Goals
 
 - No public UI for assigning roles.
-- No full user-management console inside FortiDashboard yet.
+- No full user-management console inside Penguard yet.
 - No destructive FortiGate actions.
 - No multi-tenant admin hierarchy in this cut.
 
@@ -31,7 +31,7 @@ Seeded users:
 - `analyst@example.com`: role `analyst`.
 - `admin@example.com`: role `admin`.
 
-New users created through `POST /api/auth/register` receive only `analyst`. Production administrators should be created or promoted through Keycloak administration, not through the public FortiDashboard registration form.
+New users created through `POST /api/auth/register` receive only `analyst`. Production administrators should be created or promoted through Keycloak administration, not through the public Penguard registration form.
 
 ## Backend Design
 

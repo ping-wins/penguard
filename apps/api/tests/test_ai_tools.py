@@ -12,8 +12,8 @@ def csrf_headers(client: TestClient) -> dict[str, str]:
 
 
 def enable_lab_scripted_ai(monkeypatch) -> None:
-    monkeypatch.setenv("FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS", "true")
-    monkeypatch.setenv("FORTIDASHBOARD_AI_PROVIDER", "scripted")
+    monkeypatch.setenv("PENGUARD_ENABLE_LAB_DEMO_TOOLS", "true")
+    monkeypatch.setenv("PENGUARD_AI_PROVIDER", "scripted")
     get_settings.cache_clear()
     get_ai_provider.cache_clear()
 

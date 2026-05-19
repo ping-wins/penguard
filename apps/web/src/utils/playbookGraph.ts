@@ -7,7 +7,7 @@ import type {
   PlaybookNodeType,
 } from '../services/playbooksClient'
 
-export const PLAYBOOK_NODE_DRAG_MIME = 'application/x-fortidashboard-playbook-node'
+export const PLAYBOOK_NODE_DRAG_MIME = 'application/x-penguard-playbook-node'
 
 export type PlaybookCanvasNodeData = {
   label: string

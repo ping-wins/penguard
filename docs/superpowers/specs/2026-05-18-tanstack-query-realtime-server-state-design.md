@@ -2,7 +2,7 @@
 
 ## Problem
 
-FortiDashboard currently receives live FortiGate telemetry through UDP syslog, but
+Penguard currently receives live FortiGate telemetry through UDP syslog, but
 the cockpit still behaves like a fetch-on-demand dashboard. Widgets hydrate from
 `/api/widgets/*/data`, the backend publishes narrow SSE events, and several
 widgets only update after a manual page refresh or an ad hoc widget reload.

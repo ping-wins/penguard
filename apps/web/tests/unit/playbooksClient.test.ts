@@ -81,7 +81,7 @@ describe('playbooksClient', () => {
       kind: 'discord',
       url: 'https://discord.com/api/webhooks/123456789/secret-token',
     })
-    const tested = await testPlaybookWebhookDestination('pwd_discord_soc', 'FortiDashboard test')
+    const tested = await testPlaybookWebhookDestination('pwd_discord_soc', 'Penguard test')
 
     expect(created.redactedUrl).toBe('https://discord.com/api/webhooks/123456789/...')
     expect(tested).toEqual({ destinationId: 'pwd_discord_soc', statusCode: 204, ok: true })

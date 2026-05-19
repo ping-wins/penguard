@@ -56,7 +56,7 @@ class FakePolicyService:
                         "service": ["HTTPS"],
                     },
                     "ownership": "external",
-                    "managedByFortiDashboard": False,
+                    "managedByPenguard": False,
                     "isMutable": True,
                     "supports": ["edit", "disable", "delete"],
                     "risk": {"level": "medium", "reasons": ["Allows traffic"]},
@@ -217,7 +217,7 @@ def test_fortigate_policy_adapter_normalizes_inventory() -> None:
     assert row["id"] == "fortigate:int_fgt_01:policy:10"
     assert row["providerType"] == "fortigate"
     assert row["ownership"] == "external"
-    assert row["managedByFortiDashboard"] is False
+    assert row["managedByPenguard"] is False
     assert row["supports"] == ["edit", "disable", "delete"]
     assert row["scope"]["service"] == ["HTTPS"]
 
@@ -260,7 +260,7 @@ def test_fortigate_policy_adapter_creates_firewall_policy() -> None:
             integrationId="int_fgt_01",
             action="create",
             payload={
-                "name": "FD_ALLOW_SOC_TO_WAF",
+                "name": "PG_ALLOW_SOC_TO_WAF",
                 "srcintf": [{"name": "port2"}],
                 "dstintf": [{"name": "port3"}],
                 "srcaddr": [{"name": "all"}],
@@ -281,7 +281,7 @@ def test_fortigate_policy_adapter_creates_firewall_policy() -> None:
 
     assert client.created == [
         {
-            "name": "FD_ALLOW_SOC_TO_WAF",
+            "name": "PG_ALLOW_SOC_TO_WAF",
             "srcintf": [{"name": "port2"}],
             "dstintf": [{"name": "port3"}],
             "srcaddr": [{"name": "all"}],
@@ -293,7 +293,7 @@ def test_fortigate_policy_adapter_creates_firewall_policy() -> None:
             "status": "enable",
         }
     ]
-    assert applied["appliedResult"] == {"created": "FD_ALLOW_SOC_TO_WAF"}
+    assert applied["appliedResult"] == {"created": "PG_ALLOW_SOC_TO_WAF"}
 
 
 class FakeFortiWebPolicyService:
@@ -313,7 +313,7 @@ class FakeFortiWebPolicyService:
                     "name": "FortiWeb Lab",
                     "status": "connected",
                     "targetServerPolicy": "lab-waf-policy",
-                    "managedIpListPolicy": "FD_IP_BLOCKLIST",
+                    "managedIpListPolicy": "PG_IP_BLOCKLIST",
                 }
             ]
         }
@@ -332,11 +332,11 @@ class FakeFortiWebPolicyService:
                     "reason": "DoS source",
                     "intent": {
                         "targetServerPolicy": "lab-waf-policy",
-                        "managedIpListPolicy": "FD_IP_BLOCKLIST",
+                        "managedIpListPolicy": "PG_IP_BLOCKLIST",
                     },
                     "preflightSummary": {
                         "serverPolicy": "lab-waf-policy",
-                        "managedIpListPolicy": "FD_IP_BLOCKLIST",
+                        "managedIpListPolicy": "PG_IP_BLOCKLIST",
                     },
                     "proposedChanges": [],
                     "reviewHash": "hash_01",
@@ -366,17 +366,17 @@ class FakeFortiWebPolicyService:
             "reason": reason,
             "intent": {
                 "targetServerPolicy": "lab-waf-policy",
-                "managedIpListPolicy": "FD_IP_BLOCKLIST",
+                "managedIpListPolicy": "PG_IP_BLOCKLIST",
             },
             "preflightSummary": {
                 "serverPolicy": "lab-waf-policy",
-                "managedIpListPolicy": "FD_IP_BLOCKLIST",
+                "managedIpListPolicy": "PG_IP_BLOCKLIST",
                 "alreadyBlocked": False,
             },
             "proposedChanges": [
                 {
                     "operation": "update_ip_list",
-                    "summary": "Add 203.0.113.10 to FortiDashboard managed FortiWeb IP list",
+                    "summary": "Add 203.0.113.10 to Penguard managed FortiWeb IP list",
                 }
             ],
             "reviewHash": "fweb_hash_02",
@@ -407,7 +407,7 @@ class FakeFortiWebPolicyService:
         owner_user_id: str,
         integration_id: str,
         target_server_policy: str | None = None,
-        inline_protection_profile: str = "FD Inline DoS Protection",
+        inline_protection_profile: str = "Penguard Inline DoS Protection",
         dos_prevention_policy: str = "Predefined",
         reason: str | None = None,
     ) -> dict:
@@ -446,7 +446,7 @@ class FakeFortiWebPolicyService:
                 {
                     "operation": "create_inline_protection_profile",
                     "summary": (
-                        "Create FortiDashboard-owned FortiWeb profile "
+                        "Create Penguard-owned FortiWeb profile "
                         f"{inline_protection_profile} with {dos_prevention_policy} DoS prevention"
                     ),
                 },
@@ -511,7 +511,7 @@ def test_fortiweb_policy_adapter_lists_configured_policy_and_blocks() -> None:
     }
     assert [row["kind"] for row in rows] == ["server_policy", "ip_blocklist", "source_block"]
     assert rows[0]["name"] == "lab-waf-policy"
-    assert rows[1]["managedByFortiDashboard"] is True
+    assert rows[1]["managedByPenguard"] is True
     assert rows[2]["supports"] == ["delete"]
 
 
@@ -558,7 +558,7 @@ def test_fortiweb_policy_adapter_reviews_and_applies_waf_dos_policy_edit() -> No
             action="edit",
             payload={
                 "operation": "prepare_waf_dos_policy",
-                "inlineProtectionProfile": "FD Inline DoS Protection",
+                "inlineProtectionProfile": "Penguard Inline DoS Protection",
                 "dosPreventionPolicy": "Predefined",
                 "reason": "Lab DoS validation",
             },
@@ -580,7 +580,7 @@ def test_fortiweb_policy_adapter_reviews_and_applies_waf_dos_policy_edit() -> No
     assert service.waf_reviews == [
         (
             "lab-waf-policy",
-            "FD Inline DoS Protection",
+            "Penguard Inline DoS Protection",
             "Predefined",
             "Lab DoS validation",
         )

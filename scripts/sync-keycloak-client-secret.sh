@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Align the Keycloak `fortidashboard-bff` client secret with the value in .env
+# Align the Keycloak `penguard-bff` client secret with the value in .env
 # after the first `docker compose up`. The realm import file ships with the
 # literal `dev-client-secret`; this script overwrites it via the Keycloak
 # admin REST API so the BFF and Keycloak agree on the same value.
@@ -22,10 +22,10 @@ fi
 # shellcheck disable=SC1090
 source "${ENV_FILE}"
 
-for required in FORTIDASHBOARD_KEYCLOAK_BASE_URL \
-                FORTIDASHBOARD_KEYCLOAK_REALM \
-                FORTIDASHBOARD_KEYCLOAK_CLIENT_ID \
-                FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET \
+for required in PENGUARD_KEYCLOAK_BASE_URL \
+                PENGUARD_KEYCLOAK_REALM \
+                PENGUARD_KEYCLOAK_CLIENT_ID \
+                PENGUARD_KEYCLOAK_CLIENT_SECRET \
                 KC_BOOTSTRAP_ADMIN_USERNAME \
                 KC_BOOTSTRAP_ADMIN_PASSWORD; do
   if [[ -z "${!required:-}" ]]; then
@@ -41,9 +41,9 @@ for tool in curl jq; do
   fi
 done
 
-KC_BASE="${FORTIDASHBOARD_KEYCLOAK_BASE_URL%/}"
-REALM="${FORTIDASHBOARD_KEYCLOAK_REALM}"
-CLIENT_ID="${FORTIDASHBOARD_KEYCLOAK_CLIENT_ID}"
+KC_BASE="${PENGUARD_KEYCLOAK_BASE_URL%/}"
+REALM="${PENGUARD_KEYCLOAK_REALM}"
+CLIENT_ID="${PENGUARD_KEYCLOAK_CLIENT_ID}"
 
 echo "Authenticating against ${KC_BASE} as ${KC_BOOTSTRAP_ADMIN_USERNAME}…"
 token="$(
@@ -76,8 +76,8 @@ echo "Pushing the new secret for client ${CLIENT_ID} (uuid ${client_uuid})…"
 curl -s -f -X PUT \
      -H "Authorization: Bearer ${token}" \
      -H "Content-Type: application/json" \
-     --data "{\"secret\": \"${FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET}\"}" \
+     --data "{\"secret\": \"${PENGUARD_KEYCLOAK_CLIENT_SECRET}\"}" \
      "${KC_BASE}/admin/realms/${REALM}/clients/${client_uuid}" \
   > /dev/null
 
-echo "Done. The Keycloak client secret now matches FORTIDASHBOARD_KEYCLOAK_CLIENT_SECRET in .env."
+echo "Done. The Keycloak client secret now matches PENGUARD_KEYCLOAK_CLIENT_SECRET in .env."

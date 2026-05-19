@@ -1,4 +1,4 @@
-"""AI provider abstraction for the FortiDashboard cockpit assistant.
+"""AI provider abstraction for the Penguard cockpit assistant.
 
 This package exposes a thin protocol (`AIProvider`) and a few built-in
 adapters: an Anthropic adapter, an OpenAI-compatible adapter and a

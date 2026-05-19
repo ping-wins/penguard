@@ -97,7 +97,7 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
         NodeTypeDefinition(
             id="audit.note",
             label="Write Audit Note",
-            description="Records a FortiDashboard audit event from the playbook run.",
+            description="Records a Penguard audit event from the playbook run.",
             effectSummary="Writes a real audit log entry for traceability.",
             category="action",
             boundary="case_note",
@@ -233,7 +233,7 @@ def node_type_definitions() -> list[NodeTypeDefinition]:
             id="fortigate.temporary_block",
             label="FortiGate Temporary Block",
             description="Requests a temporary FortiGate block through the governed policy workflow.",
-            effectSummary="Pauses for approval and then uses FortiDashboard-owned policy orchestration.",
+            effectSummary="Pauses for approval and then uses Penguard-owned policy orchestration.",
             category="action",
             sensitive=True,
             dryRunOnly=False,

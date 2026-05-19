@@ -108,7 +108,7 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 }
 
 function localeHeaders(): Record<string, string> {
-  return { 'X-FortiDashboard-Locale': getLocale() }
+  return { 'X-Penguard-Locale': getLocale() }
 }
 
 async function parseOrThrow<T>(response: Response, fallback: string): Promise<T> {

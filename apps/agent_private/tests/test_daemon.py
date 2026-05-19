@@ -8,7 +8,7 @@ def identity() -> dict[str, str]:
     return {
         "service": "agent_private",
         "hostname": "WIN-LAB-01",
-        "username": "FORTIDASHBOARD\\Administrator",
+        "username": "PENGUARD\\Administrator",
         "os": "Windows",
     }
 

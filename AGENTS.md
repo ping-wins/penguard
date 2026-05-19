@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This file is the FortiDashboard contributor and AI-agent guide. Keep it short,
+This file is the Penguard contributor and AI-agent guide. Keep it short,
 current and action-oriented. It is not a changelog, release note, sprint log or
 MVP diary.
 
@@ -17,7 +17,7 @@ Use this split:
   historical recording scripts.
 - `docs/superpowers/`: implementation plans/specs used by AI-agent workflows.
 
-FortiDashboard is a modular NG-SOC cockpit. FortiGate is the first real Fortinet
+Penguard is a modular NG-SOC cockpit. FortiGate is the first real Fortinet
 provider. FortiSIEM/FortiSOAR/FortiEDR/FortiXDR are not faked; unavailable
 Fortinet capabilities are represented by internal SOC-lite services with clear
 labels and safe boundaries.
@@ -63,7 +63,7 @@ product need is explicit.
   workspace, incidents, playbooks, playbook runs, endpoint enrollment, admin
   views and approvals.
 - `soar_skipper` actions default to `dry_run`. Sensitive FortiGate/FortiWeb
-  actions may become live only through FortiDashboard-owned APIs with RBAC,
+  actions may become live only through Penguard-owned APIs with RBAC,
   explicit approval, preflight, diff/summary, rollback guidance and audit.
 - AI-generated playbooks and widgets are drafts until a permitted human reviews
   and applies them.
@@ -72,7 +72,7 @@ product need is explicit.
 
 ### FortiGate policy orchestration boundary
 
-FortiDashboard is a SOC orchestrator. FortiGate integrations are allowed to
+Penguard is a SOC orchestrator. FortiGate integrations are allowed to
 perform real, audited FortiGate policy orchestration for customer/lab traffic
 validation and approved response workflows. Do not replace this with mock,
 draft-only or out-of-band CLI guidance as the product path.
@@ -87,7 +87,7 @@ Allowed for the MVP:
 - Safe/additive firewall traffic-policy orchestration only when all of these are
   true: preflight has read interfaces, address objects, services and current
   policy order; the requested change is shown as a diff/summary; an `admin`
-  explicitly confirms; FortiDashboard creates or updates only FortiDashboard-
+  explicitly confirms; Penguard creates or updates only Penguard-
   owned objects/policies; existing customer policies are not silently
   overwritten; the action, target entities, before/after summary, FortiGate
   response and rollback guidance are audited with secrets redacted.
@@ -165,7 +165,7 @@ Coding conventions:
 
 ## Auth, Sessions And SSO
 
-Keycloak is the identity provider, but users interact with FortiDashboard Vue
+Keycloak is the identity provider, but users interact with Penguard Vue
 screens rather than hosted Keycloak forms.
 
 Mandatory auth model:
@@ -186,16 +186,16 @@ Kerberos/SPNEGO support:
 - `SessionMiddleware` stores OAuth state in the `f_session` cookie.
 - Local AD/Kerberos values live in `.env`, `docker-compose.yml`, `krb5.conf` or
   local host config. Do not track real keytabs or lab secrets.
-- `fortidashboard.keytab` must remain untracked.
+- `penguard.keytab` must remain untracked.
 - `configSSOKerberosKeycloak.md` is the detailed AD/Kerberos lab setup guide.
 
 Important Keycloak URL rules:
 
-- `FORTIDASHBOARD_KEYCLOAK_BASE_URL` is API-to-Keycloak. In Compose it should
+- `PENGUARD_KEYCLOAK_BASE_URL` is API-to-Keycloak. In Compose it should
   point to `http://keycloak:8080`.
-- Browser-facing values are `FORTIDASHBOARD_KEYCLOAK_BROWSER_BASE_URL`,
-  `FORTIDASHBOARD_OIDC_ISSUER`, `FORTIDASHBOARD_SSO_REDIRECT_URI` and
-  `FORTIDASHBOARD_SSO_POST_LOGIN_URL`.
+- Browser-facing values are `PENGUARD_KEYCLOAK_BROWSER_BASE_URL`,
+  `PENGUARD_OIDC_ISSUER`, `PENGUARD_SSO_REDIRECT_URI` and
+  `PENGUARD_SSO_POST_LOGIN_URL`.
 - Kerberos/SPNEGO requires the browser-facing Keycloak hostname to match the
   service principal in the realm import.
 
@@ -228,7 +228,7 @@ Product setup direction:
 3. Show required log-forwarding/syslog settings and the current state.
 4. Apply safe/additive log forwarding only with explicit confirmation.
 5. Verify receipt of logs.
-6. If no incidents appear, guide the operator through FortiDashboard policy
+6. If no incidents appear, guide the operator through Penguard policy
    orchestration to create or verify a log-enabled traffic path such as a
    lab deny/log or allow/log policy. Do not require out-of-band FortiGate UI
    changes for the normal validation flow.
@@ -282,7 +282,7 @@ Current capabilities:
 - Audit create, update, simulate, run and approve actions through the BFF.
 - Completed approved runs can update the linked SIEM ticket to `contained`; if
   SIEM patching fails, the response is partial and audited.
-- FortiGate response nodes may request FortiDashboard-owned policy orchestration
+- FortiGate response nodes may request Penguard-owned policy orchestration
   after approval. They must not bypass the BFF, RBAC, preflight or audit path.
 
 Gateway API:
@@ -428,11 +428,11 @@ Rules:
 Direction (2026-05-14 onward): vendor connectors are not part of the monorepo.
 Each provider integration is a versioned **package** (manifest + Python
 connector code + fixtures) hosted in the private registry repo
-`ping-wins/fortidashboard-addons`. The dashboard ships zero vendor
+`ping-wins/penguard-addons`. The dashboard ships zero vendor
 connectors and gains them at runtime via install endpoints that fetch a
 GitHub tarball, extract it onto a Docker volume, register the row in
 `installed_addons`, and dynamically import the package as
-`fortidashboard_addons.<id>`.
+`penguard_addons.<id>`.
 
 Rules for contributors and agents:
 
@@ -534,14 +534,14 @@ Allowed:
 - Suggest safe actions and draft playbooks.
 - Draft custom widgets using the workspace data model.
 - Suggest FortiGate/FortiWeb response actions for a permitted human to approve
-  in FortiDashboard.
+  in Penguard.
 
 Forbidden:
 
 - Activate playbooks or approve sensitive steps.
 - Run destructive actions.
 - Directly apply or approve FortiGate/FortiWeb policy/config changes. Live
-  policy changes must be initiated by a permitted human through FortiDashboard's
+  policy changes must be initiated by a permitted human through Penguard's
   governed orchestration UI/API.
 - Reveal secrets.
 - Execute arbitrary Python, shell, SQL, HTTP or browser code.
@@ -574,7 +574,7 @@ POST /api/soc/tickets/{ticketId}/apply-containment
 Do not present lab/demo paths as product setup.
 
 - Synthetic replay endpoints are lab-only and must be registered only when
-  `FORTIDASHBOARD_ENABLE_LAB_DEMO_TOOLS=true`.
+  `PENGUARD_ENABLE_LAB_DEMO_TOOLS=true`.
 - Replay/seed scripts belong under lab tooling, not normal operator flows.
 - Simulator data must be visibly labeled.
 - Docs that teach synthetic demos belong in `docs/lab/` or
@@ -594,7 +594,7 @@ The cockpit settings live behind the sidebar gear icon with these tabs:
 - Profile: current Keycloak BFF session and sign-out shortcut.
 - Appearance: theme/layout builder.
 - Language: pt-BR/en-US picker persisted to `localStorage` under
-  `fortidashboard:locale`.
+  `penguard:locale`.
 
 Translation layer:
 
@@ -603,7 +603,7 @@ Translation layer:
   `apps/web/src/i18n/messages/en-US.ts`.
 - Components call `useI18n().t('namespace.key')`.
 - `setLocale()` keeps `<html lang>` in sync.
-- Backend AI calls read `X-FortiDashboard-Locale` with `Accept-Language`
+- Backend AI calls read `X-Penguard-Locale` with `Accept-Language`
   fallback.
 
 Any newly added user-facing UI must be translated in the same PR.
@@ -659,7 +659,7 @@ Repository:
 docker compose config --quiet
 docker compose up --build
 docker compose up -d --build api
-FORTIDASHBOARD_MOCK_MODE=true docker compose up -d --build api
+PENGUARD_MOCK_MODE=true docker compose up -d --build api
 ```
 
 API:
@@ -715,7 +715,7 @@ Rules:
 - Use forward slashes in Compose, Dockerfiles and Python paths.
 - Do not mount host `node_modules` or `.venv` into containers; use named Docker
   volumes.
-- Document `fortidashboard.local` hosts-file setup for both Windows and Linux.
+- Document `penguard.local` hosts-file setup for both Windows and Linux.
 - Bash here-docs are acceptable only inside container `command:` fields. Local
   scripts must not assume bash unless a PowerShell mirror exists.
 

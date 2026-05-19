@@ -45,7 +45,7 @@ def test_register_sets_http_only_session_cookie_without_returning_tokens():
     assert "refresh_token" not in response.text
 
     set_cookie = response.headers["set-cookie"]
-    assert "fortidashboard_session=" in set_cookie
+    assert "penguard_session=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "SameSite=lax" in set_cookie
 
@@ -64,7 +64,7 @@ def test_login_sets_session_cookie_and_me_reads_contextual_browser_session():
 
     assert login_response.status_code == 200
     assert login_response.json()["session"]["authenticated"] is True
-    assert "fortidashboard_session=" in login_response.headers["set-cookie"]
+    assert "penguard_session=" in login_response.headers["set-cookie"]
 
     me_response = client.get("/api/auth/me")
 
@@ -107,7 +107,7 @@ def test_logout_clears_http_only_session_cookie():
     assert logout_response.status_code == 200
     assert logout_response.json() == {"authenticated": False}
     set_cookie = logout_response.headers["set-cookie"]
-    assert "fortidashboard_session=" in set_cookie
+    assert "penguard_session=" in set_cookie
     assert "Max-Age=0" in set_cookie
 
     me_response = client.get("/api/auth/me")

@@ -663,7 +663,7 @@ def test_router_ignores_role_tier_env_override(monkeypatch):
         "app.ai.agent.router.get_ai_agent_settings_store",
         lambda: store,
     )
-    monkeypatch.setenv("FORTIDASHBOARD_ROLE_CHAT_TIER", "deep")
+    monkeypatch.setenv("PENGUARD_ROLE_CHAT_TIER", "deep")
 
     backend = pick_backend(get_role("chat"), "user-1")  # type: ignore[arg-type]
 

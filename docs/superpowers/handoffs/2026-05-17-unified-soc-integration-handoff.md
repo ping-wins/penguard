@@ -16,8 +16,8 @@ Stopped **before starting Task 1.4** (user request). Tasks 1.1, 1.2, 1.3 are **c
 
 | Repo | Path | Remote |
 |---|---|---|
-| **DASH** (dashboard) | `C:\Users\lucas\Desktop\PingWins-FortiDashboard\FortiDashboard` | `github.com/ping-wins/fortidashboard` |
-| **PKGS** (add-on packages) | `C:\Users\lucas\Desktop\PingWins-FortiDashboard\fortidashboard-addons` | `github.com/ping-wins/fortidashboard-addons` |
+| **DASH** (dashboard) | `C:\Users\lucas\Desktop\PingWins-Penguard\Penguard` | `github.com/ping-wins/penguard` |
+| **PKGS** (add-on packages) | `C:\Users\lucas\Desktop\PingWins-Penguard\penguard-addons` | `github.com/ping-wins/penguard-addons` |
 
 ### Done
 
@@ -58,7 +58,7 @@ Full step-by-step code for every task is in the plan doc. Each task is bite-size
 ### Critical environment notes (these bit us — don't relearn them)
 
 - **API container has NO pytest.** Do NOT use `docker compose exec api pytest`. Run API tests on the host venv:
-  `& "C:\Users\lucas\Desktop\PingWins-FortiDashboard\FortiDashboard\apps\api\.venv\Scripts\python.exe" -m pytest apps/api/tests/<file> -q`
+  `& "C:\Users\lucas\Desktop\PingWins-Penguard\Penguard\apps\api\.venv\Scripts\python.exe" -m pytest apps/api/tests/<file> -q`
   Run from the DASH repo root (running from the monorepo root collects other apps' tests and errors — always scope to `apps/api/tests`).
 - **Backend no source bind mount.** For tasks that change running API behavior, `docker compose up -d --build api` after the edit (per project memory). Pure schema/unit tests run fine on the host venv without rebuild.
 - **PKGS ⇄ DASH cross-repo copy:** subagents can't `cp` reliably across the two repo roots in one shell. Use Read (source) → Write (dest) with identical content. Confirmed the ported clients have **zero `app.*` imports** (fortigate `client.py` ✅; fortiweb `client.py` ✅ — only `json`/`typing`/`httpx`), so ports are byte-for-byte, no edits.

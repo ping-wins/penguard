@@ -1,1 +1,1 @@
-"""Developer scripts for FortiDashboard API."""
+"""Developer scripts for Penguard API."""

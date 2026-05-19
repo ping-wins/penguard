@@ -43,7 +43,7 @@ Do not implement:
   copied into live lab configuration.
 - Every mutating endpoint must require CSRF/session auth and write an audit event.
 - Every proposed FortiGate write must include preflight, review hash and redacted before/after summary.
-- FortiGate writes are limited to owned objects/policies with `FD_` prefixes.
+- FortiGate writes are limited to owned objects/policies with `PG_` prefixes.
 - Existing customer policies are read for placement decisions but are not modified silently.
 
 ---
@@ -72,7 +72,7 @@ def test_allowed_fortigate_traffic_burst_creates_port_scan_incident() -> None:
                 "destinationPort": port,
                 "service": f"tcp/{port}",
                 "action": "accept",
-                "policyId": "FD_LAB_ALLOW_SCAN",
+                "policyId": "PG_LAB_ALLOW_SCAN",
                 "subtype": "forward",
                 "logid": f"000000{port}",
             },
@@ -281,11 +281,11 @@ async def test_fortigate_client_creates_owned_address_object() -> None:
         if request.method == "POST" and request.url.path == "/api/v2/cmdb/firewall/address":
             body = json.loads(request.content.decode())
             assert body == {
-                "name": "FD_ADDR_192_0_2_50",
+                "name": "PG_ADDR_192_0_2_50",
                 "subnet": "192.0.2.50 255.255.255.255",
-                "comment": "FortiDashboard owned temporary block object",
+                "comment": "Penguard owned temporary block object",
             }
-            return httpx.Response(200, json={"status": "success", "mkey": "FD_ADDR_192_0_2_50"})
+            return httpx.Response(200, json={"status": "success", "mkey": "PG_ADDR_192_0_2_50"})
         return httpx.Response(404, json={"status": "error"})
 
     client = FortiGateApiClient(
@@ -295,9 +295,9 @@ async def test_fortigate_client_creates_owned_address_object() -> None:
     )
 
     result = await client.create_address_object(
-        name="FD_ADDR_192_0_2_50",
+        name="PG_ADDR_192_0_2_50",
         subnet="192.0.2.50 255.255.255.255",
-        comment="FortiDashboard owned temporary block object",
+        comment="Penguard owned temporary block object",
     )
 
     assert result["status"] == "success"
@@ -310,10 +310,10 @@ async def test_fortigate_client_creates_firewall_policy() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and request.url.path == "/api/v2/cmdb/firewall/policy":
             body = json.loads(request.content.decode())
-            assert body["name"] == "FD_TMP_BLOCK_192_0_2_50"
+            assert body["name"] == "PG_TMP_BLOCK_192_0_2_50"
             assert body["action"] == "deny"
             assert body["logtraffic"] == "all"
-            assert body["srcaddr"] == [{"name": "FD_ADDR_192_0_2_50"}]
+            assert body["srcaddr"] == [{"name": "PG_ADDR_192_0_2_50"}]
             return httpx.Response(200, json={"status": "success", "mkey": 42})
         return httpx.Response(404, json={"status": "error"})
 
@@ -325,17 +325,17 @@ async def test_fortigate_client_creates_firewall_policy() -> None:
 
     result = await client.create_firewall_policy(
         {
-            "name": "FD_TMP_BLOCK_192_0_2_50",
+            "name": "PG_TMP_BLOCK_192_0_2_50",
             "action": "deny",
             "logtraffic": "all",
-            "srcaddr": [{"name": "FD_ADDR_192_0_2_50"}],
+            "srcaddr": [{"name": "PG_ADDR_192_0_2_50"}],
             "dstaddr": [{"name": "all"}],
             "service": [{"name": "ALL"}],
             "schedule": "always",
             "srcintf": [{"name": "port2"}],
             "dstintf": [{"name": "port3"}],
             "status": "enable",
-            "comments": "FortiDashboard owned temporary block",
+            "comments": "Penguard owned temporary block",
         }
     )
 
@@ -566,14 +566,14 @@ from .policy_models import (
 )
 
 
-FD_LAB_PREFIX = "FD_LAB_ALLOW"
-FD_TMP_BLOCK_PREFIX = "FD_TMP_BLOCK"
-FD_ADDR_PREFIX = "FD_ADDR"
+PG_LAB_PREFIX = "PG_LAB_ALLOW"
+PG_TMP_BLOCK_PREFIX = "PG_TMP_BLOCK"
+PG_ADDR_PREFIX = "PG_ADDR"
 
 
 def normalize_address_name(ip_value: str) -> str:
     address = ipaddress.ip_address(ip_value)
-    return f"{FD_ADDR_PREFIX}_{str(address).replace('.', '_').replace(':', '_')}"
+    return f"{PG_ADDR_PREFIX}_{str(address).replace('.', '_').replace(':', '_')}"
 
 
 def host_subnet(ip_value: str) -> str:
@@ -610,7 +610,7 @@ class FortiGatePolicyOrchestrator:
             scope=request.scope,
             integration_id=self.integration_id,
             existing_policy_count=len(policies),
-            owned_policy_count=sum(1 for policy in policies if str(policy.get("name", "")).startswith("FD_")),
+            owned_policy_count=sum(1 for policy in policies if str(policy.get("name", "")).startswith("PG_")),
             proposed_policy_name=policy_name,
             placement=self._placement(request, policies),
             warnings=warnings,
@@ -719,9 +719,9 @@ Temporary block expiration is stored in the request table, not pushed into Forti
 
 Required assertions:
 
-- `lab_allow_log` policy names start with `FD_LAB_ALLOW_`.
-- `temporary_block` policy names start with `FD_TMP_BLOCK_`.
-- IPv4 source `192.0.2.50` maps to address object `FD_ADDR_192_0_2_50`.
+- `lab_allow_log` policy names start with `PG_LAB_ALLOW_`.
+- `temporary_block` policy names start with `PG_TMP_BLOCK_`.
+- IPv4 source `192.0.2.50` maps to address object `PG_ADDR_192_0_2_50`.
 - `source_only` block uses destination address `all` and service `ALL`.
 - `source_destination_service` block uses both destination object and configured service.
 - Same preflight input produces the same `review_hash`.
@@ -930,7 +930,7 @@ class PolicyFakeFortiGateClient:
         self.created_policies: list[dict[str, Any]] = []
 
     async def get_policies(self) -> list[dict[str, Any]]:
-        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        return [{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}]
 
     async def get_address_objects(self) -> list[dict[str, Any]]:
         return []
@@ -1689,7 +1689,7 @@ Runbook sections:
 2. Lab allow+log wizard: fields to enter, what gets created, where logs appear.
 3. Nmap validation: attacker scans victim through FortiGate; expected SIEM `Possible port scan` incident.
 4. Ticket/SOAR response: draft containment, approve playbook, review policy change, apply FortiGate policy.
-5. Rollback: disable/remove only `FD_` owned policies/objects from FortiGate GUI/CLI.
+5. Rollback: disable/remove only `PG_` owned policies/objects from FortiGate GUI/CLI.
 6. Troubleshooting: no logs, no incident, wrong interface, customer policy shadowing, review hash mismatch.
 
 Do not include real lab IPs or secrets.
@@ -1765,11 +1765,11 @@ docker compose config --quiet
 - [ ] Optional live lab smoke, only with operator-provided environment variables:
 
 ```bash
-FORTIDASHBOARD_FGT_INTEGRATION_ID=<integration-id> \
-FORTIDASHBOARD_LAB_SOURCE_INTERFACE=<source-interface> \
-FORTIDASHBOARD_LAB_DESTINATION_INTERFACE=<destination-interface> \
-FORTIDASHBOARD_LAB_ATTACKER_IP=<attacker-ip> \
-FORTIDASHBOARD_LAB_VICTIM_IP=<victim-ip> \
+PENGUARD_FGT_INTEGRATION_ID=<integration-id> \
+PENGUARD_LAB_SOURCE_INTERFACE=<source-interface> \
+PENGUARD_LAB_DESTINATION_INTERFACE=<destination-interface> \
+PENGUARD_LAB_ATTACKER_IP=<attacker-ip> \
+PENGUARD_LAB_VICTIM_IP=<victim-ip> \
 scripts/smoke/fortigate-policy-orchestration.sh
 ```
 
@@ -1802,13 +1802,13 @@ docs: document FortiGate policy orchestration
 ## Manual Acceptance Criteria
 
 - Connecting FortiGate and enabling syslog/log forwarding stays unchanged.
-- Lab policy wizard creates a real FortiGate `FD_LAB_ALLOW_*` policy with `logtraffic all`.
+- Lab policy wizard creates a real FortiGate `PG_LAB_ALLOW_*` policy with `logtraffic all`.
 - Running an authorized nmap scan from attacker to victim through FortiGate creates a `Possible port scan` SIEM incident without browser refresh.
 - The incident appears in the ticket console through existing SSE updates.
 - Ticket containment can create a SOAR run with `fortigate.temporary_block`.
 - Approving the run does not write FortiGate immediately.
 - The ticket drawer shows `Policy Change Review` and the final `Apply FortiGate Policy` button.
-- Applying creates only `FD_` owned objects/policies and writes audit events.
+- Applying creates only `PG_` owned objects/policies and writes audit events.
 - Mismatched review hash blocks apply.
 - Old `Traffic policy helper` / `Draft CLI` UX is gone.
 

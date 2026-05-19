@@ -1,13 +1,13 @@
 # agent_private
 
-`agent_private` is the optional endpoint sensor for FortiDashboard labs. It is
+`agent_private` is the optional endpoint sensor for Penguard labs. It is
 explicit and safe by default. The recommended Windows Server lab path is now a
 daemon/service runtime managed by a local CLI; the TUI remains available for
 troubleshooting and dry-run demos.
 
 ## Cockpit Onboarding
 
-1. Open FortiDashboard, go to **Endpoints**, and choose **Add Windows Agent**.
+1. Open Penguard, go to **Endpoints**, and choose **Add Windows Agent**.
 2. Enter a display name and optional hostname hint for the Windows host.
 3. Generate the enrollment and copy only the one-time enrollment token.
 4. Pair the agent from the repository root on the Windows host.
@@ -26,7 +26,7 @@ uv run agent-private task start
 uv run agent-private status
 ```
 
-`pair` discovers the FortiDashboard API by sending a UDP broadcast on the VMware
+`pair` discovers the Penguard API by sending a UDP broadcast on the VMware
 management network. If broadcast is blocked, it automatically probes the likely
 VMware host addresses on the VM network before failing. It saves the discovered
 API URL, endpoint ID and enrollment token to the local config file, but prints
@@ -73,7 +73,7 @@ uv run agent-private diagnostics --post
 ```
 
 `task` is the recommended Windows Server lab runtime. It writes a runner script
-under `%PROGRAMDATA%\agent_private`, registers `FortiDashboardAgentDaemon` with
+under `%PROGRAMDATA%\agent_private`, registers `PenguardAgentDaemon` with
 Windows Task Scheduler, runs the foreground daemon under `SYSTEM`, and redirects
 stdout/stderr to `%PROGRAMDATA%\agent_private\logs\daemon-task.log`.
 
@@ -112,7 +112,7 @@ are masked/redacted before logs are printed or sent.
 
 ## VMware Discovery Network
 
-For labs, put the Windows Server VM and the FortiDashboard host on the same
+For labs, put the Windows Server VM and the Penguard host on the same
 VMware host-only or NAT management network. Keep this separate from the traffic
 path used by FortiGate/FortiWeb/victim testing.
 
@@ -120,10 +120,10 @@ Recommended shape:
 
 ```txt
 Windows Server VM
-  NIC 1: VMware host-only/NAT management network -> FortiDashboard API discovery
+  NIC 1: VMware host-only/NAT management network -> Penguard API discovery
   NIC 2: lab traffic network, if needed
 
-FortiDashboard host
+Penguard host
   Docker API port: 8000/tcp
   Agent discovery port: 8764/udp
 ```
@@ -147,7 +147,7 @@ cd apps/agent_private
 uv run agent-private
 ```
 
-The TUI lets the operator set the FortiDashboard API URL, endpoint ID,
+The TUI lets the operator set the Penguard API URL, endpoint ID,
 enrollment token and loop intervals, save a local config, start/stop the
 foreground agent loop, or send one-off heartbeat, process snapshot, connection
 snapshot and demo telemetry. It is a troubleshooting surface, not the preferred
@@ -267,7 +267,7 @@ uv run agent-private task start
 
 ## CLI Posting Telemetry
 
-Create an enrollment token through the FortiDashboard BFF, then send telemetry to the browser-facing API. The BFF forwards the enrollment token to `xdr_rico`; the agent does not need a browser session.
+Create an enrollment token through the Penguard BFF, then send telemetry to the browser-facing API. The BFF forwards the enrollment token to `xdr_rico`; the agent does not need a browser session.
 
 ```bash
 export AGENT_PRIVATE_API_URL=http://localhost:8000

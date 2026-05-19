@@ -1,3 +1,3 @@
 import os
 
-os.environ.setdefault("FORTIDASHBOARD_MOCK_MODE", "true")
+os.environ.setdefault("PENGUARD_MOCK_MODE", "true")

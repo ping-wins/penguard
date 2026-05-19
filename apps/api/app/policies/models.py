@@ -20,7 +20,7 @@ class PolicyAction(StrEnum):
 
 
 class PolicyOwnership(StrEnum):
-    FORTIDASHBOARD = "fortidashboard"
+    PENGUARD = "penguard"
     EXTERNAL = "external"
     UNKNOWN = "unknown"
 
@@ -49,7 +49,7 @@ class PolicyRow(BaseModel):
     direction: dict[str, Any] = Field(default_factory=dict)
     scope: dict[str, Any] = Field(default_factory=dict)
     ownership: PolicyOwnership = PolicyOwnership.UNKNOWN
-    managed_by_fortidashboard: bool = Field(default=False, alias="managedByFortiDashboard")
+    managed_by_penguard: bool = Field(default=False, alias="managedByPenguard")
     is_mutable: bool = Field(default=False, alias="isMutable")
     supports: list[str] = Field(default_factory=list)
     risk: dict[str, Any] = Field(default_factory=dict)

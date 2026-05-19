@@ -78,7 +78,7 @@ def test_test_destination_posts_discord_payload_without_exposing_url():
     response = client.post(
         f"/api/soc/playbook-webhook-destinations/{created['id']}/test",
         headers=csrf_headers(client),
-        json={"content": "FortiDashboard test"},
+        json={"content": "Penguard test"},
     )
 
     assert response.status_code == 200
@@ -90,7 +90,7 @@ def test_test_destination_posts_discord_payload_without_exposing_url():
     assert sent == [
         {
             "url": "https://discord.com/api/webhooks/123456789/secret-token",
-            "payload": {"content": "FortiDashboard test"},
+            "payload": {"content": "Penguard test"},
             "timeout": 5.0,
         }
     ]

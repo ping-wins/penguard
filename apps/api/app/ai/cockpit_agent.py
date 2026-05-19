@@ -97,7 +97,7 @@ def _build_agent(
 
     @agent.tool_plain(
         name="list_data_fields",
-        description="List bindable provider fields available to FortiDashboard widgets.",
+        description="List bindable provider fields available to Penguard widgets.",
         timeout=2,
     )
     def list_data_fields_tool(provider: str) -> dict[str, Any]:
@@ -133,12 +133,12 @@ def _build_agent(
 def _system_prompt(locale: str) -> str:
     if locale.lower().startswith("en"):
         return (
-            "You are the FortiDashboard cockpit agent. Use safe internal tools "
+            "You are the Penguard cockpit agent. Use safe internal tools "
             "for dashboard data, widget drafts and SOC context. Never persist "
             "a widget or playbook without explicit user confirmation."
         )
     return (
-        "Voce e o agente de cockpit do FortiDashboard. Use tools internas "
+        "Voce e o agente de cockpit do Penguard. Use tools internas "
         "seguras para dados do dashboard, rascunhos de widgets e contexto SOC. "
         "Nunca persista um widget ou playbook sem confirmacao explicita do usuario."
     )
@@ -405,11 +405,11 @@ def _available_tools_reply(locale: str) -> str:
     tool_names = ", ".join(spec.name for spec in list_tool_specs())
     if locale.lower().startswith("en"):
         return (
-            f"I can use these safe FortiDashboard tools: {tool_names}. "
+            f"I can use these safe Penguard tools: {tool_names}. "
             "Anything that changes a workspace or playbook stays as a draft until you confirm it."
         )
     return (
-        f"Posso usar estas tools seguras do FortiDashboard: {tool_names}. "
+        f"Posso usar estas tools seguras do Penguard: {tool_names}. "
         "Qualquer mudanca em workspace ou playbook fica como rascunho ate voce confirmar."
     )
 

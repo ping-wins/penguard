@@ -11,7 +11,7 @@
 
 # Kerberos / AD secrets — never commit
 *.keytab
-fortidashboard.keytab
+penguard.keytab
 
 # Logs
 logs

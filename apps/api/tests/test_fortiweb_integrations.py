@@ -18,12 +18,12 @@ def test_create_fortiweb_integration_never_returns_api_key():
         json={
             "name": "FortiWeb Lab",
             "host": "https://fortiweb.local",
-            "username": "fortidashboard-api",
+            "username": "penguard-api",
             "password": "secret",
             "vdom": "root",
             "verifyTls": False,
             "targetServerPolicy": "lab-waf-policy",
-            "managedIpListPolicy": "FD_IP_BLOCKLIST",
+            "managedIpListPolicy": "PG_IP_BLOCKLIST",
         },
     )
 
@@ -36,7 +36,7 @@ def test_create_fortiweb_integration_never_returns_api_key():
         "status": "connected",
         "capabilities": ["system", "waf_events", "ip_blocklist", "dos_response"],
         "targetServerPolicy": "lab-waf-policy",
-        "managedIpListPolicy": "FD_IP_BLOCKLIST",
+        "managedIpListPolicy": "PG_IP_BLOCKLIST",
         "lastCheckedAt": "2026-05-17T12:00:00.000Z",
         "telemetry": {
             "status": "pending",
@@ -77,7 +77,7 @@ def test_test_fortiweb_connection_returns_device_metadata():
         headers=csrf_headers(),
         json={
             "host": "https://fortiweb.local",
-            "username": "fortidashboard-api",
+            "username": "penguard-api",
             "password": "secret",
             "vdom": "root",
             "verifyTls": False,

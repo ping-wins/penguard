@@ -208,7 +208,7 @@ describe('DashboardCanvas build pane', () => {
     })
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
-      'application/x-fortidashboard-provider-field',
+      'application/x-penguard-provider-field',
       expect.stringContaining('"fieldId":"system.cpu"'),
     )
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'system.cpu')
@@ -222,7 +222,7 @@ describe('DashboardCanvas build pane', () => {
       dataTransfer: socTransfer,
     })
     expect(socTransfer.setData).toHaveBeenCalledWith(
-      'application/x-fortidashboard-provider-field',
+      'application/x-penguard-provider-field',
       expect.stringContaining('"integrationId":"int_kowalski_01"'),
     )
   })

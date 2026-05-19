@@ -8,14 +8,14 @@ from app.integrations.fortiweb.auth import build_fortiweb_authorization
 
 def test_build_fortiweb_authorization_uses_compact_base64_payload() -> None:
     token = build_fortiweb_authorization(
-        username="fortidashboard-api",
+        username="penguard-api",
         password="secret",
         vdom="root",
     )
 
     decoded = json.loads(base64.b64decode(token).decode("utf-8"))
     assert decoded == {
-        "username": "fortidashboard-api",
+        "username": "penguard-api",
         "password": "secret",
         "vdom": "root",
     }

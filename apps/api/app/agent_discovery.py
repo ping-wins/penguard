@@ -6,8 +6,8 @@ import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
-DISCOVERY_REQUEST_TYPE = "fortidashboard.agent_discovery.v1"
-DISCOVERY_RESPONSE_TYPE = "fortidashboard.agent_discovery.response.v1"
+DISCOVERY_REQUEST_TYPE = "penguard.agent_discovery.v1"
+DISCOVERY_RESPONSE_TYPE = "penguard.agent_discovery.response.v1"
 
 
 class AgentDiscoveryProtocol(asyncio.DatagramProtocol):
@@ -39,7 +39,7 @@ class AgentDiscoveryProtocol(asyncio.DatagramProtocol):
         nonce = request.get("nonce")
         response: dict[str, Any] = {
             "type": DISCOVERY_RESPONSE_TYPE,
-            "product": "FortiDashboard",
+            "product": "Penguard",
             "apiScheme": self.api_scheme,
             "apiPort": self.api_port,
             "apiBasePath": self.api_base_path,

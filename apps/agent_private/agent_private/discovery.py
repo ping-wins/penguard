@@ -11,8 +11,8 @@ from uuid import uuid4
 import httpx
 import psutil
 
-DISCOVERY_REQUEST_TYPE = "fortidashboard.agent_discovery.v1"
-DISCOVERY_RESPONSE_TYPE = "fortidashboard.agent_discovery.response.v1"
+DISCOVERY_REQUEST_TYPE = "penguard.agent_discovery.v1"
+DISCOVERY_RESPONSE_TYPE = "penguard.agent_discovery.response.v1"
 DEFAULT_DISCOVERY_PORT = 8764
 DEFAULT_DISCOVERY_TIMEOUT_SECONDS = 5.0
 
@@ -176,5 +176,5 @@ def discover_dashboard(
             return _discovery_from_api_url(api_url)
 
     raise DashboardDiscoveryError(
-        "FortiDashboard API was not discovered on the local VMware network."
+        "Penguard API was not discovered on the local VMware network."
     )

@@ -209,7 +209,7 @@ describe('DraggableWidget', () => {
       type: 'audit.siem.event',
       ticket: {
         id: 'inc_audit_01',
-        title: 'Repeated failed FortiDashboard logins',
+        title: 'Repeated failed Penguard logins',
         severity: 'medium',
         triageLevel: 'T2',
         ticketStatus: 'new',
@@ -644,7 +644,7 @@ describe('DraggableWidget', () => {
     await wrapper.trigger('drop', {
       dataTransfer: {
         getData: (type: string) => (
-          type === 'application/x-fortidashboard-provider-field'
+          type === 'application/x-penguard-provider-field'
             ? JSON.stringify(binding)
             : ''
         ),

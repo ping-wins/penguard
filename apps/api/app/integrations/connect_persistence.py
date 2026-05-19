@@ -59,7 +59,7 @@ def persist_integration(
                 runtime_auth.get("targetServerPolicy") or "lab-waf-policy"
             ),
             managed_ip_list_policy=str(
-                runtime_auth.get("managedIpListPolicy") or "FD_IP_BLOCKLIST"
+                runtime_auth.get("managedIpListPolicy") or "PG_IP_BLOCKLIST"
             ),
         )
     if provider_type in ("siem_kowalski", "xdr_rico", "soar_skipper"):

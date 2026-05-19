@@ -5,14 +5,14 @@ Date: 2026-05-19
 ## Goal
 
 Create a beta FortiAnalyzer marketplace package in
-`ping-wins/fortidashboard-addons` so FortiDashboard can list, install, and
+`ping-wins/penguard-addons` so Penguard can list, install, and
 preview an on-prem FortiAnalyzer integration through the existing add-on
 loader. This beta version is deliberately read-only and exists mainly so
 FortiAnalyzer appears in the marketplace while appliance validation is pending.
 
 ## Context
 
-FortiDashboard marketplace add-ons are self-contained packages: manifest,
+Penguard marketplace add-ons are self-contained packages: manifest,
 Python connector code, and optional fixtures. New vendor packages belong in the
 registry repo, not in this monorepo's transitional `addons/` directory.
 
@@ -29,7 +29,7 @@ Reference:
 
 ## Package Scope
 
-Add this package to `ping-wins/fortidashboard-addons`:
+Add this package to `ping-wins/penguard-addons`:
 
 ```txt
 fortianalyzer-core/0.1.0-beta.1/
@@ -194,7 +194,7 @@ Manual verification after publication:
 - The `/sys/status` JSON-RPC probe follows the FortiManager/FortiAnalyzer
   JSON-RPC convention, but this implementation cannot be appliance-tested in
   the current environment.
-- FortiDashboard may need a future `provider.type = "fortianalyzer"` persistence
+- Penguard may need a future `provider.type = "fortianalyzer"` persistence
   path if the generic connect flow does not yet accept that provider type.
 - Real log ingestion will need a separate design once ADOM, log type, paging,
   and normalization requirements are known.

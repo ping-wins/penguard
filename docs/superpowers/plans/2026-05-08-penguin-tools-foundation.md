@@ -4,7 +4,7 @@
 
 **Goal:** Add the first clean implementation slice for the Penguin SOC-lite tools: shared contracts/catalog, service scaffolds, Docker Compose wiring and baseline tests.
 
-**Architecture:** Keep FortiDashboard as the browser-facing BFF and add independent headless apps for `siem_kowalski`, `soar_skipper`, `xdr_rico` and `agent_private`. This phase intentionally avoids business logic beyond health/metadata so later phases can implement SIEM, SOAR and XDR behavior behind stable boundaries.
+**Architecture:** Keep Penguard as the browser-facing BFF and add independent headless apps for `siem_kowalski`, `soar_skipper`, `xdr_rico` and `agent_private`. This phase intentionally avoids business logic beyond health/metadata so later phases can implement SIEM, SOAR and XDR behavior behind stable boundaries.
 
 **Tech Stack:** Python 3.12, FastAPI, Pydantic, Pytest, Ruff, Docker Compose, Postgres, Redis, JSON fixtures in `packages/contracts` and metadata in `packages/soc-catalog`.
 
@@ -52,7 +52,7 @@ Create `packages/soc-catalog/package.json`:
 
 ```json
 {
-  "name": "@fortidashboard/soc-catalog",
+  "name": "@penguard/soc-catalog",
   "version": "0.1.0",
   "private": true
 }
@@ -65,11 +65,11 @@ Create `packages/soc-catalog/README.md`:
 ```markdown
 # SOC Catalog
 
-Shared SOC-lite metadata for FortiDashboard and the Penguin tools.
+Shared SOC-lite metadata for Penguard and the Penguin tools.
 
 - `event-types.json` defines normalized event classes used by `siem_kowalski`.
 - `playbook-node-types.json` defines allowed workflow nodes used by `soar_skipper`.
-- `widgets.json` defines SOC widgets that can be surfaced in the FortiDashboard cockpit.
+- `widgets.json` defines SOC widgets that can be surfaced in the Penguard cockpit.
 
 This package contains static metadata only. Runtime state belongs in the owning app tables.
 ```
@@ -250,7 +250,7 @@ Create each service `pyproject.toml`:
 [project]
 name = "siem-kowalski"
 version = "0.1.0"
-description = "SIEM-lite service for FortiDashboard"
+description = "SIEM-lite service for Penguard"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -369,7 +369,7 @@ Create `apps/agent_private/pyproject.toml`:
 [project]
 name = "agent-private"
 version = "0.1.0"
-description = "Endpoint sensor for FortiDashboard xdr_rico"
+description = "Endpoint sensor for Penguard xdr_rico"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.27.0",
@@ -424,7 +424,7 @@ Add service:
   redis:
     image: redis:7-alpine
     ports:
-      - "${FORTIDASHBOARD_REDIS_PORT:-6379}:6379"
+      - "${PENGUARD_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -473,10 +473,10 @@ Add services:
 Add to `.env.example`:
 
 ```dotenv
-FORTIDASHBOARD_REDIS_PORT=6379
-FORTIDASHBOARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
-FORTIDASHBOARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
-FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
+PENGUARD_REDIS_PORT=6379
+PENGUARD_SIEM_KOWALSKI_URL=http://siem-kowalski:8000
+PENGUARD_SOAR_SKIPPER_URL=http://soar-skipper:8000
+PENGUARD_XDR_RICO_URL=http://xdr-rico:8000
 ```
 
 - [ ] **Step 4: Validate compose config**
@@ -484,7 +484,7 @@ FORTIDASHBOARD_XDR_RICO_URL=http://xdr-rico:8000
 Run:
 
 ```bash
-docker compose config >/tmp/fortidashboard-compose.yml
+docker compose config >/tmp/penguard-compose.yml
 ```
 
 Expected: command exits `0`.

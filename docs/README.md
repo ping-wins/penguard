@@ -1,4 +1,4 @@
-# FortiDashboard Documentation
+# Penguard Documentation
 
 This directory is organized by purpose, not by sprint history. Use this index to
 decide where new information belongs.

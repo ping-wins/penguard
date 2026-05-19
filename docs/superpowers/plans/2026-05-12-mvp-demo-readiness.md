@@ -4,7 +4,7 @@
 
 **Goal:** Make the MVP demo cockpit clearer and more complete by surfacing data provenance, endpoint-related incidents, endpoint-to-SIEM suspicious activity forwarding, and approval-driven containment completion.
 
-**Architecture:** Keep FortiDashboard single-cockpit and BFF-centered. Backend changes stay in `apps/api/app/routers/soc.py` plus existing SIEM/XDR/SOAR contracts; frontend changes stay in Vue clients/stores/components already backing tickets, endpoints, and widgets.
+**Architecture:** Keep Penguard single-cockpit and BFF-centered. Backend changes stay in `apps/api/app/routers/soc.py` plus existing SIEM/XDR/SOAR contracts; frontend changes stay in Vue clients/stores/components already backing tickets, endpoints, and widgets.
 
 **Tech Stack:** FastAPI, Pytest, Vue 3, Pinia, Vitest.
 

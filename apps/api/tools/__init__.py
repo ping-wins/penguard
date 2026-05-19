@@ -1,1 +1,1 @@
-"""Lab-only helper scripts for FortiDashboard development."""
+"""Lab-only helper scripts for Penguard development."""

@@ -9,4 +9,4 @@ WORKDIR /app
 
 EXPOSE 5173
 
-CMD ["pnpm", "--filter", "@fortidashboard/web", "dev", "--host", "0.0.0.0"]
+CMD ["pnpm", "--filter", "@penguard/web", "dev", "--host", "0.0.0.0"]

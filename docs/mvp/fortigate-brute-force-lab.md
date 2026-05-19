@@ -1,7 +1,7 @@
 # FortiGate Brute Force Lab — Demo Guide
 
 This guide walks a lab operator end-to-end through provoking a `repeated_failed_login`
-incident from a Debian attacker VM and confirming the resulting alert in FortiDashboard.
+incident from a Debian attacker VM and confirming the resulting alert in Penguard.
 It assumes you own the FortiGate VM and the Debian VM (authorized lab use only).
 
 Last updated: 2026-05-14.
@@ -98,7 +98,7 @@ end
 `local-traffic enable` + `event enable` is what makes SSH attempts against the
 FortiGate itself show up in the event log.
 
-## Phase 2 — Connect the integration in FortiDashboard
+## Phase 2 — Connect the integration in Penguard
 
 In the cockpit: Sidebar → Integrations → Add → **FortiGate**.
 
@@ -237,7 +237,7 @@ Expected patterns:
 
 - Brute force is destructive testing. Only run it against assets you control.
 - Never push the generated API key or the lab passwords into the repository.
-  `.env.local`, `fortidashboard.keytab` and similar are intentionally gitignored.
+  `.env.local`, `penguard.keytab` and similar are intentionally gitignored.
 - Trusthost CIDR on the FortiGate API user must remain narrow (`/24` of the BFF
   network at most). Loosening it removes the only network-level guard the
   read-only key has.

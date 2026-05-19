@@ -1,6 +1,6 @@
 # VMware SOC Lab: FortiGate, FortiWeb, Attacker, Victim
 
-This is the canonical VMware runbook for the local FortiDashboard SOC lab.
+This is the canonical VMware runbook for the local Penguard SOC lab.
 Use it to rebuild the lab end to end without relying on synthetic replay.
 
 The final traffic path is:
@@ -12,11 +12,11 @@ BlackArch attacker -> FortiGate -> FortiWeb -> Arch victim/origin
 The final management path is separate:
 
 ```txt
-Host FortiDashboard/Docker -> FortiGate API
-Host FortiDashboard/Docker -> FortiWeb API/GUI
+Host Penguard/Docker -> FortiGate API
+Host Penguard/Docker -> FortiWeb API/GUI
 ```
 
-FortiDashboard manages FortiGate lab policies directly through the governed
+Penguard manages FortiGate lab policies directly through the governed
 FortiGate API orchestration path. FortiManager is optional/future lab
 infrastructure and is not required for this MVP topology. FortiAnalyzer is not
 required for this lab.
@@ -27,7 +27,7 @@ Use simple VMware names and keep the traffic networks as LAN Segments.
 
 | VMware network | Type | DHCP | Subnet | Purpose |
 | --- | --- | --- | --- | --- |
-| `MGMT_BRIDGED` | Bridged | Optional | Your physical LAN | Host, FortiDashboard, FortiGate management, FortiWeb management |
+| `MGMT_BRIDGED` | Bridged | Optional | Your physical LAN | Host, Penguard, FortiGate management, FortiWeb management |
 | `ATTACK_NET` | LAN Segment | Off | `10.10.10.0/24` | BlackArch side of FortiGate |
 | `WAF_FRONT` | LAN Segment | Off | `10.10.20.0/24` | FortiGate to FortiWeb public/VIP side |
 | `WAF_BACK` | LAN Segment | Off | `10.10.40.0/24` | FortiWeb to victim/origin side |
@@ -43,7 +43,7 @@ because they depend on the bridged LAN DHCP/static range.
 
 | Machine | Interface | VMware network | IP | Purpose |
 | --- | --- | --- | --- | --- |
-| Host | physical/Wi-Fi/Ethernet | `MGMT_BRIDGED` | `<HOST_MGMT_IP>` | Browser, Docker Compose, FortiDashboard |
+| Host | physical/Wi-Fi/Ethernet | `MGMT_BRIDGED` | `<HOST_MGMT_IP>` | Browser, Docker Compose, Penguard |
 | FortiGate | `port1` | `MGMT_BRIDGED` | `<FGT_MGMT_IP>` | API and GUI management |
 | FortiGate | `port2` | `ATTACK_NET` | `10.10.10.1/24` | Attacker gateway |
 | FortiGate | `port3` | `WAF_FRONT` | `10.10.20.1/24` | WAF front gateway |
@@ -122,11 +122,11 @@ it as the policy manager, but FortiGate permanent trial limitations can prevent
 FGFM registration with newer FortiManager builds because the trial VM may keep a
 generic factory certificate and reject custom certificate imports.
 
-For the MVP lab, manage policies directly from FortiDashboard through the
+For the MVP lab, manage policies directly from Penguard through the
 FortiGate API. Reintroduce FortiManager only when a full evaluation/license path
 or compatible version pair is available.
 
-## Host: FortiDashboard
+## Host: Penguard
 
 Start the stack from the repository root:
 
@@ -182,13 +182,13 @@ diagnose hardware deviceinfo nic
 
 ```txt
 config firewall address
-  edit "FD_HOST_ATTACKER"
+  edit "PG_HOST_ATTACKER"
     set subnet 10.10.10.10 255.255.255.255
   next
-  edit "FD_HOST_FORTIWEB_VIP"
+  edit "PG_HOST_FORTIWEB_VIP"
     set subnet 10.10.20.30 255.255.255.255
   next
-  edit "FD_NET_WAF_BACK"
+  edit "PG_NET_WAF_BACK"
     set subnet 10.10.40.0 255.255.255.0
   next
 end
@@ -201,11 +201,11 @@ For the WAF landing demo, expose only HTTP/HTTPS to the FortiWeb VIP:
 ```txt
 config firewall policy
   edit 0
-    set name "FD_LAB_ALLOW_ATTACK_TO_WAF_WEB"
+    set name "PG_LAB_ALLOW_ATTACK_TO_WAF_WEB"
     set srcintf "port2"
     set dstintf "port3"
-    set srcaddr "FD_HOST_ATTACKER"
-    set dstaddr "FD_HOST_FORTIWEB_VIP"
+    set srcaddr "PG_HOST_ATTACKER"
+    set dstaddr "PG_HOST_FORTIWEB_VIP"
     set action accept
     set schedule "always"
     set service "HTTP" "HTTPS"
@@ -214,7 +214,7 @@ config firewall policy
 end
 ```
 
-For SIEM port-scan validation, use FortiDashboard policy orchestration to create
+For SIEM port-scan validation, use Penguard policy orchestration to create
 a temporary allow/log policy to the FortiWeb VIP with service `ALL`, then remove
 or disable it after the test.
 
@@ -238,11 +238,11 @@ traffic. Add an explicit deny/log guard if the FortiGate has a general
 ```txt
 config firewall policy
   edit 0
-    set name "FD_LAB_DENY_ATTACK_TO_WAF_BACK"
+    set name "PG_LAB_DENY_ATTACK_TO_WAF_BACK"
     set srcintf "port2"
     set dstintf "port1"
-    set srcaddr "FD_HOST_ATTACKER"
-    set dstaddr "FD_NET_WAF_BACK"
+    set srcaddr "PG_HOST_ATTACKER"
+    set dstaddr "PG_NET_WAF_BACK"
     set action deny
     set schedule "always"
     set service "ALL"
@@ -297,7 +297,7 @@ object.
 
 ```txt
 config system vip
-  edit "FD_VIP_LANDING"
+  edit "PG_VIP_LANDING"
     set interface "port1"
     set vip 10.10.20.30/24
   next
@@ -321,7 +321,7 @@ config server-policy vserver
         set interface "port1"
         set status enable
         set use-interface-ip disable
-        set vip "FD_VIP_LANDING"
+        set vip "PG_VIP_LANDING"
       next
     end
   next
@@ -411,32 +411,32 @@ Expected:
 - `curl http://10.10.20.30/` returns the victim HTML through FortiWeb.
 - Direct `curl http://10.10.40.10:8080/` fails.
 
-## FortiDashboard Policy Management
+## Penguard Policy Management
 
-FortiDashboard is the current policy manager for this lab. It talks directly to
+Penguard is the current policy manager for this lab. It talks directly to
 FortiGate over the management network and may create or update only
-FortiDashboard-owned objects and policies after preflight, diff review, admin
+Penguard-owned objects and policies after preflight, diff review, admin
 confirmation and audit.
 
 Use this path for:
 
 - temporary allow/log scan-validation policies;
-- logged WAF web policies owned by FortiDashboard;
+- logged WAF web policies owned by Penguard;
 - approved temporary containment policies tied to SOC tickets.
 
 Do not require FortiManager for the MVP validation flow. Keep any FortiManager
 VM powered off unless you are explicitly testing a licensed/compatible
 FortiManager path.
 
-## FortiDashboard Connector Setup
+## Penguard Connector Setup
 
 In the cockpit:
 
 1. Connect FortiGate using `<FGT_MGMT_IP>`.
 2. Verify FortiGate syslog/log-forwarding health.
 3. Connect FortiWeb using `<FWEB_MGMT_IP>` when the add-on/provider is enabled.
-4. Keep FortiGate and FortiWeb telemetry direct to FortiDashboard/SIEM.
-5. Use FortiDashboard policy orchestration for temporary lab policies and
+4. Keep FortiGate and FortiWeb telemetry direct to Penguard/SIEM.
+5. Use Penguard policy orchestration for temporary lab policies and
    approved containment.
 
 FortiWeb WAF policy remains direct FortiWeb configuration in this lab.
@@ -473,7 +473,7 @@ Expected: connection failure or timeout.
 ### 3. FortiGate SIEM Port Scan
 
 Temporarily apply an allow/log policy to the FortiWeb VIP through
-FortiDashboard policy orchestration, then run:
+Penguard policy orchestration, then run:
 
 ```bash
 sudo nmap -e <ATTACK_IFACE> -Pn -n -sS -T4 -p 1-2000 --max-retries 1 10.10.20.30
@@ -482,10 +482,10 @@ sudo nmap -e <ATTACK_IFACE> -Pn -n -sS -T4 -p 1-2000 --max-retries 1 10.10.20.30
 Expected:
 
 - FortiGate Forward Traffic logs from `10.10.10.10` to `10.10.20.30`.
-- FortiDashboard receives syslog in real time.
+- Penguard receives syslog in real time.
 - SIEM creates a `Possible port scan` incident without browser refresh.
 - SOAR can suggest a FortiGate temporary block, but live apply requires a
-  FortiDashboard approval/review flow.
+  Penguard approval/review flow.
 
 ### 4. FortiWeb DoS/WAF Test
 
@@ -498,17 +498,17 @@ ab -n 500 -c 50 http://10.10.20.30/
 Expected:
 
 - FortiWeb attack/traffic logs.
-- FortiDashboard WAF/SIEM widgets update through realtime delivery.
+- Penguard WAF/SIEM widgets update through realtime delivery.
 - Recent incidents and tickets update without `F5`.
 
-### 5. FortiDashboard Policy Management
+### 5. Penguard Policy Management
 
-In FortiDashboard:
+In Penguard:
 
 1. Open the FortiGate integration policy workflow.
 2. Confirm preflight reads interfaces, address objects, services and current
    policy order.
-3. Review the diff for any `FD_` object or policy change.
+3. Review the diff for any `PG_` object or policy change.
 4. Apply only after an admin explicitly confirms.
 5. Confirm the audit drawer records the policy request, diff summary, FortiGate
    response and rollback/cleanup guidance.
@@ -543,9 +543,9 @@ Check that:
 - `ip route get 10.10.20.30` on BlackArch uses `10.10.10.1`.
 - FortiGate policy is `port2 -> port3`.
 - The matching policy has `logtraffic all`.
-- FortiDashboard ingestion/log-forwarding health is green.
+- Penguard ingestion/log-forwarding health is green.
 
-### FortiDashboard Policy Orchestration Fails
+### Penguard Policy Orchestration Fails
 
 Check:
 
@@ -556,7 +556,7 @@ show firewall address
 ```
 
 Then confirm the FortiGate API token is valid, trusted hosts include the
-FortiDashboard API host, and the requested change touches only `FD_` lab-owned
+Penguard API host, and the requested change touches only `PG_` lab-owned
 objects or policies.
 
 ## Safety Rules
@@ -564,7 +564,7 @@ objects or policies.
 - Attack only `10.10.20.30` for WAF/DoS demonstrations.
 - Use `10.10.20.30`, not `10.10.40.10`, as the attacker-facing landing target.
 - Keep flood tests short and bounded.
-- Do not expose FortiDashboard API to the internet.
+- Do not expose Penguard API to the internet.
 - Do not run scans against the physical LAN.
-- Use FortiDashboard governed policy orchestration for real FortiGate policy
+- Use Penguard governed policy orchestration for real FortiGate policy
   changes.

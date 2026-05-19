@@ -38,7 +38,7 @@ Token claims should be minimal:
 
 ```json
 {
-  "iss": "fortidashboard-api",
+  "iss": "penguard-api",
   "aud": "siem_kowalski",
   "sub": "apps/api",
   "scope": "soc.events:write soc.incidents:read",
@@ -57,8 +57,8 @@ Future internal calls should include:
 ```txt
 Authorization: Bearer <short-lived-service-token>
 X-Request-ID: req_01
-X-FortiDashboard-Actor-ID: usr_01
-X-FortiDashboard-Actor-Roles: analyst
+X-Penguard-Actor-ID: usr_01
+X-Penguard-Actor-Roles: analyst
 ```
 
 `apps/api` should enforce browser RBAC before making an internal call. Penguin services should enforce service-token scopes and reject direct user tokens.

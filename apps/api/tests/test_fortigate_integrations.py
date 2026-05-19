@@ -94,7 +94,7 @@ class SyslogCapableFortiGateClient(HealthyFortiGateClient):
 class PolicyCapableFortiGateClient(SyslogCapableFortiGateClient):
     def __init__(self):
         super().__init__()
-        self.policies = [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        self.policies = [{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}]
         self.address_objects: list[dict] = []
         self.created_addresses: list[dict] = []
         self.created_policies: list[dict] = []
@@ -1414,10 +1414,10 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
 
     assert preflight_response.status_code == 200
     preflight_payload = preflight_response.json()
-    assert preflight_payload["proposed_policy_name"].startswith("FD_TMP_BLOCK_")
+    assert preflight_payload["proposed_policy_name"].startswith("PG_TMP_BLOCK_")
     assert len(preflight_payload["proposed_policy_name"]) <= 35
     assert preflight_payload["placement"] == (
-        "before first FortiDashboard-owned lab allow/log policy"
+        "before first Penguard-owned lab allow/log policy"
     )
 
     assert review_response.status_code == 200
@@ -1432,8 +1432,8 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
     apply_payload = apply_response.json()
     assert apply_payload["status"] == "applied"
     assert [item["name"] for item in apply_payload["applied_changes"]] == [
-        "FD_ADDR_192_0_2_50",
-        "FD_ADDR_198_51_100_10",
+        "PG_ADDR_192_0_2_50",
+        "PG_ADDR_198_51_100_10",
         preflight_payload["proposed_policy_name"],
     ]
     assert len(fake_client.created_addresses) == 2

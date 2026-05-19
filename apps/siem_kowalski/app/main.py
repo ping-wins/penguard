@@ -221,7 +221,7 @@ DETECTION_RULES: list[DetectionRule] = [
         title="FortiWeb DoS activity detected",
         severity="critical",
         summary=(
-            "FortiDashboard observed or inferred DoS activity against a protected application."
+            "Penguard observed or inferred DoS activity against a protected application."
         ),
         eventTypes=["waf.dos"],
     ),

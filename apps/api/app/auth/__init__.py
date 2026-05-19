@@ -1,1 +1,1 @@
-"""Authentication services for the FortiDashboard BFF."""
+"""Authentication services for the Penguard BFF."""

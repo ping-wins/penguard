@@ -9,8 +9,8 @@ from typing import Any
 
 from agent_private.logs import agent_log_path, append_agent_log
 
-TASK_NAME = "FortiDashboardAgentDaemon"
-TASK_DESCRIPTION = "FortiDashboard endpoint telemetry daemon for Windows lab hosts."
+TASK_NAME = "PenguardAgentDaemon"
+TASK_DESCRIPTION = "Penguard endpoint telemetry daemon for Windows lab hosts."
 RUNNER_SCRIPT_NAME = "run-agent-daemon.cmd"
 
 

@@ -22,7 +22,7 @@ from app.integrations.fortigate.policy_requests import (
 
 class FakePolicyClient:
     def get_policies(self) -> list[dict]:
-        return [{"name": "FD_LAB_ALLOW_SCAN", "policyid": 10}]
+        return [{"name": "PG_LAB_ALLOW_SCAN", "policyid": 10}]
 
     def get_address_objects(self) -> list[dict]:
         return []
@@ -79,7 +79,7 @@ def test_create_fetch_and_apply_fortigate_policy_request(session):
     assert record.incident_id == "inc_123"
     assert record.playbook_run_id == "run_123"
     assert record.intent_json["intent"] == "temporary_block"
-    assert record.preflight_summary_json["proposed_policy_name"].startswith("FD_TMP_BLOCK_")
+    assert record.preflight_summary_json["proposed_policy_name"].startswith("PG_TMP_BLOCK_")
     assert record.proposed_changes_json[-1]["object_type"] == "firewall.policy"
     assert record.review_hash == preflight.review_hash
 
@@ -99,10 +99,10 @@ def test_create_fetch_and_apply_fortigate_policy_request(session):
     applied = mark_policy_request_applied(
         session,
         record=record,
-        result={"appliedChanges": [{"name": "FD_TMP_BLOCK_192_0_2_50"}]},
+        result={"appliedChanges": [{"name": "PG_TMP_BLOCK_192_0_2_50"}]},
     )
 
     assert applied.status == "applied"
     assert applied.applied_result_json == {
-        "appliedChanges": [{"name": "FD_TMP_BLOCK_192_0_2_50"}]
+        "appliedChanges": [{"name": "PG_TMP_BLOCK_192_0_2_50"}]
     }
