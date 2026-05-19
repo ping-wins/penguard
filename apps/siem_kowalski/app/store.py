@@ -102,6 +102,13 @@ class SiemStore:
             reverse=True,
         )
 
+    def list_events_by_ids(self, event_ids: list[str]) -> list[dict[str, Any]]:
+        if not event_ids:
+            return []
+        statement = select(events_table.c.payload).where(events_table.c.id.in_(event_ids))
+        with self.engine.begin() as connection:
+            return [row.payload for row in connection.execute(statement)]
+
     def count_events(self) -> int:
         statement = select(func.count()).select_from(events_table)
         with self.engine.begin() as connection:

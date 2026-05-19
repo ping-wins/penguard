@@ -8,7 +8,7 @@
       "fields": [
         {
           "id": "total",
-          "label": "Open Incidents",
+          "label": "Incident Count",
           "type": "number",
           "unit": "count",
           "source": "soc-incidents-by-severity",
@@ -41,6 +41,29 @@
           "type": "array",
           "source": "soc-top-entities",
           "recommendedVisuals": ["table", "list"]
+        },
+        {
+          "id": "breaches",
+          "label": "SLA Breaches",
+          "type": "array",
+          "source": "soc-sla-breach",
+          "recommendedVisuals": ["feed", "table"]
+        },
+        {
+          "id": "mttdAvgMs",
+          "label": "MTTD Average",
+          "type": "number",
+          "unit": "milliseconds",
+          "source": "soc-mttd-mttr",
+          "recommendedVisuals": ["card", "gauge"]
+        },
+        {
+          "id": "mttrAvgMs",
+          "label": "MTTR Average",
+          "type": "number",
+          "unit": "milliseconds",
+          "source": "soc-mttd-mttr",
+          "recommendedVisuals": ["card", "gauge"]
         }
       ]
     }

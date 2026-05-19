@@ -109,7 +109,7 @@
       "source": "siem_kowalski",
       "requiredCapabilities": ["incidents"],
       "defaultSize": { "w": 5, "h": 4 },
-      "dataEndpoint": "/api/widgets/soc-recent-incidents/data",
+      "dataEndpoint": "/api/widgets/soc-sla-breach/data",
       "template": "sla-breach-feed",
       "dataGroup": "incidents",
       "fieldBindings": {
@@ -123,7 +123,7 @@
       "source": "siem_kowalski",
       "requiredCapabilities": ["incidents"],
       "defaultSize": { "w": 4, "h": 3 },
-      "dataEndpoint": "/api/widgets/soc-recent-incidents/data",
+      "dataEndpoint": "/api/widgets/soc-mttd-mttr/data",
       "template": "kpi-grid",
       "dataGroup": "incidents",
       "fieldBindings": {

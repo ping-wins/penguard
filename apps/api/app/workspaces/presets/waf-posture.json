@@ -1,10 +1,10 @@
 {
   "slug": "waf-posture",
   "title": "WAF Posture",
-  "description": "Web application firewall view: DoS rate trend, top attacking IPs and live block feed.",
+  "description": "Web application firewall posture with DoS trend, attacking IP concentration and live block feed from SIEM-backed FortiWeb telemetry.",
   "category": "engineer",
   "icon": "ShieldCheck",
-  "tags": ["engineer", "waf", "fortiweb", "dos"],
+  "tags": ["engineer", "waf", "fortiweb", "dos", "siem"],
   "manifest": {
     "schemaVersion": 1,
     "workspaceId": "tpl_waf_posture",
@@ -29,16 +29,16 @@
         "instanceId": "w_dos_feed",
         "catalogId": "waf-dos-feed",
         "providerType": "fortiweb",
-        "layout": { "x": 0, "y": 4, "w": 5, "h": 4, "z": 12 },
+        "layout": { "x": 0, "y": 4, "w": 6, "h": 4, "z": 12 },
         "fieldBindings": []
       }
     ],
     "presentation": null,
     "metadata": {
       "description": "WAF posture preset",
-      "tags": ["engineer", "waf"],
+      "tags": ["engineer", "waf", "fortiweb", "siem"],
       "incidentId": null,
-      "exportedAt": "2026-05-17T00:00:00.000Z",
+      "exportedAt": "2026-05-19T00:00:00.000Z",
       "exportedByEmail": null
     }
   }

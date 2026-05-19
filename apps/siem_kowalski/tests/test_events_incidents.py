@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 from app import main
@@ -34,6 +36,53 @@ def _clear_legacy_memory_lists() -> None:
             value.clear()
 
 
+def _iso(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _incident_payload(
+    incident_id: str,
+    *,
+    created_at: datetime,
+    severity: str = "high",
+    status: str = "open",
+    ticket_status: str = "new",
+    origin: dict | None = None,
+    attributes: dict | None = None,
+    entities: dict | None = None,
+    event_ids: list[str] | None = None,
+) -> dict:
+    return {
+        "id": incident_id,
+        "ruleId": "manual_test_rule",
+        "title": f"Manual test incident {incident_id}",
+        "severity": severity,
+        "status": status,
+        "source": "kowalski",
+        "origin": origin or {"kind": "test"},
+        "attributes": attributes or {},
+        "entities": entities or {"sourceIp": f"192.0.2.{len(incident_id)}"},
+        "summary": "Inserted directly for metrics testing.",
+        "createdAt": _iso(created_at),
+        "timeline": [],
+        "eventIds": event_ids or [],
+        "triageLevel": "T1" if severity in {"critical", "high"} else "T2",
+        "ticketStatus": ticket_status,
+        "assigneeUserId": None,
+        "aiAnalysisId": None,
+    }
+
+
+def _store_incident(payload: dict, created_at: datetime) -> None:
+    main.store.add_incident(
+        payload,
+        rule_id=payload["ruleId"],
+        severity=payload["severity"],
+        status=payload["status"],
+        created_at=created_at,
+    )
+
+
 def test_post_events_stores_event_with_generated_id_and_detects_network_scan():
     response = client.post("/events", json=_event_payload("network.scan", source_ip="192.0.2.77"))
 
@@ -53,6 +102,273 @@ def test_post_events_stores_event_with_generated_id_and_detects_network_scan():
     assert matching[0]["status"] == "open"
     assert matching[0]["entities"]["sourceIp"] == "192.0.2.77"
     assert matching[0]["timeline"]
+
+
+def test_executive_metrics_calculates_widget_sections():
+    client.post("/admin/reset")
+    try:
+        occurred_at = datetime.now(UTC) - timedelta(minutes=3)
+        event = client.post(
+            "/events",
+            json={
+                **_event_payload("network.scan", severity="high", source_ip="192.0.2.205"),
+                "occurredAt": _iso(occurred_at),
+                "entities": {
+                    "sourceIp": "192.0.2.205",
+                    "destinationIp": "198.51.100.10",
+                    "hostname": "edge-fw",
+                },
+            },
+        ).json()
+        incident = next(
+            incident
+            for incident in client.get("/incidents").json()
+            if event["id"] in incident["eventIds"]
+        )
+        client.patch(f"/incidents/{incident['id']}", json={"status": "resolved"})
+
+        response = client.get("/metrics/executive", params={"window": "24h", "limit": 10})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["severity"] == {
+            "items": [{"severity": "high", "count": 1}],
+            "total": 1,
+        }
+        assert payload["recentIncidents"]["count"] == 1
+        assert payload["recentIncidents"]["incidents"][0]["id"] == incident["id"]
+        assert {
+            "field": "sourceIp",
+            "value": "192.0.2.205",
+            "count": 1,
+        } in payload["topEntities"]["entities"]
+        assert payload["responseTimes"]["mttdSampleSize"] == 1
+        assert payload["responseTimes"]["mttrSampleSize"] == 1
+        assert payload["responseTimes"]["mttdAvgMs"] >= 0
+        assert payload["responseTimes"]["mttrAvgMs"] >= 0
+        assert payload["responseTimes"]["perIncident"][0]["id"] == incident["id"]
+    finally:
+        client.post("/admin/reset")
+
+
+def test_executive_metrics_classifies_sla_breaches():
+    client.post("/admin/reset")
+    now = datetime.now(UTC)
+    red_created = now - timedelta(hours=2)
+    amber_created = now - timedelta(minutes=20)
+    green_created = now - timedelta(minutes=2)
+    try:
+        for incident_id, created_at in (
+            ("inc_red_sla", red_created),
+            ("inc_amber_sla", amber_created),
+            ("inc_green_sla", green_created),
+        ):
+            payload = _incident_payload(incident_id, created_at=created_at)
+            main.store.add_incident(
+                payload,
+                rule_id=payload["ruleId"],
+                severity=payload["severity"],
+                status=payload["status"],
+                created_at=created_at,
+            )
+
+        response = client.get("/metrics/executive", params={"window": "24h", "limit": 10})
+
+        assert response.status_code == 200
+        sla = response.json()["sla"]
+        assert sla["open"] == 3
+        assert sla["red"] == 1
+        assert sla["amber"] == 1
+        assert [breach["id"] for breach in sla["breaches"]] == [
+            "inc_red_sla",
+            "inc_amber_sla",
+        ]
+        assert [breach["bucket"] for breach in sla["breaches"]] == ["red", "amber"]
+    finally:
+        client.post("/admin/reset")
+
+
+def test_executive_metrics_filters_by_integration_id_on_incident_fields():
+    client.post("/admin/reset")
+    now = datetime.now(UTC)
+    try:
+        _store_incident(
+            _incident_payload(
+                "inc_fgt_a",
+                created_at=now - timedelta(minutes=3),
+                entities={"sourceIp": "192.0.2.10", "integrationId": "int_fgt_a"},
+            ),
+            now - timedelta(minutes=3),
+        )
+        _store_incident(
+            _incident_payload(
+                "inc_fgt_b",
+                created_at=now - timedelta(minutes=2),
+                attributes={"integrationId": "int_fgt_b"},
+                entities={"sourceIp": "192.0.2.11"},
+            ),
+            now - timedelta(minutes=2),
+        )
+
+        scoped = client.get(
+            "/metrics/executive",
+            params={"integrationId": "int_fgt_a", "window": "24h"},
+        )
+        global_metrics = client.get("/metrics/executive", params={"window": "24h"})
+
+        assert scoped.status_code == 200
+        assert scoped.json()["scope"] == {
+            "integrationId": "int_fgt_a",
+            "providerType": None,
+            "applied": True,
+        }
+        assert scoped.json()["severity"]["total"] == 1
+        assert [item["id"] for item in scoped.json()["recentIncidents"]["incidents"]] == [
+            "inc_fgt_a"
+        ]
+        assert global_metrics.json()["severity"]["total"] == 2
+    finally:
+        client.post("/admin/reset")
+
+
+def test_executive_metrics_filters_by_integration_id_on_related_events():
+    client.post("/admin/reset")
+    event = client.post(
+        "/events",
+        json={
+            "source": "fortigate.syslog",
+            "eventType": "custom.metric_scope",
+            "severity": "medium",
+            "occurredAt": _iso(datetime.now(UTC) - timedelta(minutes=5)),
+            "entities": {"sourceIp": "192.0.2.50", "integrationId": "int_event_only"},
+            "attributes": {"source": "fortigate.syslog"},
+        },
+    ).json()
+    now = datetime.now(UTC)
+    try:
+        _store_incident(
+            _incident_payload(
+                "inc_event_only",
+                created_at=now - timedelta(minutes=4),
+                entities={"sourceIp": "192.0.2.50"},
+                event_ids=[event["id"]],
+            ),
+            now - timedelta(minutes=4),
+        )
+        _store_incident(
+            _incident_payload(
+                "inc_other",
+                created_at=now - timedelta(minutes=3),
+                entities={"sourceIp": "192.0.2.51", "integrationId": "int_other"},
+            ),
+            now - timedelta(minutes=3),
+        )
+
+        response = client.get(
+            "/metrics/executive",
+            params={"integrationId": "int_event_only", "window": "24h"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["severity"]["total"] == 1
+        assert response.json()["recentIncidents"]["incidents"][0]["id"] == "inc_event_only"
+        assert response.json()["responseTimes"]["mttdSampleSize"] == 1
+    finally:
+        client.post("/admin/reset")
+
+
+def test_executive_metrics_filters_by_provider_type_and_combined_scope():
+    client.post("/admin/reset")
+    now = datetime.now(UTC)
+    try:
+        _store_incident(
+            _incident_payload(
+                "inc_fortigate",
+                created_at=now - timedelta(minutes=6),
+                origin={"kind": "fortigate.syslog"},
+                attributes={"integrationId": "int_shared", "source": "fortigate"},
+                entities={"sourceIp": "192.0.2.70"},
+            ),
+            now - timedelta(minutes=6),
+        )
+        _store_incident(
+            _incident_payload(
+                "inc_fortiweb",
+                created_at=now - timedelta(minutes=5),
+                origin={"kind": "fortiweb.telemetry"},
+                attributes={"integrationId": "int_shared", "source": "fortiweb"},
+                entities={"sourceIp": "192.0.2.71"},
+            ),
+            now - timedelta(minutes=5),
+        )
+        _store_incident(
+            _incident_payload(
+                "inc_demo",
+                created_at=now - timedelta(minutes=4),
+                origin={"kind": "demo.replay"},
+                attributes={"source": "demo.replay"},
+                entities={"sourceIp": "192.0.2.72"},
+            ),
+            now - timedelta(minutes=4),
+        )
+
+        provider_only = client.get(
+            "/metrics/executive",
+            params={"providerType": "fortigate", "window": "24h"},
+        )
+        combined = client.get(
+            "/metrics/executive",
+            params={
+                "integrationId": "int_shared",
+                "providerType": "fortiweb",
+                "window": "24h",
+            },
+        )
+
+        assert provider_only.status_code == 200
+        assert [item["id"] for item in provider_only.json()["recentIncidents"]["incidents"]] == [
+            "inc_fortigate"
+        ]
+        assert combined.status_code == 200
+        assert combined.json()["scope"] == {
+            "integrationId": "int_shared",
+            "providerType": "fortiweb",
+            "applied": True,
+        }
+        assert [item["id"] for item in combined.json()["recentIncidents"]["incidents"]] == [
+            "inc_fortiweb"
+        ]
+    finally:
+        client.post("/admin/reset")
+
+
+def test_executive_metrics_unknown_integration_returns_empty_sections():
+    client.post("/admin/reset")
+    now = datetime.now(UTC)
+    try:
+        _store_incident(
+            _incident_payload(
+                "inc_known",
+                created_at=now - timedelta(minutes=3),
+                attributes={"integrationId": "int_known"},
+            ),
+            now - timedelta(minutes=3),
+        )
+
+        response = client.get(
+            "/metrics/executive",
+            params={"integrationId": "int_missing", "window": "24h"},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["severity"]["total"] == 0
+        assert payload["recentIncidents"]["incidents"] == []
+        assert payload["topEntities"]["entities"] == []
+        assert payload["sla"] == {"breaches": [], "red": 0, "amber": 0, "open": 0}
+        assert payload["responseTimes"]["perIncident"] == []
+    finally:
+        client.post("/admin/reset")
 
 
 def test_detection_thresholds_create_expected_incidents():

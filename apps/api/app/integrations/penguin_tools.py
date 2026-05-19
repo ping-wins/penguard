@@ -335,6 +335,8 @@ def expected_tool_type_for_widget(widget_id: str) -> str | None:
         "soc-incidents-by-severity",
         "soc-recent-incidents",
         "soc-top-entities",
+        "soc-sla-breach",
+        "soc-mttd-mttr",
     }:
         return "siem_kowalski"
     if widget_id == "xdr-endpoint-health":

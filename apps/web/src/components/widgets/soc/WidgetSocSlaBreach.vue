@@ -28,7 +28,36 @@ type Breach = {
   ruleId: string | null
 }
 
-const breaches = computed<Breach[]>(() => {
+function numericField(key: string): number | null {
+  const value = Number(props.data?.[key])
+  return Number.isFinite(value) ? value : null
+}
+
+const calculatedBreaches = computed<Breach[]>(() => {
+  const raw = Array.isArray(props.data?.breaches) ? props.data.breaches : []
+  return raw
+    .filter((row: any) => row && typeof row === 'object')
+    .map((row: any) => ({
+      id: String(row.id ?? ''),
+      title: String(row.title ?? row.summary ?? row.id ?? 'Incident'),
+      severity: normalizeSeverity(row.severity),
+      ticketStatus: String(row.ticketStatus || row.status || '--'),
+      triageLevel: String(row.triageLevel || '--'),
+      ageMs: Number(row.ageMs) || 0,
+      bucket: row.bucket === 'red' ? 'red' : 'amber',
+      ruleId: row.ruleId ?? row.rule_id ?? null,
+    }))
+    .sort((a: Breach, b: Breach) => b.ageMs - a.ageMs)
+})
+
+const hasCalculatedSla = computed(() =>
+  Array.isArray(props.data?.breaches)
+  || numericField('red') !== null
+  || numericField('amber') !== null
+  || numericField('open') !== null
+)
+
+const incidentBreaches = computed<Breach[]>(() => {
   const out: Breach[] = []
   for (const inc of incidents.value) {
     if (!inc || typeof inc !== 'object') continue
@@ -52,8 +81,16 @@ const breaches = computed<Breach[]>(() => {
   return out.sort((a, b) => b.ageMs - a.ageMs)
 })
 
-const redCount = computed(() => breaches.value.filter((b) => b.bucket === 'red').length)
-const amberCount = computed(() => breaches.value.filter((b) => b.bucket === 'amber').length)
+const breaches = computed<Breach[]>(() =>
+  hasCalculatedSla.value ? calculatedBreaches.value : incidentBreaches.value
+)
+
+const redCount = computed(() =>
+  numericField('red') ?? breaches.value.filter((b) => b.bucket === 'red').length
+)
+const amberCount = computed(() =>
+  numericField('amber') ?? breaches.value.filter((b) => b.bucket === 'amber').length
+)
 
 const triageDistribution = computed(() => topByCount(breaches.value, (b) => b.triageLevel, 4))
 const ruleDistribution = computed(() => topByCount(breaches.value, (b) => b.ruleId, 5))

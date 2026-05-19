@@ -30,6 +30,8 @@ SOC_WIDGET_IDS = {
     "soc-incidents-by-severity",
     "soc-recent-incidents",
     "soc-top-entities",
+    "soc-sla-breach",
+    "soc-mttd-mttr",
     "xdr-endpoint-health",
     "soar-active-playbook-runs",
     "soar-playbook-run-history",
@@ -169,16 +171,48 @@ def _soc_widget_data(
 ) -> dict[str, Any]:
     match widget_id:
         case "soc-incidents-by-severity":
-            incidents = _items(siem_client.request("GET", "/incidents", params={"limit": 200}))
-            data = _incidents_by_severity(incidents)
+            metrics = _siem_executive_metrics(siem_client, integration_id=integration_id)
+            data = _section(
+                metrics,
+                "severity",
+                {"items": [], "total": 0},
+            )
             source = "siem_kowalski"
         case "soc-recent-incidents":
-            incidents = _items(siem_client.request("GET", "/incidents", params={"limit": 10}))
-            data = {"incidents": incidents, "count": len(incidents)}
+            metrics = _siem_executive_metrics(siem_client, integration_id=integration_id)
+            data = _section(
+                metrics,
+                "recentIncidents",
+                {"incidents": [], "count": 0},
+            )
             source = "siem_kowalski"
         case "soc-top-entities":
-            incidents = _items(siem_client.request("GET", "/incidents", params={"limit": 200}))
-            data = {"entities": _top_entities(incidents)}
+            metrics = _siem_executive_metrics(siem_client, integration_id=integration_id)
+            data = _section(metrics, "topEntities", {"entities": []})
+            source = "siem_kowalski"
+        case "soc-sla-breach":
+            metrics = _siem_executive_metrics(siem_client, integration_id=integration_id)
+            data = _section(
+                metrics,
+                "sla",
+                {"breaches": [], "red": 0, "amber": 0, "open": 0},
+            )
+            source = "siem_kowalski"
+        case "soc-mttd-mttr":
+            metrics = _siem_executive_metrics(siem_client, integration_id=integration_id)
+            data = _section(
+                metrics,
+                "responseTimes",
+                {
+                    "mttdAvgMs": None,
+                    "mttrAvgMs": None,
+                    "mttdMedianMs": None,
+                    "mttrMedianMs": None,
+                    "mttdSampleSize": 0,
+                    "mttrSampleSize": 0,
+                    "perIncident": [],
+                },
+            )
             source = "siem_kowalski"
         case "xdr-endpoint-health":
             endpoints = _items(xdr_client.request("GET", "/endpoints"))
@@ -249,6 +283,16 @@ def _soc_widget_summary(widget_id: str, data: dict[str, Any]) -> str:
             return f"incidents={len(data.get('incidents', []))} count={data.get('count', 0)}"
         case "soc-top-entities":
             return f"entities={len(data.get('entities', []))}"
+        case "soc-sla-breach":
+            return (
+                f"breaches={len(data.get('breaches', []))} red={data.get('red', 0)} "
+                f"amber={data.get('amber', 0)} open={data.get('open', 0)}"
+            )
+        case "soc-mttd-mttr":
+            return (
+                f"mttd_samples={data.get('mttdSampleSize', 0)} "
+                f"mttr_samples={data.get('mttrSampleSize', 0)}"
+            )
         case "xdr-endpoint-health":
             return f"endpoints={len(data.get('endpoints', []))} total={data.get('total', 0)}"
         case "soar-active-playbook-runs":
@@ -271,6 +315,10 @@ def _soc_widget_is_empty(widget_id: str, data: dict[str, Any]) -> bool:
             return not data.get("incidents")
         case "soc-top-entities":
             return not data.get("entities")
+        case "soc-sla-breach":
+            return not data.get("breaches")
+        case "soc-mttd-mttr":
+            return not data.get("mttdSampleSize") and not data.get("mttrSampleSize")
         case "xdr-endpoint-health":
             return not data.get("endpoints")
         case "soar-active-playbook-runs":
@@ -286,6 +334,27 @@ def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
+
+
+def _siem_executive_metrics(
+    siem_client: SocWidgetClient,
+    *,
+    integration_id: str,
+) -> dict[str, Any]:
+    return siem_client.request(
+        "GET",
+        "/metrics/executive",
+        params={"window": "24h", "limit": 10, "integrationId": integration_id},
+    )
+
+
+def _section(
+    payload: dict[str, Any],
+    key: str,
+    default: dict[str, Any],
+) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else default
 
 
 def _playbook_run_summary(runs: list[dict[str, Any]]) -> dict[str, int]:
