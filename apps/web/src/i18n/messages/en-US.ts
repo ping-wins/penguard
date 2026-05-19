@@ -120,6 +120,177 @@ export default {
     routesHeader: 'REST routes',
     widgetsHeader: 'Widgets contributed',
     siemHeader: 'SIEM event types emitted',
+    requiredField: 'required',
+    fieldTypes: {
+      text: 'text',
+      url: 'URL',
+      secret: 'secret',
+      boolean: 'boolean',
+      number: 'number',
+    },
+    errors: {
+      load: 'Failed to load the marketplace.',
+      loadAddons: 'Failed to load marketplace add-ons.',
+      loadDetail: 'Failed to load add-on details.',
+      versionUnavailable: 'Marketplace add-on version is unavailable.',
+      install: 'Failed to install marketplace add-on.',
+      uninstall: 'Failed to uninstall marketplace add-on.',
+    },
+    addons: {
+      fortianalyzer_core: {
+        name: 'FortiAnalyzer Core Beta',
+        category: 'SIEM',
+        description: 'SIEM analytics beta for FortiAnalyzer: marketplace listing, JSON-RPC health probe scaffold, preview widgets, and draft-only analyst playbook actions. Appliance validation is pending.',
+        auth: {
+          host: {
+            label: 'FortiAnalyzer URL',
+            placeholder: 'https://fortianalyzer.example.local',
+          },
+          apiKey: {
+            label: 'API key',
+          },
+          verifyTls: {
+            label: 'Verify TLS',
+          },
+        },
+        routes: {
+          jsonrpc_system_status: {
+            summary: 'Read-only JSON-RPC request for /sys/status.',
+          },
+        },
+        widgets: {
+          fortianalyzer_health_preview: 'FortiAnalyzer health preview',
+          fortianalyzer_adom_log_posture: 'ADOM log posture preview',
+          fortianalyzer_top_event_types: 'Top event types preview',
+          fortianalyzer_ingestion_readiness: 'Ingestion readiness preview',
+        },
+        siemEventTypes: {
+          fortianalyzer_analytics_preview: 'FortiAnalyzer analytics preview',
+        },
+      },
+      fortigate_core: {
+        name: 'FortiGate Core',
+        category: 'Firewall',
+        description: 'Pull system status, traffic, policies, threat logs and admin login events from the FortiGate REST API.',
+        auth: {
+          host: {
+            label: 'Host URL',
+            placeholder: 'https://192.168.0.100',
+          },
+          apiKey: {
+            label: 'API key',
+          },
+          verifyTls: {
+            label: 'Verify TLS',
+          },
+        },
+        routes: {
+          system_status: {
+            summary: 'Device hostname, model, firmware and serial.',
+          },
+        },
+        widgets: {
+          fortigate_system_status: 'FortiGate system status',
+          fortigate_network_traffic: 'FortiGate network traffic',
+          fortigate_firewall_policies: 'FortiGate firewall policies',
+          fortigate_top_threats: 'FortiGate top threats',
+          fortigate_recent_events: 'FortiGate recent events',
+          fortigate_risk_posture: 'FortiGate risk posture',
+          fortigate_interface_health: 'FortiGate interface health',
+          fortigate_anomaly_highlights: 'FortiGate anomaly highlights',
+          fortigate_kpi_sessions: 'FortiGate session KPI',
+        },
+        siemEventTypes: {
+          auth_failed_login: 'Failed login',
+          network_deny: 'Denied traffic',
+          network_event: 'Network event',
+        },
+      },
+      fortiweb_core: {
+        name: 'FortiWeb Core',
+        category: 'WAF',
+        description: 'Connect a FortiWeb WAF: REST health probe plus push ingestion of attack, traffic and event telemetry.',
+        auth: {
+          host: {
+            label: 'FortiWeb URL',
+            placeholder: 'https://fortiweb.example.local',
+          },
+          username: {
+            label: 'Username',
+          },
+          password: {
+            label: 'Password',
+          },
+          vdom: {
+            label: 'VDOM',
+          },
+          verifyTls: {
+            label: 'Verify TLS',
+          },
+        },
+        routes: {
+          push_ingest: {
+            summary: 'Receives FortiWeb WAF log payloads.',
+          },
+        },
+        widgets: {
+          soc_recent_incidents: 'Recent SOC incidents',
+          soc_open_tickets: 'Open SOC tickets',
+          soc_incidents_by_severity: 'SOC incidents by severity',
+        },
+        siemEventTypes: {
+          waf_attack: 'WAF attack',
+          waf_dos: 'WAF DoS',
+          waf_blocked_request: 'WAF blocked request',
+          http_attack: 'HTTP attack',
+        },
+      },
+      penguin_siem: {
+        name: 'Kowalski SIEM',
+        category: 'SIEM',
+        description: 'Kowalski SIEM: events, incidents, detection rules and timelines.',
+        auth: {
+          host: {
+            label: 'Kowalski URL',
+            placeholder: 'http://siem-kowalski:8000',
+          },
+        },
+        widgets: {
+          soc_incidents_by_severity: 'SOC incidents by severity',
+          soc_recent_incidents: 'Recent SOC incidents',
+          soc_top_entities: 'Top SOC entities',
+        },
+      },
+      penguin_soar: {
+        name: 'Skipper SOAR',
+        category: 'SOAR',
+        description: 'Skipper SOAR: playbooks, playbook runs, approvals and dry-run actions.',
+        auth: {
+          host: {
+            label: 'Skipper URL',
+            placeholder: 'http://soar-skipper:8000',
+          },
+        },
+        widgets: {
+          soar_active_playbook_runs: 'Active playbook runs',
+          soar_playbook_run_history: 'Playbook run history',
+        },
+      },
+      penguin_xdr: {
+        name: 'Rico XDR',
+        category: 'XDR',
+        description: 'Rico XDR: endpoint inventory, endpoint events and heartbeats.',
+        auth: {
+          host: {
+            label: 'Rico URL',
+            placeholder: 'http://xdr-rico:8000',
+          },
+        },
+        widgets: {
+          xdr_endpoint_health: 'XDR endpoint health',
+        },
+      },
+    },
   },
   endpoints: {
     title: 'Endpoints',

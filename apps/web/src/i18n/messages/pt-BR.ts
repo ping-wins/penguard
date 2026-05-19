@@ -120,6 +120,177 @@ export default {
     routesHeader: 'Rotas REST',
     widgetsHeader: 'Widgets contribuídos',
     siemHeader: 'Tipos de evento SIEM emitidos',
+    requiredField: 'obrigatório',
+    fieldTypes: {
+      text: 'texto',
+      url: 'URL',
+      secret: 'segredo',
+      boolean: 'booleano',
+      number: 'número',
+    },
+    errors: {
+      load: 'Falha ao carregar o marketplace.',
+      loadAddons: 'Falha ao carregar add-ons do marketplace.',
+      loadDetail: 'Falha ao carregar detalhes do add-on.',
+      versionUnavailable: 'A versão do add-on de marketplace está indisponível.',
+      install: 'Falha ao instalar add-on de marketplace.',
+      uninstall: 'Falha ao desinstalar add-on de marketplace.',
+    },
+    addons: {
+      fortianalyzer_core: {
+        name: 'FortiAnalyzer Core Beta',
+        category: 'SIEM',
+        description: 'Beta de analytics SIEM para FortiAnalyzer: listagem no marketplace, scaffold de health check JSON-RPC, widgets de preview e ações de playbook apenas em rascunho. A validação em appliance ainda está pendente.',
+        auth: {
+          host: {
+            label: 'URL do FortiAnalyzer',
+            placeholder: 'https://fortianalyzer.example.local',
+          },
+          apiKey: {
+            label: 'Chave de API',
+          },
+          verifyTls: {
+            label: 'Verificar TLS',
+          },
+        },
+        routes: {
+          jsonrpc_system_status: {
+            summary: 'Requisição JSON-RPC read-only para /sys/status.',
+          },
+        },
+        widgets: {
+          fortianalyzer_health_preview: 'Saúde do FortiAnalyzer (preview)',
+          fortianalyzer_adom_log_posture: 'Postura de logs/ADOM (preview)',
+          fortianalyzer_top_event_types: 'Tipos de evento principais (preview)',
+          fortianalyzer_ingestion_readiness: 'Prontidão de ingestão (preview)',
+        },
+        siemEventTypes: {
+          fortianalyzer_analytics_preview: 'Analytics do FortiAnalyzer (preview)',
+        },
+      },
+      fortigate_core: {
+        name: 'FortiGate Core',
+        category: 'Firewall',
+        description: 'Coleta status do sistema, tráfego, políticas, logs de ameaça e eventos de login administrativo pela API REST do FortiGate.',
+        auth: {
+          host: {
+            label: 'URL do host',
+            placeholder: 'https://192.168.0.100',
+          },
+          apiKey: {
+            label: 'Chave de API',
+          },
+          verifyTls: {
+            label: 'Verificar TLS',
+          },
+        },
+        routes: {
+          system_status: {
+            summary: 'Hostname, modelo, firmware e serial do dispositivo.',
+          },
+        },
+        widgets: {
+          fortigate_system_status: 'Status do sistema FortiGate',
+          fortigate_network_traffic: 'Tráfego de rede FortiGate',
+          fortigate_firewall_policies: 'Políticas de firewall FortiGate',
+          fortigate_top_threats: 'Principais ameaças FortiGate',
+          fortigate_recent_events: 'Eventos recentes FortiGate',
+          fortigate_risk_posture: 'Postura de risco FortiGate',
+          fortigate_interface_health: 'Saúde de interfaces FortiGate',
+          fortigate_anomaly_highlights: 'Destaques de anomalias FortiGate',
+          fortigate_kpi_sessions: 'KPI de sessões FortiGate',
+        },
+        siemEventTypes: {
+          auth_failed_login: 'Falha de login',
+          network_deny: 'Tráfego negado',
+          network_event: 'Evento de rede',
+        },
+      },
+      fortiweb_core: {
+        name: 'FortiWeb Core',
+        category: 'WAF',
+        description: 'Conecta um WAF FortiWeb: health check REST e ingestão push de telemetria de ataque, tráfego e eventos.',
+        auth: {
+          host: {
+            label: 'URL do FortiWeb',
+            placeholder: 'https://fortiweb.example.local',
+          },
+          username: {
+            label: 'Usuário',
+          },
+          password: {
+            label: 'Senha',
+          },
+          vdom: {
+            label: 'VDOM',
+          },
+          verifyTls: {
+            label: 'Verificar TLS',
+          },
+        },
+        routes: {
+          push_ingest: {
+            summary: 'Recebe payloads de log do WAF FortiWeb.',
+          },
+        },
+        widgets: {
+          soc_recent_incidents: 'Incidentes SOC recentes',
+          soc_open_tickets: 'Tickets SOC abertos',
+          soc_incidents_by_severity: 'Incidentes SOC por severidade',
+        },
+        siemEventTypes: {
+          waf_attack: 'Ataque WAF',
+          waf_dos: 'DoS WAF',
+          waf_blocked_request: 'Requisição bloqueada pelo WAF',
+          http_attack: 'Ataque HTTP',
+        },
+      },
+      penguin_siem: {
+        name: 'Kowalski SIEM',
+        category: 'SIEM',
+        description: 'Kowalski SIEM: eventos, incidentes, regras de detecção e timelines.',
+        auth: {
+          host: {
+            label: 'URL do Kowalski',
+            placeholder: 'http://siem-kowalski:8000',
+          },
+        },
+        widgets: {
+          soc_incidents_by_severity: 'Incidentes SOC por severidade',
+          soc_recent_incidents: 'Incidentes SOC recentes',
+          soc_top_entities: 'Principais entidades SOC',
+        },
+      },
+      penguin_soar: {
+        name: 'Skipper SOAR',
+        category: 'SOAR',
+        description: 'Skipper SOAR: playbooks, execuções de playbook, aprovações e ações em dry-run.',
+        auth: {
+          host: {
+            label: 'URL do Skipper',
+            placeholder: 'http://soar-skipper:8000',
+          },
+        },
+        widgets: {
+          soar_active_playbook_runs: 'Execuções de playbook ativas',
+          soar_playbook_run_history: 'Histórico de execuções de playbook',
+        },
+      },
+      penguin_xdr: {
+        name: 'Rico XDR',
+        category: 'XDR',
+        description: 'Rico XDR: inventário de endpoints, eventos de endpoint e heartbeats.',
+        auth: {
+          host: {
+            label: 'URL do Rico',
+            placeholder: 'http://xdr-rico:8000',
+          },
+        },
+        widgets: {
+          xdr_endpoint_health: 'Saúde de endpoints XDR',
+        },
+      },
+    },
   },
   endpoints: {
     title: 'Endpoints',
