@@ -154,6 +154,15 @@ class FortiWebClient(Protocol):
     def update_ip_list(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
+    def get_ip_list_members(self, name: str) -> list[dict[str, Any]]:
+        pass
+
+    def create_ip_list_member(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        pass
+
+    def delete_ip_list_member(self, name: str, member_id: str) -> dict[str, Any]:
+        pass
+
 
 class FortiWebClientFactory(Protocol):
     def __call__(self, *, host: str, api_key: str, verify_tls: bool) -> FortiWebClient:
@@ -536,24 +545,22 @@ class FortiWebIntegrationService:
         managed_ip_list_policy = str(block["intent"]["managedIpListPolicy"])
         target_server_policy = str(connection["target_server_policy"])
         profile_name = str(block["preflightSummary"]["inlineProtectionProfile"])
-        member = _block_member(source_ip)
-        ip_list_exists = bool(block["preflightSummary"].get("ipListExists"))
-        current_ip_list = (
+        try:
             client.get_ip_list(managed_ip_list_policy)
-            if ip_list_exists
-            else {"name": managed_ip_list_policy, "members": []}
-        )
-        desired_members = _members_without_source(current_ip_list, source_ip)
-        desired_members.append(member)
-        desired_ip_list = {
-            **current_ip_list,
-            "name": managed_ip_list_policy,
-            "members": desired_members,
-        }
-        if ip_list_exists:
-            client.update_ip_list(managed_ip_list_policy, desired_ip_list)
-        else:
-            client.create_ip_list(desired_ip_list)
+            current_members = client.get_ip_list_members(managed_ip_list_policy)
+        except FortiWebApiError as exc:
+            if "not found" not in str(exc).lower():
+                raise FortiWebConnectionFailed(str(exc)) from exc
+            client.create_ip_list({"name": managed_ip_list_policy})
+            current_members = []
+        if _member_for_source(current_members, source_ip) is None:
+            client.create_ip_list_member(
+                managed_ip_list_policy,
+                _block_member(
+                    source_ip,
+                    member_id=_next_ip_list_member_id(current_members),
+                ),
+            )
         if not block["preflightSummary"].get("ipListAttached"):
             profile = client.get_inline_protection_profile(profile_name)
             profile["ip-list-policy"] = managed_ip_list_policy
@@ -587,12 +594,9 @@ class FortiWebIntegrationService:
         )
         source_ip = str(block["sourceIp"])
         managed_ip_list_policy = str(block["intent"]["managedIpListPolicy"])
-        current_ip_list = client.get_ip_list(managed_ip_list_policy)
-        desired_ip_list = {
-            **current_ip_list,
-            "members": _members_without_source(current_ip_list, source_ip),
-        }
-        client.update_ip_list(managed_ip_list_policy, desired_ip_list)
+        member = _member_for_source(client.get_ip_list_members(managed_ip_list_policy), source_ip)
+        if member is not None:
+            client.delete_ip_list_member(managed_ip_list_policy, str(member["id"]))
         removed_result = {
             "removed": True,
             "sourceIp": source_ip,
@@ -819,13 +823,13 @@ class FortiWebIntegrationService:
             )
         ip_list_exists = True
         try:
-            ip_list = client.get_ip_list(managed_ip_list_policy)
+            client.get_ip_list(managed_ip_list_policy)
+            members = client.get_ip_list_members(managed_ip_list_policy)
         except FortiWebApiError as exc:
             if "not found" not in str(exc).lower():
                 raise FortiWebConnectionFailed(str(exc)) from exc
             ip_list_exists = False
-            ip_list = {"name": managed_ip_list_policy, "members": []}
-        members = _ip_list_members(ip_list)
+            members = []
         already_blocked = any(str(member.get("ip")) == source_ip for member in members)
         proposed_changes: list[dict[str, Any]] = []
         if not ip_list_exists:
@@ -897,12 +901,19 @@ def _normalize_ip(source_ip: str) -> str:
     return str(ip_address(source_ip))
 
 
-def _block_member(source_ip: str) -> dict[str, Any]:
+def _block_member(source_ip: str, *, member_id: int | None = None) -> dict[str, Any]:
+    if member_id is None:
+        return {
+            "ip": source_ip,
+            "type": "black-ip",
+            "group-type": "ip-string",
+        }
     return {
+        "id": str(member_id),
+        "seq": member_id,
         "ip": source_ip,
         "type": "black-ip",
-        "action": "alert_deny",
-        "status": "enable",
+        "group-type": "ip-string",
     }
 
 
@@ -1116,3 +1127,24 @@ def _members_without_source(ip_list: dict[str, Any], source_ip: str) -> list[dic
         for member in _ip_list_members(ip_list)
         if str(member.get("ip") or member.get("address") or "") != source_ip
     ]
+
+
+def _member_for_source(
+    members: list[dict[str, Any]],
+    source_ip: str,
+) -> dict[str, Any] | None:
+    for member in members:
+        if str(member.get("ip") or member.get("address") or "") == source_ip:
+            return dict(member)
+    return None
+
+
+def _next_ip_list_member_id(members: list[dict[str, Any]]) -> int:
+    ids: list[int] = []
+    for member in members:
+        value = member.get("id") or member.get("seq")
+        try:
+            ids.append(int(str(value)))
+        except (TypeError, ValueError):
+            continue
+    return max(ids, default=0) + 1

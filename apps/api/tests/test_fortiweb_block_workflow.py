@@ -118,10 +118,12 @@ class FortiWebBlockClient:
         }
         self.ip_list = {
             "name": "PG_IP_BLOCKLIST",
-            "members": [],
+            "sz_members": 0,
         }
+        self.ip_list_members: list[dict[str, Any]] = []
         self.server_updates: list[dict[str, Any]] = []
         self.ip_list_updates: list[dict[str, Any]] = []
+        self.ip_list_member_updates: list[dict[str, Any]] = []
         self.inline_updates: list[dict[str, Any]] = []
 
     def get_system_status(self):
@@ -177,10 +179,11 @@ class FortiWebBlockClient:
 
     def get_ip_list(self, name: str):
         assert name == "PG_IP_BLOCKLIST"
-        return {
-            **self.ip_list,
-            "members": [dict(member) for member in self.ip_list["members"]],
-        }
+        return dict(self.ip_list)
+
+    def get_ip_list_members(self, name: str):
+        assert name == "PG_IP_BLOCKLIST"
+        return [dict(member) for member in self.ip_list_members]
 
     def create_ip_list(self, payload: dict[str, Any]):
         self.ip_list = dict(payload)
@@ -192,6 +195,21 @@ class FortiWebBlockClient:
         self.ip_list.update(payload)
         self.ip_list_updates.append(dict(payload))
         return dict(self.ip_list)
+
+    def create_ip_list_member(self, name: str, payload: dict[str, Any]):
+        assert name == "PG_IP_BLOCKLIST"
+        self.ip_list_members.append(dict(payload))
+        self.ip_list["sz_members"] = len(self.ip_list_members)
+        self.ip_list_member_updates.append(dict(payload))
+        return dict(payload)
+
+    def delete_ip_list_member(self, name: str, member_id: str):
+        assert name == "PG_IP_BLOCKLIST"
+        self.ip_list_members = [
+            member for member in self.ip_list_members if str(member.get("id")) != str(member_id)
+        ]
+        self.ip_list["sz_members"] = len(self.ip_list_members)
+        return {"deleted": True, "id": member_id}
 
 
 def service_with_client(fake_client: FortiWebBlockClient):
@@ -233,8 +251,7 @@ def test_review_source_block_prepares_managed_ip_list_change_without_ttl():
             "member": {
                 "ip": "10.10.10.10",
                 "type": "black-ip",
-                "action": "alert_deny",
-                "status": "enable",
+                "group-type": "ip-string",
             },
         }
     ]
@@ -260,12 +277,13 @@ def test_apply_source_block_adds_black_ip_until_user_removes_it():
     )
 
     assert applied["status"] == "active"
-    assert fake_client.ip_list["members"] == [
+    assert fake_client.ip_list_members == [
         {
+            "id": "1",
+            "seq": 1,
             "ip": "10.10.10.10",
             "type": "black-ip",
-            "action": "alert_deny",
-            "status": "enable",
+            "group-type": "ip-string",
         }
     ]
     assert "expiresAt" not in str(fake_client.ip_list)
@@ -295,7 +313,7 @@ def test_remove_source_block_removes_ip_member_after_explicit_delete():
     )
 
     assert removed["status"] == "removed"
-    assert fake_client.ip_list["members"] == []
+    assert fake_client.ip_list_members == []
 
 
 def test_review_waf_dos_policy_prepares_server_policy_and_profile_changes():

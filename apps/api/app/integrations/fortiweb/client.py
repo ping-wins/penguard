@@ -122,20 +122,55 @@ class FortiWebApiClient:
 
     def get_ip_list(self, name: str) -> dict[str, Any]:
         results = self._get(f"/api/v2.0/cmdb/waf/ip-list/{name}")
+        if isinstance(results, list):
+            try:
+                results = self._named_object(results, name, "FortiWeb IP list")
+            except FortiWebApiError as exc:
+                raise FortiWebApiError(f"FortiWeb IP list {name} not found") from exc
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb IP list response was not an object")
         return results
 
     def create_ip_list(self, payload: dict[str, Any]) -> dict[str, Any]:
-        results = self._post("/api/v2.0/cmdb/waf/ip-list", json=payload)
+        results = self._post("/api/v2.0/cmdb/waf/ip-list", json={"data": payload})
+        results = self._single_object(results, "FortiWeb IP list create")
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb IP list create response was not an object")
         return results
 
     def update_ip_list(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        results = self._put(f"/api/v2.0/cmdb/waf/ip-list/{name}", json=payload)
+        results = self._put(f"/api/v2.0/cmdb/waf/ip-list/{name}", json={"data": payload})
+        results = self._single_object(results, "FortiWeb IP list update")
         if not isinstance(results, dict):
             raise FortiWebApiError("FortiWeb IP list update response was not an object")
+        return results
+
+    def get_ip_list_members(self, name: str) -> list[dict[str, Any]]:
+        results = self._get("/api/v2.0/cmdb/waf/ip-list/members", params={"mkey": name})
+        if isinstance(results, dict):
+            return [results]
+        if not isinstance(results, list):
+            raise FortiWebApiError("FortiWeb IP list members response was not a list")
+        return [dict(item) for item in results if isinstance(item, dict)]
+
+    def create_ip_list_member(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        results = self._post(
+            "/api/v2.0/cmdb/waf/ip-list/members",
+            params={"mkey": name},
+            json={"data": payload},
+        )
+        results = self._single_object(results, "FortiWeb IP list member create")
+        if not isinstance(results, dict):
+            raise FortiWebApiError("FortiWeb IP list member create response was not an object")
+        return results
+
+    def delete_ip_list_member(self, name: str, member_id: str) -> dict[str, Any]:
+        results = self._delete(
+            "/api/v2.0/cmdb/waf/ip-list/members",
+            params={"mkey": name, "sub_mkey": member_id},
+        )
+        if not isinstance(results, dict):
+            raise FortiWebApiError("FortiWeb IP list member delete response was not an object")
         return results
 
     def _get(
@@ -164,6 +199,14 @@ class FortiWebApiClient:
         json: dict[str, Any],
     ) -> Any:
         return self._request("PUT", path, params=params, json=json)
+
+    def _delete(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | list[tuple[str, Any]] | None = None,
+    ) -> Any:
+        return self._request("DELETE", path, params=params)
 
     def _request(
         self,

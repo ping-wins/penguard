@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useTicketsStore } from '../../stores/useTicketsStore'
+import { usePoliciesStore } from '../../stores/usePoliciesStore'
 import {
   useIntegrationsStore,
   type FortiWebBlockReviewResponse,
@@ -60,6 +61,7 @@ import {
 
 const { t } = useI18n()
 const store = useTicketsStore()
+const policiesStore = usePoliciesStore()
 const integrationsStore = useIntegrationsStore()
 
 function cvssBadgeClass(severity: string | undefined): string {
@@ -635,6 +637,7 @@ async function runApplyPolicyReview(ticket: Ticket) {
       reviewHash: policyReview.value.review_hash,
     })
     policyApplyResult.value = result
+    await policiesStore.loadPolicies({})
     const ticketUpdate = result.ticketUpdate
     const updatedTicket = ticketUpdate?.ticket
     if (updatedTicket) {
