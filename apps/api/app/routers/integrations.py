@@ -40,6 +40,7 @@ from app.integrations.fortigate.store import (
 )
 from app.integrations.fortigate.syslog import send_fortigate_syslog_probe
 from app.integrations.fortiweb.auth import build_fortiweb_authorization
+from app.integrations.fortiweb.client import FortiWebApiError
 from app.integrations.fortiweb.service import (
     FortiWebConnectionFailed,
     FortiWebIntegrationService,
@@ -594,7 +595,7 @@ def apply_fortiweb_source_block(
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="FortiWeb block not found") from exc
-    except (PermissionError, FortiWebConnectionFailed) as exc:
+    except (PermissionError, FortiWebApiError, FortiWebConnectionFailed) as exc:
         audit_store.record(
             action="integration.fortiweb.block_applied",
             outcome="failed",
@@ -652,7 +653,7 @@ def remove_fortiweb_source_block(
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="FortiWeb block not found") from exc
-    except (PermissionError, FortiWebConnectionFailed) as exc:
+    except (PermissionError, FortiWebApiError, FortiWebConnectionFailed) as exc:
         audit_store.record(
             action="integration.fortiweb.block_removed",
             outcome="failed",

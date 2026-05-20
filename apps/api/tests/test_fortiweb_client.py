@@ -161,3 +161,88 @@ def test_fortiweb_client_selects_named_resource_from_collection_response() -> No
         "name": "Inline Standard Protection",
         "application-layer-dos-prevention": "Predefined",
     }
+
+
+def test_fortiweb_client_treats_empty_ip_list_collection_as_not_found() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v2.0/cmdb/waf/ip-list/PG_IP_BLOCKLIST"
+        return httpx.Response(200, json={"results": []})
+
+    client = FortiWebApiClient(
+        host="https://fortiweb.local",
+        api_key="fortiweb-auth",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(FortiWebApiError, match="not found"):
+        client.get_ip_list("PG_IP_BLOCKLIST")
+
+
+def test_fortiweb_client_wraps_ip_list_create_payload() -> None:
+    payload = {
+        "name": "PG_IP_BLOCKLIST",
+        "members": [{"ip": "10.10.10.10", "type": "black-ip"}],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/v2.0/cmdb/waf/ip-list"
+        assert json.loads(request.content.decode("utf-8")) == {"data": payload}
+        return httpx.Response(200, json={"results": [payload]})
+
+    client = FortiWebApiClient(
+        host="https://fortiweb.local",
+        api_key="fortiweb-auth",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.create_ip_list(payload) == payload
+
+
+def test_fortiweb_client_wraps_ip_list_update_payload() -> None:
+    payload = {
+        "name": "PG_IP_BLOCKLIST",
+        "members": [{"ip": "10.10.10.10", "type": "black-ip"}],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path == "/api/v2.0/cmdb/waf/ip-list/PG_IP_BLOCKLIST"
+        assert json.loads(request.content.decode("utf-8")) == {"data": payload}
+        return httpx.Response(200, json={"results": [payload]})
+
+    client = FortiWebApiClient(
+        host="https://fortiweb.local",
+        api_key="fortiweb-auth",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.update_ip_list("PG_IP_BLOCKLIST", payload) == payload
+
+
+def test_fortiweb_client_creates_ip_list_member_subobject() -> None:
+    payload = {
+        "id": "1",
+        "seq": 1,
+        "type": "black-ip",
+        "ip": "10.10.10.10",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/v2.0/cmdb/waf/ip-list/members"
+        assert request.url.params["mkey"] == "PG_IP_BLOCKLIST"
+        assert json.loads(request.content.decode("utf-8")) == {"data": payload}
+        return httpx.Response(200, json={"results": [payload]})
+
+    client = FortiWebApiClient(
+        host="https://fortiweb.local",
+        api_key="fortiweb-auth",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.create_ip_list_member("PG_IP_BLOCKLIST", payload) == payload
