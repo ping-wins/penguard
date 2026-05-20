@@ -57,11 +57,11 @@ def test_ai_status_reports_unconfigured_provider_by_default():
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider"] == ""
-    assert payload["runtime"] == "pydantic_ai"
+    assert payload["runtime"] == "direct"
     assert payload["ready"] is False
 
 
-def test_ai_status_reports_pydantic_ai_cockpit_runtime(monkeypatch):
+def test_ai_status_reports_direct_cockpit_runtime(monkeypatch):
     enable_lab_scripted_ai(monkeypatch)
     client = TestClient(app)
 
@@ -70,11 +70,11 @@ def test_ai_status_reports_pydantic_ai_cockpit_runtime(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider"] == "scripted"
-    assert payload["runtime"] == "pydantic_ai"
+    assert payload["runtime"] == "direct"
     assert payload["ready"] is True
 
 
-def test_ai_chat_uses_cockpit_agent_and_audits_available_tools(monkeypatch):
+def test_ai_chat_fallback_uses_llm_for_unknown_prompts(monkeypatch):
     enable_lab_scripted_ai(monkeypatch)
     client = TestClient(app)
 
@@ -87,11 +87,10 @@ def test_ai_chat_uses_cockpit_agent_and_audits_available_tools(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "pydantic_ai.scripted"
-    assert payload["runtime"] == "pydantic_ai"
-    assert "draft_widget" in payload["reply"]
-    assert audit["items"][0]["details"]["runtime"] == "pydantic_ai"
-    assert audit["items"][0]["details"]["toolCount"] >= 5
+    assert payload["provider"] == "scripted"
+    assert payload["runtime"] == "direct"
+    assert audit["items"][0]["details"]["runtime"] == "direct"
+    assert audit["items"][0]["details"]["toolCount"] == 0
 
 
 def test_ai_chat_can_draft_widget_with_internal_tool(monkeypatch):
@@ -114,9 +113,8 @@ def test_ai_chat_can_draft_widget_with_internal_tool(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "pydantic_ai.scripted"
+    assert payload["provider"] == "scripted"
     assert "CPU Usage" in payload["reply"]
-    assert "draft_widget" in payload["reply"]
     assert "confirme" in payload["reply"].lower()
     assert payload["widgetDrafts"] == [
         {

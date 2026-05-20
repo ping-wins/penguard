@@ -258,7 +258,7 @@ def ai_status(
     elif provider_name == "scripted" and settings.enable_lab_demo_tools:
         model = model or "scripted-cockpit"
     remote_provider_ready = (
-        provider_name in {"anthropic", "openai", "openai_compat", "openai-compatible"}
+        provider_name in {"anthropic", "gemini", "google", "openai", "openai_compat", "openai-compatible"}
         and settings.ai_api_key
     )
     ready = bool(
@@ -269,7 +269,7 @@ def ai_status(
         provider=provider_name,
         model=model,
         ready=ready,
-        runtime="pydantic_ai",
+        runtime="direct",
     )
 
 
