@@ -123,7 +123,32 @@ def _no_reply(locale: str) -> str:
     return "Posso ajudar a criar widgets. Descreva um widget ou mencione IDs de campos."
 
 
+def _intent_widget_request(prompt: str) -> DraftWidgetRequest | None:
+    lowered = prompt.lower()
+    if re.search(r"incident[aeo]s?\s+recent[aeo]s?", lowered) or "recent incident" in lowered:
+        return DraftWidgetRequest(
+            provider="siem_kowalski",
+            visual_type="feed",
+            field_ids=["incidents"],
+            title="Incidentes Recentes",
+        )
+    if (
+        re.search(r"incident[aeo]s?\s+por\s+severidade", lowered)
+        or "incidents by severity" in lowered
+    ):
+        return DraftWidgetRequest(
+            provider="siem_kowalski",
+            visual_type="bar",
+            field_ids=["items"],
+            title="Incidentes por Severidade",
+        )
+    return None
+
+
 def _draft_widget_request_from_prompt(prompt: str) -> DraftWidgetRequest | None:
+    intent_request = _intent_widget_request(prompt)
+    if intent_request is not None:
+        return intent_request
     lowered = prompt.lower()
     field_ids = _extract_field_ids(prompt)
     if not field_ids:
