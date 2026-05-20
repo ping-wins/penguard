@@ -1606,21 +1606,20 @@ def _run_fortigate_event_ingestion(
             error=None,
             finished_at=datetime.now(UTC),
         )
-        if event_ids:
-            realtime_broker.publish(
-                {
-                    "type": "fortigate.ingestion.events",
-                    "ownerUserId": owner_user_id,
-                    "integrationId": integration_id,
-                    "eventIds": event_ids,
-                    "receivedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
-                        "+00:00",
-                        "Z",
-                    ),
-                    "refresh": ["widgets", "tickets"],
-                    "trigger": trigger,
-                }
-            )
+        realtime_broker.publish(
+            {
+                "type": "fortigate.ingestion.events",
+                "ownerUserId": owner_user_id,
+                "integrationId": integration_id,
+                "eventIds": event_ids,
+                "receivedAt": datetime.now(UTC).isoformat(timespec="milliseconds").replace(
+                    "+00:00",
+                    "Z",
+                ),
+                "refresh": ["widgets", "tickets"] if event_ids else ["widgets"],
+                "trigger": trigger,
+            }
+        )
         return {
             "integrationId": integration_id,
             "rawEventCount": raw_event_count,

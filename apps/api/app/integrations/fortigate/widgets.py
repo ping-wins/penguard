@@ -1,3 +1,5 @@
+import math
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -71,6 +73,75 @@ class FortiGateWidgetClientFactory(Protocol):
         pass
 
 
+def _sin_jitter(base: float, amplitude: float, period: float = 20.0, offset: float = 0.0) -> int:
+    return max(0, round(base + amplitude * math.sin(2 * math.pi * (time.time() + offset) / period)))
+
+
+def _mock_system_status_data() -> dict[str, Any]:
+    return {
+        "cpu": _sin_jitter(18, 12, period=17),
+        "memory": _sin_jitter(56, 8, period=31),
+        "sessions": _sin_jitter(3800, 600, period=23),
+        "uptimeSeconds": int(time.time() % 864000),
+    }
+
+
+def _mock_kpi_sessions_data() -> dict[str, Any]:
+    return {"sessions": _sin_jitter(3800, 600, period=23)}
+
+
+def _mock_network_traffic_data() -> dict[str, Any]:
+    interfaces = ["port1", "port2", "wan1"]
+    return {
+        "interfaces": [
+            {
+                "name": iface,
+                "rxBps": _sin_jitter(1_200_000, 800_000, period=19, offset=i * 7),
+                "txBps": _sin_jitter(400_000, 300_000, period=13, offset=i * 5),
+                "status": "up",
+            }
+            for i, iface in enumerate(interfaces)
+        ]
+    }
+
+
+def _mock_top_threats_data() -> dict[str, Any]:
+    threats = ["Botnet.C2", "ExploitKit.Rig", "Trojan.Dropper", "Ransomware.Locky"]
+    return {
+        "threats": [
+            {
+                "name": threat,
+                "count": _sin_jitter(40 + i * 12, 20, period=17 + i * 3),
+                "severity": "high" if i < 2 else "medium",
+            }
+            for i, threat in enumerate(threats)
+        ]
+    }
+
+
+def _mock_top_source_ips_data() -> dict[str, Any]:
+    ips = ["203.0.113.5", "198.51.100.22", "192.0.2.14", "10.0.0.55"]
+    return {
+        "items": [
+            {
+                "ip": ip,
+                "count": _sin_jitter(200 + i * 50, 80, period=11 + i * 4),
+                "blocked": i < 2,
+            }
+            for i, ip in enumerate(ips)
+        ]
+    }
+
+
+_MOCK_DYNAMIC_BUILDERS: dict[str, Any] = {
+    "fortigate-system-status": _mock_system_status_data,
+    "fortigate-kpi-sessions": _mock_kpi_sessions_data,
+    "fortigate-network-traffic": _mock_network_traffic_data,
+    "fortigate-top-threats": _mock_top_threats_data,
+    "fortigate-top-source-ips": _mock_top_source_ips_data,
+}
+
+
 class MockFortiGateWidgetDataService:
     def get_widget_data(
         self,
@@ -79,13 +150,33 @@ class MockFortiGateWidgetDataService:
         *,
         owner_user_id: str,
     ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        refreshed_at = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        cache_ttl = WIDGET_REFRESH_INTERVAL_SECONDS.get(widget_id, DEFAULT_REFRESH_INTERVAL_SECONDS)
+        meta = {"source": "fortigate", "cacheTtlSeconds": cache_ttl, "refreshIntervalSeconds": cache_ttl}
+
+        dynamic_builder = _MOCK_DYNAMIC_BUILDERS.get(widget_id)
+        if dynamic_builder is not None:
+            return {
+                "widgetId": widget_id,
+                "integrationId": integration_id,
+                "refreshedAt": refreshed_at,
+                "status": "ready",
+                "data": dynamic_builder(),
+                "meta": meta,
+            }
+
         fixture_name = MOCK_WIDGET_FIXTURES.get(widget_id)
         if fixture_name is None:
             raise KeyError("Widget data not found")
-        data = load_fixture(fixture_name)
-        if widget_id != data["widgetId"] or integration_id != data["integrationId"]:
-            raise KeyError("Widget data not found")
-        return data
+        fixture = load_fixture(fixture_name)
+        return {
+            **fixture,
+            "widgetId": widget_id,
+            "integrationId": integration_id,
+            "refreshedAt": refreshed_at,
+            "meta": meta,
+        }
 
 
 class FortiGateWidgetDataService:
