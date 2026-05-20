@@ -50,6 +50,13 @@ import {
 } from '../../services/ticketsClient'
 import { Trash2 } from 'lucide-vue-next'
 import { sourceBadgeFor, type SourceBadge } from '../../utils/sourceBadges'
+import {
+  buildIncidentFacts,
+  defaultIncidentDrawerStep,
+  hasDeterministicContainment,
+  isFortiWebPrimary,
+  type IncidentDrawerStep,
+} from './incidentDrawerState'
 
 const { t } = useI18n()
 const store = useTicketsStore()
@@ -79,6 +86,9 @@ function cvssCalcUrl(vector: string): string {
 const severityFilter = ref<string | null>(null)
 const statusFilter = ref<TicketStatus | null>(null)
 const selected = ref<Ticket | null>(null)
+const activeDrawerStep = ref<IncidentDrawerStep>('summary')
+const showRawDetails = ref(false)
+const showOtherProviderActions = ref(false)
 const isSavingPatch = ref(false)
 const patchError = ref<string | null>(null)
 const aiAnalysis = ref<IncidentAnalysis | null>(null)
@@ -135,6 +145,10 @@ const visibleTriageContext = computed(() => {
   return triageContext.value?.incidentId ? triageContext.value : null
 })
 const threatIntelFlagged = computed(() => threatIntel.value?.summary.flagged ?? [])
+const incidentFacts = computed(() => selected.value ? buildIncidentFacts(selected.value, visibleTriageContext.value) : null)
+const deterministicContainmentAvailable = computed(() => hasDeterministicContainment(visibleTriageContext.value))
+const fortiWebIsPrimary = computed(() => selected.value ? isFortiWebPrimary(selected.value, visibleTriageContext.value) : false)
+const showFortiWebActions = computed(() => fortiWebIsPrimary.value || showOtherProviderActions.value)
 
 function formatTriageValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(', ')
@@ -165,6 +179,16 @@ function thresholdLabel(threshold: any): string {
   return [threshold.path, threshold.operator, threshold.value]
     .filter((part) => part !== undefined && part !== null && part !== '')
     .join(' ')
+}
+
+function setActiveDrawerStep(step: IncidentDrawerStep) {
+  activeDrawerStep.value = step
+}
+
+function drawerStepClass(step: IncidentDrawerStep): string {
+  return activeDrawerStep.value === step
+    ? 'border-theme-primary/60 bg-theme-primary/15 text-theme-text'
+    : 'border-theme-border bg-theme-bg/40 text-theme-text-muted hover:text-theme-text hover:bg-theme-bg/70'
 }
 
 const lanes = computed<{ level: TriageLevel; label: string; description: string; color: string }[]>(() => [
@@ -285,6 +309,7 @@ async function loadTriageContext(ticketId: string) {
 }
 
 async function runAnalysis(ticket: Ticket) {
+  activeDrawerStep.value = 'analysis'
   isAnalyzing.value = true
   aiError.value = null
   try {
@@ -297,6 +322,7 @@ async function runAnalysis(ticket: Ticket) {
 }
 
 async function runContainment(ticket: Ticket) {
+  activeDrawerStep.value = 'containment'
   isContaining.value = true
   aiError.value = null
   try {
@@ -355,6 +381,7 @@ function resetFortiwebBlockState() {
 }
 
 async function runDraftPlaybook(ticket: Ticket) {
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   isDrafting.value = true
   try {
@@ -367,6 +394,7 @@ async function runDraftPlaybook(ticket: Ticket) {
 }
 
 async function runInstantiateTemplate(ticket: Ticket, templateId: string) {
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   instantiatingTemplateId.value = templateId
   try {
@@ -381,6 +409,7 @@ async function runInstantiateTemplate(ticket: Ticket, templateId: string) {
 
 async function runApplyPlaybook(ticket: Ticket) {
   if (!playbookDraft.value) return
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   isApplying.value = true
   try {
@@ -403,6 +432,7 @@ async function runApplyPlaybook(ticket: Ticket) {
 async function runApprovePlaybook(ticket: Ticket) {
   const runId = applyResult.value?.run?.id
   if (!runId) return
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   isApprovingRun.value = true
   try {
@@ -570,6 +600,7 @@ async function runRemoveFortiwebBlock() {
 async function runCreatePolicyReview() {
   const runId = applyResult.value?.run?.id
   if (!runId) return
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   isCreatingPolicyReview.value = true
   policyApplyResult.value = null
@@ -594,6 +625,7 @@ async function runCreatePolicyReview() {
 async function runApplyPolicyReview(ticket: Ticket) {
   const runId = applyResult.value?.run?.id
   if (!runId || !policyReview.value) return
+  activeDrawerStep.value = 'containment'
   playbookError.value = null
   isApplyingPolicyReview.value = true
   try {
@@ -661,6 +693,9 @@ watch(
   () => selected.value?.id,
   (ticketId) => {
     resetAiState()
+    activeDrawerStep.value = selected.value ? defaultIncidentDrawerStep(selected.value) : 'summary'
+    showRawDetails.value = false
+    showOtherProviderActions.value = false
     triageContext.value = null
     triageContextError.value = null
     if (selected.value) primeFortiwebBlockForm(selected.value)
@@ -835,10 +870,11 @@ async function resetIncidents() {
     <!-- Detail drawer -->
     <div
       v-if="selected"
+      data-test="ticket-incident-drawer"
       class="fixed inset-0 z-40 flex justify-end bg-black/50 backdrop-blur-sm"
       @click.self="selected = null"
     >
-      <div class="w-full max-w-md h-full bg-theme-panel border-l border-theme-border overflow-y-auto shadow-2xl">
+      <div class="w-full max-w-xl h-full bg-theme-panel border-l border-theme-border overflow-y-auto shadow-2xl">
         <div class="px-4 py-3 border-b border-theme-border flex items-start justify-between gap-2">
           <div class="min-w-0">
             <div class="text-xs text-theme-text-muted">{{ selected.id }}</div>
@@ -866,6 +902,175 @@ async function resetIncidents() {
             {{ t('tickets.drawer.openedAt', { date: formatTime(selected.createdAt) }) }}
           </div>
         </div>
+
+        <div class="px-4 py-3 border-b border-theme-border bg-theme-bg/25">
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <button
+              type="button"
+              data-test="ticket-drawer-step-summary"
+              class="rounded border px-2 py-2 text-left font-semibold transition"
+              :class="drawerStepClass('summary')"
+              @click="setActiveDrawerStep('summary')"
+            >
+              <span class="block text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.workflow.stepLabel', { number: 1 }) }}</span>
+              {{ t('tickets.workflow.summary') }}
+            </button>
+            <button
+              type="button"
+              data-test="ticket-drawer-step-analysis"
+              class="rounded border px-2 py-2 text-left font-semibold transition"
+              :class="drawerStepClass('analysis')"
+              @click="setActiveDrawerStep('analysis')"
+            >
+              <span class="block text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.workflow.stepLabel', { number: 2 }) }}</span>
+              {{ t('tickets.workflow.analysis') }}
+            </button>
+            <button
+              type="button"
+              data-test="ticket-drawer-step-containment"
+              class="rounded border px-2 py-2 text-left font-semibold transition"
+              :class="drawerStepClass('containment')"
+              @click="setActiveDrawerStep('containment')"
+            >
+              <span class="block text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.workflow.stepLabel', { number: 3 }) }}</span>
+              {{ t('tickets.workflow.containment') }}
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="activeDrawerStep === 'summary'"
+          data-test="ticket-drawer-summary-step"
+          class="px-4 py-4 border-b border-theme-border space-y-4"
+        >
+          <div>
+            <div class="text-[10px] uppercase tracking-wider text-theme-text-muted">{{ t('tickets.workflow.currentIncident') }}</div>
+            <h4 class="mt-1 text-base font-semibold text-theme-text">{{ incidentFacts?.title || selected.title }}</h4>
+            <p class="mt-1 text-xs text-theme-text-muted leading-relaxed">{{ selected.summary }}</p>
+          </div>
+
+          <dl class="grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded border border-theme-border bg-theme-bg/40 p-2">
+              <dt class="text-theme-text-muted">{{ t('tickets.workflow.source') }}</dt>
+              <dd class="mt-1 font-mono text-theme-text break-all">{{ incidentFacts?.source || '—' }}</dd>
+            </div>
+            <div class="rounded border border-theme-border bg-theme-bg/40 p-2">
+              <dt class="text-theme-text-muted">{{ t('tickets.workflow.target') }}</dt>
+              <dd class="mt-1 font-mono text-theme-text break-all">{{ incidentFacts?.target || '—' }}</dd>
+            </div>
+            <div class="rounded border border-theme-border bg-theme-bg/40 p-2">
+              <dt class="text-theme-text-muted">{{ t('tickets.workflow.observedScope') }}</dt>
+              <dd class="mt-1 text-theme-text">
+                <span v-if="incidentFacts?.observedPortCount">
+                  {{ t('tickets.workflow.portCount', { count: incidentFacts.observedPortCount }) }}
+                </span>
+                <span v-else>—</span>
+                <span v-if="incidentFacts?.scanWindow" class="text-theme-text-muted">
+                  · {{ incidentFacts.scanWindow }}
+                </span>
+              </dd>
+            </div>
+            <div class="rounded border border-theme-border bg-theme-bg/40 p-2">
+              <dt class="text-theme-text-muted">{{ t('tickets.workflow.response') }}</dt>
+              <dd class="mt-1 text-theme-text">{{ incidentFacts?.recommendedResponse || t('tickets.workflow.responsePending') }}</dd>
+            </div>
+          </dl>
+
+          <div class="rounded border border-theme-border/70 bg-theme-bg/30 p-3 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                <div class="text-xs font-semibold text-theme-text">{{ t('tickets.workflow.ticketControl') }}</div>
+                <p class="mt-0.5 text-[11px] text-theme-text-muted">{{ t('tickets.workflow.ticketControlHint') }}</p>
+              </div>
+              <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px]" :class="statusBadgeClass(selected.ticketStatus)">
+                {{ t('tickets.status.' + selected.ticketStatus) }}
+              </span>
+            </div>
+
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.triageLevel') }}</label>
+              <div class="flex gap-2">
+                <button
+                  v-for="level in triageOptions"
+                  :key="level"
+                  type="button"
+                  :disabled="isSavingPatch || level === selected.triageLevel"
+                  @click="applyPatch(selected!, { triageLevel: level })"
+                  class="px-3 py-1 rounded border text-xs font-semibold disabled:opacity-60"
+                  :class="level === selected.triageLevel
+                    ? lanes.find(l => l.level === level)?.color
+                    : 'border-theme-border text-theme-text hover:brightness-110'"
+                >
+                  {{ level }}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[10px] uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.ticketStatus') }}</label>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="opt in statusOptions"
+                  :key="opt.value"
+                  type="button"
+                  :disabled="isSavingPatch || opt.value === selected.ticketStatus"
+                  @click="applyPatch(selected!, { ticketStatus: opt.value })"
+                  class="px-3 py-1 rounded border text-xs font-semibold disabled:opacity-60"
+                  :class="opt.value === selected.ticketStatus
+                    ? statusBadgeClass(opt.value)
+                    : 'border-theme-border text-theme-text hover:brightness-110'"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="patchError" class="text-xs text-red-300 flex items-start gap-1">
+              <AlertCircle :size="13" class="mt-0.5" />
+              {{ patchError }}
+            </div>
+            <div v-if="isSavingPatch" class="text-xs text-theme-text-muted flex items-center gap-1">
+              <Loader2 :size="12" class="animate-spin" />
+              {{ t('common.saving') }}
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-test="ticket-ai-analyze"
+              class="inline-flex items-center gap-1 rounded border border-fuchsia-500/50 bg-fuchsia-500/15 px-3 py-1.5 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/25"
+              :disabled="isAnalyzing"
+              @click="runAnalysis(selected!)"
+            >
+              <Loader2 v-if="isAnalyzing" :size="12" class="animate-spin" />
+              <Sparkles v-else :size="12" />
+              {{ t('tickets.workflow.analyzeIncident') }}
+            </button>
+            <button
+              type="button"
+              data-test="ticket-ai-containment"
+              class="inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/25"
+              :disabled="isContaining"
+              @click="runContainment(selected!)"
+            >
+              <Loader2 v-if="isContaining" :size="12" class="animate-spin" />
+              <Shield v-else :size="12" />
+              {{ deterministicContainmentAvailable ? t('tickets.workflow.prepareContainment') : t('tickets.workflow.reviewContainment') }}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            data-test="ticket-toggle-raw-details"
+            class="text-xs text-theme-text-muted hover:text-theme-text"
+            @click="showRawDetails = !showRawDetails"
+          >
+            {{ showRawDetails ? t('tickets.workflow.hideRawDetails') : t('tickets.workflow.showRawDetails') }}
+          </button>
+        </div>
+
+        <div v-show="activeDrawerStep === 'analysis'" data-test="ticket-drawer-analysis-step">
 
         <div
           v-if="selectedDetection"
@@ -1045,54 +1250,6 @@ async function resetIncidents() {
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="px-4 py-3 border-b border-theme-border space-y-3">
-          <div>
-            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.triageLevel') }}</label>
-            <div class="flex gap-2">
-              <button
-                v-for="level in triageOptions"
-                :key="level"
-                type="button"
-                :disabled="isSavingPatch || level === selected.triageLevel"
-                @click="applyPatch(selected!, { triageLevel: level })"
-                class="px-3 py-1 rounded border text-xs font-semibold disabled:opacity-60"
-                :class="level === selected.triageLevel
-                  ? lanes.find(l => l.level === level)?.color
-                  : 'border-theme-border text-theme-text hover:brightness-110'"
-              >
-                {{ level }}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs uppercase tracking-wider text-theme-text-muted mb-1">{{ t('tickets.drawer.ticketStatus') }}</label>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                type="button"
-                :disabled="isSavingPatch || opt.value === selected.ticketStatus"
-                @click="applyPatch(selected!, { ticketStatus: opt.value })"
-                class="px-3 py-1 rounded border text-xs font-semibold disabled:opacity-60"
-                :class="opt.value === selected.ticketStatus
-                  ? statusBadgeClass(opt.value)
-                  : 'border-theme-border text-theme-text hover:brightness-110'"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-          </div>
-          <div v-if="patchError" class="text-xs text-red-300 flex items-start gap-1">
-            <AlertCircle :size="13" class="mt-0.5" />
-            {{ patchError }}
-          </div>
-          <div v-if="isSavingPatch" class="text-xs text-theme-text-muted flex items-center gap-1">
-            <Loader2 :size="12" class="animate-spin" />
-            {{ t('common.saving') }}
-          </div>
-        </div>
-
         <!-- Threat Intel -->
         <div class="px-4 py-3 border-b border-theme-border bg-sky-500/5 space-y-3">
           <div class="flex items-center justify-between gap-2">
@@ -1175,8 +1332,135 @@ async function resetIncidents() {
           </p>
         </div>
 
-        <!-- FortiWeb Response -->
+        <div class="px-4 py-3 border-b border-theme-border bg-fuchsia-500/5 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs uppercase tracking-wider text-fuchsia-300 flex items-center gap-1">
+              <Sparkles :size="13" />
+              {{ t('tickets.ai.header') }}
+            </h4>
+            <button
+              type="button"
+              :disabled="isAnalyzing"
+              @click="runAnalysis(selected!)"
+              data-test="ticket-analysis-ai-analyze"
+              class="text-xs px-2 py-1 rounded border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Loader2 v-if="isAnalyzing" :size="11" class="animate-spin" />
+              <Sparkles v-else :size="11" />
+              {{ t('tickets.ai.analyze') }}
+            </button>
+          </div>
+
+          <div v-if="aiError" class="text-xs text-red-300 flex items-start gap-1">
+            <AlertCircle :size="13" class="mt-0.5" />
+            {{ aiError }}
+          </div>
+
+          <div v-if="aiAnalysis" data-test="ticket-ai-analysis" class="rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 p-3 text-xs space-y-2">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="font-semibold text-fuchsia-100">{{ aiAnalysis.headline }}</div>
+                <p class="mt-1 text-theme-text leading-relaxed whitespace-pre-line">{{ aiAnalysis.summary }}</p>
+              </div>
+              <div class="flex shrink-0 flex-col items-end gap-1">
+                <span
+                  v-if="aiAnalysisBadge"
+                  class="rounded border px-1.5 py-0.5 text-[10px]"
+                  :class="sourceBadgeClass(aiAnalysisBadge)"
+                >
+                  {{ t(aiAnalysisBadge.labelKey) }}
+                </span>
+                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200">
+                  {{ t('tickets.ai.riskScore', { score: aiAnalysis.riskScore }) }}
+                </span>
+              </div>
+            </div>
+            <div class="text-[11px]">
+              <span class="text-theme-text-muted">{{ t('tickets.ai.suggestedLabel') }}</span>
+              <span class="ml-1 text-fuchsia-200 font-semibold">{{ aiAnalysis.suggestedTriage }} · {{ t('tickets.status.' + aiAnalysis.suggestedTicketStatus) }}</span>
+              <button
+                type="button"
+                :disabled="isSavingPatch"
+                @click="applySuggestedAnalysis(selected!)"
+                class="ml-2 px-2 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/15 text-[10px] disabled:opacity-50"
+              >
+                {{ t('common.apply') }}
+              </button>
+            </div>
+          </div>
+          <p v-else class="text-xs text-theme-text-muted italic">
+            {{ t('tickets.ai.hint') }}
+          </p>
+        </div>
+
+        </div>
+
+        <div v-if="activeDrawerStep === 'containment'" data-test="ticket-drawer-containment-step">
         <div class="px-4 py-3 border-b border-theme-border bg-emerald-500/5 space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h4 class="text-xs uppercase tracking-wider text-emerald-300 flex items-center gap-1">
+                <Workflow :size="13" />
+                {{ t('tickets.workflow.containmentPath') }}
+              </h4>
+              <p class="mt-1 text-xs text-theme-text-muted leading-relaxed">
+                {{ t('tickets.workflow.fortigateGoverned') }}
+              </p>
+            </div>
+            <span
+              v-if="visibleTriageContext"
+              class="rounded border px-1.5 py-0.5 text-[10px] uppercase"
+              :class="confidenceClass(visibleTriageContext.confidence)"
+            >
+              {{ visibleTriageContext.confidence }}
+            </span>
+          </div>
+
+          <div v-if="visibleTriageContext?.playbookTemplates?.length" class="space-y-2">
+            <div
+              v-for="template in visibleTriageContext.playbookTemplates"
+              :key="template.templateId"
+              class="rounded border border-emerald-500/30 bg-theme-bg/50 p-3 text-xs"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="font-semibold text-theme-text">{{ template.label }}</div>
+                  <div class="mt-0.5 font-mono text-[10px] text-theme-text-muted break-all">{{ template.templateId }}</div>
+                  <p class="mt-1 text-theme-text-muted leading-relaxed">{{ template.reason }}</p>
+                </div>
+                <button
+                  type="button"
+                  :data-test="`ticket-containment-template-${template.templateId}`"
+                  :disabled="instantiatingTemplateId === template.templateId"
+                  @click="runInstantiateTemplate(selected!, template.templateId)"
+                  class="shrink-0 inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+                >
+                  <Loader2 v-if="instantiatingTemplateId === template.templateId" :size="11" class="animate-spin" />
+                  <Workflow v-else :size="11" />
+                  {{ t('tickets.drawer.instantiateTemplate') }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <p v-else class="text-xs text-theme-text-muted italic">
+            {{ t('tickets.workflow.noRecommendedPlaybook') }}
+          </p>
+        </div>
+
+        <div class="px-4 py-2 border-b border-theme-border bg-theme-bg/20">
+          <button
+            type="button"
+            data-test="ticket-toggle-provider-actions"
+            class="inline-flex items-center gap-1 text-xs text-theme-text-muted hover:text-theme-text"
+            @click="showOtherProviderActions = !showOtherProviderActions"
+          >
+            <Shield :size="12" />
+            {{ showOtherProviderActions ? t('tickets.workflow.hideOtherProviderActions') : t('tickets.workflow.showOtherProviderActions') }}
+          </button>
+        </div>
+
+        <!-- FortiWeb Response -->
+        <div v-if="showFortiWebActions" class="px-4 py-3 border-b border-theme-border bg-emerald-500/5 space-y-3">
           <div class="flex items-center justify-between gap-2">
             <h4 class="text-xs uppercase tracking-wider text-emerald-300 flex items-center gap-1">
               <Shield :size="13" />
@@ -1685,9 +1969,10 @@ async function resetIncidents() {
             {{ t('tickets.ai.hint') }}
           </p>
         </div>
+        </div>
 
         <!-- Entities -->
-        <div v-if="selected.entities && Object.keys(selected.entities).length" class="px-4 py-3 border-b border-theme-border">
+        <div v-if="showRawDetails && selected.entities && Object.keys(selected.entities).length" data-test="ticket-raw-entities" class="px-4 py-3 border-b border-theme-border">
           <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">{{ t('tickets.drawer.entities') }}</h4>
           <dl class="text-xs grid grid-cols-3 gap-x-2 gap-y-1">
             <template v-for="(value, key) in selected.entities" :key="key">
@@ -1698,7 +1983,7 @@ async function resetIncidents() {
         </div>
 
         <!-- Timeline -->
-        <div class="px-4 py-3">
+        <div v-if="showRawDetails" data-test="ticket-raw-timeline" class="px-4 py-3">
           <h4 class="text-xs uppercase tracking-wider text-theme-text-muted mb-2">{{ t('tickets.drawer.timeline') }}</h4>
           <ul class="space-y-2">
             <li
