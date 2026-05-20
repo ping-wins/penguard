@@ -9,8 +9,9 @@ Start here:
 
 1. `vmware-soc-lab-blackarch-arch.md` - canonical end-to-end VMware topology.
 2. `fortigate-scan-detection.md` - FortiGate/SIEM port-scan validation.
-3. `fortiweb-landing-waf-lab.md` - FortiWeb landing reverse-proxy checklist.
-4. `fortiweb-dos-lab.md` - controlled FortiWeb DoS/WAF validation.
+3. `fortinet-webhook-realtime-lab.md` - Fortinet push-webhook realtime path.
+4. `fortiweb-landing-waf-lab.md` - FortiWeb landing reverse-proxy checklist.
+5. `fortiweb-dos-lab.md` - controlled FortiWeb DoS/WAF validation.
 
 Current canonical traffic path:
 

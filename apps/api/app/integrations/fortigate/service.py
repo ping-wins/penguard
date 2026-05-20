@@ -26,6 +26,9 @@ class FortiGateIntegrationStore(Protocol):
     def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
         pass
 
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        pass
+
     def find_public_by_host(self, source_host: str) -> dict[str, Any] | None:
         pass
 
@@ -187,6 +190,11 @@ class MockFortiGateIntegrationService:
 
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
         return integration_id == "int_fgt_01"
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        if integration_id == "int_fgt_01":
+            return "user_demo"
+        return None
 
     def resolve_syslog_integration_id(
         self,
@@ -691,6 +699,9 @@ class FortiGateIntegrationService:
             owner_user_id=owner_user_id,
             integration_id=integration_id,
         )
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        return self.store.get_owner_user_id(integration_id)
 
     def resolve_syslog_integration_id(
         self,

@@ -145,6 +145,13 @@ class SqlAlchemyFortiGateIntegrationStore:
                 "verify_tls": model.verify_tls,
             }
 
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        with self.session_factory() as db:
+            model = db.get(FortiGateIntegrationModel, integration_id)
+            if model is None:
+                return None
+            return model.owner_user_id
+
     def find_public_by_host(self, source_host: str) -> dict[str, Any] | None:
         normalized_source = _normalize_host_for_match(source_host)
         with self.session_factory() as db:

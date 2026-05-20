@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.auth import dependencies as auth_dependencies
 from app.core.config import get_settings
 from app.main import app
+from app.realtime import realtime_broker
 from app.routers import integrations, soc, soc_ingest
 from app.routers.soc_ingest import BruteForceAggregator
 
@@ -23,9 +24,36 @@ class FakeSiemClient:
         pass_through_statuses=None,
     ) -> dict:
         self.calls.append({"method": method, "path": path, "json": json})
-        return {
+        event = {
+            **(json or {}),
             "id": f"evt_{len(self.calls):03d}",
-            "eventType": (json or {}).get("eventType"),
+        }
+        if path == "/events/ingest":
+            incident = {
+                "id": f"inc_{len(self.calls):03d}",
+                "ruleId": "fortiweb_dos_activity"
+                if event.get("eventType") == "waf.dos"
+                else "denied_traffic_burst",
+                "title": "Detected incident",
+                "severity": event.get("severity", "high"),
+                "status": "open",
+                "source": "kowalski",
+                "origin": {"kind": event.get("source")},
+                "attributes": event.get("attributes", {}),
+                "entities": event.get("entities", {}),
+                "summary": "Detected from pushed telemetry.",
+                "createdAt": event.get("occurredAt", "2026-05-20T12:00:00Z"),
+                "timeline": [],
+                "eventIds": [event["id"]],
+                "triageLevel": "T3",
+                "ticketStatus": "new",
+                "assigneeUserId": None,
+                "aiAnalysisId": None,
+            }
+            return {"event": event, "incident": incident}
+        return {
+            "id": event["id"],
+            "eventType": event.get("eventType"),
         }
 
 
@@ -35,6 +63,11 @@ class FakeFortiWebTelemetryService:
 
     def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool:
         return integration_id == "int_fweb_lab" and token == "native-token"
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        if integration_id == "int_fweb_lab":
+            return "user_fweb"
+        return None
 
     def record_telemetry_event(
         self,
@@ -52,6 +85,28 @@ class FakeFortiWebTelemetryService:
         }
         self.recorded_events.append(event)
         return event
+
+
+class FakeFortiGateIntegrationService:
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        if integration_id == "int_fgt_lab01":
+            return "user_fgt"
+        return None
+
+    def record_syslog_event(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        event_id: str | None,
+        received_at,
+    ) -> dict:
+        return {
+            "ownerUserId": owner_user_id,
+            "integrationId": integration_id,
+            "eventId": event_id,
+            "receivedAt": received_at,
+        }
 
 
 @pytest.fixture(autouse=True)
@@ -116,6 +171,41 @@ def test_fortiweb_native_ingest_uses_integration_token_without_global_env(monkey
     assert fake_siem.calls[0]["json"]["eventType"] == "waf.dos"
     assert fake_siem.calls[0]["json"]["entities"]["integrationId"] == "int_fweb_lab"
     assert fake_fortiweb.recorded_events[0]["eventType"] == "waf.dos"
+
+
+def test_fortiweb_native_ingest_publishes_realtime_event_and_incident(monkeypatch):
+    fake_siem = FakeSiemClient()
+    fake_fortiweb = FakeFortiWebTelemetryService()
+    published: list[dict] = []
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[integrations.get_fortiweb_integration_service] = (
+        lambda: fake_fortiweb
+    )
+    monkeypatch.setattr(realtime_broker, "publish", published.append)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/soc/ingest/fortiweb/int_fweb_lab",
+        headers={"Authorization": "Bearer native-token"},
+        json={
+            "type": "attack",
+            "subtype": "dos",
+            "src": "10.10.10.10",
+            "dst": "10.10.20.30",
+            "msg": "HTTP flood detected",
+            "action": "block",
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_siem.calls[0]["path"] == "/events/ingest"
+    assert [event["type"] for event in published] == [
+        "soc.event.created",
+        "soc.incident.created",
+    ]
+    assert {event["ownerUserId"] for event in published} == {"user_fweb"}
+    assert published[0]["event"]["eventType"] == "waf.dos"
+    assert published[1]["ticket"]["id"] == "inc_001"
 
 
 def test_invalid_token_returns_401():
@@ -216,6 +306,47 @@ def test_classifies_traffic_deny_as_network_deny():
     forwarded = fake_siem.calls[0]["json"]
     assert forwarded["eventType"] == "network.deny"
     assert forwarded["entities"]["destinationIp"] == "10.0.0.5"
+
+
+def test_fortigate_webhook_emits_network_scan_once_and_publishes_realtime(monkeypatch):
+    fake_siem = FakeSiemClient()
+    fake_fortigate = FakeFortiGateIntegrationService()
+    published: list[dict] = []
+    app.dependency_overrides[soc.get_siem_client] = lambda: fake_siem
+    app.dependency_overrides[integrations.get_fortigate_integration_service] = (
+        lambda: fake_fortigate
+    )
+    monkeypatch.setattr(realtime_broker, "publish", published.append)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/soc/ingest/fortigate",
+        headers={
+            "Authorization": "Bearer test-secret-token",
+            "X-Penguard-Integration-Id": "int_fgt_lab01",
+        },
+        json={
+            "type": "utm",
+            "subtype": "anomaly",
+            "action": "detected",
+            "srcip": "198.51.100.50",
+            "dstip": "10.0.0.5",
+            "level": "warning",
+            "msg": "TCP port scan detected",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["emitted"] == 1
+    assert response.json()["throttled"] == 0
+    assert fake_siem.calls[0]["path"] == "/events/ingest"
+    assert [event["type"] for event in published] == [
+        "soc.event.created",
+        "soc.incident.created",
+    ]
+    assert {event["ownerUserId"] for event in published} == {"user_fgt"}
+    assert published[0]["event"]["eventType"] == "network.scan"
+    assert published[1]["ticket"]["entities"]["destinationIp"] == "10.0.0.5"
 
 
 def test_accepts_batch_payload_and_aggregates_within_call():

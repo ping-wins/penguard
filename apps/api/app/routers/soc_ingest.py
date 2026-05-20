@@ -30,7 +30,11 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, st
 from app.auth.audit import InMemoryAuthAuditStore, SqlAlchemyAuthAuditStore
 from app.auth.dependencies import get_auth_audit_store
 from app.core.config import get_settings
-from app.routers.integrations import get_fortiweb_integration_service
+from app.realtime import realtime_broker
+from app.routers.integrations import (
+    get_fortigate_integration_service,
+    get_fortiweb_integration_service,
+)
 from app.routers.soc import get_siem_client
 
 logger = logging.getLogger(__name__)
@@ -54,6 +58,8 @@ class SocClient(Protocol):
 
 
 class FortiWebTelemetryService(Protocol):
+    def get_owner_user_id(self, integration_id: str) -> str | None: ...
+
     def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool: ...
 
     def record_telemetry_event(
@@ -63,6 +69,19 @@ class FortiWebTelemetryService(Protocol):
         event_id: str | None,
         event_type: str,
         occurred_at: str,
+    ) -> dict[str, Any]: ...
+
+
+class FortiGateWebhookService(Protocol):
+    def get_owner_user_id(self, integration_id: str) -> str | None: ...
+
+    def record_syslog_event(
+        self,
+        *,
+        owner_user_id: str,
+        integration_id: str,
+        event_id: str | None,
+        received_at: datetime,
     ) -> dict[str, Any]: ...
 
 
@@ -346,11 +365,92 @@ def _integration_id_header(value: str | None) -> str:
     return cleaned or "fortigate-webhook"
 
 
+def _should_aggregate(event_type: str) -> bool:
+    return event_type == "auth.failed_login"
+
+
+def _single_event_burst(raw: dict[str, Any]) -> _BurstState:
+    user = _coerce_str(raw.get("user") or raw.get("username"))
+    message = _coerce_str(raw.get("msg") or raw.get("message") or raw.get("logdesc"))
+    destination_ip = _coerce_str(raw.get("dstip") or raw.get("destinationIp")) or None
+    now_ts = _now_dt().timestamp()
+    return _BurstState(
+        count=1,
+        first_seen=now_ts,
+        last_emit=now_ts,
+        last_attempt=now_ts,
+        last_severity=_map_severity(raw),
+        last_message=message,
+        last_destination_ip=destination_ip,
+        users={user} if user else set(),
+    )
+
+
+def _ingest_to_siem(
+    siem_client: SocClient,
+    event: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    response = siem_client.request("POST", "/events/ingest", json=event)
+    if not isinstance(response, dict):
+        return None, None
+    created_event = response.get("event")
+    incident = response.get("incident")
+    if not isinstance(created_event, dict):
+        created_event = response if response.get("id") else None
+    if not isinstance(incident, dict):
+        incident = None
+    return created_event, incident
+
+
+def _publish_realtime_ingest(
+    *,
+    owner_user_id: str | None,
+    integration_id: str,
+    event: dict[str, Any] | None,
+    incident: dict[str, Any] | None,
+    received_at: datetime | None = None,
+) -> None:
+    if not owner_user_id:
+        return
+    received_at_iso = (received_at or _now_dt()).isoformat(timespec="milliseconds").replace(
+        "+00:00",
+        "Z",
+    )
+    event_id = event.get("id") if isinstance(event, dict) else None
+    if event:
+        realtime_broker.publish(
+            {
+                "type": "soc.event.created",
+                "ownerUserId": owner_user_id,
+                "integrationId": integration_id,
+                "eventId": event_id,
+                "event": event,
+                "receivedAt": received_at_iso,
+            }
+        )
+    if incident:
+        realtime_broker.publish(
+            {
+                "type": "soc.incident.created",
+                "ownerUserId": owner_user_id,
+                "integrationId": integration_id,
+                "eventId": event_id,
+                "event": event,
+                "ticket": incident,
+                "receivedAt": received_at_iso,
+            }
+        )
+
+
 @router.post("/soc/ingest/fortigate")
 def ingest_fortigate_webhook(
     request: Request,
     payload: Annotated[Any, Body()],
     siem_client: Annotated[SocClient, Depends(get_siem_client)],
+    fortigate_service: Annotated[
+        FortiGateWebhookService,
+        Depends(get_fortigate_integration_service),
+    ],
     audit_store: Annotated[AuditStore, Depends(get_auth_audit_store)],
     aggregator: Annotated[BruteForceAggregator, Depends(get_aggregator)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
@@ -361,6 +461,7 @@ def ingest_fortigate_webhook(
 ) -> dict[str, Any]:
     _verify_token(authorization)
     integration_id = _integration_id_header(integration_header)
+    owner_user_id = fortigate_service.get_owner_user_id(integration_id)
     raw_events = _normalize_payload(payload)
     now_ts = _now_dt().timestamp()
     emitted: list[dict[str, Any]] = []
@@ -373,22 +474,26 @@ def ingest_fortigate_webhook(
         severity = _map_severity(raw)
         message = _coerce_str(raw.get("msg") or raw.get("message") or raw.get("logdesc"))
         destination_ip = _coerce_str(raw.get("dstip") or raw.get("destinationIp")) or None
-        should_emit, burst = aggregator.register(
-            event_type=event_type,
-            source_ip=source_ip,
-            integration_id=integration_id,
-            now=now_ts,
-            user=user,
-            severity=severity,
-            message=message,
-            destination_ip=destination_ip,
-        )
-        if not should_emit:
-            skipped += 1
-            continue
+        if _should_aggregate(event_type):
+            should_emit, burst = aggregator.register(
+                event_type=event_type,
+                source_ip=source_ip,
+                integration_id=integration_id,
+                now=now_ts,
+                user=user,
+                severity=severity,
+                message=message,
+                destination_ip=destination_ip,
+            )
+            if not should_emit:
+                skipped += 1
+                continue
+        else:
+            burst = _single_event_burst(raw)
         siem_event = _build_siem_event(raw, integration_id=integration_id, burst=burst)
         try:
-            created = siem_client.request("POST", "/events", json=siem_event)
+            received_at = _now_dt()
+            created, incident = _ingest_to_siem(siem_client, siem_event)
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -402,7 +507,21 @@ def ingest_fortigate_webhook(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Failed to forward to siem-kowalski: {exc}",
             ) from exc
-        emitted.append(created)
+        if created is not None and owner_user_id:
+            fortigate_service.record_syslog_event(
+                owner_user_id=owner_user_id,
+                integration_id=integration_id,
+                event_id=_coerce_str(created.get("id")) or None,
+                received_at=received_at,
+            )
+        _publish_realtime_ingest(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            event=created,
+            incident=incident,
+            received_at=received_at,
+        )
+        emitted.append(created or {})
 
     audit_store.record(
         action="soc.ingest.fortigate",
@@ -527,7 +646,7 @@ def ingest_fortiweb_event(
             continue
         event = _normalize_fortiweb_event(item, integration_id=integration_id)
         try:
-            siem_client.request("POST", "/events", json=event)
+            _ingest_to_siem(siem_client, event)
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -583,6 +702,7 @@ def ingest_native_fortiweb_event(
         )
 
     raw_items = payload if isinstance(payload, list) else [payload]
+    owner_user_id = fortiweb_service.get_owner_user_id(integration_id)
     emitted = 0
 
     for item in raw_items:
@@ -590,7 +710,8 @@ def ingest_native_fortiweb_event(
             continue
         event = _normalize_fortiweb_event(item, integration_id=integration_id)
         try:
-            response = siem_client.request("POST", "/events", json=event)
+            received_at = _now_dt()
+            created, incident = _ingest_to_siem(siem_client, event)
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -606,9 +727,16 @@ def ingest_native_fortiweb_event(
         emitted += 1
         fortiweb_service.record_telemetry_event(
             integration_id=integration_id,
-            event_id=_coerce_str(response.get("id")) or None,
+            event_id=_coerce_str(created.get("id") if created else None) or None,
             event_type=str(event["eventType"]),
             occurred_at=str(event["occurredAt"]),
+        )
+        _publish_realtime_ingest(
+            owner_user_id=owner_user_id,
+            integration_id=integration_id,
+            event=created,
+            incident=incident,
+            received_at=received_at,
         )
 
     audit_store.record(
