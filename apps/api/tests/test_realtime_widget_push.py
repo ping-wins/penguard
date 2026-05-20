@@ -1,6 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
-from app.main import _fortigate_realtime_widget_snapshots, _syslog_realtime_events
+from app.main import (
+    _FORTIGATE_REALTIME_WIDGET_IDS,
+    _fortigate_realtime_widget_snapshots,
+    _syslog_realtime_events,
+)
 
 
 class FakeFortiGateWidgetService:
@@ -34,7 +38,7 @@ class FakeFortiGateWidgetService:
         }
 
 
-def test_syslog_realtime_snapshot_includes_fortigate_system_status_widget():
+def test_syslog_realtime_snapshot_includes_all_realtime_widget_ids():
     service = FakeFortiGateWidgetService()
     last_sent: dict[tuple[str, str], datetime] = {}
 
@@ -47,26 +51,31 @@ def test_syslog_realtime_snapshot_includes_fortigate_system_status_widget():
         min_interval_seconds=0,
     )
 
-    assert snapshots == [
-        {
-            "widgetId": "fortigate-system-status",
-            "integrationId": "int_fgt_01",
-            "refreshedAt": "2026-05-15T12:00:00.000Z",
-            "status": "ready",
-            "data": {
-                "hostname": "FGT-LAB",
-                "cpu": 7,
-                "memory": 52,
-                "sessions": 18,
-            },
-            "meta": {
-                "source": "fortigate",
-                "cacheTtlSeconds": 2,
-                "refreshIntervalSeconds": 2,
-            },
-        }
+    snapshot_ids = [s["widgetId"] for s in snapshots]
+    assert len(snapshots) == len(_FORTIGATE_REALTIME_WIDGET_IDS)
+    assert "fortigate-system-status" in snapshot_ids
+    assert "fortigate-network-traffic" in snapshot_ids
+    system_status = next(s for s in snapshots if s["widgetId"] == "fortigate-system-status")
+    assert system_status == {
+        "widgetId": "fortigate-system-status",
+        "integrationId": "int_fgt_01",
+        "refreshedAt": "2026-05-15T12:00:00.000Z",
+        "status": "ready",
+        "data": {
+            "hostname": "FGT-LAB",
+            "cpu": 7,
+            "memory": 52,
+            "sessions": 18,
+        },
+        "meta": {
+            "source": "fortigate",
+            "cacheTtlSeconds": 2,
+            "refreshIntervalSeconds": 2,
+        },
+    }
+    assert service.calls == [
+        (wid, "int_fgt_01", "user_01") for wid in _FORTIGATE_REALTIME_WIDGET_IDS
     ]
-    assert service.calls == [("fortigate-system-status", "int_fgt_01", "user_01")]
 
 
 def test_syslog_realtime_snapshots_are_throttled_per_integration():
@@ -102,10 +111,10 @@ def test_syslog_realtime_snapshots_are_throttled_per_integration():
     assert first
     assert second == []
     assert third
-    assert service.calls == [
-        ("fortigate-system-status", "int_fgt_01", "user_01"),
-        ("fortigate-system-status", "int_fgt_01", "user_01"),
+    expected_calls_per_batch = [
+        (wid, "int_fgt_01", "user_01") for wid in _FORTIGATE_REALTIME_WIDGET_IDS
     ]
+    assert service.calls == expected_calls_per_batch + expected_calls_per_batch
 
 
 def test_syslog_realtime_events_include_siem_domain_payloads():
@@ -141,6 +150,7 @@ def test_syslog_realtime_events_include_siem_domain_payloads():
         "soc.event.created",
         "soc.incident.created",
     ]
+    assert events[0]["refresh"] == ["widgets"]
     assert events[1]["event"] == event
     assert events[2]["event"] == event
     assert events[2]["ticket"] == ticket

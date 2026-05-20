@@ -42,7 +42,18 @@ from app.routers import (
 
 logger = logging.getLogger(__name__)
 _settings = get_settings()
-_FORTIGATE_REALTIME_WIDGET_IDS = ("fortigate-system-status",)
+_FORTIGATE_REALTIME_WIDGET_IDS = (
+    "fortigate-system-status",
+    "fortigate-kpi-sessions",
+    "fortigate-network-traffic",
+    "fortigate-firewall-policies",
+    "fortigate-top-threats",
+    "fortigate-risk-posture",
+    "fortigate-interface-health",
+    "fortigate-recent-events",
+    "fortigate-anomaly-highlights",
+    "fortigate-top-source-ips",
+)
 _fortigate_realtime_widget_last_sent: dict[tuple[str, str], datetime] = {}
 
 
@@ -153,6 +164,7 @@ def _syslog_realtime_events(
         "integrationId": integration_id,
         "eventId": event_id,
         "receivedAt": received_at_iso,
+        "refresh": ["widgets"],
         "ticket": ticket,
         "widgets": widget_snapshots,
     }
