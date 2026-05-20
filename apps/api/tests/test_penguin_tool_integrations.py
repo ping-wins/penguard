@@ -185,7 +185,7 @@ def test_penguin_tool_store_scopes_rows_by_owner_and_returns_public_payload():
     assert created["host"] == "http://siem-kowalski:8000"
     assert [row.owner_user_id for row in rows] == ["usr_a", "usr_b"]
     all_items = store.list_public(owner_user_id="usr_a")["items"]
-    assert [item["id"] for item in all_items] == ["int_siem_owner_a", "int_xdr_owner_b"]
+    assert [item["id"] for item in all_items] == ["int_siem_owner_a"]
     assert store.get(integration_id="int_xdr_owner_b", owner_user_id="usr_a") is None
     assert store.delete(integration_id="int_xdr_owner_b", owner_user_id="usr_a") is False
     assert store.delete(integration_id="int_siem_owner_a", owner_user_id="usr_a") is True

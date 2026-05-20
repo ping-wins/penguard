@@ -118,10 +118,10 @@ class SqlAlchemyFortiGateIntegrationStore:
             return self._created_payload(model)
 
     def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
-        _ = owner_user_id
         with self.session_factory() as db:
             rows = db.execute(
                 select(FortiGateIntegrationModel)
+                .where(FortiGateIntegrationModel.owner_user_id == owner_user_id)
                 .order_by(FortiGateIntegrationModel.created_at)
             ).scalars()
             return {"items": [self._list_item(row) for row in rows]}
