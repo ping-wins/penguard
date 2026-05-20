@@ -737,60 +737,57 @@ const actions = computed(() => [
             class="w-full bg-theme-bg border border-theme-border rounded p-2 mb-3"
           />
           <p v-if="!filteredCommunity.length" class="text-sm text-theme-text-muted">{{ t('workspaces.communityDialog.empty') }}</p>
-          <ul class="space-y-3">
+          <ul class="grid grid-cols-2 gap-3">
             <li
               v-for="template in filteredCommunity"
               :key="template.id"
-              class="border border-theme-border rounded-lg p-3 bg-theme-bg/30"
+              class="border border-theme-border rounded-lg p-3 bg-theme-bg/30 flex flex-col"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1 flex-wrap">
-                    <span class="font-semibold text-theme-text">{{ template.title }}</span>
-                    <span
-                      v-if="template.isCurated"
-                      data-test="curated-badge"
-                      class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-semibold"
-                    >
-                      {{ t('workspaces.communityDialog.curatedBadge') }}
-                    </span>
-                    <span class="text-xs text-theme-text-muted">@{{ template.slug }}</span>
-                  </div>
-                  <p class="text-sm text-theme-text-muted">{{ template.description || t('workspaces.communityDialog.noDescription') }}</p>
-                  <div class="flex items-center gap-2 mt-2 flex-wrap">
-                    <span
-                      v-for="tag in template.tags"
-                      :key="tag"
-                      class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted"
-                    >
-                      #{{ tag }}
-                    </span>
-                  </div>
-                  <div class="text-xs text-theme-text-muted mt-2">
-                    {{ t('workspaces.communityDialog.author', { author: template.publishedByEmail || t('workspaces.communityDialog.anonymous') }) }} · {{ t('workspaces.communityDialog.installs', { count: template.installCount }) }}
-                  </div>
-                </div>
-                <div class="flex flex-col gap-2 shrink-0">
-                  <button
-                    type="button"
-                    :disabled="isBusy"
-                    @click="installTemplate(template)"
-                    class="px-3 py-1.5 rounded-lg text-white text-sm hover:brightness-110 disabled:opacity-50"
-                    :style="{ backgroundColor: themeStore.primary }"
+              <div class="flex-1">
+                <div class="flex items-start gap-2 mb-1 flex-wrap">
+                  <span class="font-semibold text-theme-text leading-snug">{{ template.title }}</span>
+                  <span
+                    v-if="template.isCurated"
+                    data-test="curated-badge"
+                    class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 font-semibold shrink-0"
                   >
-                    {{ t('workspaces.communityDialog.install') }}
-                  </button>
-                  <button
-                    v-if="!template.isCurated && authStore.user?.id === template.publishedByUserId"
-                    type="button"
-                    :disabled="isBusy"
-                    @click="removeTemplate(template)"
-                    class="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 text-sm hover:bg-red-500/10 disabled:opacity-50 flex items-center gap-1"
-                  >
-                    <Trash2 :size="14" />
-                    {{ t('workspaces.communityDialog.remove') }}
-                  </button>
+                    {{ t('workspaces.communityDialog.curatedBadge') }}
+                  </span>
                 </div>
+                <div class="text-xs text-theme-text-muted mb-1.5">@{{ template.slug }}</div>
+                <p class="text-sm text-theme-text-muted leading-snug">{{ template.description || t('workspaces.communityDialog.noDescription') }}</p>
+                <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span
+                    v-for="tag in template.tags"
+                    :key="tag"
+                    class="text-xs px-2 py-0.5 rounded-full border border-theme-border bg-theme-bg/60 text-theme-text-muted"
+                  >
+                    #{{ tag }}
+                  </span>
+                </div>
+                <div class="text-xs text-theme-text-muted mt-2">
+                  {{ t('workspaces.communityDialog.author', { author: template.publishedByEmail || t('workspaces.communityDialog.anonymous') }) }} · {{ t('workspaces.communityDialog.installs', { count: template.installCount }) }}
+                </div>
+              </div>
+              <div class="flex gap-2 mt-3 pt-3 border-t border-theme-border/50">
+                <button
+                  type="button"
+                  :disabled="isBusy"
+                  @click="installTemplate(template)"
+                  class="flex-1 px-3 py-1.5 rounded-lg text-white text-sm hover:brightness-110 disabled:opacity-50"
+                  :style="{ backgroundColor: themeStore.primary }"
+                >
+                  {{ t('workspaces.communityDialog.install') }}
+                </button>
+                <button
+                  v-if="!template.isCurated && authStore.user?.id === template.publishedByUserId"
+                  type="button"
+                  :disabled="isBusy"
+                  @click="removeTemplate(template)"
+                  class="px-2 py-1.5 rounded-lg border border-red-500/40 text-red-300 text-sm hover:bg-red-500/10 disabled:opacity-50 flex items-center gap-1"
+                >
+                  <Trash2 :size="14" />
+                </button>
               </div>
             </li>
           </ul>

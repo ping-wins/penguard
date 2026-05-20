@@ -34,14 +34,27 @@ export interface RealtimeEvent {
   widgets?: RealtimeWidgetSnapshot[]
 }
 
+const WIDGET_HEARTBEAT_INTERVAL_MS = 5000
+
 export const useRealtimeStore = defineStore('realtime', () => {
   let source: EventSource | null = null
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   const handlers = new Set<RealtimeHandler>()
   const connectionState = ref<'idle' | 'connecting' | 'connected' | 'error'>('idle')
   const lastEvent = ref<RealtimeEvent | null>(null)
   const lastErrorAt = ref<string | null>(null)
   const eventCount = ref(0)
   let resyncPending = false
+
+  function _dispatchWidgetHeartbeat() {
+    const heartbeat: RealtimeEvent = {
+      type: 'widget.heartbeat',
+      refresh: ['widgets'],
+      receivedAt: new Date().toISOString(),
+    }
+    applyRealtimeQueryEvent(queryClient, heartbeat)
+    for (const handler of handlers) handler(heartbeat)
+  }
 
   function connect() {
     if (source || typeof window === 'undefined' || typeof EventSource === 'undefined') return
@@ -59,8 +72,9 @@ export const useRealtimeStore = defineStore('realtime', () => {
       connectionState.value = 'error'
       lastErrorAt.value = new Date().toISOString()
       resyncPending = true
-      // EventSource retries automatically. Keep the singleton open so the
-      // browser can reconnect without every widget creating its own loop.
+    }
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(_dispatchWidgetHeartbeat, WIDGET_HEARTBEAT_INTERVAL_MS)
     }
   }
 
@@ -91,6 +105,10 @@ export const useRealtimeStore = defineStore('realtime', () => {
   }
 
   function disconnect() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
     source?.close()
     source = null
     connectionState.value = 'idle'

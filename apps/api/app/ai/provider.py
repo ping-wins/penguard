@@ -633,16 +633,15 @@ class GeminiAIProvider:
         *,
         locale: str = "pt-BR",
     ) -> str:
-        system_text = _chat_system_prompt(locale)
         contents: list[dict[str, Any]] = []
+        system_text: str | None = None
         for message in messages:
             role = message.get("role", "user")
             content = str(message.get("content") or "")
             if not content:
                 continue
             if role == "system":
-                # Gemini accepts a system_instruction parameter; we fold legacy
-                # system turns into it rather than the contents list.
+                system_text = content
                 continue
             contents.append(
                 {
@@ -654,6 +653,7 @@ class GeminiAIProvider:
             contents=contents,
             system_instruction=system_text,
             response_mime_type=None,
+            max_output_tokens=512,
         )
 
     def _generate(self, prompt: str, *, response_mime_type: str | None = None) -> str:
@@ -669,11 +669,12 @@ class GeminiAIProvider:
         contents: list[dict[str, Any]],
         system_instruction: str | None,
         response_mime_type: str | None,
+        max_output_tokens: int = 4096,
     ) -> str:
         body: dict[str, Any] = {"contents": contents}
         if system_instruction:
             body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
-        generation_config: dict[str, Any] = {"maxOutputTokens": 4096}
+        generation_config: dict[str, Any] = {"maxOutputTokens": max_output_tokens}
         if response_mime_type:
             generation_config["responseMimeType"] = response_mime_type
         body["generationConfig"] = generation_config
@@ -1135,6 +1136,7 @@ def get_ai_provider() -> AIProvider:
     api_key = getattr(settings, "ai_api_key", "") or ""
     model = getattr(settings, "ai_model", "") or ""
     base_url = getattr(settings, "ai_base_url", "") or ""
+    timeout_seconds = float(getattr(settings, "ai_timeout_seconds", 90.0) or 90.0)
 
     if not provider_name:
         raise AIConfigurationError(
@@ -1160,6 +1162,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "claude-3-5-haiku-latest",
             base_url=base_url or "https://api.anthropic.com",
+            timeout_seconds=timeout_seconds,
         )
     if provider_name in {"gemini", "google", "google_ai", "google_gemini"}:
         if not api_key:
@@ -1170,6 +1173,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "gemini-flash-latest",
             base_url=base_url or "https://generativelanguage.googleapis.com",
+            timeout_seconds=timeout_seconds,
         )
     if provider_name in {"openai", "openai_compat", "openai_compatible"}:
         if not api_key:
@@ -1181,6 +1185,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "gpt-4o-mini",
             base_url=base_url or "https://api.openai.com/v1",
+            timeout_seconds=timeout_seconds,
         )
     raise AIConfigurationError(
         f"Unsupported AI provider '{provider_name}'. Configure anthropic, "

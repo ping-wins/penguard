@@ -14,7 +14,7 @@ import {
 } from '../../stores/useCockpitLayoutStore'
 import { useDraggableEdge } from '../../composables/useDraggableEdge'
 import AuditFeed from '../audit/AuditFeed.vue'
-import AgentPanel from '../ai/AgentPanel.vue'
+import CockpitChatPanel from '../ai/CockpitChatPanel.vue'
 import WorkspacePanel from '../workspace/WorkspacePanel.vue'
 import TicketsPanel from '../tickets/TicketsPanel.vue'
 import EndpointsPanel from '../endpoints/EndpointsPanel.vue'
@@ -291,7 +291,7 @@ async function handleLogout() {
       <!-- Assistant Tab -->
       <div v-if="activeTab === 'assistant'" class="flex flex-col h-full shrink-0" :style="{ width: `${drawerPx}px` }">
         <div class="flex-1 min-h-0">
-          <AgentPanel />
+          <CockpitChatPanel />
         </div>
       </div>
 

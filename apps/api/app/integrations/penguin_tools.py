@@ -263,10 +263,10 @@ class SqlAlchemyPenguinToolIntegrationStore:
             return self._payload(model)
 
     def list_public(self, *, owner_user_id: str) -> dict[str, list[dict[str, Any]]]:
-        _ = owner_user_id
         with self.session_factory() as db:
             rows = db.execute(
                 select(PenguinToolIntegrationModel)
+                .where(PenguinToolIntegrationModel.owner_user_id == owner_user_id)
                 .order_by(PenguinToolIntegrationModel.created_at)
             ).scalars()
             return {"items": [self._payload(row) for row in rows]}

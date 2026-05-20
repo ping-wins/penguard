@@ -465,7 +465,6 @@ def test_fortigate_integration_store_scopes_rows_by_owner_user_id():
 
     assert [item["id"] for item in store.list_public(owner_user_id="usr_a")["items"]] == [
         "int_fgt_owner_a",
-        "int_fgt_owner_b",
     ]
     assert store.get_connection("int_fgt_owner_b", owner_user_id="usr_a") is None
     assert store.get_connection("int_fgt_owner_a", owner_user_id="usr_a") == {
@@ -1071,7 +1070,6 @@ def test_fortigate_integration_endpoint_scopes_list_to_authenticated_user():
     assert second_response.status_code == 201
     assert [item["id"] for item in list_response.json()["items"]] == [
         "int_fgt_owner_a",
-        "int_fgt_owner_b",
     ]
 
 
