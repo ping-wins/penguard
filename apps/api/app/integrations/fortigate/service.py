@@ -26,6 +26,9 @@ class FortiGateIntegrationStore(Protocol):
     def get_connection(self, integration_id: str, *, owner_user_id: str) -> dict[str, Any] | None:
         pass
 
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        pass
+
     def find_public_by_host(self, source_host: str) -> dict[str, Any] | None:
         pass
 
@@ -118,6 +121,15 @@ class FortiGateClient(Protocol):
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        pass
+
     def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
@@ -178,6 +190,11 @@ class MockFortiGateIntegrationService:
 
     def delete(self, *, integration_id: str, owner_user_id: str) -> bool:
         return integration_id == "int_fgt_01"
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        if integration_id == "int_fgt_01":
+            return "user_demo"
+        return None
 
     def resolve_syslog_integration_id(
         self,
@@ -314,7 +331,21 @@ class _MockFortiGatePolicyClient:
         return {"status": "success", "mkey": name, "subnet": subnet, "comment": comment}
 
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "success", "mkey": payload.get("name"), "payload": dict(payload)}
+        return {"status": "success", "mkey": 42, "payload": dict(payload)}
+
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "mkey": policy_id,
+            "before": before,
+            "after": after,
+        }
 
     def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "mkey": policy_id, "payload": dict(payload)}
@@ -668,6 +699,9 @@ class FortiGateIntegrationService:
             owner_user_id=owner_user_id,
             integration_id=integration_id,
         )
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        return self.store.get_owner_user_id(integration_id)
 
     def resolve_syslog_integration_id(
         self,

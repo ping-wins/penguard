@@ -96,14 +96,23 @@ def apply_policy_review_for_user(
         integration_id=integration_id,
         owner_user_id=owner_user_id,
     )
+    orchestrator = FortiGatePolicyOrchestrator(
+        client,
+        integration_id=integration_id,
+    )
+    current_preflight = orchestrator.preflight(
+        FortiGatePolicyReviewRequest.model_validate(record.intent_json)
+    )
+    if current_preflight.review_hash != record.review_hash:
+        raise HTTPException(
+            status_code=409,
+            detail="Policy review is stale; create a new policy review before applying",
+        )
     changes = [
         FortiGatePolicyObjectChange.model_validate(change)
         for change in record.proposed_changes_json
     ]
-    applied_changes = FortiGatePolicyOrchestrator(
-        client,
-        integration_id=integration_id,
-    ).apply_changes(changes)
+    applied_changes = orchestrator.apply_changes(changes)
     mark_policy_request_applied(
         db,
         record=record,

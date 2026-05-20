@@ -138,6 +138,13 @@ class SqlAlchemyFortiWebIntegrationStore:
                 return None
             return model.telemetry_token_hash
 
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        with self.session_factory() as db:
+            model = db.get(FortiWebIntegrationModel, integration_id)
+            if model is None:
+                return None
+            return model.owner_user_id
+
     def rotate_telemetry_token(
         self,
         *,

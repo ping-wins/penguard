@@ -57,6 +57,9 @@ class FortiWebIntegrationStore(Protocol):
     def get_telemetry_token_hash(self, integration_id: str) -> str | None:
         pass
 
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        pass
+
     def rotate_telemetry_token(
         self,
         *,
@@ -217,6 +220,11 @@ class MockFortiWebIntegrationService:
     def verify_telemetry_token(self, *, integration_id: str, token: str) -> bool:
         _ = token
         return integration_id == "int_fweb_01"
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        if integration_id == "int_fweb_01":
+            return "user_demo"
+        return None
 
     def rotate_telemetry_token(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
         _ = owner_user_id
@@ -407,6 +415,9 @@ class FortiWebIntegrationService:
         if not expected:
             return False
         return hmac.compare_digest(expected, _telemetry_token_hash(token))
+
+    def get_owner_user_id(self, integration_id: str) -> str | None:
+        return self.store.get_owner_user_id(integration_id)
 
     def rotate_telemetry_token(self, *, integration_id: str, owner_user_id: str) -> dict[str, Any]:
         telemetry_token = _generate_telemetry_token()

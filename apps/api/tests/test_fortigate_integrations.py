@@ -98,6 +98,7 @@ class PolicyCapableFortiGateClient(SyslogCapableFortiGateClient):
         self.address_objects: list[dict] = []
         self.created_addresses: list[dict] = []
         self.created_policies: list[dict] = []
+        self.moved_policies: list[dict] = []
 
     def get_policies(self):
         return list(self.policies)
@@ -113,8 +114,20 @@ class PolicyCapableFortiGateClient(SyslogCapableFortiGateClient):
 
     def create_firewall_policy(self, payload):
         self.created_policies.append(dict(payload))
-        self.policies.append(dict(payload))
-        return {"status": "success", "mkey": payload["name"]}
+        policy_id = 42 + len(self.created_policies) - 1
+        self.policies.append({**dict(payload), "policyid": policy_id})
+        return {"status": "success", "mkey": policy_id}
+
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ):
+        payload = {"policyId": policy_id, "before": before, "after": after}
+        self.moved_policies.append(payload)
+        return {"status": "success", **payload}
 
 
 class FailingPolicyFortiGateClient(PolicyCapableFortiGateClient):
@@ -1437,9 +1450,15 @@ def test_fortigate_policy_review_and_apply_endpoints_create_real_policy_request(
         "PG_ADDR_192_0_2_50",
         "PG_ADDR_198_51_100_10",
         preflight_payload["proposed_policy_name"],
+        preflight_payload["proposed_policy_name"],
     ]
+    assert apply_payload["applied_changes"][-1]["operation"] == "move"
+    assert apply_payload["applied_changes"][-1]["before"] == "10"
     assert len(fake_client.created_addresses) == 2
     assert fake_client.created_policies[0]["action"] == "deny"
+    assert fake_client.moved_policies == [
+        {"policyId": "42", "before": "10", "after": None}
+    ]
     assert [event.action for event in audit_store.events][-3:] == [
         "integration.fortigate.policy_preflight",
         "integration.fortigate.policy_review_created",

@@ -50,7 +50,7 @@ class FortiGatePolicyPreflightRequest(BaseModel):
 
 
 class FortiGatePolicyObjectChange(BaseModel):
-    operation: Literal["create", "reuse"]
+    operation: Literal["create", "reuse", "update"]
     object_type: Literal["firewall.address", "firewall.policy"]
     name: str
     payload: dict[str, Any]
