@@ -118,10 +118,40 @@ export function normalizeWidgetLayout(layout: WidgetLayout): WidgetLayout {
 }
 
 export function normalizeWorkspaceWidgets(widgets: WorkspaceWidget[]): WorkspaceWidget[] {
-  return widgets.map((widget) => ({
+  const normalized = widgets.map((widget) => ({
     ...widget,
     layout: normalizeWidgetLayout(widget.layout),
   }))
+  return _hasStackedWidgets(normalized) ? _autoSpread(normalized) : normalized
+}
+
+function _hasStackedWidgets(widgets: WorkspaceWidget[]): boolean {
+  const seen = new Set<string>()
+  for (const w of widgets) {
+    const key = `${w.layout.x},${w.layout.y}`
+    if (seen.has(key)) return true
+    seen.add(key)
+  }
+  return false
+}
+
+function _autoSpread(widgets: WorkspaceWidget[]): WorkspaceWidget[] {
+  const GAP = 20
+  const MAX_ROW_WIDTH = 1200
+  let x = 0
+  let y = 0
+  let rowH = 0
+  return widgets.map((widget, i) => {
+    if (i > 0 && x + widget.layout.w > MAX_ROW_WIDTH) {
+      x = 0
+      y += rowH + GAP
+      rowH = 0
+    }
+    const placed = { ...widget, layout: { ...widget.layout, x, y } }
+    x += widget.layout.w + GAP
+    rowH = Math.max(rowH, widget.layout.h)
+    return placed
+  })
 }
 
 export function createWidgetInstance({
