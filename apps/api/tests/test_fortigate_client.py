@@ -229,6 +229,28 @@ def test_fortigate_client_creates_firewall_policy():
     assert result["mkey"] == 42
 
 
+def test_fortigate_client_moves_firewall_policy_before_neighbor():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path == "/api/v2/cmdb/firewall/policy/42"
+        assert request.url.params["action"] == "move"
+        assert request.url.params["before"] == "10"
+        assert "after" not in request.url.params
+        return httpx.Response(200, json={"status": "success", "mkey": 42})
+
+    client = FortiGateApiClient(
+        host="https://fortigate.local",
+        api_key="secret-token",
+        verify_tls=False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.move_firewall_policy("42", before="10") == {
+        "status": "success",
+        "mkey": 42,
+    }
+
+
 def test_fortigate_client_includes_response_excerpt_for_http_errors():
     client = FortiGateApiClient(
         host="https://fortigate.local",

@@ -22,6 +22,7 @@ from app.auth.dependencies import (
 from app.auth.token_cipher import TokenCipher
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.integrations.fortigate.client import FortiGateApiError
 from app.integrations.fortigate.policy_models import (
     FortiGatePolicyApplyRequest,
     FortiGatePolicyIntent,
@@ -1627,16 +1628,33 @@ def apply_playbook_run_policy(
     _ensure_fortigate_policy_run(run)
     incident_id = str(run.get("incidentId") or "")
     owner_user_id = str(current_user["id"])
-    policy = apply_policy_review_for_user(
-        db=db,
-        integration_id=payload.integration_id,
-        owner_user_id=owner_user_id,
-        service=fortigate_service,
-        payload=FortiGatePolicyApplyRequest(
-            request_id=payload.request_id,
-            review_hash=payload.review_hash,
-        ),
-    )
+    try:
+        policy = apply_policy_review_for_user(
+            db=db,
+            integration_id=payload.integration_id,
+            owner_user_id=owner_user_id,
+            service=fortigate_service,
+            payload=FortiGatePolicyApplyRequest(
+                request_id=payload.request_id,
+                review_hash=payload.review_hash,
+            ),
+        )
+    except FortiGateApiError as exc:
+        _audit(
+            audit_store,
+            request=request,
+            current_user=current_user,
+            action="soc.playbook.policy_apply_failed",
+            outcome="failed",
+            details={
+                "runId": run_id,
+                "incidentId": incident_id,
+                "integrationId": payload.integration_id,
+                "requestId": payload.request_id,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     ticket_update: dict[str, Any] | None = None
     if incident_id:
         ticket = siem_client.request(

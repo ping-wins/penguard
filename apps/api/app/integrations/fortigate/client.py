@@ -139,6 +139,29 @@ class FortiGateApiClient:
             raise FortiGateApiError("FortiGate firewall policy create response was not an object")
         return results
 
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        if bool(before) == bool(after):
+            raise ValueError("exactly one of before or after is required")
+        params = {"action": "move"}
+        if before:
+            params["before"] = before
+        if after:
+            params["after"] = after
+        results = self._put(
+            f"/api/v2/cmdb/firewall/policy/{policy_id}",
+            json={},
+            params=params,
+        )
+        if not isinstance(results, dict):
+            raise FortiGateApiError("FortiGate firewall policy move response was not an object")
+        return results
+
     def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         results = self._put(f"/api/v2/cmdb/firewall/policy/{policy_id}", json=payload)
         if not isinstance(results, dict):
@@ -248,7 +271,13 @@ class FortiGateApiClient:
             return payload["results"]
         return payload
 
-    def _put(self, path: str, *, json: dict[str, Any]) -> Any:
+    def _put(
+        self,
+        path: str,
+        *,
+        json: dict[str, Any],
+        params: dict[str, str] | None = None,
+    ) -> Any:
         try:
             with httpx.Client(
                 base_url=self.host,
@@ -261,7 +290,7 @@ class FortiGateApiClient:
                 timeout=self.timeout_seconds,
                 transport=self.transport,
             ) as client:
-                response = client.put(path, json=json)
+                response = client.put(path, json=json, params=params)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code

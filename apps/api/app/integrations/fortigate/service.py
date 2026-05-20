@@ -118,6 +118,15 @@ class FortiGateClient(Protocol):
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        pass
+
     def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         pass
 
@@ -314,7 +323,21 @@ class _MockFortiGatePolicyClient:
         return {"status": "success", "mkey": name, "subnet": subnet, "comment": comment}
 
     def create_firewall_policy(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "success", "mkey": payload.get("name"), "payload": dict(payload)}
+        return {"status": "success", "mkey": 42, "payload": dict(payload)}
+
+    def move_firewall_policy(
+        self,
+        policy_id: str,
+        *,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "mkey": policy_id,
+            "before": before,
+            "after": after,
+        }
 
     def update_firewall_policy(self, policy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {"status": "success", "mkey": policy_id, "payload": dict(payload)}
