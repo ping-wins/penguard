@@ -1136,6 +1136,7 @@ def get_ai_provider() -> AIProvider:
     api_key = getattr(settings, "ai_api_key", "") or ""
     model = getattr(settings, "ai_model", "") or ""
     base_url = getattr(settings, "ai_base_url", "") or ""
+    timeout_seconds = float(getattr(settings, "ai_timeout_seconds", 90.0) or 90.0)
 
     if not provider_name:
         raise AIConfigurationError(
@@ -1161,6 +1162,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "claude-3-5-haiku-latest",
             base_url=base_url or "https://api.anthropic.com",
+            timeout_seconds=timeout_seconds,
         )
     if provider_name in {"gemini", "google", "google_ai", "google_gemini"}:
         if not api_key:
@@ -1171,6 +1173,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "gemini-flash-latest",
             base_url=base_url or "https://generativelanguage.googleapis.com",
+            timeout_seconds=timeout_seconds,
         )
     if provider_name in {"openai", "openai_compat", "openai_compatible"}:
         if not api_key:
@@ -1182,6 +1185,7 @@ def get_ai_provider() -> AIProvider:
             api_key=api_key,
             model=model or "gpt-4o-mini",
             base_url=base_url or "https://api.openai.com/v1",
+            timeout_seconds=timeout_seconds,
         )
     raise AIConfigurationError(
         f"Unsupported AI provider '{provider_name}'. Configure anthropic, "

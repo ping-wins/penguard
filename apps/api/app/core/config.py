@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = ""
     ai_base_url: str = ""
+    ai_timeout_seconds: float = 90.0
     threat_intel_provider: str = "virustotal"
     threat_intel_cache_ttl_seconds: int = 3600
     virustotal_api_key: str = ""
