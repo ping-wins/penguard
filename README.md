@@ -1,5 +1,11 @@
 # Penguard
 
+> **License and intellectual property:** this public repository is provided only
+> for academic evaluation in the FIAP Challenge developed in partnership with
+> Fortinet. This project is not open source. Commercial use, redistribution,
+> sublicensing, production deployment, derivative works, AI/model training use,
+> and ownership transfer are not authorized. See `LICENSE.md`.
+
 Penguard é um dashboard modular para NG-SOC, focado em centralizar visibilidade de rede e inteligência de ameaças. O primeiro alvo de integração é FortiGate via REST API, com backend FastAPI e frontend Vue 3 + Vite.
 
 > **Modelo de deploy:** single-tenant por instância. Cada cliente roda sua
